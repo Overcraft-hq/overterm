@@ -12,21 +12,21 @@ import Foundation
 /// probe, force-unlock: `interruptible` false) given a moment to end
 /// first —, and once terraform has exited its group is swept with SIGKILL,
 /// so a provider plugin validate started is never left behind.
-enum TerraformRun {
-    struct Result: Sendable, Equatable {
-        var status: Int32
-        var stdout: Data
-        var stderr: String
+package enum TerraformRun {
+    package struct Result: Sendable, Equatable {
+        package var status: Int32
+        package var stdout: Data
+        package var stderr: String
         /// Its stdout passed the limit; what came is kept.
-        var truncated = false
-        var timedOut = false
+        package var truncated = false
+        package var timedOut = false
     }
 
-    enum Failure: Error, Equatable, CustomStringConvertible {
+    package enum Failure: Error, Equatable, CustomStringConvertible {
         case refused(String)
         case spawn(Int32)
 
-        var description: String {
+        package var description: String {
             switch self {
             case .refused(let why): "refused: \(why)"
             case .spawn(let code): "terraform could not start: \(String(cString: strerror(code)))"
@@ -34,9 +34,9 @@ enum TerraformRun {
         }
     }
 
-    static let outputLimit = 1 << 20
-    static let stderrLimit = 64 << 10
-    static let timeout: TimeInterval = 30
+    package static let outputLimit = 1 << 20
+    package static let stderrLimit = 64 << 10
+    package static let timeout: TimeInterval = 30
 
     /// Runs `arguments` with `binary` in `folder`, `input` on its stdin.
     /// `file`: a descriptor the child gets as fd 3 (`show -json /dev/fd/3`,
@@ -48,7 +48,7 @@ enum TerraformRun {
     /// -backend=false`, the lock probe, `force-unlock` — passes false: a
     /// cancelled task leaves it to end on its own (its timeout still holds),
     /// never half done.
-    static func short(
+    package static func short(
         _ binary: URL, _ arguments: [String], in folder: URL, environment: [String: String], input: Data? = nil, timeout: TimeInterval = timeout,
         file: Int32? = nil, limit: Int = outputLimit, interruptible: Bool = true
     ) async throws -> Result {
@@ -85,14 +85,14 @@ enum TerraformRun {
 
     /// What a terraform it starts is given: `environment`, marked as this
     /// run's (D-15) — pure but for the run's own marker.
-    static func childEnvironment(_ environment: [String: String]) -> [String: String] {
+    package static func childEnvironment(_ environment: [String: String]) -> [String: String] {
         OvertermRun.current.marking(environment, helper: .terraform)
     }
 
     /// The same, blocking the calling thread (a GCD one). `stopper`: what
     /// stops it from elsewhere (a cancelled task); `interruptible`: whether
     /// quitting interrupts it at once (`stopAll`).
-    static func runBlocking(
+    package static func runBlocking(
         _ binary: URL, _ arguments: [String], in folder: URL, environment: [String: String], input: Data?, timeout: TimeInterval,
         file: Int32? = nil, limit: Int = outputLimit, stopper: Stopper? = nil, interruptible: Bool = true
     ) throws -> Result {
@@ -157,10 +157,10 @@ enum TerraformRun {
     }
 
     /// The process groups of the runs going now, by their leader's pid.
-    static let live = LiveGroups()
+    package static let live = LiveGroups()
 
     /// The longest quitting waits for a run that writes or holds a lock.
-    static let quitGrace: TimeInterval = 3
+    package static let quitGrace: TimeInterval = 3
 
     /// Stops every run going (at quit, at a scenario's end — `endRun`):
     /// SIGINT to each read's group at once, as Ctrl-C would; a run that
@@ -169,7 +169,7 @@ enum TerraformRun {
     /// then interrupted too — terraform releases a lock it took on SIGINT.
     /// Each waiting thread reaps its run and sweeps the group if the app is
     /// still there.
-    static func stopAll(grace: TimeInterval = quitGrace) {
+    package static func stopAll(grace: TimeInterval = quitGrace) {
         live.stopped()
         for group in live.all where live.isInterruptible(group) { killpg(group, SIGINT) }
         let deadline = Date().addingTimeInterval(grace)
@@ -177,30 +177,30 @@ enum TerraformRun {
         for group in live.all { killpg(group, SIGINT) }
     }
 
-    final class LiveGroups: @unchecked Sendable {
+    package final class LiveGroups: @unchecked Sendable {
         private let lock = NSLock()
         /// Each group, and whether quitting interrupts it at once.
         private var groups: [pid_t: Bool] = [:]
-        var all: [pid_t] { lock.withLock { Array(groups.keys) } }
-        func isInterruptible(_ group: pid_t) -> Bool { lock.withLock { groups[group] ?? true } }
-        func insert(_ group: pid_t, interruptible: Bool = true) { lock.withLock { groups[group] = interruptible } }
-        func remove(_ group: pid_t) { _ = lock.withLock { groups.removeValue(forKey: group) } }
+        package var all: [pid_t] { lock.withLock { Array(groups.keys) } }
+        package func isInterruptible(_ group: pid_t) -> Bool { lock.withLock { groups[group] ?? true } }
+        package func insert(_ group: pid_t, interruptible: Bool = true) { lock.withLock { groups[group] = interruptible } }
+        package func remove(_ group: pid_t) { _ = lock.withLock { groups.removeValue(forKey: group) } }
         /// How many times `stopAll` ran: a run that sees it change while it
         /// went may have been interrupted.
         private var stops = 0
-        var generation: Int { lock.withLock { stops } }
-        func stopped() { lock.withLock { stops += 1 } }
+        package var generation: Int { lock.withLock { stops } }
+        package func stopped() { lock.withLock { stops += 1 } }
     }
 
     /// Stops one run from another thread: SIGINT to its group once it has
     /// started (at once if it already has), never after it was reaped.
-    final class Stopper: @unchecked Sendable {
+    package final class Stopper: @unchecked Sendable {
         private let lock = NSLock()
         private var group: pid_t?
         private var stopped = false
-        var isStopped: Bool { lock.withLock { stopped } }
+        package var isStopped: Bool { lock.withLock { stopped } }
 
-        func started(_ pid: pid_t) {
+        package func started(_ pid: pid_t) {
             let stop = lock.withLock {
                 group = pid
                 return stopped
@@ -208,9 +208,9 @@ enum TerraformRun {
             if stop { killpg(pid, SIGINT) }
         }
 
-        func finished() { lock.withLock { group = nil } }
+        package func finished() { lock.withLock { group = nil } }
 
-        func stop() {
+        package func stop() {
             let running = lock.withLock {
                 stopped = true
                 return group

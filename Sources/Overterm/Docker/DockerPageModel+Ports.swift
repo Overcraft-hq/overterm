@@ -2,22 +2,22 @@ import Foundation
 
 /// What an Up is of: a project — by its labels, or one before it runs (its
 /// checkout's files) — or a checkout's compose files nothing was read of.
-enum ComposeUpTarget: Equatable {
+package enum ComposeUpTarget: Equatable {
     case project(ComposeProject)
     case checkout(URL)
 }
 
 /// Up on Free Ports: asked first (an Up), or moving what is taken (the verb).
-enum ComposeFreePorts: Equatable { case ask, yes }
+package enum ComposeFreePorts: Equatable { case ask, yes }
 
 /// An Up's files on this Mac: the checkout's compose files (real paths, as
 /// Compose finds them), Compose's project folder, the name it runs as now.
-struct ComposeUpSetup: Equatable {
-    var base: [String]
-    var folder: String
-    var running: String?
+package struct ComposeUpSetup: Equatable {
+    package var base: [String]
+    package var folder: String
+    package var running: String?
     /// Where its tab runs.
-    var directory: URL
+    package var directory: URL
 }
 
 /// Each worktree's stack on its own ports. Before an Up of a checkout's
@@ -29,13 +29,13 @@ struct ComposeUpSetup: Equatable {
 extension DockerPageModel {
     /// A compose command for a project, its files as the store says them —
     /// its override after the checkout's, when it has one.
-    func composeCommand(_ project: ComposeProject, _ verb: String, services: [String] = [], profiles: [String] = []) -> String {
+    package func composeCommand(_ project: ComposeProject, _ verb: String, services: [String] = [], profiles: [String] = []) -> String {
         ports.command(project, verb, services: services, profiles: profiles, endpoint: docker.endpoint)
     }
 
     /// A compose command that reads the files, in a tab (Pull, Watch, a
     /// service's Run): once the project's override is as its files are now.
-    func runCompose(_ project: ComposeProject, _ verb: String, services: [String] = [], in folder: URL?) {
+    package func runCompose(_ project: ComposeProject, _ verb: String, services: [String] = [], in folder: URL?) {
         withCurrentPorts(project) { [weak self] in
             guard let self else { return }
             self.actions?.run(self.composeCommand(project, verb, services: services), folder)
@@ -44,7 +44,7 @@ extension DockerPageModel {
 
     /// Once the project's override is written again from its files, when
     /// they changed since (`ComposePortStore.refresh`); at once otherwise.
-    func withCurrentPorts(_ project: ComposeProject, _ then: @escaping @MainActor () -> Void) {
+    package func withCurrentPorts(_ project: ComposeProject, _ then: @escaping @MainActor () -> Void) {
         guard ports.needsRefresh(project) else { return then() }
         let endpoint = docker.endpoint
         Task { [weak self] in
@@ -56,17 +56,17 @@ extension DockerPageModel {
     /// Whether an Up may ask Compose and probe ports: not in an isolated run
     /// without a scenario's stub `docker`, nor in a test process unless a
     /// test asks for it (`checksPortsInTests`, with a stub of its own).
-    nonisolated static var mayCheckPorts: Bool {
+    package nonisolated static var mayCheckPorts: Bool {
         if NSClassFromString("XCTestCase") != nil { return checksPortsInTests && DockerCLI.override != nil }
         return DockerCLI.override != nil || !AppEnvironment.isIsolated
     }
 
     /// A test's own stub answers an Up's questions.
-    nonisolated(unsafe) static var checksPortsInTests = false
+    package nonisolated(unsafe) static var checksPortsInTests = false
 
     /// An Up from a key, a button or a menu: typed at once when there is
     /// nothing to look at, else once the ports have been (`up`).
-    func startUp(
+    package func startUp(
         _ target: ComposeUpTarget, options: String = "-d", services: [String] = [], profiles: [String] = [], freePorts: ComposeFreePorts = .ask
     ) {
         let request = UpRequest(options: options, services: services, profiles: profiles, freePorts: freePorts)
@@ -79,7 +79,7 @@ extension DockerPageModel {
 
     /// The same, awaited: back once the command is in a tab or the question
     /// is asked.
-    func up(
+    package func up(
         _ target: ComposeUpTarget, options: String = "-d", services: [String] = [], profiles: [String] = [], freePorts: ComposeFreePorts = .ask
     ) async {
         let request = UpRequest(options: options, services: services, profiles: profiles, freePorts: freePorts)
@@ -92,7 +92,7 @@ extension DockerPageModel {
     /// The checkout's files for an Up: a project's labels' (none of ours,
     /// all on this Mac), a checkout's as Compose finds them. Nil when they
     /// aren't here: the Up is typed as it always was.
-    func upSetup(_ target: ComposeUpTarget) -> ComposeUpSetup? {
+    package func upSetup(_ target: ComposeUpTarget) -> ComposeUpSetup? {
         func exists(_ path: String) -> Bool { FileManager.default.fileExists(atPath: path) }
         switch target {
         case .project(let project) where project.planned:
@@ -133,7 +133,7 @@ extension DockerPageModel {
 
     /// Why Up on Free Ports can't help a project here; nil when it can. Its
     /// verb and a conflict's button say it; `U` says it and does nothing.
-    func freePortsUnavailable(_ project: ComposeProject) -> String? {
+    package func freePortsUnavailable(_ project: ComposeProject) -> String? {
         if project.workingDir == nil { return "Compose didn't say where it ran." }
         if upSetup(.project(project)) == nil { return "Its compose files aren't on this Mac." }
         if let version = composeVersion, !ComposePorts.supportsOverride(version: version) {
@@ -145,20 +145,20 @@ extension DockerPageModel {
     /// What an Up of a stack said: on the page — and, when the page isn't
     /// on screen (an Up from the panel, the right slot, a menu, New Task),
     /// in an alert too, as the window's own errors are.
-    func reportUp(_ message: String, failed: Bool) {
+    package func reportUp(_ message: String, failed: Bool) {
         if failed { error = message } else { cleaned = message }
         if !visible { actions?.alert("Up on Free Ports", message) }
     }
 
     // MARK: The flow
 
-    struct UpRequest {
-        var options: String
-        var services: [String]
-        var profiles: [String]
-        var freePorts: ComposeFreePorts
+    package struct UpRequest {
+        package var options: String
+        package var services: [String]
+        package var profiles: [String]
+        package var freePorts: ComposeFreePorts
 
-        var verb: String { "up " + options }
+        package var verb: String { "up " + options }
     }
 
     private enum UpStart {
@@ -363,7 +363,7 @@ extension DockerPageModel {
     }
 
     /// `docker compose version --short`, asked once (an answer is kept).
-    func composeVersion(_ cli: DockerCLI) async -> String? {
+    package func composeVersion(_ cli: DockerCLI) async -> String? {
         if let composeVersion { return composeVersion }
         guard let output = try? await cli.run(["compose", "version", "--short"], timeout: 10) else { return nil }
         let version = output.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -422,7 +422,7 @@ extension DockerPageModel {
 
     /// Where a project of a planned one's name runs, when not from its
     /// checkout: usually another worktree whose file sets `name:`.
-    func runsElsewhere(_ project: ComposeProject) -> String? {
+    package func runsElsewhere(_ project: ComposeProject) -> String? {
         guard let other = docker.projects.first(where: { $0.name == project.name }), let folder = project.workingDir,
             ComposeProjects.projects([other], in: folder).isEmpty
         else { return nil }
@@ -433,7 +433,7 @@ extension DockerPageModel {
 
     /// Forgets the project's override, asked first. Its containers keep
     /// their ports until its next Up.
-    func confirmForgetPorts(_ project: ComposeProject) {
+    package func confirmForgetPorts(_ project: ComposeProject) {
         guard let kept = ports.override(of: project) else { return }
         actions?.confirm(
             "Back to the compose file's ports?",

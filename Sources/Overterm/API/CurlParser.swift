@@ -2,11 +2,11 @@ import Foundation
 
 /// A cURL command — as a browser's "Copy as cURL" writes it, or a README —
 /// made into a request.
-enum CurlParser {
-    enum Problem: LocalizedError, Equatable {
+package enum CurlParser {
+    package enum Problem: LocalizedError, Equatable {
         case notCurl
         case noURL
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .notCurl: "That isn't a curl command."
             case .noURL: "The curl command has no URL."
@@ -14,7 +14,7 @@ enum CurlParser {
         }
     }
 
-    static func parse(_ command: String) throws -> BruFile {
+    package static func parse(_ command: String) throws -> BruFile {
         let words = tokenize(command)
         guard words.first.map({ $0 == "curl" || $0.hasSuffix("/curl") }) == true else { throw Problem.notCurl }
         var method: String?
@@ -133,7 +133,7 @@ enum CurlParser {
     }
 
     /// `a=1&b=x%20y` → pairs, decoded.
-    static func formPairs(_ text: String) -> [BruPair] {
+    package static func formPairs(_ text: String) -> [BruPair] {
         text.split(separator: "&").map { part in
             let pieces = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map {
                 String($0).replacingOccurrences(of: "+", with: " ").removingPercentEncoding ?? String($0)
@@ -144,7 +144,7 @@ enum CurlParser {
 
     /// Words as a POSIX shell splits them: quotes, backslashes, `$'…'`,
     /// line continuations.
-    static func tokenize(_ command: String) -> [String] {
+    package static func tokenize(_ command: String) -> [String] {
         var words: [String] = []
         var word = ""
         var inWord = false

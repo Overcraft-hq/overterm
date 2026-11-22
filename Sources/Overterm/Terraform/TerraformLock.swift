@@ -9,24 +9,24 @@ import Foundation
 /// with its process, and a leftover file is not a lock. `cloud {}` and
 /// `remote` roots say "workspace … is locked by run …": an HCP lock,
 /// never parsed here. Pure.
-struct TerraformLockInfo: Equatable, Sendable {
-    var id: String
-    var path: String?
+package struct TerraformLockInfo: Equatable, Sendable {
+    package var id: String
+    package var path: String?
     /// `OperationTypeApply`, `OperationTypePlan`…
-    var operation: String?
+    package var operation: String?
     /// `user@host`.
-    var who: String?
-    var version: String?
-    var created: Date?
-    var info: String?
+    package var who: String?
+    package var version: String?
+    package var created: Date?
+    package var info: String?
     /// The http backend's variant (GitLab's managed state too): its
     /// force-unlock removes whatever lock is there (2e).
-    var http = false
+    package var http = false
 
-    static let summary = "Error acquiring the state lock"
+    package static let summary = "Error acquiring the state lock"
 
     /// The lock a diagnostic names, or nil when it names none.
-    static func parse(summary: String, detail: String) -> TerraformLockInfo? {
+    package static func parse(summary: String, detail: String) -> TerraformLockInfo? {
         guard summary.hasPrefix(Self.summary) else { return nil }
         var fields: [String: String] = [:]
         var inInfo = false
@@ -59,7 +59,7 @@ struct TerraformLockInfo: Equatable, Sendable {
 
     /// Go's `time.Time` as the lock info prints it (`2026-11-08 11:42:46.353924 +0000 UTC`),
     /// or as JSON writes it (RFC 3339, `2026-11-08T11:42:46.353924Z`).
-    static func date(_ text: String) -> Date? {
+    package static func date(_ text: String) -> Date? {
         let trimmed = text.replacingOccurrences(of: " UTC", with: "").trimmingCharacters(in: .whitespaces)
         // The fraction dropped: a second is all a person reads.
         let plain = trimmed.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
@@ -74,7 +74,7 @@ struct TerraformLockInfo: Equatable, Sendable {
     }
 
     /// "an apply", "a plan", or the operation's own word.
-    var operationWords: String? {
+    package var operationWords: String? {
         guard let operation else { return nil }
         switch operation {
         case "OperationTypeApply": return "an apply"
@@ -86,7 +86,7 @@ struct TerraformLockInfo: Equatable, Sendable {
     }
 
     /// "Locked by ci@globex-runner-7 since 09:00 (an apply, Terraform 1.17.1)".
-    func said(now: Date = Date(), timeZone: TimeZone = .current) -> String {
+    package func said(now: Date = Date(), timeZone: TimeZone = .current) -> String {
         var text = "Locked by " + (who ?? "someone")
         if let created {
             let formatter = DateFormatter()
@@ -101,7 +101,7 @@ struct TerraformLockInfo: Equatable, Sendable {
     }
 
     /// The lock's age, said: "3 h", "12 min".
-    func age(now: Date = Date()) -> String? {
+    package func age(now: Date = Date()) -> String? {
         guard let created else { return nil }
         let seconds = max(0, now.timeIntervalSince(created))
         if seconds < 120 { return "\(Int(seconds)) s" }
@@ -112,7 +112,7 @@ struct TerraformLockInfo: Equatable, Sendable {
 
     /// Whether `who` is this Mac's own `user@host`: then Overterm looks for
     /// a live terraform in the root (4.10).
-    func isThisMac(user: String = NSUserName(), host: String = ProcessInfo.processInfo.hostName) -> Bool {
+    package func isThisMac(user: String = NSUserName(), host: String = ProcessInfo.processInfo.hostName) -> Bool {
         guard let who, let at = who.lastIndex(of: "@") else { return false }
         let name = String(who[..<at])
         let machine = String(who[who.index(after: at)...]).lowercased()

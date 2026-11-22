@@ -8,7 +8,7 @@ extension KubeClient {
     /// caller to read and mask at once: a Secret's carries its values.
     /// Refused here unless the connection's context is writable for this
     /// session; never retried.
-    func apply(_ request: KubeWriteRequest) async throws -> Data {
+    package func apply(_ request: KubeWriteRequest) async throws -> Data {
         guard connection.writable else { throw KubeWriteRefused(reason: "This context is read-only: Overterm changes nothing here.") }
         let response: HTTPResponse
         do {
@@ -30,7 +30,7 @@ extension KubeClient {
     /// The object as the cluster has it now, as JSON; nil when it isn't
     /// there. A Secret's carries its values: read only for its diff, masked
     /// before anything shows it, never kept.
-    func live(_ ref: KubeObjectRef) async throws -> Data? {
+    package func live(_ ref: KubeObjectRef) async throws -> Data? {
         do {
             return try await get(KubeWrites.path(ref)).body
         } catch let error as KubeAPIError where error.isNotFound {
@@ -42,11 +42,11 @@ extension KubeClient {
 /// `kubectl kustomize DIR`: a kustomization rendered here, from its files
 /// alone — kubectl reaches no cluster for it (Section 5: started on every
 /// class), and is given `KUBECONFIG=/dev/null` all the same.
-enum KubeKustomize {
-    static let timeout: TimeInterval = 30
-    static let outputLimit = 4 << 20
+package enum KubeKustomize {
+    package static let timeout: TimeInterval = 30
+    package static let outputLimit = 4 << 20
 
-    static func render(_ folder: URL, context: KubeContext, configuration: KubeProxies.Configuration) async throws -> String {
+    package static func render(_ folder: URL, context: KubeContext, configuration: KubeProxies.Configuration) async throws -> String {
         if let refused = KubeProcessCheck.rule(.kustomize, for: context).refused { throw KubeManifestProblem(refused) }
         let tool = try await KubeProxyPlanner().tool(context, configuration: configuration, serverMinor: nil)
         var given = tool.environment
@@ -75,27 +75,27 @@ enum KubeKustomize {
 /// of them at quit, and a gone Overterm's folder when the next one makes
 /// its own.
 @MainActor
-enum KubeManifestEdits {
-    struct Opened {
-        var ref: KubeObjectRef
+package enum KubeManifestEdits {
+    package struct Opened {
+        package var ref: KubeObjectRef
         /// What the object was at as it was read: sent with the apply.
-        var resourceVersion: String?
+        package var resourceVersion: String?
     }
 
     /// The copies open now, by path.
-    private(set) static var opened: [String: Opened] = [:]
+    package private(set) static var opened: [String: Opened] = [:]
     private static var swept = false
 
     /// The support folder's (an isolated run's own, a unit test's too).
-    static var root: URL {
+    package static var root: URL {
         AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/Edits", isDirectory: true)
     }
 
-    static var folder: URL { root.appendingPathComponent(String(getpid()), isDirectory: true) }
+    package static var folder: URL { root.appendingPathComponent(String(getpid()), isDirectory: true) }
 
     /// `<context's hash>/<namespace>/deployment-web.yaml`: the tab says
     /// what it is, two contexts' never one file.
-    static func url(for ref: KubeObjectRef) -> URL {
+    package static func url(for ref: KubeObjectRef) -> URL {
         let hash = String(KubeSocketFolder.name(for: ref.context).dropLast(".sock".count))
         let kind = (ref.kind.singular.isEmpty ? ref.kind.kind.lowercased() : ref.kind.singular)
         return folder.appendingPathComponent(hash, isDirectory: true).appendingPathComponent(ref.namespace ?? "_cluster", isDirectory: true)
@@ -107,7 +107,7 @@ enum KubeManifestEdits {
     }
 
     /// The copy's first lines: what it is, where it goes.
-    static func header(_ ref: KubeObjectRef, production: Bool) -> String {
+    package static func header(_ ref: KubeObjectRef, production: Bool) -> String {
         "# \(production ? "PRODUCTION · " : "")\(ref.context) · \(ref.namespace.map { "namespace \($0)" } ?? "cluster-wide") — \(KubeWriteOutcome.spoken(ref))\n"
             + "# In memory, never saved: Diff with Cluster shows what an apply would change; Apply is a step of its own.\n"
     }
@@ -115,7 +115,7 @@ enum KubeManifestEdits {
     /// `ref`'s name in the editor, and the version its text was read at.
     /// Nothing is written.
     @discardableResult
-    static func register(_ ref: KubeObjectRef, resourceVersion: String?) -> URL {
+    package static func register(_ ref: KubeObjectRef, resourceVersion: String?) -> URL {
         let file = url(for: ref)
         opened[file.standardizedFileURL.path] = Opened(ref: ref, resourceVersion: resourceVersion)
         return file
@@ -132,17 +132,17 @@ enum KubeManifestEdits {
         guard written == data.count else { throw KubeManifestProblem("Overterm couldn't write \(file.path).") }
     }
 
-    static func edit(at url: URL) -> Opened? { opened[url.standardizedFileURL.path] }
+    package static func edit(at url: URL) -> Opened? { opened[url.standardizedFileURL.path] }
 
     /// The templates' copies open now (`KubeTemplates`), by path: a file to
     /// apply, never saved, removed with its tab — and its tab closed once
     /// it is applied (2.18: a Secret's value typed into it goes then).
-    private(set) static var templates: Set<String> = []
+    package private(set) static var templates: Set<String> = []
 
-    static func isTemplate(_ url: URL) -> Bool { templates.contains(url.standardizedFileURL.path) }
+    package static func isTemplate(_ url: URL) -> Bool { templates.contains(url.standardizedFileURL.path) }
 
     /// A template's copy, `templates/<name>-<a tab's id>.yaml`: 0600, its folders 0700.
-    static func writeTemplate(_ text: String, name: String) throws -> URL {
+    package static func writeTemplate(_ text: String, name: String) throws -> URL {
         try prepare()
         let folder = self.folder.appendingPathComponent("templates", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -153,22 +153,22 @@ enum KubeManifestEdits {
     }
 
     /// Said for a save of a template's copy.
-    static let templateUnsaved =
+    package static let templateUnsaved =
         "A template's copy isn't saved: what you type in it — a Secret's value too — stays in memory. Apply sends what is in the editor and closes the tab; closing it drops it."
 
     /// Said for a save of one: it lives in memory, masked as it was read.
-    static let unsaved =
+    package static let unsaved =
         "A cluster object's YAML is never saved: what you type stays in memory, never in a file. Apply sends what is in the editor; Revert gives back the cluster's."
 
     /// After an apply: what the object is at now.
-    static func applied(_ url: URL, resourceVersion: String?) {
+    package static func applied(_ url: URL, resourceVersion: String?) {
         guard var edit = opened[url.standardizedFileURL.path] else { return }
         edit.resourceVersion = resourceVersion
         opened[url.standardizedFileURL.path] = edit
     }
 
     /// Its tab closed, its buffer gone: a template's file removed.
-    static func remove(_ url: URL) {
+    package static func remove(_ url: URL) {
         let key = url.standardizedFileURL.path
         opened.removeValue(forKey: key)
         guard templates.remove(key) != nil else { return }
@@ -176,7 +176,7 @@ enum KubeManifestEdits {
     }
 
     /// At quit: this Overterm's folder.
-    static func removeAll() {
+    package static func removeAll() {
         opened = [:]
         templates = []
         try? FileManager.default.removeItem(at: folder)
@@ -197,7 +197,7 @@ enum KubeManifestEdits {
 
 /// What a manifest's session asks of its window.
 @MainActor
-protocol KubeManifestHost: AnyObject {
+package protocol KubeManifestHost: AnyObject {
     /// The write's confirmation (`WriteConfirmation`), the name typed where
     /// asked: what was typed when the button was pressed, nil for Cancel.
     func askManifestWrite(_ confirmation: KubeWriteConfirmation) async -> String?
@@ -213,17 +213,17 @@ protocol KubeManifestHost: AnyObject {
 }
 
 extension KubeManifestHost {
-    func manifestTemplateApplied(_ said: String) {}
-    func showExplain(_ session: KubeExplainSession) {}
+    package func manifestTemplateApplied(_ said: String) {}
+    package func showExplain(_ session: KubeExplainSession) {}
 }
 
 /// The diff and the apply, shared by the editor's sessions and agents'
 /// `k8s_apply`: on the main actor, the objects never leave it. Every
 /// request goes through `KubeClient` on the context's connection.
 @MainActor
-enum KubeManifestRun {
+package enum KubeManifestRun {
     /// What the context serves: the page's (the same cluster), else read.
-    static func discovery(_ context: KubeContext, client: KubeClient, model: KubernetesModel) async throws -> KubeDiscovery {
+    package static func discovery(_ context: KubeContext, client: KubeClient, model: KubernetesModel) async throws -> KubeDiscovery {
         if let known = model.knownDiscovery(of: context) { return known }
         return try await client.discover()
     }
@@ -236,7 +236,7 @@ enum KubeManifestRun {
     /// none listed, or refused), else one row of them asked
     /// (`applicationsHere`). nil only where Applications are listed here:
     /// Argo CD's own words stand. Discovery unread: can't tell, so "may".
-    static func marksReason(_ context: KubeContext, client: KubeClient, model: KubernetesModel) async -> KubeMarkedAppsMode.Reason? {
+    package static func marksReason(_ context: KubeContext, client: KubeClient, model: KubernetesModel) async -> KubeMarkedAppsMode.Reason? {
         guard let discovery = try? await discovery(context, client: client, model: model) else { return .undiscovered }
         if case .only(let reason) = KubeMarkedAppsMode.of(discovery: discovery, applications: .notYetListed, marked: []) { return reason }
         // Served: a section's word holds only for what a cluster serving them can say.
@@ -249,7 +249,7 @@ enum KubeManifestRun {
     /// `.noApplications` (the survey's development cluster serves the kind
     /// with none, its apps' Applications elsewhere); refused: `.forbidden`;
     /// one or more: nil; no answer: `.undiscovered` — "may" all the same.
-    static func applicationsHere(_ discovery: KubeDiscovery, client: KubeClient) async -> KubeMarkedAppsMode.Reason? {
+    package static func applicationsHere(_ discovery: KubeDiscovery, client: KubeClient) async -> KubeMarkedAppsMode.Reason? {
         let applications = KubeMarkedAppsMode.applications
         guard let kind = discovery.kinds.first(where: { $0.group == applications.group && $0.resource == applications.resource }) else { return .undiscovered }
         let path = KubePath.query(kind.path(namespace: nil), [("limit", "1"), ("includeObject", "None")])
@@ -266,7 +266,7 @@ enum KubeManifestRun {
     /// The namespace an object without one goes to: the page's on the
     /// context (of several, the context's own when it is one, else the
     /// first), else the context's own.
-    static func defaultNamespace(_ context: KubeContext, model: KubernetesModel) -> String {
+    package static func defaultNamespace(_ context: KubeContext, model: KubernetesModel) -> String {
         let own = KubernetesModel.defaultScope(context).one()
         return model.agentDefaultScope(for: context).one(preferring: own) ?? own ?? "default"
     }
@@ -275,7 +275,7 @@ enum KubeManifestRun {
     /// the list of each group version a manifest names that isn't its
     /// group's preferred one (discovery holds only that) — `autoscaling/v1`,
     /// a CRD's older version — so the object goes to its own version's path.
-    static func served(_ objects: [KubeManifestObject], discovery: KubeDiscovery, client: KubeClient) async -> KubeDiscovery {
+    package static func served(_ objects: [KubeManifestObject], discovery: KubeDiscovery, client: KubeClient) async -> KubeDiscovery {
         var discovery = discovery
         var asked = Set<String>()
         for object in objects where KubeApply.kind(of: object, in: discovery) == nil && asked.insert(object.apiVersion).inserted {
@@ -290,7 +290,7 @@ enum KubeManifestRun {
 
     /// Where each object goes, in order: its kind at its own apiVersion,
     /// its namespace (the file's, else `namespace`, else the page's).
-    static func refs(
+    package static func refs(
         _ objects: [KubeManifestObject], context: KubeContext, client: KubeClient, model: KubernetesModel, namespace: String?
     ) async throws -> [KubeObjectRef] {
         let discovery = await served(objects, discovery: try await discovery(context, client: client, model: model), client: client)
@@ -303,7 +303,7 @@ enum KubeManifestRun {
     /// no dry run (a 400 saying so) — and nothing else. An admission's
     /// denial is a 403 too, but it is the cluster saying no to the object:
     /// that is shown, never a client-side diff as if it would apply.
-    static func refusal(_ error: Error) -> String? {
+    package static func refusal(_ error: Error) -> String? {
         if let refused = error as? KubeWriteRefused { return refused.reason }
         guard let api = error as? KubeAPIError else { return nil }
         if api.status == 400, dryRunUnsupported(api.message) { return "a webhook of the cluster's takes no dry run (\(api.message))" }
@@ -312,11 +312,11 @@ enum KubeManifestRun {
     }
 
     /// `admission webhook "x" does not support dry run`.
-    static func dryRunUnsupported(_ message: String) -> Bool { message.lowercased().contains("does not support dry run") }
+    package static func dryRunUnsupported(_ message: String) -> Bool { message.lowercased().contains("does not support dry run") }
 
     /// `admission webhook "x" denied the request: …`, a
     /// ValidatingAdmissionPolicy's `… denied request: …`.
-    static func admissionDenied(_ message: String) -> Bool {
+    package static func admissionDenied(_ message: String) -> Bool {
         let text = message.lowercased()
         return text.contains("admission webhook") || text.contains("denied the request") || text.contains("denied request")
     }
@@ -325,7 +325,7 @@ enum KubeManifestRun {
     /// (a GET), then — on a writable context — a server-side apply with
     /// `dryRun=All`; read-only, or refused, the file merged over the live
     /// object here, labelled so. Both sides stripped and masked.
-    static func diff(
+    package static func diff(
         _ objects: [KubeManifestObject], text: String, context: KubeContext, client: KubeClient, model: KubernetesModel, namespace: String?,
         kustomized: Bool = false
     ) async throws -> KubeManifestDiffResult {
@@ -404,13 +404,13 @@ enum KubeManifestRun {
     /// its own ref, with the version it was opened at (`versions`, by ref)
     /// unless `replacing`, `force` only when asked again. The first
     /// failure stops it — what was applied before it stays applied.
-    enum Outcome {
+    package enum Outcome {
         case applied([KubeObjectRef: String?])
         case conflict(KubeApplyConflict, applied: [KubeObjectRef: String?])
         case failed(String, applied: [KubeObjectRef: String?])
     }
 
-    static func apply(
+    package static func apply(
         _ items: [KubeManifestItem], client: KubeClient, versions: [KubeObjectRef: String], force: Bool, replacing: Bool
     ) async -> Outcome {
         var applied: [KubeObjectRef: String?] = [:]
@@ -431,7 +431,7 @@ enum KubeManifestRun {
     }
 
     /// An apply's error said plainly.
-    static func failed(_ ref: KubeObjectRef, _ error: Error) -> String {
+    package static func failed(_ ref: KubeObjectRef, _ error: Error) -> String {
         let object = KubeWriteOutcome.spoken(ref)
         if let refused = error as? KubeWriteRefused { return refused.reason }
         if let problem = error as? KubeProxyProblem { return "\(object): \(problem.reason)" }
@@ -446,7 +446,7 @@ enum KubeManifestRun {
     }
 
     /// `Applied deployment shop/web to kind-fake.`
-    static func done(_ refs: [KubeObjectRef], context: String) -> String {
+    package static func done(_ refs: [KubeObjectRef], context: String) -> String {
         refs.count == 1 ? "Applied \(KubeWriteOutcome.spoken(refs[0])) to \(context)." : "Applied \(refs.count) objects to \(context)."
     }
 }
@@ -465,8 +465,8 @@ enum KubeManifestRun {
 /// Force (confirmed again; never on production) — or, the object changed
 /// since it was opened, Replace.
 @MainActor
-final class KubeManifestSession: ObservableObject, Identifiable {
-    enum Source: Equatable {
+package final class KubeManifestSession: ObservableObject, Identifiable {
+    package enum Source: Equatable {
         /// A copy of a cluster object (`y`): it goes back where it came from.
         case object(KubeObjectRef)
         /// A manifest of the checkout's.
@@ -475,31 +475,31 @@ final class KubeManifestSession: ObservableObject, Identifiable {
         case kustomization(URL)
     }
 
-    enum State: Equatable {
+    package enum State: Equatable {
         case idle
         case working(String)
         case done(String)
         case failed(String)
 
-        var text: String? {
+        package var text: String? {
             switch self {
             case .idle: nil
             case .working(let text), .done(let text), .failed(let text): text
             }
         }
 
-        var isWorking: Bool { if case .working = self { true } else { false } }
-        var isFailure: Bool { if case .failed = self { true } else { false } }
+        package var isWorking: Bool { if case .working = self { true } else { false } }
+        package var isFailure: Bool { if case .failed = self { true } else { false } }
     }
 
-    let id = UUID()
-    let source: Source
+    package let id = UUID()
+    package let source: Source
     /// The editor's file.
-    let file: URL
-    let model: KubernetesModel
+    package let file: URL
+    package let model: KubernetesModel
     /// The context it is compared with and applied to: an object's own,
     /// else the one picked (the page's, at first).
-    @Published var contextName: String? {
+    @Published package var contextName: String? {
         didSet {
             guard contextName != oldValue else { return }
             docsNote = nil
@@ -509,46 +509,46 @@ final class KubeManifestSession: ObservableObject, Identifiable {
             refreshApplyRefusal()
         }
     }
-    @Published private(set) var state: State = .idle
-    @Published private(set) var result: KubeManifestDiffResult?
+    @Published package private(set) var state: State = .idle
+    @Published package private(set) var result: KubeManifestDiffResult?
     /// Each object's diff, made for the pane once.
-    @Published private(set) var fileDiffs: [String: DiffModel.FileDiff] = [:]
+    @Published package private(set) var fileDiffs: [String: DiffModel.FileDiff] = [:]
     /// The last apply's 409: Force or Replace.
-    @Published private(set) var conflict: KubeApplyConflict?
+    @Published package private(set) var conflict: KubeApplyConflict?
     /// The contexts, for the picker (a file's).
-    @Published private(set) var contexts: [KubeContext] = []
+    @Published package private(set) var contexts: [KubeContext] = []
     /// Why Apply isn't offered on the context picked now; nil when it is.
-    @Published private(set) var applyRefusal: String?
+    @Published package private(set) var applyRefusal: String?
     /// Where the field docs came from, or why they couldn't be read (3.15).
-    @Published var docsNote: String?
+    @Published package var docsNote: String?
 
     /// The buffer's text, as it is now.
-    var text: () -> String = { "" }
+    package var text: () -> String = { "" }
     /// Where the editor's caret is in it: what Explain explains.
-    var caret: () -> Int = { 0 }
+    package var caret: () -> Int = { 0 }
     /// The field docs were read (a hover, a completion, Explain): the editor marks unknown fields.
-    var onDocsRead: (() -> Void)?
+    package var onDocsRead: (() -> Void)?
     /// The editor's files with unsaved edits: a kustomization renders the
     /// saved files, so it refuses while one of its folder's is unsaved.
-    var unsaved: () -> [URL] = { [] }
-    weak var host: KubeManifestHost?
+    package var unsaved: () -> [URL] = { [] }
+    package weak var host: KubeManifestHost?
     /// What a request goes through: the context's proxy in a background
     /// slot (the page keeps its own), or a test's connection.
-    var client: (KubeContext) -> KubeClient
+    package var client: (KubeContext) -> KubeClient
     /// What a read nobody asked for goes through — a hover where the mouse
     /// rests (3.15) —: a slot free as it stands, never a browser sign-in
     /// (`KubeProxies.Role.spare`), or a test's connection.
-    var unaskedClient: (KubeContext) -> KubeClient
+    package var unaskedClient: (KubeContext) -> KubeClient
     /// A kustomization rendered: a test's stands in.
-    var render: (URL, KubeContext) async throws -> String
+    package var render: (URL, KubeContext) async throws -> String
     /// What the session is told when an apply lands (the scenario).
-    var onApplied: ((String) -> Void)?
+    package var onApplied: ((String) -> Void)?
     /// A cluster object's YAML (`KubeResourceBuffer`): the bar's banner, its Revert.
-    weak var resource: KubeResourceBuffer?
+    package weak var resource: KubeResourceBuffer?
     /// The object's own apply landed, at this version: its buffer has what the cluster has.
-    var onObjectApplied: ((String?) -> Void)?
+    package var onObjectApplied: ((String?) -> Void)?
 
-    init(source: Source, file: URL, model: KubernetesModel) {
+    package init(source: Source, file: URL, model: KubernetesModel) {
         self.source = source
         self.file = file
         self.model = model
@@ -560,13 +560,13 @@ final class KubeManifestSession: ObservableObject, Identifiable {
         if case .object(let ref) = source { contextName = ref.context } else { contextName = model.selectedName }
     }
 
-    var isOwnCopy: Bool { if case .object = source { true } else { false } }
+    package var isOwnCopy: Bool { if case .object = source { true } else { false } }
 
     /// The copy's object, for an `.object` source.
-    var ref: KubeObjectRef? { if case .object(let ref) = source { ref } else { nil } }
+    package var ref: KubeObjectRef? { if case .object(let ref) = source { ref } else { nil } }
 
     /// What the bar says it is.
-    var title: String {
+    package var title: String {
         switch source {
         case .object(let ref): KubeWriteOutcome.spoken(ref)
         case .file(let url): url.lastPathComponent
@@ -575,7 +575,7 @@ final class KubeManifestSession: ObservableObject, Identifiable {
     }
 
     /// The contexts read again (the picker opening; the bar appearing).
-    func refreshContexts() async {
+    package func refreshContexts() async {
         guard let list = await model.contextsForAgents() else {
             contexts = []
             applyRefusal = "Kubernetes is off in Settings ▸ Kubernetes."
@@ -599,7 +599,7 @@ final class KubeManifestSession: ObservableObject, Identifiable {
     }
 
     /// The context as the kubeconfig and the session's switches say it now.
-    func contextNow() async -> KubeContext? {
+    package func contextNow() async -> KubeContext? {
         guard let name = contextName, let list = await model.contextsForAgents() else { return nil }
         contexts = list.contexts
         refreshApplyRefusal(list)
@@ -627,10 +627,10 @@ final class KubeManifestSession: ObservableObject, Identifiable {
         return (text, try objects(text))
     }
 
-    var isKustomization: Bool { if case .kustomization = source { true } else { false } }
+    package var isKustomization: Bool { if case .kustomization = source { true } else { false } }
 
     /// Said on the bar (a save of Overterm's copy, refused).
-    func say(_ text: String) {
+    package func say(_ text: String) {
         guard !state.isWorking else { return }
         state = .done(text)
     }
@@ -648,11 +648,11 @@ final class KubeManifestSession: ObservableObject, Identifiable {
 
     // MARK: Diff with Cluster
 
-    func diffWithCluster() { Task { _ = await runDiff() } }
+    package func diffWithCluster() { Task { _ = await runDiff() } }
 
     /// The diff, shown in the pane; nil when it couldn't be made (said).
     @discardableResult
-    func runDiff(show: Bool = true) async -> KubeManifestDiffResult? {
+    package func runDiff(show: Bool = true) async -> KubeManifestDiffResult? {
         await runDiff(show: show, of: nil)
     }
 
@@ -721,22 +721,22 @@ final class KubeManifestSession: ObservableObject, Identifiable {
 
     // MARK: Apply
 
-    func apply() { Task { await runApply() } }
+    package func apply() { Task { await runApply() } }
 
     /// Force: the last 409's fields taken from their managers, asked again.
-    func forceApply() {
+    package func forceApply() {
         guard case .fields = conflict else { return }
         Task { await runApply(force: true) }
     }
 
     /// Replace: the object changed since it was opened; applied again
     /// without that version, asked again.
-    func replace() {
+    package func replace() {
         guard case .changed = conflict else { return }
         Task { await runApply(replacing: true) }
     }
 
-    func runApply(force: Bool = false, replacing: Bool = false) async {
+    package func runApply(force: Bool = false, replacing: Bool = false) async {
         guard !state.isWorking else { return }
         let asked = conflict
         guard let name = contextName else {
@@ -881,7 +881,7 @@ final class KubeManifestSession: ObservableObject, Identifiable {
     }
 
     /// The tab closed: an object's copy goes with it.
-    func close() {
+    package func close() {
         if isOwnCopy || KubeManifestEdits.isTemplate(file) { KubeManifestEdits.remove(file) }
         result = nil
         fileDiffs = [:]

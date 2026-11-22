@@ -35,31 +35,31 @@ import Foundation
 extension KubeMCP {
     /// An agent's read of the marks' rows: 2,000 objects or 16 MB a kind
     /// (a test's own).
-    static var marksRows = KubeMarkedAppsSession.Bounds(rowsPage: 500, pageBytes: 16 << 20, rowsObjects: 2000, rowsBytes: 16 << 20, getBytes: 4 << 20)
+    package static var marksRows = KubeMarkedAppsSession.Bounds(rowsPage: 500, pageBytes: 16 << 20, rowsObjects: 2000, rowsBytes: 16 << 20, getBytes: 4 << 20)
     /// Then a GET of at most this many, 16 MB in all.
-    nonisolated static let marksGets = 20
-    nonisolated static let marksGetsBytes = 16 << 20
+    package nonisolated static let marksGets = 20
+    package nonisolated static let marksGetsBytes = 16 << 20
     /// At most this many apps' lines; the rest counted by state.
-    nonisolated static let marksLines = 100
+    package nonisolated static let marksLines = 100
 
     /// The apps read from marks, as an agent is told them.
-    struct MarkedAppsRead {
-        var apps: [KubeMarkedRanked] = []
-        var reading = KubeMarkedReading()
-        var tally = KubeMarkedApps.Tally()
-        var probable = false
+    package struct MarkedAppsRead {
+        package var apps: [KubeMarkedRanked] = []
+        package var reading = KubeMarkedReading()
+        package var tally = KubeMarkedApps.Tally()
+        package var probable = false
         /// The section's mode, when its store answered.
-        var mode: KubeMarkedAppsMode?
+        package var mode: KubeMarkedAppsMode?
         /// When the section ranked them; nil: read for this answer.
-        var section: Date?
+        package var section: Date?
         /// Read for this answer: how many objects a GET settled, and what
         /// it couldn't settle, said.
-        var settled = 0
-        var unsettled: [String] = []
+        package var settled = 0
+        package var unsettled: [String] = []
     }
 
     /// `state`: whether Ready apps read from marks are listed too.
-    static func marksState(_ call: Call) throws -> Bool {
+    package static func marksState(_ call: Call) throws -> Bool {
         switch call.string("state")?.lowercased() {
         case nil, "problems": return false
         case "all": return true
@@ -70,7 +70,7 @@ extension KubeMCP {
     /// The section's apps of the target's context when its store answers
     /// for the call's scope: same cluster and user, under five minutes old,
     /// its reads done, its mode deriving them; the apps in the scope.
-    static func keptMarks(_ target: Target, kubernetes: KubernetesModel, now: Date) -> MarkedAppsRead? {
+    package static func keptMarks(_ target: Target, kubernetes: KubernetesModel, now: Date) -> MarkedAppsRead? {
         guard let kept = kubernetes.markedApps(of: target.context, now: now), kept.mode != .off, !kept.reading.kinds.isEmpty, !kept.reading.isReading else { return nil }
         if let wanted = target.scope.names {
             if let held = kept.scope.names, !Set(held).isSuperset(of: wanted) { return nil }
@@ -82,7 +82,7 @@ extension KubeMCP {
     }
 
     /// An app in or deploying into the scope: one of its namespaces in it.
-    static func inScope(_ app: KubeMarkedApp, _ scope: KubeScope) -> Bool {
+    package static func inScope(_ app: KubeMarkedApp, _ scope: KubeScope) -> Bool {
         guard scope != .all else { return true }
         return app.namespaces.contains { scope.includes($0) }
     }
@@ -92,7 +92,7 @@ extension KubeMCP {
     /// apps, those that may be problems picked and every app ranked off the
     /// main thread (14.4.6: 2,000 rows a kind, four kinds) — the main
     /// thread only waits for the reads.
-    static func readMarks(_ target: Target, discovery: KubeDiscovery, now: Date) async -> MarkedAppsRead {
+    package static func readMarks(_ target: Target, discovery: KubeDiscovery, now: Date) async -> MarkedAppsRead {
         let kinds = KubeMarkedAppsSession.kinds(discovery).workloads
         var reading = KubeMarkedReading()
         reading.kinds = kinds.map(KubeKindCatalog.title(of:))
@@ -179,7 +179,7 @@ extension KubeMCP {
     /// what may be a problem among them — not ready by its row, an Argo
     /// Rollout's phase —, the most recently changed by Argo CD first. Off
     /// the main thread.
-    nonisolated static func marksMade(
+    package nonisolated static func marksMade(
         _ listed: [(kind: KubeMarkedKind, rows: KubeRows)], scope: KubeScope, now: Date
     ) -> (apps: KubeMarkedApps, candidates: [KubeMarkedMember]) {
         var members: [KubeMarkedMember] = []
@@ -208,7 +208,7 @@ extension KubeMCP {
     /// Rollouts weren't read whole, a Deployment scaled to 0 with no
     /// Rollout of its app read Unknown (`KubeGitOpsMatch.health`). Off the
     /// main thread.
-    nonisolated static func marksRanked(
+    package nonisolated static func marksRanked(
         _ apps: KubeMarkedApps, candidates: [KubeMarkedMember], wires: [KubeMarkedMember.ID: KubeMarkedWorkloadWire], rollouts: KubeGitOpsMatch.RolloutsRead
     ) -> (apps: [KubeMarkedRanked], tally: KubeMarkedApps.Tally, probable: Bool) {
         var apps = apps
@@ -224,7 +224,7 @@ extension KubeMCP {
     /// refused or cut, refused across the cluster only where read in every
     /// one of the scope's namespaces —; or not, and why. `title`: the
     /// Rollouts' title among the reading's kinds, nil where not served.
-    nonisolated static func marksRollouts(_ reading: KubeMarkedReading, title: String?, scope: KubeScope) -> KubeGitOpsMatch.RolloutsRead {
+    package nonisolated static func marksRollouts(_ reading: KubeMarkedReading, title: String?, scope: KubeScope) -> KubeGitOpsMatch.RolloutsRead {
         guard let title else { return .notServed }
         if let why = reading.failed[title] { return .unread("Argo Rollouts couldn't be read: \(why)") }
         guard reading.listed.contains(title) else {
@@ -241,7 +241,7 @@ extension KubeMCP {
     /// Applications said (`.notYetListed`: not read, or cut — `unlisted`
     /// saying which: "couldn't be read — …", "were cut at …"). Every count
     /// plain, whatever the person's locale writes.
-    static func gitOpsMarks(
+    package static func gitOpsMarks(
         filter: GitOpsFilter, _ target: Target, discovery: KubeDiscovery, applications: KubeMarkedAppsMode.ApplicationsRead, unlisted: String? = nil,
         kept: MarkedAppsRead?, kubernetes: KubernetesModel, failing: Bool, every: Bool, limit: Int, now: Date
     ) async -> (lines: [String], hint: String?) {
@@ -370,29 +370,29 @@ extension KubeMCP {
     /// the rail says it (`KubePanelGitOps`): its matches with their health,
     /// whose it is and where their Application stands; what B, C and D
     /// said; the owners whose "not in" lines they replace.
-    struct CheckoutMarks {
-        struct Match {
-            var entry: KubeGitOpsMatch.MarkedFound
-            var health: KubeMarkedHealth.AppVerdict
-            var scope: KubeGitOpsMatch.MarkedScope
-            var place: KubeGitOpsMatch.MarkedPlace
+    package struct CheckoutMarks {
+        package struct Match {
+            package var entry: KubeGitOpsMatch.MarkedFound
+            package var health: KubeMarkedHealth.AppVerdict
+            package var scope: KubeGitOpsMatch.MarkedScope
+            package var place: KubeGitOpsMatch.MarkedPlace
         }
 
         /// Why it reads from marks across the cluster: the rail's line.
-        var line: String?
-        var found: [Match] = []
-        var probably: [Match] = []
-        var tooMany: String?
+        package var line: String?
+        package var found: [Match] = []
+        package var probably: [Match] = []
+        package var tooMany: String?
         /// Those by name or image outside the binding's namespace, beside
         /// those in it: never listed, only counted — the failing ones alone
         /// when only those are asked for.
-        var elsewhere: [Match] = []
-        var nothing: String?
-        var caveats: [String] = []
-        var notes: [String] = []
+        package var elsewhere: [Match] = []
+        package var nothing: String?
+        package var caveats: [String] = []
+        package var notes: [String] = []
         /// The Argo CD owners an app read from marks says now: their "not in" lines go.
-        var replaced: Set<KubeGitOpsObject.Key> = []
-        var derivedOwners: Set<KubeGitOpsOwner> = []
+        package var replaced: Set<KubeGitOpsObject.Key> = []
+        package var derivedOwners: Set<KubeGitOpsOwner> = []
     }
 
 
@@ -411,7 +411,7 @@ extension KubeMCP {
     /// scaled to 0); **C** and **D** "probably", the binding namespace's
     /// first and those elsewhere counted. An app the section ranked in the
     /// last five minutes is said with its verdict. Its counts plain.
-    static func gitOpsCheckoutMarks(
+    package static func gitOpsCheckoutMarks(
         _ workloads: [KubePanelGitOps.Bound], owners: KubePanelGitOps.OwnersRead, held: Bool, binding: KubeBinding, context: KubeContext, client: KubeClient,
         discovery: KubeDiscovery, facts: KubeGitOpsMatch.Checkout, key: KubeGitOpsMatchCache.Key, kubernetes: KubernetesModel, now: Date
     ) async -> CheckoutMarks {
@@ -603,7 +603,7 @@ extension KubeMCP {
 
     /// Where neither Argo CD's Applications nor Flux is served, what is
     /// said of Flux beside the marks.
-    static func fluxUnserved(_ discovery: KubeDiscovery, context: String) -> String? {
+    package static func fluxUnserved(_ discovery: KubeDiscovery, context: String) -> String? {
         let mode = KubePanelGitOps.mode(of: discovery)
         if mode.contains("flux=served") { return nil }
         if mode.contains("flux=undiscovered") { return "Whether \(context) serves Flux can't be told: Flux's groups didn't answer discovery." }
@@ -611,7 +611,7 @@ extension KubeMCP {
     }
 
     /// Where Argo CD's Applications are asked for and aren't here: the apps read from marks.
-    static let marksHint = "Argo CD's apps read from the marks on their objects: kind marks lists them."
+    package static let marksHint = "Argo CD's apps read from the marks on their objects: kind marks lists them."
 }
 
 /// What `k8s_gitops` says of the apps read from marks (gitops.md 14.2.6):
@@ -619,16 +619,16 @@ extension KubeMCP {
 /// `notServed`, nothing of where Argo CD runs for apps only probably its —;
 /// what health is; where they were read; the count, a floor unless the
 /// read was whole; one line each. Pure.
-enum KubeMCPMarksText {
+package enum KubeMCPMarksText {
     /// A line's longest.
-    static let lineLimit = 1200
+    package static let lineLimit = 1200
 
     /// `1 app`, `1024 apps`: an agent's numbers are plain, whatever the
     /// person's locale writes (`2.000` is two in English).
-    static func counted(_ count: Int, _ noun: String) -> String { "\(count) \(noun)\(count == 1 ? "" : "s")" }
+    package static func counted(_ count: Int, _ noun: String) -> String { "\(count) \(noun)\(count == 1 ? "" : "s")" }
 
     /// `2 Argo CD installations mark objects here: hub-eu (812 apps), unnamed (82 apps).`; nil for one.
-    static func installations(_ apps: [KubeMarkedApp]) -> String? {
+    package static func installations(_ apps: [KubeMarkedApp]) -> String? {
         let all = KubeMarkedSection.installations(apps)
         guard all.count > 1 else { return nil }
         let each = all.map { "\($0.installation.isEmpty ? "unnamed" : $0.installation) (\(counted($0.apps, "app")))" }
@@ -636,7 +636,7 @@ enum KubeMCPMarksText {
     }
 
     /// After the context's line: why the apps are read from marks.
-    static func opening(_ mode: KubeMarkedAppsMode, context: String, probable: Bool) -> String {
+    package static func opening(_ mode: KubeMarkedAppsMode, context: String, probable: Bool) -> String {
         let tail = "apps read from the marks on their objects; no sync status, repository or revision."
         if probable {
             return
@@ -651,11 +651,11 @@ enum KubeMCPMarksText {
         }
     }
 
-    static let health =
+    package static let health =
         "Health is Argo CD's built-in rules applied to what is here (custom health checks configured in Argo CD aren't known): Failed is its Degraded, Paused its Suspended, Ready its Healthy; an app none of whose workloads was read is Unknown, never Ready."
 
     /// Where the apps were read: the section's store, or this answer's own read.
-    static func source(_ read: KubeMCP.MarkedAppsRead, kinds: [String], rows: KubeMarkedAppsSession.Bounds, now: Date) -> String {
+    package static func source(_ read: KubeMCP.MarkedAppsRead, kinds: [String], rows: KubeMarkedAppsSession.Bounds, now: Date) -> String {
         if let at = read.section {
             let age = now.timeIntervalSince(at)
             return "As the GitOps section on the Kubernetes page read them \(age < 60 ? "just now" : "\(KubeAge.format(age)) ago"): nothing read for this answer."
@@ -667,7 +667,7 @@ enum KubeMCPMarksText {
 
     /// "12 apps read from marks in any namespace, problems first: 4 Failed, …"
     /// — "At least" with what couldn't be read when the read wasn't whole.
-    static func counts(_ apps: [KubeMarkedRanked], whole: Bool, unread: [String], scope: KubeScope, failing: Bool) -> String {
+    package static func counts(_ apps: [KubeMarkedRanked], whole: Bool, unread: [String], scope: KubeScope, failing: Bool) -> String {
         let place = scope == .all ? "in any namespace" : "in or deploying into \(scope.said)"
         let said = KubeGitOpsState.allCases.compactMap { state -> String? in
             let these = apps.filter { $0.health.state == state }
@@ -683,7 +683,7 @@ enum KubeMCPMarksText {
     }
 
     /// `marks  Failed  payments/checkout-api  ns=payments  2 Deploy 1 Svc  rollout stalled (ProgressDeadlineExceeded): Deployment checkout-api  image=…/checkout-api:4.12.0`
-    static func line(_ ranked: KubeMarkedRanked, beside: KubeMarkedSection.Beside? = nil, now: Date) -> String {
+    package static func line(_ ranked: KubeMarkedRanked, beside: KubeMarkedSection.Beside? = nil, now: Date) -> String {
         let app = ranked.app
         let health = ranked.health
         var word = health.state.word
@@ -729,7 +729,7 @@ enum KubeMCPMarksText {
     /// namespace's, those elsewhere counted —; what B couldn't compare.
     /// Problems only with `failing`: those elsewhere too, counted on their
     /// own where none was said above them.
-    static func checkout(_ marked: KubeMCP.CheckoutMarks, failing: Bool, limit: Int, context: String, now: Date) -> [String] {
+    package static func checkout(_ marked: KubeMCP.CheckoutMarks, failing: Bool, limit: Int, context: String, now: Date) -> [String] {
         let found = failing ? marked.found.filter { $0.health.state.isProblem } : marked.found
         let probably = failing ? marked.probably.filter { $0.health.state.isProblem } : marked.probably
         let elsewhere = failing ? marked.elsewhere.filter { $0.health.state.isProblem } : marked.elsewhere
@@ -761,7 +761,7 @@ enum KubeMCPMarksText {
 
     /// What the reads couldn't say, cut or settle, and the marks counted:
     /// less what the count said already (`counted`: it named what couldn't be read).
-    static func notes(_ read: KubeMCP.MarkedAppsRead, counted: Bool) -> [String] {
+    package static func notes(_ read: KubeMCP.MarkedAppsRead, counted: Bool) -> [String] {
         var said = read.reading.said(plain: true)
         if counted {
             let unread = Set(read.reading.unread(plain: true))

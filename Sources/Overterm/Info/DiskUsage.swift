@@ -1,37 +1,37 @@
 import Foundation
 
 /// How much disk a checkout takes, and where.
-struct DiskReport: Equatable {
-    let root: URL
-    let total: UInt64
-    let files: Int
+package struct DiskReport: Equatable {
+    package let root: URL
+    package let total: UInt64
+    package let files: Int
     /// The largest top-level entries, biggest first.
-    let largest: [(name: String, bytes: UInt64)]
+    package let largest: [(name: String, bytes: UInt64)]
     /// Stopped at the file limit: the numbers are a lower bound.
-    let partial: Bool
+    package let partial: Bool
 
-    static func == (a: DiskReport, b: DiskReport) -> Bool {
+    package static func == (a: DiskReport, b: DiskReport) -> Bool {
         a.root == b.root && a.total == b.total && a.files == b.files && a.partial == b.partial
             && a.largest.map(\.name) == b.largest.map(\.name) && a.largest.map(\.bytes) == b.largest.map(\.bytes)
     }
 }
 
 /// A cancellation flag a background measurement checks.
-final class Cancellation: @unchecked Sendable {
+package final class Cancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
-    var isCancelled: Bool { lock.withLock { value } }
-    func cancel() { lock.withLock { value = true } }
+    package var isCancelled: Bool { lock.withLock { value } }
+    package func cancel() { lock.withLock { value = true } }
 }
 
-enum DiskUsage {
+package enum DiskUsage {
     /// A generous cap: a big monorepo with node_modules is a few hundred
     /// thousand files. Beyond it the report says "at least".
-    static let fileLimit = 2_000_000
+    package static let fileLimit = 2_000_000
 
     /// Walks `root` (not following symlinks), summing allocated sizes per
     /// top-level entry. Blocking and possibly long; call off main.
-    static func measure(_ root: URL, top: Int = 6, cancellation: Cancellation? = nil) -> DiskReport? {
+    package static func measure(_ root: URL, top: Int = 6, cancellation: Cancellation? = nil) -> DiskReport? {
         let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .isRegularFileKey]
         guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: keys, options: [], errorHandler: { _, _ in true })
         else { return nil }

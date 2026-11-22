@@ -3,10 +3,10 @@ import Foundation
 
 /// Lower Priority's steps (6.10): its nice raised by 5 or 10, or to 20 —
 /// never past 20, never down.
-enum ActivityNiceStep: CaseIterable, Hashable, Sendable {
+package enum ActivityNiceStep: CaseIterable, Hashable, Sendable {
     case five, ten, lowest
 
-    var title: String {
+    package var title: String {
         switch self {
         case .five: "+5…"
         case .ten: "+10…"
@@ -15,7 +15,7 @@ enum ActivityNiceStep: CaseIterable, Hashable, Sendable {
     }
 
     /// The nice a process at `nice` is given.
-    func value(from nice: Int8) -> Int32 {
+    package func value(from nice: Int8) -> Int32 {
         switch self {
         case .five: min(Int32(nice) + 5, ActivityPriorityChange.lowest)
         case .ten: min(Int32(nice) + 10, ActivityPriorityChange.lowest)
@@ -26,7 +26,7 @@ enum ActivityNiceStep: CaseIterable, Hashable, Sendable {
     /// Why this step gives a process at `nice` nothing — it is there
     /// already, and nice is only ever raised —; nil when it raises it.
     /// The row menu's step and `n`'s chooser both grey it with this.
-    func already(from nice: Int8) -> String? {
+    package func already(from nice: Int8) -> String? {
         value(from: nice) <= Int32(nice) ? "Its nice is already \(nice): nice can only be raised." : nil
     }
 }
@@ -41,7 +41,7 @@ extension ActivityPageModel {
     /// `row`'s process as a verb sees it: the selection's, read off the
     /// main thread with every owner of the snapshot (`verbSubject`). Nil
     /// while it is read, or once it is gone from the table.
-    func subject(for row: ActivityProcessRow) -> ActivityVerbSubject? {
+    package func subject(for row: ActivityProcessRow) -> ActivityVerbSubject? {
         guard let subject = verbSubject, subject.signal.identity == row.identity else { return nil }
         return Self.overlaid(subject, known: known())
     }
@@ -55,7 +55,7 @@ extension ActivityPageModel {
     /// continue still lists isn't read as ⌃Z's. A traced stop, and any
     /// other, stays the snapshot's.
     /// Pure.
-    nonisolated static func overlaid(_ subject: ActivityVerbSubject, known: ActivityVerbSubject.Known) -> ActivityVerbSubject {
+    package nonisolated static func overlaid(_ subject: ActivityVerbSubject, known: ActivityVerbSubject.Known) -> ActivityVerbSubject {
         var subject = subject
         let identity = subject.signal.identity
         subject.target.backgroundedHere = known.backgroundHere.contains(identity)
@@ -74,7 +74,7 @@ extension ActivityPageModel {
     /// What `k` does to it: Stop Agent on an agent, Interrupt on a
     /// terraform write and on the pane's foreground job with no agent in
     /// its group, else Stop.
-    nonisolated static func stopVerb(for target: ActivityTarget) -> ActivityVerb {
+    package nonisolated static func stopVerb(for target: ActivityTarget) -> ActivityVerb {
         if target.kind == .agent { return .stopAgent }
         if target.terraformWrite != nil { return .interrupt }
         if target.kind == .paneJob, target.inForeground, !target.groupHoldsAgent { return .interrupt }
@@ -83,21 +83,21 @@ extension ActivityPageModel {
 
     /// Whether the page stopped `identity` in the last two minutes: Force
     /// Quit then asks plainly, without "Stop it first?" (D-11).
-    func recentlyStopped(_ identity: ActivityProcessID, now: Date = Date()) -> Bool {
+    package func recentlyStopped(_ identity: ActivityProcessID, now: Date = Date()) -> Bool {
         stoppedAt[identity].map { now.timeIntervalSince($0) < ActivityStopWatch.forceQuitWindow } ?? false
     }
 
     /// The page sent `identity` a Stop or an Interrupt `now`: kept for
     /// Force Quit's two minutes, and no longer — what is older goes as
     /// each is noted, so the set holds only the last two minutes' stops.
-    func noteStopped(_ identity: ActivityProcessID, at now: Date = Date()) {
+    package func noteStopped(_ identity: ActivityProcessID, at now: Date = Date()) {
         stoppedAt = stoppedAt.filter { now.timeIntervalSince($0.value) < ActivityStopWatch.forceQuitWindow }
         stoppedAt[identity] = now
     }
 
     /// The stage 2 verbs of one process row; greyed, "being read", until
     /// its subject is read.
-    func signalVerbs(for row: ActivityProcessRow) -> [ResourceVerb] {
+    package func signalVerbs(for row: ActivityProcessRow) -> [ResourceVerb] {
         let subject = subject(for: row)
         let identity = row.identity
         func rule(_ verb: ActivityVerb) -> ActivityRule? {
@@ -160,13 +160,13 @@ extension ActivityPageModel {
 
     /// The routes the page takes from a row now: the pane's close, Suspend
     /// and Resume Tab, a pane's job suspended with its pane.
-    nonisolated static let routes: Set<ActivityRoute> = [.closePane, .suspendTab, .resumeTab, .suspendPane]
-    nonisolated static let reading = "Being read…"
-    nonisolated static let routeElsewhere = "Its owner's own verb: on its own page."
+    package nonisolated static let routes: Set<ActivityRoute> = [.closePane, .suspendTab, .resumeTab, .suspendPane]
+    package nonisolated static let reading = "Being read…"
+    package nonisolated static let routeElsewhere = "Its owner's own verb: on its own page."
 
     /// Why the page doesn't do what `rule` says now; nil when it does: a
     /// refusal, or an owner's verb on another page. Pure.
-    nonisolated static func unavailable(_ rule: ActivityRule) -> String? {
+    package nonisolated static func unavailable(_ rule: ActivityRule) -> String? {
         switch rule {
         case .refused(let why): return why
         case .route(let route, _): return routes.contains(route) ? nil : routeElsewhere
@@ -176,7 +176,7 @@ extension ActivityPageModel {
 
     /// `k`, `K`, `x`, `p`, `b`, `n` on the selected process: `k`'s verb decided on the
     /// process read again as its sheet opens.
-    func pressSignalKey(_ key: ActivityKey) -> Bool {
+    package func pressSignalKey(_ key: ActivityKey) -> Bool {
         guard let row = selectedProcess else { return false }
         switch key {
         case .stop: actions.stop(row.identity)

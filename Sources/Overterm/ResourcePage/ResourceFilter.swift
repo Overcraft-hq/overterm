@@ -2,7 +2,7 @@ import Foundation
 
 /// The keys a page's filter field knows: what a word's `name:` means,
 /// aliases included. Each page has its own (Docker's is `DockerFilterKey`).
-protocol ResourceFilterKey: Hashable, Sendable {
+package protocol ResourceFilterKey: Hashable, Sendable {
     /// A word with no known key: free text.
     static var text: Self { get }
     /// Every name a key goes by, lowercased (`project`, `p`, `stack`).
@@ -22,16 +22,16 @@ protocol ResourceFilterKey: Hashable, Sendable {
 ///     restarts:>3            a value read as a number (`Term.compare`)
 ///
 /// Pure.
-struct ResourceFilter<Key: ResourceFilterKey>: Equatable, Sendable {
-    struct Term: Equatable, Sendable {
-        var key: Key
+package struct ResourceFilter<Key: ResourceFilterKey>: Equatable, Sendable {
+    package struct Term: Equatable, Sendable {
+        package var key: Key
         /// The value lowercased, for matching.
-        var value: String
-        var negated: Bool
+        package var value: String
+        package var negated: Bool
         /// The value as typed: what a case-sensitive key reads.
-        var raw: String
+        package var raw: String
 
-        init(key: Key, value: String, negated: Bool, raw: String? = nil) {
+        package init(key: Key, value: String, negated: Bool, raw: String? = nil) {
             self.key = key
             self.value = value
             self.negated = negated
@@ -39,11 +39,11 @@ struct ResourceFilter<Key: ResourceFilterKey>: Equatable, Sendable {
         }
     }
 
-    var terms: [Term]
+    package var terms: [Term]
 
-    var isEmpty: Bool { terms.isEmpty }
+    package var isEmpty: Bool { terms.isEmpty }
 
-    init(_ text: String) {
+    package init(_ text: String) {
         terms = text.split(whereSeparator: \.isWhitespace).compactMap { word in
             var word = Substring(word)
             let negated = word.hasPrefix("-") && word.count > 1
@@ -61,7 +61,7 @@ struct ResourceFilter<Key: ResourceFilterKey>: Equatable, Sendable {
 
     /// Every term holds for a resource — a negated one when it doesn't.
     /// `match` says whether a term, read as not negated, holds.
-    func matches(by match: (Term) -> Bool) -> Bool {
+    package func matches(by match: (Term) -> Bool) -> Bool {
         terms.allSatisfy { match($0) != $0.negated }
     }
 }
@@ -69,26 +69,26 @@ struct ResourceFilter<Key: ResourceFilterKey>: Equatable, Sendable {
 extension ResourceFilter.Term {
     /// The value as a comparison with a number: `>3`, `>=3`, `<3`, `<=3`,
     /// `=3` or `3`. nil when the value is not one.
-    var comparison: ResourceFilterComparison? { ResourceFilterComparison(value) }
+    package var comparison: ResourceFilterComparison? { ResourceFilterComparison(value) }
 
     /// Whether `number` passes the value as a comparison; false when the
     /// value is not one.
-    func compare(_ number: Int) -> Bool { comparison?.holds(for: number) ?? false }
+    package func compare(_ number: Int) -> Bool { comparison?.holds(for: number) ?? false }
 }
 
 /// A filter value read as a number compared: `restarts:>3`.
-struct ResourceFilterComparison: Equatable, Sendable {
-    enum Operator: String, Sendable { case less = "<", lessOrEqual = "<=", equal = "=", greaterOrEqual = ">=", greater = ">" }
+package struct ResourceFilterComparison: Equatable, Sendable {
+    package enum Operator: String, Sendable { case less = "<", lessOrEqual = "<=", equal = "=", greaterOrEqual = ">=", greater = ">" }
 
-    var op: Operator
-    var number: Int
+    package var op: Operator
+    package var number: Int
 
-    init(op: Operator, number: Int) {
+    package init(op: Operator, number: Int) {
         self.op = op
         self.number = number
     }
 
-    init?(_ text: String) {
+    package init?(_ text: String) {
         // Two-character operators first: `>=` is not `>` then `=3`.
         let ops: [Operator] = [.lessOrEqual, .greaterOrEqual, .less, .greater, .equal]
         let op = ops.first { text.hasPrefix($0.rawValue) } ?? .equal
@@ -98,7 +98,7 @@ struct ResourceFilterComparison: Equatable, Sendable {
         self.number = number
     }
 
-    func holds(for value: Int) -> Bool {
+    package func holds(for value: Int) -> Bool {
         switch op {
         case .less: value < number
         case .lessOrEqual: value <= number

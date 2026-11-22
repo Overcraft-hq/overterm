@@ -8,35 +8,35 @@ import Foundation
 /// only users are stopped containers that go too is unused by then);
 /// volumes no container mounts (only anonymous ones unless named ones are
 /// asked for); networks of our own nobody is on; build cache not in use.
-struct DockerPrunePlan: Equatable, Sendable {
-    struct Choice: Equatable, Sendable {
-        var containers = true
-        var images = true
+package struct DockerPrunePlan: Equatable, Sendable {
+    package struct Choice: Equatable, Sendable {
+        package var containers = true
+        package var images = true
         /// Tagged images too, not only `<none>`.
-        var allImages = false
-        var volumes = false
+        package var allImages = false
+        package var volumes = false
         /// Named volumes too, not only anonymous ones.
-        var namedVolumes = false
-        var networks = true
-        var buildCache = true
+        package var namedVolumes = false
+        package var networks = true
+        package var buildCache = true
     }
 
-    var containers: [ContainerSummary] = []
-    var images: [ImageSummary] = []
-    var volumes: [VolumeSummary] = []
-    var networks: [NetworkSummary] = []
-    var buildCache = 0
+    package var containers: [ContainerSummary] = []
+    package var images: [ImageSummary] = []
+    package var volumes: [VolumeSummary] = []
+    package var networks: [NetworkSummary] = []
+    package var buildCache = 0
 
-    var isEmpty: Bool { containers.isEmpty && images.isEmpty && volumes.isEmpty && networks.isEmpty && buildCache == 0 }
+    package var isEmpty: Bool { containers.isEmpty && images.isEmpty && volumes.isEmpty && networks.isEmpty && buildCache == 0 }
 
     /// Bytes it frees, as the engine counts them: images' own sizes (a
     /// layer another image shares stays, so this is at most), volumes'
     /// data, the cache.
-    var reclaimable: Int {
+    package var reclaimable: Int {
         images.reduce(0) { $0 + $1.Size } + volumes.reduce(0) { $0 + ($1.UsageData?.Size ?? 0) } + buildCache
     }
 
-    static func make(
+    package static func make(
         _ choice: Choice, containers: [ContainerSummary], images: [ImageSummary], volumes: [VolumeSummary], networks: [NetworkSummary],
         buildCache: [DockerDiskUsage.BuildCacheEntry]
     ) -> DockerPrunePlan {

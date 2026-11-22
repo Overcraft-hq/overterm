@@ -2,7 +2,7 @@ import Foundation
 
 /// What `ActivityRing` keeps a history of (docs/design/activity/analysis.md,
 /// 6.11).
-enum ActivityRingKey: Hashable, Sendable {
+package enum ActivityRingKey: Hashable, Sendable {
     /// One of the user's processes.
     case process(ActivityProcessID)
     /// An agent's subtree, summed: the agent and everything under it.
@@ -14,7 +14,7 @@ enum ActivityRingKey: Hashable, Sendable {
     case system
 
     /// A process's or an agent's: forgotten 15 minutes after it ends.
-    var identity: ActivityProcessID? {
+    package var identity: ActivityProcessID? {
         switch self {
         case .process(let identity), .agent(let identity): identity
         case .tab, .system: nil
@@ -24,19 +24,19 @@ enum ActivityRingKey: Hashable, Sendable {
 
 /// One sample of a key: its rates over the census's last interval, its
 /// footprint now. Nil is unread, never zero.
-struct ActivityRingSample: Equatable, Sendable {
+package struct ActivityRingSample: Equatable, Sendable {
     /// 100 is one core; the system's, 100 every core.
-    var cpu: Double
+    package var cpu: Double
     /// Bytes: the footprint; the system's, the memory used.
-    var memory: Double?
+    package var memory: Double?
     /// W, an estimate.
-    var energy: Double?
-    var idleWakeups: Double?
+    package var energy: Double?
+    package var idleWakeups: Double?
     /// Bytes a second.
-    var diskRead: Double?
-    var diskWritten: Double?
+    package var diskRead: Double?
+    package var diskWritten: Double?
 
-    init(cpu: Double, memory: Double? = nil, energy: Double? = nil, idleWakeups: Double? = nil, diskRead: Double? = nil, diskWritten: Double? = nil) {
+    package init(cpu: Double, memory: Double? = nil, energy: Double? = nil, idleWakeups: Double? = nil, diskRead: Double? = nil, diskWritten: Double? = nil) {
         self.cpu = cpu
         self.memory = memory
         self.energy = energy
@@ -46,7 +46,7 @@ struct ActivityRingSample: Equatable, Sendable {
     }
 
     /// A process's: its rates and footprint.
-    init(_ rates: ActivityRates, usage: ActivityUsage?) {
+    package init(_ rates: ActivityRates, usage: ActivityUsage?) {
         self.init(
             cpu: rates.cpuPercent, memory: usage.map { Double($0.footprint) }, energy: rates.energy, idleWakeups: rates.idleWakeupsPerSecond,
             diskRead: rates.diskReadPerSecond, diskWritten: rates.diskWrittenPerSecond)
@@ -54,7 +54,7 @@ struct ActivityRingSample: Equatable, Sendable {
 
     /// Two samples added: a subtree's, a tab's. A part either lacks is left
     /// out of the sum — the sum unread only when both lack it.
-    static func + (a: ActivityRingSample, b: ActivityRingSample) -> ActivityRingSample {
+    package static func + (a: ActivityRingSample, b: ActivityRingSample) -> ActivityRingSample {
         func add(_ x: Double?, _ y: Double?) -> Double? { x.map { $0 + (y ?? 0) } ?? y }
         return ActivityRingSample(
             cpu: a.cpu + b.cpu, memory: add(a.memory, b.memory), energy: add(a.energy, b.energy), idleWakeups: add(a.idleWakeups, b.idleWakeups),
@@ -91,113 +91,113 @@ struct ActivityRingSample: Equatable, Sendable {
 /// as long. Both copies alive at once — the sampler's and the one the last
 /// snapshot holds — stay under `byteCap` (4 MB) as `heldBytes` counts
 /// them: ended strips go first, then the quietest, then the details.
-struct ActivityRing: Sendable {
-    static let second: UInt64 = 1_000_000_000
-    static let cellLength: UInt64 = 15 * second
-    static let cellCount = 60
-    static let detailSpan: UInt64 = 15 * 60 * second
+package struct ActivityRing: Sendable {
+    package static let second: UInt64 = 1_000_000_000
+    package static let cellLength: UInt64 = 15 * second
+    package static let cellCount = 60
+    package static let detailSpan: UInt64 = 15 * 60 * second
     /// 15 minutes at the fastest cadence, 1 s.
-    static let detailPoints = 900
-    static let foldLength: UInt64 = 60 * second
-    static let foldCount = 60
-    static let detailLimit = 50
-    static let keepEnded: UInt64 = 15 * 60 * second
+    package static let detailPoints = 900
+    package static let foldLength: UInt64 = 60 * second
+    package static let foldCount = 60
+    package static let detailLimit = 50
+    package static let keepEnded: UInt64 = 15 * 60 * second
     /// The longest interval a rate spans (`ProcessUsage.maximumInterval`):
     /// samples further apart lie across a gap.
-    static let breakAfter: UInt64 = ProcessUsage.maximumInterval
-    static let defaultByteCap = 4 * 1_048_576
+    package static let breakAfter: UInt64 = ProcessUsage.maximumInterval
+    package static let defaultByteCap = 4 * 1_048_576
     /// The copies alive at once: the sampler's, and the one the last
     /// snapshot (the page's too) still holds while the next tick merges.
-    static let copies = 2
+    package static let copies = 2
 
     /// A strip's 15 s, 8 bytes: CPU in tenths of a percent (at most
     /// 6,553.4%), the footprint in KiB; all ones where nothing was sampled.
-    struct Cell: Equatable, Sendable {
-        static let unread = UInt16.max
-        var high = Cell.unread
-        var low = Cell.unread
-        var memory = UInt32.max
+    package struct Cell: Equatable, Sendable {
+        package static let unread = UInt16.max
+        package var high = Cell.unread
+        package var low = Cell.unread
+        package var memory = UInt32.max
 
-        var isEmpty: Bool { high == Cell.unread }
+        package var isEmpty: Bool { high == Cell.unread }
 
-        static func tenths(_ cpu: Double) -> UInt16 {
+        package static func tenths(_ cpu: Double) -> UInt16 {
             guard cpu.isFinite else { return 0 }
             return UInt16(min(max(cpu * 10, 0), 65_534).rounded())
         }
 
-        static func percent(_ tenths: UInt16) -> Double? { tenths == unread ? nil : Double(tenths) / 10 }
+        package static func percent(_ tenths: UInt16) -> Double? { tenths == unread ? nil : Double(tenths) / 10 }
 
-        static func kibibytes(_ bytes: Double) -> UInt32 {
+        package static func kibibytes(_ bytes: Double) -> UInt32 {
             guard bytes.isFinite else { return .max }
             return UInt32(min(max(bytes / 1_024, 0), 4_294_967_294).rounded())
         }
 
         /// Bytes; nil unread.
-        var footprint: Double? { memory == .max ? nil : Double(memory) * 1_024 }
+        package var footprint: Double? { memory == .max ? nil : Double(memory) * 1_024 }
     }
 
     /// A detail's sample; a NaN CPU marks a break.
-    struct Point: Equatable, Sendable {
-        var time: UInt64
-        var cpu: Float32
-        var memory: Float32
-        var energy: Float32
-        var idleWakeups: Float32
-        var diskRead: Float32
-        var diskWritten: Float32
+    package struct Point: Equatable, Sendable {
+        package var time: UInt64
+        package var cpu: Float32
+        package var memory: Float32
+        package var energy: Float32
+        package var idleWakeups: Float32
+        package var diskRead: Float32
+        package var diskWritten: Float32
 
-        var isBreak: Bool { cpu.isNaN }
+        package var isBreak: Bool { cpu.isNaN }
     }
 
     /// A minute of a detail's samples, folded.
-    struct Fold: Equatable, Sendable {
-        var minute: UInt64
-        var count: UInt32
-        var lowCPU: Float32
-        var meanCPU: Float32
-        var highCPU: Float32
-        var lowMemory: Float32
-        var meanMemory: Float32
-        var highMemory: Float32
+    package struct Fold: Equatable, Sendable {
+        package var minute: UInt64
+        package var count: UInt32
+        package var lowCPU: Float32
+        package var meanCPU: Float32
+        package var highCPU: Float32
+        package var lowMemory: Float32
+        package var meanMemory: Float32
+        package var highMemory: Float32
     }
 
-    struct Strip: Sendable {
+    package struct Strip: Sendable {
         /// Its cells' place in the buffer: `slot × cellCount`, the cell
         /// number modulo the count after it.
-        var slot: Int
+        package var slot: Int
         /// The newest cell's number (its time ÷ `cellLength`), and the first's.
-        var newest: UInt64
-        var first: UInt64
+        package var newest: UInt64
+        package var first: UInt64
         /// When its process was first found gone.
-        var ended: UInt64?
+        package var ended: UInt64?
         /// The last CPU sampled, in the newest cell.
-        var last: Float32 = .nan
+        package var last: Float32 = .nan
     }
 
-    struct Detail: Sendable {
-        var points: [Point] = []
-        var folds: [Fold] = []
+    package struct Detail: Sendable {
+        package var points: [Point] = []
+        package var folds: [Fold] = []
         /// When it was last fed: the least recently fed goes first.
-        var fed: UInt64
+        package var fed: UInt64
     }
 
-    var byteCap: Int
-    private(set) var strips: [ActivityRingKey: Strip] = [:]
-    private(set) var details: [ActivityRingKey: Detail] = [:]
+    package var byteCap: Int
+    package private(set) var strips: [ActivityRingKey: Strip] = [:]
+    package private(set) var details: [ActivityRingKey: Detail] = [:]
     /// Every strip's cells, `cellCount` a slot.
     private var cells: [Cell] = []
     /// Slots a forgotten strip left, reused first.
     private var freeSlots: [Int] = []
     /// The newest time recorded.
-    private(set) var now: UInt64 = 0
+    package private(set) var now: UInt64 = 0
 
-    init(byteCap: Int = ActivityRing.defaultByteCap) { self.byteCap = byteCap }
+    package init(byteCap: Int = ActivityRing.defaultByteCap) { self.byteCap = byteCap }
 
     // MARK: Recording
 
     /// One key's sample at `time`; kept in the detail tier too when
     /// `detail`.
-    mutating func record(_ key: ActivityRingKey, _ sample: ActivityRingSample, at time: UInt64, detail: Bool = false) {
+    package mutating func record(_ key: ActivityRingKey, _ sample: ActivityRingSample, at time: UInt64, detail: Bool = false) {
         now = max(now, time)
         let cell = time / Self.cellLength
         let count = UInt64(Self.cellCount)
@@ -330,7 +330,7 @@ struct ActivityRing: Sendable {
     /// The detail tier's keys for one merge (6.11), at most `detailLimit`,
     /// in order: the focus, the Mac, the agents' subtrees, then the tabs —
     /// each busiest first. Pure.
-    static func detailKeys(
+    package static func detailKeys(
         focus: [ActivityProcessID], system: Bool, agents: [(ActivityProcessID, Double)], tabs: [(UUID, Double)]
     ) -> Set<ActivityRingKey> {
         var keys: [ActivityRingKey] = focus.sorted().map { .process($0) }
@@ -347,7 +347,7 @@ struct ActivityRing: Sendable {
     /// pushes out another it feeds, so no detail is lost and made again
     /// each tick —; the rest are recorded as strips alone. Then what ended
     /// is forgotten in its time, and the cap kept.
-    mutating func merge(_ snapshot: ActivitySnapshot, detail: Set<ActivityProcessID> = []) {
+    package mutating func merge(_ snapshot: ActivitySnapshot, detail: Set<ActivityProcessID> = []) {
         let time = snapshot.historyNow
         func sample(_ identity: ActivityProcessID) -> ActivityRingSample? {
             guard let facts = snapshot.facts[identity], let rates = facts.rates else { return nil }
@@ -396,7 +396,7 @@ struct ActivityRing: Sendable {
     }
 
     /// What ended `keepEnded` ago goes, and a tab nothing fed for as long.
-    mutating func forgetEnded(live: (ActivityProcessID) -> Bool, at time: UInt64) {
+    package mutating func forgetEnded(live: (ActivityProcessID) -> Bool, at time: UInt64) {
         let oldestCell = time / Self.cellLength
         var gone: [ActivityRingKey] = []
         for (key, strip) in strips {
@@ -422,7 +422,7 @@ struct ActivityRing: Sendable {
     /// Back under `byteCap`, both copies counted (`heldBytes`): ended
     /// strips first, oldest ended first, then the quietest, then the
     /// details least recently fed.
-    mutating func keepUnderCap() {
+    package mutating func keepUnderCap() {
         compact()
         guard heldBytes > byteCap else { return }
         // Counted as packed — the buffer holding the live strips alone —,
@@ -475,7 +475,7 @@ struct ActivityRing: Sendable {
 
     /// `key`'s CPU, a cell each, oldest first, the last the cell `now` is
     /// in: nil where nothing was sampled — or nil when it has no strip.
-    func cpuStrip(_ key: ActivityRingKey, now: UInt64? = nil) -> [Double?]? {
+    package func cpuStrip(_ key: ActivityRingKey, now: UInt64? = nil) -> [Double?]? {
         guard let strip = strips[key] else { return nil }
         let current = (now ?? self.now) / Self.cellLength
         return (0..<Self.cellCount).map { index in
@@ -489,7 +489,7 @@ struct ActivityRing: Sendable {
 
     /// When `key`'s strip began, when that is inside the 15 minutes shown:
     /// "since 13:40". Nil for one older than the window, or none.
-    func since(_ key: ActivityRingKey, now: UInt64? = nil) -> UInt64? {
+    package func since(_ key: ActivityRingKey, now: UInt64? = nil) -> UInt64? {
         guard let strip = strips[key] else { return nil }
         let current = (now ?? self.now) / Self.cellLength
         guard strip.first + UInt64(Self.cellCount) > current + 1 else { return nil }
@@ -501,7 +501,7 @@ struct ActivityRing: Sendable {
     /// than the cell before `now`'s: the start of that run, nil when there
     /// is none. glances' rule: a level must last before it is an event —
     /// the caller asks how long.
-    func sustained(_ key: ActivityRingKey, atLeast threshold: Double, now: UInt64? = nil) -> UInt64? {
+    package func sustained(_ key: ActivityRingKey, atLeast threshold: Double, now: UInt64? = nil) -> UInt64? {
         guard let strip = strips[key], strip.ended == nil else { return nil }
         let current = (now ?? self.now) / Self.cellLength
         guard strip.newest + 1 >= current else { return nil }
@@ -518,18 +518,18 @@ struct ActivityRing: Sendable {
     }
 
     /// `key`'s last CPU sampled, in its newest cell.
-    func lastCPU(_ key: ActivityRingKey) -> Double? {
+    package func lastCPU(_ key: ActivityRingKey) -> Double? {
         guard let strip = strips[key], !strip.last.isNaN else { return nil }
         return Double(strip.last)
     }
 
     /// `key`'s samples for the last 15 minutes, breaks among them.
-    func points(_ key: ActivityRingKey) -> [Point] { details[key]?.points ?? [] }
+    package func points(_ key: ActivityRingKey) -> [Point] { details[key]?.points ?? [] }
 
     /// `key`'s strip as points, for a key with no detail yet (a row just
     /// selected): each cell's highest CPU and last footprint at its
     /// middle, a break between cells not side by side.
-    func cellPoints(_ key: ActivityRingKey, now: UInt64? = nil) -> [Point] {
+    package func cellPoints(_ key: ActivityRingKey, now: UInt64? = nil) -> [Point] {
         guard let strip = strips[key] else { return [] }
         let current = (now ?? self.now) / Self.cellLength
         var points: [Point] = []
@@ -553,10 +553,10 @@ struct ActivityRing: Sendable {
     }
 
     /// `key`'s minutes for the last hour.
-    func folds(_ key: ActivityRingKey) -> [Fold] { details[key]?.folds ?? [] }
+    package func folds(_ key: ActivityRingKey) -> [Fold] { details[key]?.folds ?? [] }
 
     /// The least, the mean and the most of `key`'s CPU over its folded hour.
-    func hourCPU(_ key: ActivityRingKey) -> (low: Double, mean: Double, high: Double, minutes: Int)? {
+    package func hourCPU(_ key: ActivityRingKey) -> (low: Double, mean: Double, high: Double, minutes: Int)? {
         let folds = folds(key)
         guard !folds.isEmpty else { return nil }
         let count = folds.reduce(0) { $0 + Double($1.count) }
@@ -566,7 +566,7 @@ struct ActivityRing: Sendable {
 
     /// The footprint over the folded hour: the first minute's mean and the
     /// last's, bytes — its trend. Nil without two minutes read.
-    func hourMemory(_ key: ActivityRingKey) -> (first: Double, last: Double, high: Double, minutes: Int)? {
+    package func hourMemory(_ key: ActivityRingKey) -> (first: Double, last: Double, high: Double, minutes: Int)? {
         let read = folds(key).filter { !$0.meanMemory.isNaN }
         guard read.count >= 2, let first = read.first, let last = read.last else { return nil }
         return (Double(first.meanMemory), Double(last.meanMemory), Double(read.map(\.highMemory).max() ?? 0), read.count)
@@ -574,7 +574,7 @@ struct ActivityRing: Sendable {
 
     /// The least, the mean and the most of `key`'s CPU over its 15 minutes
     /// of samples, breaks left out.
-    func spanCPU(_ key: ActivityRingKey) -> (low: Double, mean: Double, high: Double, samples: Int)? {
+    package func spanCPU(_ key: ActivityRingKey) -> (low: Double, mean: Double, high: Double, samples: Int)? {
         let read = points(key).filter { !$0.isBreak }
         guard !read.isEmpty else { return nil }
         let values = read.map { Double($0.cpu) }
@@ -582,7 +582,7 @@ struct ActivityRing: Sendable {
     }
 
     /// Whether `key` has a detail tier.
-    func hasDetail(_ key: ActivityRingKey) -> Bool { details[key] != nil }
+    package func hasDetail(_ key: ActivityRingKey) -> Bool { details[key] != nil }
 
     // MARK: Size
 
@@ -593,7 +593,7 @@ struct ActivityRing: Sendable {
     /// What malloc may round a packed buffer up by, about.
     private static let rounding = 4_096
     /// A strip, packed: its entry and its cells.
-    static let bytesPerStrip = entry + MemoryLayout<Strip>.stride + cellCount * MemoryLayout<Cell>.stride
+    package static let bytesPerStrip = entry + MemoryLayout<Strip>.stride + cellCount * MemoryLayout<Cell>.stride
 
     private static func bytes(of detail: Detail) -> Int {
         var total = entry + MemoryLayout<Detail>.stride
@@ -604,7 +604,7 @@ struct ActivityRing: Sendable {
 
     /// What one copy takes on the heap, as `KubeUsageRing.bytes` counts it:
     /// each array's whole capacity with its header, each entry.
-    var bytes: Int {
+    package var bytes: Int {
         var total = strips.count * (Self.entry + MemoryLayout<Strip>.stride) + details.values.reduce(0) { $0 + Self.bytes(of: $1) }
         if cells.capacity > 0 { total += Self.bufferHeader + cells.capacity * MemoryLayout<Cell>.stride }
         if freeSlots.capacity > 0 { total += Self.bufferHeader + freeSlots.capacity * MemoryLayout<Int>.stride }
@@ -613,8 +613,8 @@ struct ActivityRing: Sendable {
 
     /// What the history holds on the heap at once: the sampler's copy and
     /// the one the last snapshot still holds (`copies`) — what the cap is.
-    var heldBytes: Int { Self.copies * bytes }
+    package var heldBytes: Int { Self.copies * bytes }
 
-    var keyCount: Int { strips.count }
-    var detailCount: Int { details.count }
+    package var keyCount: Int { strips.count }
+    package var detailCount: Int { details.count }
 }

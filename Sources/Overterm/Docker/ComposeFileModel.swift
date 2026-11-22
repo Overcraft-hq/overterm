@@ -12,18 +12,18 @@ import Foundation
 /// top changes (FSEvents). What each checkout read last is kept for the
 /// window's life, so switching tabs shows a known one at once.
 @MainActor
-final class ComposeFileModel: ObservableObject {
+package final class ComposeFileModel: ObservableObject {
     /// Compose's JSON for a folder; nil when it wasn't asked (an isolated
     /// run without a scenario's stub).
-    typealias Reader = @MainActor (URL, DockerEndpoint?) async throws -> String?
+    package typealias Reader = @MainActor (URL, DockerEndpoint?) async throws -> String?
 
-    @Published private(set) var project: ComposeProject?
+    @Published package private(set) var project: ComposeProject?
     /// What Compose said when it couldn't read the files; the project read
     /// before stays.
-    @Published private(set) var error: String?
-    @Published private(set) var reading = false
+    @Published package private(set) var error: String?
+    @Published package private(set) var reading = false
     /// How many times Compose was asked — what the tests count.
-    private(set) var reads = 0
+    package private(set) var reads = 0
 
     private struct Known {
         var project: ComposeProject?
@@ -43,14 +43,14 @@ final class ComposeFileModel: ObservableObject {
     private var pending: ComposeConfig.Stamp?
     private var known: [String: Known] = [:]
 
-    init(docker: DockerModel = .shared, latency: TimeInterval = 0.5, reader: @escaping Reader = { try await ComposeFileModel.compose(in: $0, endpoint: $1) }) {
+    package init(docker: DockerModel = .shared, latency: TimeInterval = 0.5, reader: @escaping Reader = { try await ComposeFileModel.compose(in: $0, endpoint: $1) }) {
         self.docker = docker
         self.latency = latency
         self.reader = reader
     }
 
     /// Which checkout, and whether Docker shows in the window.
-    func update(checkout: URL?, shown: Bool) {
+    package func update(checkout: URL?, shown: Bool) {
         let folder = checkout.map(FileTreeModel.realPath)
         let moved = folder != self.folder
         let appeared = shown && !self.shown
@@ -129,7 +129,7 @@ final class ComposeFileModel: ObservableObject {
     /// or went (Up on Free Ports), which changes the name and the ports
     /// Compose gives a checkout. What every checkout read last is stale;
     /// nothing is read while nothing shows Docker.
-    func readAgain() {
+    package func readAgain() {
         for key in known.keys { known[key]?.stamp = ComposeConfig.Stamp(files: ["": "stale"]) }
         guard shown, let folder else { return }
         read(ComposeConfig.stamp(of: URL(fileURLWithPath: folder)))
@@ -138,7 +138,7 @@ final class ComposeFileModel: ObservableObject {
     /// Whether what shows was read from the checkout's top files as they
     /// are now. Nothing reads them while Docker is hidden, so a menu that
     /// acts on the project then asks this first.
-    var isCurrent: Bool {
+    package var isCurrent: Bool {
         guard let folder, !reading, let known = known[folder] else { return false }
         return known.stamp == ComposeConfig.stamp(of: URL(fileURLWithPath: folder))
     }
@@ -161,7 +161,7 @@ final class ComposeFileModel: ObservableObject {
     /// changed since (`ComposePortStore.refresh`): Compose would refuse one
     /// naming a service they no longer have. It reaches no engine; it is
     /// told Overterm's anyway, as every `docker` it runs is.
-    static func compose(in folder: URL, endpoint: DockerEndpoint?, ports: ComposePortStore = .shared) async throws -> String? {
+    package static func compose(in folder: URL, endpoint: DockerEndpoint?, ports: ComposePortStore = .shared) async throws -> String? {
         // An isolated run asks only a scenario's stub.
         guard !AppEnvironment.isIsolated || DockerCLI.override != nil else { return nil }
         guard let cli = DockerCLI(endpoint: endpoint) else {
@@ -179,7 +179,7 @@ final class ComposeFileModel: ObservableObject {
     /// kept for it, its name and its files then the override — each as
     /// Compose takes it (`ComposeProjects.composePath`) — so the plan is the
     /// stack Overterm's Up makes.
-    static func arguments(in folder: URL, ports: ComposePortStore = .shared) -> [String] {
+    package static func arguments(in folder: URL, ports: ComposePortStore = .shared) -> [String] {
         guard !ports.overrides.isEmpty, let projectFolder = ComposeProjects.projectFolder(in: folder), let kept = ports.override(in: projectFolder)
         else {
             return ComposeConfig.arguments()

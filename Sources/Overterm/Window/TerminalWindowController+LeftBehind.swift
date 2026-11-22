@@ -8,7 +8,7 @@ extension TerminalWindowController {
     /// Stop All Certain in This Checkout…: `rows`, each listed. At the
     /// button each is read again and must still be certain, eligible and
     /// not kept — from this window or another — or it is left out, said.
-    func leftBehindStopAll(_ rows: [ActivityProcessRow], group: String) {
+    package func leftBehindStopAll(_ rows: [ActivityProcessRow], group: String) {
         guard !rows.isEmpty, let window else { return }
         let targets = rows.map { ActivitySignalTarget($0.identity, path: $0.path) }
         let confirmation = WriteConfirmation(
@@ -19,7 +19,7 @@ extension TerminalWindowController {
     }
 
     /// "acme-server (pid 4242) :3001 — left by Claude in “web”…", a line each.
-    static func leftBehindListing(_ rows: [ActivityProcessRow]) -> String {
+    package static func leftBehindListing(_ rows: [ActivityProcessRow]) -> String {
         rows.prefix(20).map { row in
             var line = "\(DockerMCP.displayed(row.name)) (pid \(row.identity.pid))"
             if !row.listening.isEmpty { line += " " + row.listening.prefix(3).map { ":\($0)" }.joined(separator: " ") }
@@ -31,7 +31,7 @@ extension TerminalWindowController {
     /// `targets` read again from a fresh census and asked of the policy
     /// (`LeftBehindStop`): what may be sent SIGTERM, and what not, with why.
     /// Nil when there is no census: then nothing is sent.
-    func leftBehindChecked(_ targets: [ActivitySignalTarget], pick: LeftBehindStop.Pick) async -> LeftBehindStop.Checked? {
+    package func leftBehindChecked(_ targets: [ActivitySignalTarget], pick: LeftBehindStop.Pick) async -> LeftBehindStop.Checked? {
         let kept = LeftBehindLedger.shared.kept
         return await activityRead { snapshot, owners, known in
             LeftBehindStop.check(targets, pick: pick, in: snapshot, owners: owners, known: known, kept: kept)
@@ -40,7 +40,7 @@ extension TerminalWindowController {
 
     /// SIGTERM to each the policy lets a Stop send now, off the main thread;
     /// what wasn't sent, or was refused, is said.
-    func leftBehindStop(_ targets: [ActivitySignalTarget], pick: LeftBehindStop.Pick = .bulk) {
+    package func leftBehindStop(_ targets: [ActivitySignalTarget], pick: LeftBehindStop.Pick = .bulk) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             guard let checked = await self.leftBehindChecked(targets, pick: pick) else {
@@ -86,7 +86,7 @@ extension TerminalWindowController {
 /// Activity holds, so the header's Resume All and the quit question know it.
 extension TerminalWindowController {
     /// The launch's read (and a scenario's "next launch").
-    func activityRestoreAtLaunch() async {
+    package func activityRestoreAtLaunch() async {
         guard let snapshot = await ActivityMonitor.shared.census(within: 0) else { return }
         let stopped = ActivityPersistence.shared.restore(from: snapshot)
         guard !stopped.isEmpty else { return }
@@ -95,7 +95,7 @@ extension TerminalWindowController {
 
     /// "Activity stopped 2 processes before Overterm last quit": Resume or
     /// Leave Stopped, each listed by name and pid as the census reads it now.
-    func offerResume(_ stopped: Set<ActivityProcessID>, in snapshot: ActivitySnapshot) {
+    package func offerResume(_ stopped: Set<ActivityProcessID>, in snapshot: ActivitySnapshot) {
         guard let window else { return }
         let listed = stopped.sorted().compactMap { identity -> (target: ActivitySignalTarget, name: String)? in
             guard snapshot.table.process(identity) != nil else { return nil }
@@ -138,14 +138,14 @@ extension TerminalWindowController {
 /// close; an unticked one is kept.
 extension TerminalWindowController {
     /// How long a close waits for its census.
-    static let closeCensusLimit: Duration = .seconds(1)
+    package static let closeCensusLimit: Duration = .seconds(1)
 
-    func closeSurvivors(_ panes: [TerminalView]) async -> ActivitySurvivors {
+    package func closeSurvivors(_ panes: [TerminalView]) async -> ActivitySurvivors {
         guard let snapshot = await Self.census(within: Self.closeCensusLimit) else { return ActivitySurvivors() }
         return Self.survivors(of: panes, in: snapshot)
     }
 
-    static func survivors(of panes: [TerminalView], in snapshot: ActivitySnapshot) -> ActivitySurvivors {
+    package static func survivors(of panes: [TerminalView], in snapshot: ActivitySnapshot) -> ActivitySurvivors {
         var terminals: [String: dev_t] = [:]
         for pane in panes { terminals[pane.processTag] = pane.terminalDevice }
         return ActivitySurvivors.of(
@@ -154,7 +154,7 @@ extension TerminalWindowController {
 
     /// Whether the latest census says something of `panes` will keep
     /// running: under "only when something is running" that counts (D-16).
-    static func hasSurvivors(_ panes: [TerminalView]) -> Bool {
+    package static func hasSurvivors(_ panes: [TerminalView]) -> Bool {
         guard let snapshot = ActivityMonitor.shared.snapshot else { return false }
         return survivors(of: panes, in: snapshot).anyKeepRunning
     }
@@ -162,7 +162,7 @@ extension TerminalWindowController {
     /// What the latest census says goes on running after closing `panes`,
     /// for a sheet with no checkboxes — a window's close, quitting: named,
     /// so a question asked for it alone says why. Empty when nothing does.
-    static func survivorsListed(_ panes: [TerminalView]) -> String {
+    package static func survivorsListed(_ panes: [TerminalView]) -> String {
         guard let snapshot = ActivityMonitor.shared.snapshot else { return "" }
         let survivors = survivors(of: panes, in: snapshot)
         guard !survivors.isEmpty else { return "" }
@@ -170,7 +170,7 @@ extension TerminalWindowController {
     }
 
     /// A one-off census, or nil when none lands within `limit`.
-    static func census(within limit: Duration) async -> ActivitySnapshot? {
+    package static func census(within limit: Duration) async -> ActivitySnapshot? {
         let once = CensusOnce()
         return await withCheckedContinuation { continuation in
             Task { @MainActor in
@@ -185,7 +185,7 @@ extension TerminalWindowController {
     }
 
     /// The checkboxes under a close sheet, one a survivor, all unticked.
-    static func survivorBoxes(_ survivors: ActivitySurvivors) -> (NSView, [(NSButton, ActivitySurvivors.Survivor)])? {
+    package static func survivorBoxes(_ survivors: ActivitySurvivors) -> (NSView, [(NSButton, ActivitySurvivors.Survivor)])? {
         guard !survivors.all.isEmpty else { return nil }
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -204,7 +204,7 @@ extension TerminalWindowController {
     }
 
     /// After a close: the ticked stopped by identity, the unticked kept.
-    func settleSurvivors(_ boxes: [(NSButton, ActivitySurvivors.Survivor)]) {
+    package func settleSurvivors(_ boxes: [(NSButton, ActivitySurvivors.Survivor)]) {
         let ticked = boxes.filter { $0.0.state == .on }.map(\.1)
         let unticked = boxes.filter { $0.0.state != .on }.map(\.1)
         LeftBehindLedger.shared.keep(unticked.map(\.identity))
@@ -230,17 +230,17 @@ private final class CensusOnce {
 /// once every one is gone), Remove Anyway, Cancel — Cancel the default.
 extension TerminalWindowController {
     /// How long the removal waits for what it stopped to end.
-    static let worktreeStopWait: TimeInterval = 5
+    package static let worktreeStopWait: TimeInterval = 5
     /// The read's deadline between processes, and the wait for it as a
     /// whole — a folder's read can block for a mount's timeout.
-    static let worktreeReadDeadline: UInt64 = 3_000_000_000
-    static let worktreeReadLimit: Duration = .seconds(4)
+    package static let worktreeReadDeadline: UInt64 = 3_000_000_000
+    package static let worktreeReadLimit: Duration = .seconds(4)
 
     /// `folder`'s processes: one census, then one sweep off the main thread
     /// under a 3 s deadline, waited for at most 4 s. `complete` false when
     /// either cut it short, or there was no census: then the listing may
     /// miss some, and says so. An isolated run lists only its own (9.9).
-    func worktreeProcesses(_ folder: URL) async -> (found: [WorktreeProcess], complete: Bool) {
+    package func worktreeProcesses(_ folder: URL) async -> (found: [WorktreeProcess], complete: Bool) {
         guard let snapshot = await Self.census(within: .seconds(2)) else { return ([], false) }
         let paths = Array(Set([folder.standardizedFileURL.path, folder.resolvingSymlinksInPath().path])).sorted()
         let kept = LeftBehindLedger.shared.kept
@@ -272,7 +272,7 @@ extension TerminalWindowController {
     }
 
     /// The listing: Cancel the default — a Return stops nothing.
-    func askAboutWorktreeProcesses(_ found: [WorktreeProcess], complete: Bool, in worktree: Worktree, force: Bool, repo: URL, on window: NSWindow) {
+    package func askAboutWorktreeProcesses(_ found: [WorktreeProcess], complete: Bool, in worktree: Worktree, force: Bool, repo: URL, on window: NSWindow) {
         let stoppable = found.filter { $0.excluded == nil }
         let alert = NSAlert()
         alert.messageText =
@@ -368,9 +368,9 @@ extension TerminalWindowController {
 /// run — one census lists what an earlier Overterm left, with one asked
 /// Stop All, Show and Later. Nothing is stopped automatically.
 extension TerminalWindowController {
-    static let launchCheckDelay: Duration = .seconds(10)
+    package static let launchCheckDelay: Duration = .seconds(10)
 
-    func leftBehindAtLaunch() async {
+    package func leftBehindAtLaunch() async {
         guard Settings.shared.activityEnabled, let snapshot = await Self.census(within: .seconds(5)) else { return }
         let context = ActivityMonitor.shared.context
         let facts = Self.activityTabFacts()

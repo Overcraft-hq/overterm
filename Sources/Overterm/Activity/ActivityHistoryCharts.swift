@@ -3,23 +3,23 @@ import Foundation
 /// The detail's and the meters' charts from `ActivityRing` (docs/design/
 /// activity/analysis.md, 6.4, 6.11; D-21): `Charts/`'s time charts over the
 /// last 15 minutes, a gap where nothing was read. Pure.
-enum ActivityHistoryCharts {
+package enum ActivityHistoryCharts {
     /// The window shown: the ring's detail span.
-    static let span: TimeInterval = Double(ActivityRing.detailSpan) / 1e9
+    package static let span: TimeInterval = Double(ActivityRing.detailSpan) / 1e9
 
     /// One measure of a detail's points.
-    struct Measure: Sendable {
-        let id: String
-        let title: String
-        let unit: TimeChartUnit
+    package struct Measure: Sendable {
+        package let id: String
+        package let title: String
+        package let unit: TimeChartUnit
         /// Each series: its name and how a point's value is read.
-        let series: [(name: String, value: @Sendable (ActivityRing.Point) -> Float32)]
+        package let series: [(name: String, value: @Sendable (ActivityRing.Point) -> Float32)]
         /// Shown only when it has a value somewhere: energy where the
         /// kernel counts it, disk where anything was read or written.
-        var onlyWhenAny = false
+        package var onlyWhenAny = false
     }
 
-    static let processMeasures: [Measure] = [
+    package static let processMeasures: [Measure] = [
         Measure(id: "cpu", title: "CPU", unit: .ratio, series: [("CPU", { $0.cpu / 100 })]),
         Measure(id: "memory", title: "Memory", unit: .bytes, series: [("Memory", { $0.memory })]),
         Measure(id: "energy", title: "Energy (estimate)", unit: .watts, series: [("Energy", { $0.energy })], onlyWhenAny: true),
@@ -29,14 +29,14 @@ enum ActivityHistoryCharts {
             onlyWhenAny: true),
     ]
 
-    static let systemMeasures: [Measure] = [
+    package static let systemMeasures: [Measure] = [
         Measure(id: "cpu", title: "CPU, every core", unit: .ratio, series: [("CPU", { $0.cpu / 100 })]),
         Measure(id: "memory", title: "Memory used", unit: .bytes, series: [("Used", { $0.memory })]),
     ]
 
     /// `key`'s charts in `snapshot`'s history; `subject` the identifier's
     /// part naming it (`process.4242`, `system`). None without a detail.
-    static func charts(_ key: ActivityRingKey, subject: String, measures: [Measure], in snapshot: ActivitySnapshot) -> [TimeChartData] {
+    package static func charts(_ key: ActivityRingKey, subject: String, measures: [Measure], in snapshot: ActivitySnapshot) -> [TimeChartData] {
         var points = snapshot.history.points(key)
         // Selected a moment ago: its strip's cells until its samples come.
         if !points.contains(where: { !$0.isBreak }) { points = snapshot.history.cellPoints(key, now: snapshot.historyNow) }
@@ -82,7 +82,7 @@ enum ActivityHistoryCharts {
     }
 
     /// The hour's CPU folded: "last hour: 2.0–98.1%, mean 40.2%".
-    static func hour(_ key: ActivityRingKey, in snapshot: ActivitySnapshot) -> String? {
+    package static func hour(_ key: ActivityRingKey, in snapshot: ActivitySnapshot) -> String? {
         guard let hour = snapshot.history.hourCPU(key) else { return nil }
         let span = hour.minutes >= 60 ? "last hour" : "last \(hour.minutes) min"
         return "\(span): \(ActivityRows.percent(hour.low))–\(ActivityRows.percent(hour.high))%, mean \(ActivityRows.percent(hour.mean))%"
@@ -94,39 +94,39 @@ enum ActivityHistoryCharts {
 /// selected — never on the main actor a tick: its charts, its subtree's
 /// for an agent, the hour folded, and what Ask an Agent says of it (8.6:
 /// CPU over its history, min, mean and max, the footprint's trend). Pure.
-struct ActivityDetailHistory: Equatable, Sendable {
+package struct ActivityDetailHistory: Equatable, Sendable {
     /// The least, the mean and the most of a span.
-    struct Span: Equatable, Sendable {
-        var low: Double
-        var mean: Double
-        var high: Double
+    package struct Span: Equatable, Sendable {
+        package var low: Double
+        package var mean: Double
+        package var high: Double
         /// Samples, or minutes for the hour.
-        var count: Int
+        package var count: Int
     }
 
     /// The footprint over the hour: its first minute's mean, its last's, its peak.
-    struct Trend: Equatable, Sendable {
-        var first: Double
-        var last: Double
-        var high: Double
-        var minutes: Int
+    package struct Trend: Equatable, Sendable {
+        package var first: Double
+        package var last: Double
+        package var high: Double
+        package var minutes: Int
     }
 
-    let identity: ActivityProcessID
-    var charts: [TimeChartData] = []
-    var subtreeCharts: [TimeChartData] = []
+    package let identity: ActivityProcessID
+    package var charts: [TimeChartData] = []
+    package var subtreeCharts: [TimeChartData] = []
     /// "last hour: 2.0–98.1%, mean 40.2%".
-    var hour: String?
+    package var hour: String?
     /// CPU over its 15 minutes of samples, and over the folded hour.
-    var recentCPU: Span?
-    var hourCPU: Span?
-    var memory: Trend?
+    package var recentCPU: Span?
+    package var hourCPU: Span?
+    package var memory: Trend?
     /// An agent's: the same of it and everything under it.
-    var subtreeRecentCPU: Span?
-    var subtreeHourCPU: Span?
+    package var subtreeRecentCPU: Span?
+    package var subtreeHourCPU: Span?
 
     /// `identity`'s history in `snapshot` — one of the user's.
-    static func make(_ identity: ActivityProcessID, in snapshot: ActivitySnapshot) -> ActivityDetailHistory {
+    package static func make(_ identity: ActivityProcessID, in snapshot: ActivitySnapshot) -> ActivityDetailHistory {
         var made = ActivityDetailHistory(identity: identity)
         let key = ActivityRingKey.process(identity)
         let ring = snapshot.history
@@ -146,7 +146,7 @@ struct ActivityDetailHistory: Equatable, Sendable {
     }
 
     /// Made off the main thread, on a queue of its own.
-    static func read(_ identity: ActivityProcessID, in snapshot: ActivitySnapshot) async -> ActivityDetailHistory {
+    package static func read(_ identity: ActivityProcessID, in snapshot: ActivitySnapshot) async -> ActivityDetailHistory {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async { continuation.resume(returning: make(identity, in: snapshot)) }
         }

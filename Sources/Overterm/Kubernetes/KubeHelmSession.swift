@@ -4,12 +4,12 @@ extension KubeClient {
     /// Metadata only: no Secret's data comes with a list (Section 4, Helm
     /// releases). No plain-JSON fallback — a server that can't answer
     /// this way would send every record's data.
-    static let metadataListAccept = "application/json;as=PartialObjectMetadataList;v=v1;g=meta.k8s.io"
+    package static let metadataListAccept = "application/json;as=PartialObjectMetadataList;v=v1;g=meta.k8s.io"
 
     /// Helm's records in one storage, as their metadata says them — the
     /// labels — paged; an expired `continue` lists again from the start.
     /// With `release`, that release's alone (its `name` label too).
-    func helmRecords(_ storage: KubeHelmStorage, in scope: KubeScope, release: String? = nil) async throws -> [KubeHelmRecord] {
+    package func helmRecords(_ storage: KubeHelmStorage, in scope: KubeScope, release: String? = nil) async throws -> [KubeHelmRecord] {
         let kind = storage.kind
         let selector = storage.labelSelector + (release.map { ",\(storage == .tiller ? "NAME" : "name")=\($0)" } ?? "")
         // Tiller keeps every release's ConfigMaps in its own namespace and
@@ -50,7 +50,7 @@ extension KubeClient {
     /// masked on Helm's own queue (`KubeHelm.decoding`), never a
     /// Swift-concurrency thread: up to 32 MB inflated, parsed and masked.
     /// Cancelled, it stops between steps. The answer itself is not kept.
-    func helmRelease(_ record: KubeHelmRecord) async throws -> KubeHelmDetail {
+    package func helmRelease(_ record: KubeHelmRecord) async throws -> KubeHelmDetail {
         let response = try await get(record.storage.kind.path(namespace: record.namespace, name: record.object))
         try Task.checkCancellation()
         return try await KubeHelm.decodeOffPool(response.body, storage: record.storage)
@@ -60,9 +60,9 @@ extension KubeClient {
 extension KubeHelm {
     /// Where records are decoded: one at a time, so releases opened in a
     /// row don't decode side by side — a cancelled one stops at its next step.
-    static let decoding = DispatchQueue(label: "overterm.kubernetes.helm-decode", qos: .userInitiated)
+    package static let decoding = DispatchQueue(label: "overterm.kubernetes.helm-decode", qos: .userInitiated)
 
-    nonisolated static func decodeOffPool(_ body: Data, storage: KubeHelmStorage) async throws -> KubeHelmDetail {
+    package nonisolated static func decodeOffPool(_ body: Data, storage: KubeHelmStorage) async throws -> KubeHelmDetail {
         let cancellation = Cancellation()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -97,13 +97,13 @@ extension KubeHelm {
 /// listed (RBAC) are said, with helm in a terminal offered; ConfigMap
 /// records are still listed. A window's, as its page is.
 @MainActor
-final class KubeHelmSession: ObservableObject {
-    enum ListState: Equatable {
+package final class KubeHelmSession: ObservableObject {
+    package enum ListState: Equatable {
         case idle, loading, live
         case failed(String)
     }
 
-    enum State: Equatable {
+    package enum State: Equatable {
         /// Production: asked first.
         case confirming
         case loading
@@ -114,51 +114,51 @@ final class KubeHelmSession: ObservableObject {
     }
 
     /// The release opened: one revision of it, and how its reading stands.
-    struct Opened: Equatable {
-        var release: KubeHelmRelease
-        var record: KubeHelmRecord
-        var context: String
-        var isProduction: Bool
-        var state: State
+    package struct Opened: Equatable {
+        package var release: KubeHelmRelease
+        package var record: KubeHelmRecord
+        package var context: String
+        package var isProduction: Bool
+        package var state: State
 
-        var detail: KubeHelmDetail? {
+        package var detail: KubeHelmDetail? {
             if case .shown(let detail) = state { return detail }
             return nil
         }
     }
 
-    enum Tab: String, CaseIterable, Identifiable {
+    package enum Tab: String, CaseIterable, Identifiable {
         case overview, history, values, manifest, notes
-        var id: String { rawValue }
-        var title: String { rawValue.capitalized }
+        package var id: String { rawValue }
+        package var title: String { rawValue.capitalized }
     }
 
-    @Published private(set) var releases: [KubeHelmRelease] = []
-    @Published private(set) var listState: ListState = .idle
+    @Published package private(set) var releases: [KubeHelmRelease] = []
+    @Published package private(set) var listState: ListState = .idle
     /// Why the Secrets — where Helm keeps its releases by default — can't
     /// be listed here (a 403), said over the section.
-    @Published private(set) var secretsRefused: String?
+    @Published package private(set) var secretsRefused: String?
     /// A storage whose list failed otherwise (a 5xx, a timeout, a server
     /// that won't answer metadata only) while another's listed: said over
     /// the section, so the list isn't taken for all of them.
-    @Published private(set) var unlisted: String?
+    @Published package private(set) var unlisted: String?
     /// The release picked (`KubeHelmRelease.id`).
-    @Published var selection: String?
-    @Published private(set) var opened: Opened?
-    @Published var tab: Tab = .overview
+    @Published package var selection: String?
+    @Published package private(set) var opened: Opened?
+    @Published package var tab: Tab = .overview
     /// Values: the computed ones (`--all`) rather than the user's.
-    @Published var computedValues = false
+    @Published package var computedValues = false
     /// What opened revisions said of their charts, by release: the list's
     /// Chart and App Version — names and versions only, never a value or
     /// a description; kept for the context, gone with it.
-    @Published private(set) var charts: [String: KubeHelmChart] = [:]
+    @Published package private(set) var charts: [String: KubeHelmChart] = [:]
     /// What the open release's revisions said of themselves (Helm's
     /// description, scrubbed — a failure's can quote the manifest), by
     /// record: History's, gone with the release (rule 9).
-    @Published private(set) var summaries: [String: String] = [:]
+    @Published package private(set) var summaries: [String: String] = [:]
     /// The context and namespace the list is of.
-    private(set) var context: String?
-    private(set) var scope: KubeScope?
+    package private(set) var context: String?
+    package private(set) var scope: KubeScope?
 
     private let consent: KubeSecretConsent
     private var client: KubeClient?
@@ -166,7 +166,7 @@ final class KubeHelmSession: ObservableObject {
     private var reading: Task<Void, Never>?
     private var generation = 0
 
-    init(consent: KubeSecretConsent) {
+    package init(consent: KubeSecretConsent) {
         self.consent = consent
     }
 
@@ -175,7 +175,7 @@ final class KubeHelmSession: ObservableObject {
     /// The releases of `context` in `scope`, listed again. Another context
     /// forgets everything the last one's said; another namespace, its
     /// list and the release opened.
-    func load(context: String, scope: KubeScope, client: KubeClient?) {
+    package func load(context: String, scope: KubeScope, client: KubeClient?) {
         if context != self.context {
             drop(nil)
             charts = [:]
@@ -220,7 +220,7 @@ final class KubeHelmSession: ObservableObject {
     /// What a scope lists: Secrets and ConfigMaps; Tiller's only across all
     /// namespaces — its records sit in Tiller's namespace (kube-system by
     /// default) whichever namespace the release went to, and say no other.
-    nonisolated static func storages(_ scope: KubeScope) -> [KubeHelmStorage] {
+    package nonisolated static func storages(_ scope: KubeScope) -> [KubeHelmStorage] {
         scope == .all ? [.secret, .configMap, .tiller] : [.secret, .configMap]
     }
 
@@ -272,7 +272,7 @@ final class KubeHelmSession: ObservableObject {
 
     /// The forbidden Secret list in plain words: what it means for Helm,
     /// and what still works.
-    static func refusal(_ scope: KubeScope) -> String {
+    package static func refusal(_ scope: KubeScope) -> String {
         let place =
             switch scope {
             case .all: "across all namespaces"
@@ -284,7 +284,7 @@ final class KubeHelmSession: ObservableObject {
     }
 
     /// The storages that failed, and why, in plain words.
-    static func unlisted(_ failures: [(KubeHelmStorage, Error)]) -> String {
+    package static func unlisted(_ failures: [(KubeHelmStorage, Error)]) -> String {
         let said = failures.map { storage, error in
             "Releases kept in \(storage.said)s couldn't be listed: \(KubernetesModel.said(error))"
         }
@@ -296,7 +296,7 @@ final class KubeHelmSession: ObservableObject {
     /// A release's revision (its latest unless one is picked from its
     /// history) read: the one GET, decoded and masked — on production the
     /// session's first asked first.
-    func open(_ release: KubeHelmRelease, revision record: KubeHelmRecord? = nil, isProduction: Bool) {
+    package func open(_ release: KubeHelmRelease, revision record: KubeHelmRecord? = nil, isProduction: Bool) {
         guard let context, let client else { return }
         let record = record ?? release.latest
         // Another revision of the release open: its History's descriptions stay.
@@ -319,19 +319,19 @@ final class KubeHelmSession: ObservableObject {
     }
 
     /// The production question answered yes: not asked again this session.
-    func confirm() {
+    package func confirm() {
         guard let opened, opened.state == .confirming, let client else { return }
         consent.grant(opened.context)
         read(opened.record, client: client)
     }
 
-    func cancelConfirmation() {
+    package func cancelConfirmation() {
         guard opened?.state == .confirming else { return }
         opened = nil
     }
 
     /// Read Again, after a drop.
-    func readAgain() {
+    package func readAgain() {
         guard let opened, case .dropped = opened.state else { return }
         open(opened.release, revision: opened.record, isProduction: opened.isProduction)
     }
@@ -360,11 +360,11 @@ final class KubeHelmSession: ObservableObject {
     }
 
     /// The release opened closes (Esc, another one).
-    func close() { drop(nil) }
+    package func close() { drop(nil) }
 
     /// What was read goes: with a reason, the release stays open saying it
     /// (Read Again); without, it closes.
-    func drop(_ reason: String?) {
+    package func drop(_ reason: String?) {
         reading?.cancel()
         reading = nil
         summaries = [:]
@@ -378,15 +378,15 @@ final class KubeHelmSession: ObservableObject {
     }
 
     /// The page hid, or its window: no release read stays on screen.
-    func pageHidden() { drop("Hidden again when the page was hidden.") }
+    package func pageHidden() { drop("Hidden again when the page was hidden.") }
 
     /// ↑ ↓: the selection moves along the list.
-    func move(_ step: Int) {
+    package func move(_ step: Int) {
         guard !releases.isEmpty else { return }
         let index = selection.flatMap { id in releases.firstIndex { $0.id == id } }
         let next = index.map { min(max($0 + step, 0), releases.count - 1) } ?? (step > 0 ? 0 : releases.count - 1)
         selection = releases[next].id
     }
 
-    var selectedRelease: KubeHelmRelease? { selection.flatMap { id in releases.first { $0.id == id } } }
+    package var selectedRelease: KubeHelmRelease? { selection.flatMap { id in releases.first { $0.id == id } } }
 }

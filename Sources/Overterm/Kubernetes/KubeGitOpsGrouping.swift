@@ -6,10 +6,10 @@ import Foundation
 /// destination — and, only while more than one Argo CD installation marks
 /// the objects apps are read from (14.2.4), the installation. Remembered
 /// per page, in memory.
-enum KubeGitOpsGroupBy: String, CaseIterable, Equatable, Sendable {
+package enum KubeGitOpsGroupBy: String, CaseIterable, Equatable, Sendable {
     case none, tool, source, owner, destination, installation
 
-    var title: String {
+    package var title: String {
         switch self {
         case .none: "None"
         case .tool: "Tool"
@@ -21,15 +21,15 @@ enum KubeGitOpsGroupBy: String, CaseIterable, Equatable, Sendable {
     }
 
     /// The groupings offered: the installation only when several mark objects here.
-    static func offered(installations: Bool) -> [KubeGitOpsGroupBy] {
+    package static func offered(installations: Bool) -> [KubeGitOpsGroupBy] {
         installations ? allCases : allCases.filter { $0 != .installation }
     }
 
     /// `G` again: the next, after the last none.
-    var next: KubeGitOpsGroupBy { next(installations: false) }
+    package var next: KubeGitOpsGroupBy { next(installations: false) }
 
     /// `G` again, the installation among them when it is offered.
-    func next(installations: Bool) -> KubeGitOpsGroupBy {
+    package func next(installations: Bool) -> KubeGitOpsGroupBy {
         let all = Self.offered(installations: installations)
         guard let at = all.firstIndex(of: self) else { return .none }
         return all[(at + 1) % all.count]
@@ -40,48 +40,48 @@ enum KubeGitOpsGroupBy: String, CaseIterable, Equatable, Sendable {
 /// title, and — where an object heads it (a Flux source, an
 /// ApplicationSet, an app-of-apps parent, a `dependsOn` root) — that
 /// object's key. Pure.
-struct KubeGitOpsGroupKey: Equatable, Hashable, Sendable {
-    var id: String
-    var title: String
-    var head: KubeGitOpsObject.Key?
+package struct KubeGitOpsGroupKey: Equatable, Hashable, Sendable {
+    package var id: String
+    package var title: String
+    package var head: KubeGitOpsObject.Key?
 }
 
 /// What a row is grouped by, set from its summary as the row is made
 /// (the peers are at hand there), never read again. Pure.
-struct KubeGitOpsGroupKeys: Equatable, Sendable {
+package struct KubeGitOpsGroupKeys: Equatable, Sendable {
     /// The repository it deploys from, host included, never userinfo
     /// (`git.acme.example/acme/fleet`; a chart's repository as written,
     /// its credentials dropped): what `repo:` matches.
-    var repo = ""
+    package var repo = ""
     /// A Flux object's source (a source itself, or a HelmChart's
     /// repository); an Argo CD Application's repository. Nil: none known.
-    var source: KubeGitOpsGroupKey?
+    package var source: KubeGitOpsGroupKey?
     /// Its ApplicationSet; the top of its app-of-apps or Flux parents (by
     /// tracking id or Flux's labels); else its `dependsOn` root. Nil: none —
     /// it may still head a group of its own.
-    var owner: KubeGitOpsGroupKey?
-    var destination: KubeGitOpsGroupKey?
+    package var owner: KubeGitOpsGroupKey?
+    package var destination: KubeGitOpsGroupKey?
 }
 
 /// A group of the section's rows: its head's row when one heads it (also
 /// its first member, when shown), the rows in it, and how many of each
 /// problem. Pure.
-struct KubeGitOpsGroup: Equatable, Sendable, Identifiable {
-    var id: String
-    var by: KubeGitOpsGroupBy
-    var title: String
+package struct KubeGitOpsGroup: Equatable, Sendable, Identifiable {
+    package var id: String
+    package var by: KubeGitOpsGroupBy
+    package var title: String
     /// The object heading it, as the section holds it — shown or not: a
     /// source "carries its own state" even with a filter on.
-    var head: KubeGitOpsRow?
-    var members: [KubeGitOpsRow]
+    package var head: KubeGitOpsRow?
+    package var members: [KubeGitOpsRow]
     /// The catch-all ("No owner", "Not summarised"): drawn last.
-    var rest = false
+    package var rest = false
 
     /// The worst state among its members and its head: what orders the groups.
-    var worst: KubeGitOpsState { (members.map(\.state) + [head?.state].compactMap { $0 }).min() ?? .unknown }
+    package var worst: KubeGitOpsState { (members.map(\.state) + [head?.state].compactMap { $0 }).min() ?? .unknown }
 
     /// `5 objects · 2 failing · 1 blocked`: its members, the head aside.
-    var said: String {
+    package var said: String {
         let others = members.filter { $0.key != head?.key }
         var parts = ["\(others.count) object\(others.count == 1 ? "" : "s")"]
         for (state, count) in KubeGitOpsSection.chips(others) where state.isProblem {
@@ -93,37 +93,37 @@ struct KubeGitOpsGroup: Equatable, Sendable, Identifiable {
 
 /// A row of the section's table: a group's own row (across the columns),
 /// or one object's.
-enum KubeGitOpsListRow: ResourceTableRow {
+package enum KubeGitOpsListRow: ResourceTableRow {
     case group(KubeGitOpsGroup, folded: Bool)
     case object(KubeGitOpsRow)
 
-    var id: String {
+    package var id: String {
         switch self {
         case .group(let group, _): group.id
         case .object(let row): row.id
         }
     }
 
-    var height: CGFloat {
+    package var height: CGFloat {
         switch self {
         case .group: 28
         case .object(let row): row.height
         }
     }
 
-    var spansColumns: Bool {
+    package var spansColumns: Bool {
         if case .group = self { return true }
         return false
     }
 
-    var reuseKind: String {
+    package var reuseKind: String {
         switch self {
         case .group: "group"
         case .object: "row"
         }
     }
 
-    var object: KubeGitOpsRow? {
+    package var object: KubeGitOpsRow? {
         if case .object(let row) = self { return row }
         return nil
     }
@@ -136,19 +136,19 @@ enum KubeGitOpsListRow: ResourceTableRow {
 /// it manages, else a Kustomization's `dependsOn` root; by destination,
 /// the namespace it deploys into, another cluster said. Groups with a
 /// problem first, then by title; the catch-all last. Reads nothing. Pure.
-enum KubeGitOpsGrouping {
+package enum KubeGitOpsGrouping {
     /// Hops followed up an owner or `dependsOn` chain, as the ladder does.
-    static let hops = 5
+    package static let hops = 5
 
-    static let groupPrefix = "group:"
+    package static let groupPrefix = "group:"
 
-    static func isGroup(_ id: String) -> Bool { id.hasPrefix(groupPrefix) }
+    package static func isGroup(_ id: String) -> Bool { id.hasPrefix(groupPrefix) }
 
     // MARK: A row's keys
 
     /// What a summary's row is grouped by, its peers (the summaries held)
     /// at hand: its source's object, its owner's, where it deploys.
-    static func keys(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> KubeGitOpsGroupKeys {
+    package static func keys(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> KubeGitOpsGroupKeys {
         var keys = KubeGitOpsGroupKeys()
         keys.repo = repo(object, peers: peers)
         keys.source = source(object, peers: peers)
@@ -158,7 +158,7 @@ enum KubeGitOpsGrouping {
     }
 
     /// Host included, never userinfo: `git.acme.example/acme/fleet`.
-    static func repo(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> String {
+    package static func repo(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> String {
         func said(_ source: KubeGitOpsSource?) -> String? {
             guard let source, !source.repoURL.isEmpty else { return nil }
             return GitRemoteURL(source.repoURL)?.description ?? GitRemoteURL.withoutUserinfo(source.repoURL)
@@ -182,7 +182,7 @@ enum KubeGitOpsGrouping {
 
     /// A Flux object's source object (a source is its own; a HelmChart its
     /// repository's); an Argo CD Application's repository.
-    static func source(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> KubeGitOpsGroupKey? {
+    package static func source(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> KubeGitOpsGroupKey? {
         switch object.role {
         case .application:
             guard let source = object.sources.first(where: { !$0.isValuesRef }) ?? object.sources.first, !source.repoURL.isEmpty else { return nil }
@@ -202,7 +202,7 @@ enum KubeGitOpsGrouping {
         }
     }
 
-    static func sourceKey(_ key: KubeGitOpsObject.Key) -> KubeGitOpsGroupKey {
+    package static func sourceKey(_ key: KubeGitOpsObject.Key) -> KubeGitOpsGroupKey {
         KubeGitOpsGroupKey(id: "\(groupPrefix)source:\(key.description)", title: key.description, head: key)
     }
 
@@ -211,7 +211,7 @@ enum KubeGitOpsGrouping {
     /// the summaries, at most five hops; else the root of its `dependsOn`
     /// chain. A parent not summarised still names the group when its mark
     /// is certain; Helm's instance label alone names nobody.
-    static func owner(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> KubeGitOpsGroupKey? {
+    package static func owner(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> KubeGitOpsGroupKey? {
         if let set = object.ownerAppSet {
             return ownerKey(KubeGitOpsObject.Key(kind: "ApplicationSet", namespace: set.namespace, name: set.name))
         }
@@ -241,7 +241,7 @@ enum KubeGitOpsGrouping {
         return root.map(ownerKey)
     }
 
-    static func ownerKey(_ key: KubeGitOpsObject.Key) -> KubeGitOpsGroupKey {
+    package static func ownerKey(_ key: KubeGitOpsObject.Key) -> KubeGitOpsGroupKey {
         KubeGitOpsGroupKey(id: "\(groupPrefix)owner:\(key.description)", title: key.description, head: key)
     }
 
@@ -249,7 +249,7 @@ enum KubeGitOpsGrouping {
     /// hold it: in the namespace the mark says, else its own, else Argo
     /// CD's. Not found, a certain mark still names it (in the namespace it
     /// says, else the object's own); "probably" names nobody.
-    static func parent(of object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> KubeGitOpsObject.Key? {
+    package static func parent(of object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> KubeGitOpsObject.Key? {
         guard let owner = object.parentOwner else { return nil }
         let kind = owner.tool.kind
         var places = [owner.namespace, object.ref.namespace]
@@ -265,13 +265,13 @@ enum KubeGitOpsGrouping {
 
     /// A source's destination: it deploys nothing — the same group whether
     /// its summary has come or only its live row (`KubeGitOpsSection.row`).
-    static let sourcesDestination = KubeGitOpsGroupKey(
+    package static let sourcesDestination = KubeGitOpsGroupKey(
         id: "\(groupPrefix)destination:-sources", title: "Sources — deploy nothing themselves", head: nil)
 
     /// Where it deploys: another cluster, said; its destination's
     /// namespace; the one namespace it manages, or the several; a source
     /// deploys nothing.
-    static func destination(_ object: KubeGitOpsObject) -> KubeGitOpsGroupKey {
+    package static func destination(_ object: KubeGitOpsObject) -> KubeGitOpsGroupKey {
         func key(_ id: String, _ title: String) -> KubeGitOpsGroupKey {
             KubeGitOpsGroupKey(id: "\(groupPrefix)destination:\(id)", title: title, head: nil)
         }
@@ -286,7 +286,7 @@ enum KubeGitOpsGrouping {
 
     /// The namespaces an object manages, or an app read from marks lives
     /// in: one's own group, several's, none's.
-    static func destination(namespaces: [String]) -> KubeGitOpsGroupKey {
+    package static func destination(namespaces: [String]) -> KubeGitOpsGroupKey {
         func key(_ id: String, _ title: String) -> KubeGitOpsGroupKey {
             KubeGitOpsGroupKey(id: "\(groupPrefix)destination:\(id)", title: title, head: nil)
         }
@@ -309,7 +309,7 @@ enum KubeGitOpsGrouping {
     /// The visible rows grouped: each group's members in the order they
     /// came (the section's, or the header's sort), its head first; `all`,
     /// every row the section holds, to find a head the filter hides.
-    static func groups(_ rows: [KubeGitOpsRow], by: KubeGitOpsGroupBy, all: [KubeGitOpsRow]) -> [KubeGitOpsGroup] {
+    package static func groups(_ rows: [KubeGitOpsRow], by: KubeGitOpsGroupBy, all: [KubeGitOpsRow]) -> [KubeGitOpsGroup] {
         guard by != .none else { return [] }
         if by == .tool {
             // Argo CD's apps read from marks apart from its Applications (14.2.4).
@@ -377,12 +377,12 @@ enum KubeGitOpsGrouping {
     }
 
     /// The tool an app read from marks is grouped under.
-    static let markedTool = "Argo CD (from marks)"
+    package static let markedTool = "Argo CD (from marks)"
 
     /// By installation (14.2.4): the apps read from marks, a group each
     /// installation id — the most apps first, "No installation id" among
     /// them — and the objects read whole last, apart.
-    static func installations(_ rows: [KubeGitOpsRow]) -> [KubeGitOpsGroup] {
+    package static func installations(_ rows: [KubeGitOpsRow]) -> [KubeGitOpsGroup] {
         var order: [String] = []
         var found: [String: KubeGitOpsGroup] = [:]
         var objects: [KubeGitOpsRow] = []
@@ -411,7 +411,7 @@ enum KubeGitOpsGrouping {
     }
 
     /// The table's rows: each group's own, then — unless folded — its members.
-    static func rows(_ groups: [KubeGitOpsGroup], folded: Set<String>) -> [KubeGitOpsListRow] {
+    package static func rows(_ groups: [KubeGitOpsGroup], folded: Set<String>) -> [KubeGitOpsListRow] {
         ResourceGrouping.rows(
             groups, collapsed: folded, id: \.id, header: { .group($0, folded: folded.contains($0.id)) }, members: { $0.members.map { .object($0) } })
     }
@@ -427,24 +427,24 @@ enum KubeGitOpsGrouping {
 /// `image:` any of their members' images. A word with another key
 /// (`label:`, `ns:` — the kinds' lists') is no text here. A value it
 /// doesn't know is `refused`, said, and matches anything. Pure.
-struct KubeGitOpsFilter: Equatable, Sendable {
-    enum Key: ResourceFilterKey {
+package struct KubeGitOpsFilter: Equatable, Sendable {
+    package enum Key: ResourceFilterKey {
         case text, state, kind, tool, repo, image
 
-        static let names: [String: Key] = ["is": .state, "state": .state, "kind": .kind, "tool": .tool, "repo": .repo, "image": .image]
+        package static let names: [String: Key] = ["is": .state, "state": .state, "kind": .kind, "tool": .tool, "repo": .repo, "image": .image]
     }
 
     /// What `kind:` takes.
-    enum Kind: String, CaseIterable, Sendable {
+    package enum Kind: String, CaseIterable, Sendable {
         case app, appset, ks, hr, source, git, oci, helmrepo, chart, bucket, marks
 
-        static let aliases: [String: Kind] = [
+        package static let aliases: [String: Kind] = [
             "application": .app, "applications": .app, "apps": .app, "applicationset": .appset, "kustomization": .ks, "kustomizations": .ks,
             "helmrelease": .hr, "helmreleases": .hr, "sources": .source, "gitrepository": .git, "ocirepository": .oci, "helmrepository": .helmrepo,
             "helmchart": .chart, "marked": .marks,
         ]
 
-        func holds(_ role: KubeGitOpsObject.Role) -> Bool {
+        package func holds(_ role: KubeGitOpsObject.Role) -> Bool {
             switch (self, role) {
             case (.app, .application), (.appset, .applicationSet), (.ks, .kustomization), (.hr, .helmRelease), (.source, .source), (.marks, .markedApp): true
             case (.git, .source("GitRepository")), (.oci, .source("OCIRepository")), (.helmrepo, .source("HelmRepository")),
@@ -455,18 +455,18 @@ struct KubeGitOpsFilter: Equatable, Sendable {
         }
     }
 
-    struct Term: Equatable, Sendable {
-        var key: Key
+    package struct Term: Equatable, Sendable {
+        package var key: Key
         /// Any of these, lowercased.
-        var values: [String]
-        var negated: Bool
+        package var values: [String]
+        package var negated: Bool
     }
 
-    private(set) var terms: [Term] = []
+    package private(set) var terms: [Term] = []
     /// The words it couldn't read, said: `is:nope`.
-    private(set) var refused: [String] = []
+    package private(set) var refused: [String] = []
 
-    init(_ text: String) {
+    package init(_ text: String) {
         for term in ResourceFilter<Key>(text).terms {
             switch term.key {
             case .text:
@@ -485,14 +485,14 @@ struct KubeGitOpsFilter: Equatable, Sendable {
         }
     }
 
-    var isEmpty: Bool { terms.isEmpty }
+    package var isEmpty: Bool { terms.isEmpty }
 
     /// Whether an `is:` word asks for a state (not turned around; `is:marks`
     /// is no state): Hide Ready then hides nothing it asked for.
-    var asksState: Bool { terms.contains { $0.key == .state && !$0.negated && $0.values.contains { Self.state($0) != nil } } }
+    package var asksState: Bool { terms.contains { $0.key == .state && !$0.negated && $0.values.contains { Self.state($0) != nil } } }
 
     /// `is:nope isn't a state` — said beside the chips.
-    var refusal: String? {
+    package var refusal: String? {
         guard let first = refused.first else { return nil }
         let words = refused.joined(separator: " ")
         let name = first.drop { $0 == "-" }.prefix { $0 != ":" }
@@ -507,7 +507,7 @@ struct KubeGitOpsFilter: Equatable, Sendable {
         return "Not read: \(words) — \(known)"
     }
 
-    func matches(_ row: KubeGitOpsRow) -> Bool {
+    package func matches(_ row: KubeGitOpsRow) -> Bool {
         terms.allSatisfy { term in Self.holds(term, row) != term.negated }
     }
 
@@ -543,16 +543,16 @@ struct KubeGitOpsFilter: Equatable, Sendable {
     }
 
     /// `is:marks`: an app read from marks.
-    static func isMarks(_ value: String) -> Bool { value == "marks" || value == "marked" }
+    package static func isMarks(_ value: String) -> Bool { value == "marks" || value == "marked" }
 
-    static func state(_ value: String) -> KubeGitOpsState? {
+    package static func state(_ value: String) -> KubeGitOpsState? {
         if value == "failing" { return .failed }
         return KubeGitOpsState.allCases.first { $0.word.lowercased() == value }
     }
 
-    static func kind(_ value: String) -> Kind? { Kind(rawValue: value) ?? Kind.aliases[value] }
+    package static func kind(_ value: String) -> Kind? { Kind(rawValue: value) ?? Kind.aliases[value] }
 
-    static func tool(_ value: String) -> KubeGitOpsObject.Tool? {
+    package static func tool(_ value: String) -> KubeGitOpsObject.Tool? {
         switch value {
         case "argo", "argocd": .argo
         case "flux": .flux

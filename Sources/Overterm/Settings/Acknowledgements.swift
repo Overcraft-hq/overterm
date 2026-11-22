@@ -4,28 +4,28 @@ import SwiftUI
 /// What Overterm ships of other people's work, and each one's licence as its
 /// authors wrote it: `Resources/licenses/index.json`, made by
 /// Scripts/fetch-licenses.sh. Settings ▸ About ▸ Acknowledgements.
-struct Acknowledgement: Codable, Hashable, Identifiable {
-    var group: String
-    var name: String
-    var version: String
-    var license: String
-    var url: String
+package struct Acknowledgement: Codable, Hashable, Identifiable {
+    package var group: String
+    package var name: String
+    package var version: String
+    package var license: String
+    package var url: String
     /// The licence's text, relative to the bundle's Resources.
-    var file: String
+    package var file: String
 
-    var id: String { group + "/" + name }
+    package var id: String { group + "/" + name }
 
     /// The order the groups are listed in.
-    static let groups = ["Terminal", "Editor", "Swift packages", "Notes"]
+    package static let groups = ["Terminal", "Editor", "Swift packages", "Notes"]
 
-    static func load(from resources: URL? = Bundle.main.resourceURL) -> [Acknowledgement] {
+    package static func load(from resources: URL? = Bundle.main.resourceURL) -> [Acknowledgement] {
         guard let resources, let data = try? Data(contentsOf: resources.appendingPathComponent("licenses/index.json")),
             let all = try? JSONDecoder().decode([Acknowledgement].self, from: data)
         else { return [] }
         return all
     }
 
-    func text(in resources: URL? = Bundle.main.resourceURL) -> String {
+    package func text(in resources: URL? = Bundle.main.resourceURL) -> String {
         guard let resources, let text = try? String(contentsOf: resources.appendingPathComponent(file), encoding: .utf8) else {
             return "The licence isn’t in this build: \(url)"
         }
@@ -35,8 +35,8 @@ struct Acknowledgement: Codable, Hashable, Identifiable {
 
 /// Settings ▸ About ▸ Acknowledgements: a window, as the changelog is.
 @MainActor
-final class AcknowledgementsWindowController: NSWindowController {
-    static let shared = AcknowledgementsWindowController()
+package final class AcknowledgementsWindowController: NSWindowController {
+    package static let shared = AcknowledgementsWindowController()
 
     private init() {
         let window = NSWindow(
@@ -51,9 +51,9 @@ final class AcknowledgementsWindowController: NSWindowController {
         super.init(window: window)
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    package required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    func show() {
+    package func show() {
         if window?.isVisible != true { window?.center() }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)

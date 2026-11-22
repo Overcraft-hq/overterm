@@ -4,10 +4,10 @@ import NIOHTTP1
 /// A write refused before it left Overterm: the context is read-only (its
 /// `writable` setting is false, whatever its class), or the
 /// connection reads only.
-struct KubeWriteRefused: Error, Equatable, LocalizedError, CustomStringConvertible {
-    var reason: String
-    var errorDescription: String? { reason }
-    var description: String { reason }
+package struct KubeWriteRefused: Error, Equatable, LocalizedError, CustomStringConvertible {
+    package var reason: String
+    package var errorDescription: String? { reason }
+    package var description: String { reason }
 }
 
 /// What the page can change in a cluster (stage 2a, part 1 —
@@ -16,7 +16,7 @@ struct KubeWriteRefused: Error, Equatable, LocalizedError, CustomStringConvertib
 /// (`KubeWriteCheck`), the access review, the confirmation naming the
 /// context and namespace, the typed name where rule 4 says, then the
 /// request (`KubeWrites`) and its outcome said (`KubeWriteOutcome`).
-enum KubeWriteVerb: String, CaseIterable, Sendable {
+package enum KubeWriteVerb: String, CaseIterable, Sendable {
     /// `DELETE`, in the background, after the pod's grace period.
     case delete
     /// A pod deleted so its controller makes it again (`r` on a pod).
@@ -60,7 +60,7 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
     /// An Argo CD Application compared with its source again: `argocd.argoproj.io/refresh`.
     case refresh
 
-    var title: String {
+    package var title: String {
         switch self {
         case .delete: "Delete…"
         case .recreate: "Delete to Recreate…"
@@ -85,7 +85,7 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
         }
     }
 
-    var label: String {
+    package var label: String {
         switch self {
         case .delete: "Delete"
         case .recreate: "Recreate"
@@ -109,7 +109,7 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
         }
     }
 
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .delete, .forceDelete: "trash"
         case .recreate, .restart: "arrow.clockwise"
@@ -131,7 +131,7 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
 
     /// What a verb that sets a state sets (`KubeWriteToggle`): pause,
     /// suspend, cordon true; their opposites false.
-    var toggle: (KubeWriteToggle, Bool)? {
+    package var toggle: (KubeWriteToggle, Bool)? {
         switch self {
         case .pause: (.paused, true)
         case .resume: (.paused, false)
@@ -146,7 +146,7 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
     }
 
     /// Pause's resume, cordon's uncordon: the same state the other way.
-    var opposite: KubeWriteVerb? {
+    package var opposite: KubeWriteVerb? {
         switch self {
         case .pause: .resume
         case .resume: .pause
@@ -166,10 +166,10 @@ enum KubeWriteVerb: String, CaseIterable, Sendable {
 /// Read from the object whole (never a Secret: these kinds have no
 /// values to hide), or from a row's cells where the server's Table says
 /// it (a CronJob's Suspend, a node's Status). Pure.
-enum KubeWriteToggle: String, Sendable {
+package enum KubeWriteToggle: String, Sendable {
     case paused, suspended, unschedulable
 
-    var field: String {
+    package var field: String {
         switch self {
         case .paused: "paused"
         case .suspended: "suspend"
@@ -178,13 +178,13 @@ enum KubeWriteToggle: String, Sendable {
     }
 
     /// The object's spec says it.
-    func state(of object: [String: Any]) -> Bool {
+    package func state(of object: [String: Any]) -> Bool {
         ((object["spec"] as? [String: Any])?[field] as? Bool) == true
     }
 
     /// What a row's cells say, where the server's columns say it; nil where
     /// they don't (a Deployment's rows don't say it's paused).
-    func state(cells: [String: String]) -> Bool? {
+    package func state(cells: [String: String]) -> Bool? {
         switch self {
         case .paused: nil
         case .suspended: cells["Suspend"].flatMap { ["true": true, "false": false][$0.lowercased()] }
@@ -193,7 +193,7 @@ enum KubeWriteToggle: String, Sendable {
     }
 
     /// `deployment shop/web is paused already.`
-    func already(_ on: Bool, _ object: String) -> String {
+    package func already(_ on: Bool, _ object: String) -> String {
         switch (self, on) {
         case (.paused, true): "\(object)'s rollout is paused already."
         case (.paused, false): "\(object)'s rollout isn't paused."
@@ -206,25 +206,25 @@ enum KubeWriteToggle: String, Sendable {
 }
 
 /// Whether a write may be done on a context, and what it asks first. Pure.
-struct KubeWriteRule: Equatable, Sendable {
+package struct KubeWriteRule: Equatable, Sendable {
     /// Why it may not be done here; nil when it may.
-    var refused: String?
+    package var refused: String?
     /// What the access review (SelfSubjectAccessReview) is asked first.
-    var access: KubeAccess?
+    package var access: KubeAccess?
     /// The object's name typed to confirm (rule 4).
-    var typedName = false
+    package var typedName = false
     /// What the confirmation warns of.
-    var warning: String?
+    package var warning: String?
 
-    var allowed: Bool { refused == nil }
+    package var allowed: Bool { refused == nil }
 }
 
 /// The class check for writes (rules 1, 2 and 4): every write verb against
 /// the context's class and writability, and the kind's verbs as discovery
 /// says them. Nothing it refuses is sent. Pure.
-enum KubeWriteCheck {
+package enum KubeWriteCheck {
     /// Whether `kind` has the verb at all — offered in its menu.
-    static func offered(_ verb: KubeWriteVerb, on kind: KubeResourceKind) -> Bool {
+    package static func offered(_ verb: KubeWriteVerb, on kind: KubeResourceKind) -> Bool {
         let pods = kind.group.isEmpty && kind.resource == "pods"
         switch verb {
         case .delete: return kind.verbs.contains("delete")
@@ -247,11 +247,11 @@ enum KubeWriteCheck {
         }
     }
 
-    static func isCronJob(_ kind: KubeResourceKind) -> Bool { kind.group == "batch" && kind.resource == "cronjobs" }
-    static func isNamespace(_ kind: KubeResourceKind) -> Bool { kind.group.isEmpty && kind.resource == "namespaces" }
+    package static func isCronJob(_ kind: KubeResourceKind) -> Bool { kind.group == "batch" && kind.resource == "cronjobs" }
+    package static func isNamespace(_ kind: KubeResourceKind) -> Bool { kind.group.isEmpty && kind.resource == "namespaces" }
 
     /// What the access review is asked: `delete pods`, `patch deployments.apps/scale`, `create pods/eviction`.
-    static func access(_ verb: KubeWriteVerb, on kind: KubeResourceKind) -> KubeAccess {
+    package static func access(_ verb: KubeWriteVerb, on kind: KubeResourceKind) -> KubeAccess {
         switch verb {
         case .delete, .recreate, .forceDelete: KubeAccess(verb: "delete", resource: kind.fullName)
         case .removeFinalizers, .restart, .pause, .resume, .suspend, .unsuspend, .cordon, .uncordon, .reconcile, .fluxSuspend, .fluxResume, .refresh:
@@ -269,7 +269,7 @@ enum KubeWriteCheck {
     /// what a GitOps object's delete takes with it, as read after the
     /// review; `held`: what a namespace's GitOps objects take with it;
     /// `resume`: what a Flux object's resume on production applies.
-    static func rule(
+    package static func rule(
         _ verb: KubeWriteVerb, for context: KubeContext, kind: KubeResourceKind, replicas: Int? = nil, gitOps: KubeGitOpsDelete? = nil,
         held: KubeNamespaceGitOps? = nil, resume: KubeFluxResume? = nil
     ) -> KubeWriteRule {
@@ -302,7 +302,7 @@ enum KubeWriteCheck {
 
     /// A GitOps object's delete always warns: of what was read, else of the
     /// worst case — never nothing.
-    static func warning(
+    package static func warning(
         _ verb: KubeWriteVerb, kind: KubeResourceKind, gitOps: KubeGitOpsDelete? = nil, held: KubeNamespaceGitOps? = nil, resume: KubeFluxResume? = nil
     ) -> String? {
         switch verb {
@@ -331,36 +331,36 @@ enum KubeWriteCheck {
     }
 
     /// Why a context takes no write.
-    static func readOnly(_ context: KubeContext) -> String {
+    package static func readOnly(_ context: KubeContext) -> String {
         "This context is read-only: Overterm changes nothing here (its writable setting)."
     }
 }
 
 /// One write as it goes to the API server. Pure.
-struct KubeWriteRequest: Equatable, Sendable {
-    var method: HTTPMethod
+package struct KubeWriteRequest: Equatable, Sendable {
+    package var method: HTTPMethod
     /// With its query.
-    var path: String
-    var body: Data
-    var contentType: String
+    package var path: String
+    package var body: Data
+    package var contentType: String
 
     /// The body read back, for the tests.
-    var json: Any? { try? JSONSerialization.jsonObject(with: body) }
+    package var json: Any? { try? JSONSerialization.jsonObject(with: body) }
 }
 
 /// The requests each verb is, as kubectl makes them (docs/design/kubernetes/
 /// analysis.md, Section 4, Writes). Pure.
-enum KubeWrites {
+package enum KubeWrites {
     /// managedFields says who changed it.
-    static let fieldManager = "overterm"
-    static let restartedAt = "kubectl.kubernetes.io/restartedAt"
-    static let mergePatch = "application/merge-patch+json"
-    static let strategicPatch = "application/strategic-merge-patch+json"
-    static let jsonPatch = "application/json-patch+json"
+    package static let fieldManager = "overterm"
+    package static let restartedAt = "kubectl.kubernetes.io/restartedAt"
+    package static let mergePatch = "application/merge-patch+json"
+    package static let strategicPatch = "application/strategic-merge-patch+json"
+    package static let jsonPatch = "application/json-patch+json"
 
     /// `DELETE` with DeleteOptions: in the background (what it owns goes
     /// after it), `gracePeriodSeconds` only when given — 0 forces it.
-    static func delete(_ ref: KubeObjectRef, gracePeriod: Int? = nil) -> KubeWriteRequest {
+    package static func delete(_ ref: KubeObjectRef, gracePeriod: Int? = nil) -> KubeWriteRequest {
         var options: [String: Any] = ["apiVersion": "v1", "kind": "DeleteOptions", "propagationPolicy": "Background"]
         if let gracePeriod { options["gracePeriodSeconds"] = gracePeriod }
         return KubeWriteRequest(method: .DELETE, path: path(ref), body: encode(options), contentType: "application/json")
@@ -368,7 +368,7 @@ enum KubeWrites {
 
     /// A JSON patch: the finalizers confirmed are tested first, so one
     /// added meanwhile fails the patch (422) instead of going unseen.
-    static func removeFinalizers(_ ref: KubeObjectRef, finalizers: [String]) -> KubeWriteRequest {
+    package static func removeFinalizers(_ ref: KubeObjectRef, finalizers: [String]) -> KubeWriteRequest {
         let patch: [[String: Any]] = [
             ["op": "test", "path": "/metadata/finalizers", "value": finalizers], ["op": "remove", "path": "/metadata/finalizers"],
         ]
@@ -377,7 +377,7 @@ enum KubeWrites {
 
     /// `POST pods/{p}/eviction`: the API refuses with a 429 when a
     /// PodDisruptionBudget doesn't allow it now.
-    static func evict(_ ref: KubeObjectRef) -> KubeWriteRequest {
+    package static func evict(_ ref: KubeObjectRef) -> KubeWriteRequest {
         var metadata = ["name": ref.name]
         if let namespace = ref.namespace { metadata["namespace"] = namespace }
         let eviction: [String: Any] = ["apiVersion": "policy/v1", "kind": "Eviction", "metadata": metadata]
@@ -386,13 +386,13 @@ enum KubeWrites {
 
     /// kubectl rollout restart's patch: the template's `restartedAt`
     /// annotation set to now, so the controller rolls every pod.
-    static func restart(_ ref: KubeObjectRef, at date: Date) -> KubeWriteRequest {
+    package static func restart(_ ref: KubeObjectRef, at date: Date) -> KubeWriteRequest {
         let patch: [String: Any] = ["spec": ["template": ["metadata": ["annotations": [restartedAt: stamp(date)]]]]]
         return KubeWriteRequest(method: .PATCH, path: managed(path(ref)), body: encode(patch), contentType: strategicPatch)
     }
 
     /// The `scale` subresource's replicas, as a merge patch (RBAC: `patch` on `<kind>/scale`).
-    static func scale(_ ref: KubeObjectRef, replicas: Int) -> KubeWriteRequest {
+    package static func scale(_ ref: KubeObjectRef, replicas: Int) -> KubeWriteRequest {
         KubeWriteRequest(
             method: .PATCH, path: managed(path(ref) + "/scale"), body: encode(["spec": ["replicas": replicas]]), contentType: mergePatch)
     }
@@ -402,7 +402,7 @@ enum KubeWrites {
     /// away (`null`: false is its default and kubectl's patch omits it); a
     /// CronJob's `suspend` as a merge patch, false said, as `kubectl patch`
     /// would be typed.
-    static func toggle(_ ref: KubeObjectRef, _ toggle: KubeWriteToggle, on: Bool) -> KubeWriteRequest {
+    package static func toggle(_ ref: KubeObjectRef, _ toggle: KubeWriteToggle, on: Bool) -> KubeWriteRequest {
         switch toggle {
         case .suspended:
             return KubeWriteRequest(method: .PATCH, path: managed(path(ref)), body: encode(["spec": ["suspend": on]]), contentType: mergePatch)
@@ -412,11 +412,11 @@ enum KubeWrites {
         }
     }
 
-    static let instantiate = "cronjob.kubernetes.io/instantiate"
+    package static let instantiate = "cronjob.kubernetes.io/instantiate"
 
     /// A manual run's name: the CronJob's, `-manual-` and five characters,
     /// within a Job's 63 (a CronJob's own may be 52).
-    static func manualJobName(_ cronJob: String, suffix: String) -> String {
+    package static func manualJobName(_ cronJob: String, suffix: String) -> String {
         let tail = "-manual-" + suffix
         var head = String(cronJob.prefix(63 - tail.count))
         while head.hasSuffix("-") || head.hasSuffix(".") { head.removeLast() }
@@ -424,7 +424,7 @@ enum KubeWrites {
     }
 
     /// Five characters a Job name may hold.
-    static func randomSuffix() -> String { String((0..<5).map { _ in "bcdfghjklmnpqrstvwxz2456789".randomElement()! }) }
+    package static func randomSuffix() -> String { String((0..<5).map { _ in "bcdfghjklmnpqrstvwxz2456789".randomElement()! }) }
 
     /// `kubectl create job <name> --from=cronjob/<c>`, as kubectl makes the
     /// Job: the CronJob's `jobTemplate` spec, its labels, its annotations
@@ -432,7 +432,7 @@ enum KubeWrites {
     /// its controller (so it is listed among the CronJob's jobs), blocking
     /// its owner's foreground deletion as `metav1.NewControllerRef` does. Nil when
     /// the object isn't a CronJob with a jobTemplate.
-    static func trigger(_ ref: KubeObjectRef, cronJob object: [String: Any], job name: String) -> KubeWriteRequest? {
+    package static func trigger(_ ref: KubeObjectRef, cronJob object: [String: Any], job name: String) -> KubeWriteRequest? {
         guard let metadata = object["metadata"] as? [String: Any], let uid = metadata["uid"] as? String,
             let template = (object["spec"] as? [String: Any])?["jobTemplate"] as? [String: Any], let spec = template["spec"] as? [String: Any]
         else { return nil }
@@ -451,13 +451,13 @@ enum KubeWrites {
     }
 
     /// A namespace made, nothing but its name.
-    static func createNamespace(_ ref: KubeObjectRef) -> KubeWriteRequest {
+    package static func createNamespace(_ ref: KubeObjectRef) -> KubeWriteRequest {
         let namespace: [String: Any] = ["apiVersion": "v1", "kind": "Namespace", "metadata": ["name": ref.name]]
         return KubeWriteRequest(method: .POST, path: managed(ref.kind.path()), body: encode(namespace), contentType: "application/json")
     }
 
     /// A SelfSubjectAccessReview: may this user do it here.
-    static func review(_ access: KubeAccess, namespace: String?, name: String? = nil) -> KubeWriteRequest {
+    package static func review(_ access: KubeAccess, namespace: String?, name: String? = nil) -> KubeWriteRequest {
         let review: [String: Any] = [
             "apiVersion": "authorization.k8s.io/v1", "kind": "SelfSubjectAccessReview",
             "spec": ["resourceAttributes": KubeAccessReview.attributes(access, namespace: namespace, name: name)],
@@ -465,20 +465,20 @@ enum KubeWrites {
         return KubeWriteRequest(method: .POST, path: KubeAccessReview.path, body: encode(review), contentType: "application/json")
     }
 
-    static func path(_ ref: KubeObjectRef) -> String { ref.kind.path(namespace: ref.namespace, name: ref.name) }
+    package static func path(_ ref: KubeObjectRef) -> String { ref.kind.path(namespace: ref.namespace, name: ref.name) }
 
-    static func managed(_ path: String) -> String { KubePath.query(path, [("fieldManager", fieldManager)]) }
+    package static func managed(_ path: String) -> String { KubePath.query(path, [("fieldManager", fieldManager)]) }
 
     /// RFC 3339, as kubectl writes `restartedAt`.
-    static func stamp(_ date: Date) -> String { date.formatted(.iso8601) }
+    package static func stamp(_ date: Date) -> String { date.formatted(.iso8601) }
 
-    static func encode(_ object: Any) -> Data { (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data() }
+    package static func encode(_ object: Any) -> Data { (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data() }
 
     /// The kubectl command a write equals, for the confirmation (rule 3):
     /// `--context` and `-n` always, quoted for zsh. Nil for an eviction —
     /// no kubectl command evicts one pod (drain evicts this way).
     /// `job`: a trigger's Job name.
-    static func kubectl(
+    package static func kubectl(
         _ verb: KubeWriteVerb, _ ref: KubeObjectRef, replicas: Int? = nil, job: String? = nil, resize: [KubeResize.Change] = [], discovery: KubeDiscovery? = nil
     ) -> String? {
         let resource = KubectlLine.quoted(KubectlLine.resource(ref.kind, in: discovery))
@@ -521,12 +521,12 @@ enum KubeWrites {
 /// context's socket — a read-only one's refuses every POST, and takes no
 /// write anyway. Authoritative per verb; `SelfSubjectRulesReview` would
 /// only be a hint. Pure.
-enum KubeAccessReview {
-    static let path = "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
+package enum KubeAccessReview {
+    package static let path = "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
 
     /// `KubeAccess`'s resource, as kubectl names it (`deployments.apps/scale`),
     /// taken apart: resource, group, subresource.
-    static func attributes(_ access: KubeAccess, namespace: String?, name: String? = nil) -> [String: String] {
+    package static func attributes(_ access: KubeAccess, namespace: String?, name: String? = nil) -> [String: String] {
         let parts = access.resource.split(separator: "/", maxSplits: 1).map(String.init)
         let full = parts.first ?? access.resource
         var attributes = ["verb": access.verb]
@@ -544,7 +544,7 @@ enum KubeAccessReview {
     }
 
     /// The review's answer: allowed, or not with the authorizer's reason.
-    static func parse(_ data: Data) -> KubeCanIAnswer {
+    package static func parse(_ data: Data) -> KubeCanIAnswer {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let status = object["status"] as? [String: Any] else {
             return .failed("The access review's answer couldn't be read.")
         }
@@ -560,23 +560,23 @@ enum KubeAccessReview {
 /// its controller, whether it is being deleted.
 /// An object's JSON as `KubeClient.specRead` hands it over: made by the
 /// read and then only read, so it may cross to the caller's actor.
-struct KubeSpecRead: @unchecked Sendable {
-    let object: [String: Any]
+package struct KubeSpecRead: @unchecked Sendable {
+    package let object: [String: Any]
 }
 
-struct KubeObjectMeta: Equatable, Sendable {
-    var finalizers: [String] = []
+package struct KubeObjectMeta: Equatable, Sendable {
+    package var finalizers: [String] = []
     /// The owner with `controller: true`: `ReplicaSet web-7d9f`.
-    var controller: String?
-    var deleting = false
+    package var controller: String?
+    package var deleting = false
 
-    init(finalizers: [String] = [], controller: String? = nil, deleting: Bool = false) {
+    package init(finalizers: [String] = [], controller: String? = nil, deleting: Bool = false) {
         self.finalizers = finalizers
         self.controller = controller
         self.deleting = deleting
     }
 
-    init(_ object: [String: Any]) {
+    package init(_ object: [String: Any]) {
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         finalizers = metadata["finalizers"] as? [String] ?? []
         deleting = metadata["deletionTimestamp"] != nil
@@ -592,45 +592,45 @@ struct KubeObjectMeta: Equatable, Sendable {
 /// 403 apart from any other failure. Only the kinds in `wanted`: said as
 /// a lower bound, since custom resources, roles, policies… go with it
 /// too. Pure.
-struct KubeNamespaceContents: Equatable, Sendable {
-    struct Count: Equatable, Sendable {
-        var kind: KubeResourceKind
-        var count: Int
+package struct KubeNamespaceContents: Equatable, Sendable {
+    package struct Count: Equatable, Sendable {
+        package var kind: KubeResourceKind
+        package var count: Int
         /// A further page without the server's count of it: "500+".
-        var atLeast = false
+        package var atLeast = false
 
-        var said: String {
+        package var said: String {
             "\(count)\(atLeast ? "+" : "") " + (count == 1 && !atLeast ? (kind.singular.isEmpty ? kind.resource : kind.singular) : kind.resource)
         }
     }
 
-    var counts: [Count] = []
+    package var counts: [Count] = []
     /// Kinds the server wouldn't list here (a 403): not said as none.
-    var forbidden: [String] = []
+    package var forbidden: [String] = []
     /// Kinds whose list failed some other way (a timeout, a 5xx, the
     /// proxy gone): not said as none, nor as refused.
-    var uncounted: [String] = []
+    package var uncounted: [String] = []
 
     /// The kinds counted, in this order, as far as the server serves them.
-    static let wanted = [
+    package static let wanted = [
         "pods", "deployments.apps", "statefulsets.apps", "daemonsets.apps", "jobs.batch", "cronjobs.batch", "services", "ingresses.networking.k8s.io",
         "persistentvolumeclaims", "configmaps", "secrets", "serviceaccounts",
     ]
 
     /// The kinds to count; nil while what the server serves isn't known.
-    static func kinds(in discovery: KubeDiscovery?) -> [KubeResourceKind]? {
+    package static func kinds(in discovery: KubeDiscovery?) -> [KubeResourceKind]? {
         guard let discovery else { return nil }
         return wanted.compactMap { name in discovery.kinds.first { $0.fullName == name && $0.namespaced && $0.canList } }
     }
 
     /// A kind's list failed: refused (a 403), or not answered.
-    mutating func failed(_ kind: KubeResourceKind, _ error: Error) {
+    package mutating func failed(_ kind: KubeResourceKind, _ error: Error) {
         if (error as? KubeAPIError)?.isForbidden == true { forbidden.append(kind.resource) } else { uncounted.append(kind.resource) }
     }
 
     /// `Among the kinds Overterm counts, it holds 3 pods, 1 deployment and
     /// 2 secrets.` — and what it may hold besides.
-    var said: String {
+    package var said: String {
         var text: String
         if counts.isEmpty {
             text = forbidden.isEmpty && uncounted.isEmpty ? "It holds none of the kinds Overterm counts." : "Overterm counted none of what it holds."
@@ -645,14 +645,14 @@ struct KubeNamespaceContents: Equatable, Sendable {
 }
 
 extension KubeClient {
-    static let metadataAccept = "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1"
+    package static let metadataAccept = "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1"
 
     /// One write, refused here unless the connection's context is
     /// writable. Never retried: a 429 from an eviction is a
     /// PodDisruptionBudget saying no. The answer's body isn't kept — a
     /// deleted Secret's would carry its values.
     @discardableResult
-    func write(_ request: KubeWriteRequest) async throws -> Int {
+    package func write(_ request: KubeWriteRequest) async throws -> Int {
         guard connection.writable else { throw KubeWriteRefused(reason: "This context is read-only: Overterm changes nothing here.") }
         let response: HTTPResponse
         do {
@@ -673,7 +673,7 @@ extension KubeClient {
 
     /// Whether this user may do `access` in `namespace`: a
     /// SelfSubjectAccessReview through the (writable) context's socket.
-    func review(_ access: KubeAccess, namespace: String?, name: String? = nil) async -> KubeCanIAnswer {
+    package func review(_ access: KubeAccess, namespace: String?, name: String? = nil) async -> KubeCanIAnswer {
         let request = KubeWrites.review(access, namespace: namespace, name: name)
         guard connection.writable else { return .failed("The context is read-only: its socket takes no access review.") }
         do {
@@ -696,14 +696,14 @@ extension KubeClient {
 
     /// An object's metadata alone — its finalizers, its owner — never its
     /// data: a Secret's values stay unread.
-    func metadata(_ ref: KubeObjectRef) async throws -> KubeObjectMeta {
+    package func metadata(_ ref: KubeObjectRef) async throws -> KubeObjectMeta {
         let response = try await get(KubeWrites.path(ref), accept: Self.metadataAccept)
         return KubeObjectMeta((try? JSONSerialization.jsonObject(with: response.body) as? [String: Any]) ?? [:])
     }
 
     /// An object whole, as JSON — only for the kinds whose writes need
     /// their spec (a Deployment, a CronJob, a node), never a Secret.
-    func spec(_ ref: KubeObjectRef) async throws -> [String: Any] {
+    package func spec(_ ref: KubeObjectRef) async throws -> [String: Any] {
         guard !(ref.kind.group.isEmpty && ref.kind.resource == "secrets") else { throw KubeWriteRefused(reason: "A Secret is never read for a write.") }
         let object = try await object(ref.kind, namespace: ref.namespace, name: ref.name)
         return (try? JSONSerialization.jsonObject(with: object.data) as? [String: Any]) ?? [:]
@@ -711,14 +711,14 @@ extension KubeClient {
 
     /// `spec`, read for the main actor: the JSON handed over whole, never
     /// shared with the read that made it.
-    func specRead(_ ref: KubeObjectRef) async throws -> KubeSpecRead {
+    package func specRead(_ ref: KubeObjectRef) async throws -> KubeSpecRead {
         KubeSpecRead(object: try await spec(ref))
     }
 
     /// How many objects of `kind` a namespace holds: one Table page of
     /// rows alone (`includeObject=None`, so not a Secret's metadata
     /// either), and the server's count of the rest (`remainingItemCount`).
-    func count(_ kind: KubeResourceKind, in namespace: String, limit: Int = 500) async throws -> KubeNamespaceContents.Count {
+    package func count(_ kind: KubeResourceKind, in namespace: String, limit: Int = 500) async throws -> KubeNamespaceContents.Count {
         let path = KubePath.query(kind.path(namespace: namespace), [("limit", String(limit)), ("includeObject", "None")])
         let page = try KubeTableReader.read(try await get(path, accept: Self.tableAccept).body, namespace: namespace, kind: kind)
         let more = page.continueToken != nil
@@ -729,7 +729,7 @@ extension KubeClient {
     /// it; nil while the context's discovery isn't known. A row each, with
     /// the server's count of the rest; a page of 500 only where the
     /// server gives no count.
-    func contents(of namespace: String, discovery: KubeDiscovery?) async -> KubeNamespaceContents? {
+    package func contents(of namespace: String, discovery: KubeDiscovery?) async -> KubeNamespaceContents? {
         guard let kinds = KubeNamespaceContents.kinds(in: discovery) else { return nil }
         var contents = KubeNamespaceContents()
         for kind in kinds {
@@ -745,7 +745,7 @@ extension KubeClient {
     }
 
     /// What the `scale` subresource says the replicas are.
-    func replicas(_ ref: KubeObjectRef) async throws -> Int {
+    package func replicas(_ ref: KubeObjectRef) async throws -> Int {
         let response = try await get(KubeWrites.path(ref) + "/scale")
         let object = (try? JSONSerialization.jsonObject(with: response.body) as? [String: Any]) ?? [:]
         return ((object["spec"] as? [String: Any])?["replicas"] as? NSNumber)?.intValue ?? 0
@@ -754,14 +754,14 @@ extension KubeClient {
 
 /// A write's error said plainly — the API's 403, 404, 409, 422, an
 /// eviction's 429 — or what it did. Pure.
-enum KubeWriteOutcome {
+package enum KubeWriteOutcome {
     /// `pod shop/web-7d9`, `deployment shop/web`, `node fake-node-1`.
-    static func spoken(_ ref: KubeObjectRef) -> String {
+    package static func spoken(_ ref: KubeObjectRef) -> String {
         let kind = ref.kind.kind.isEmpty ? ref.kind.singular : ref.kind.kind.lowercased()
         return "\(kind) \(ref.namespace.map { "\($0)/" } ?? "")\(ref.name)"
     }
 
-    static func done(_ verb: KubeWriteVerb, _ ref: KubeObjectRef, from: Int? = nil, replicas: Int? = nil, job: String? = nil) -> String {
+    package static func done(_ verb: KubeWriteVerb, _ ref: KubeObjectRef, from: Int? = nil, replicas: Int? = nil, job: String? = nil) -> String {
         let object = spoken(ref)
         switch verb {
         case .pause: return "Paused \(object)'s rollout in \(ref.context)."
@@ -789,7 +789,7 @@ enum KubeWriteOutcome {
         }
     }
 
-    static func failed(_ verb: KubeWriteVerb, _ ref: KubeObjectRef, _ error: Error) -> String {
+    package static func failed(_ verb: KubeWriteVerb, _ ref: KubeObjectRef, _ error: Error) -> String {
         let object = spoken(ref)
         if let refused = error as? KubeWriteRefused { return refused.reason }
         if let problem = error as? KubeProxyProblem { return "\(object): \(problem.reason)" }
@@ -812,46 +812,46 @@ enum KubeWriteOutcome {
 /// What a write's confirmation answered, once its button was pressed: the
 /// name typed ("" when none was asked), and the image field's text where
 /// it had one. A string literal is a typed name alone.
-struct KubeWriteAnswer: Equatable, Sendable, ExpressibleByStringLiteral {
-    var typed: String
-    var image: String?
+package struct KubeWriteAnswer: Equatable, Sendable, ExpressibleByStringLiteral {
+    package var typed: String
+    package var image: String?
 
-    init(typed: String, image: String? = nil) {
+    package init(typed: String, image: String? = nil) {
         self.typed = typed
         self.image = image
     }
 
-    init(stringLiteral value: String) { self.init(typed: value) }
+    package init(stringLiteral value: String) { self.init(typed: value) }
 }
 
 /// What the confirmation says (rule 3): the context and namespace —
 /// production in capitals —, the object, what will happen, the kubectl
 /// command it equals, what it warns of, and the name to type where rule 4
 /// says. Its answer is checked here, not in the window. Pure.
-struct KubeWriteConfirmation: Equatable, Sendable {
+package struct KubeWriteConfirmation: Equatable, Sendable {
     /// The request's verb; nil for a write that runs as kubectl in a tab (`KubeTabWrite`).
-    var verb: KubeWriteVerb?
-    var title: String
+    package var verb: KubeWriteVerb?
+    package var title: String
     /// The context and namespace, drawn on their own line — in production's
     /// red on production (`WriteConfirmation`).
-    var scope: String
-    var detail: String
-    var button: String
+    package var scope: String
+    package var detail: String
+    package var button: String
     /// The name to type before the button counts; nil when none is asked.
-    var typedName: String?
-    var production: Bool
-    var kubectl: String?
+    package var typedName: String?
+    package var production: Bool
+    package var kubectl: String?
     /// The image a debug container or a node shell runs, prefilled in a
     /// field of its own — the settings' — and editable; nil, no field.
     /// What comes back is checked as an image reference before anything
     /// runs (`KubeTabWrite.image(from:)`).
-    var image: String? = nil
+    package var image: String? = nil
 
     /// How a production scope begins, wherever one is asked.
-    static let productionMark = "PRODUCTION · "
+    package static let productionMark = "PRODUCTION · "
 
     /// Whether what was typed confirms it.
-    func accepts(_ typed: String) -> Bool {
+    package func accepts(_ typed: String) -> Bool {
         guard let typedName else { return true }
         return typed.trimmingCharacters(in: .whitespacesAndNewlines) == typedName
     }
@@ -859,7 +859,7 @@ struct KubeWriteConfirmation: Equatable, Sendable {
     /// `from`/`to`: a scale's replicas; `meta`: what the pre-read found;
     /// `note`: a warning said beside the rule's — never one that guards
     /// (an Argo CD app's object opened from its detail: Argo CD may undo it).
-    static func make(
+    package static func make(
         _ verb: KubeWriteVerb, _ ref: KubeObjectRef, context: KubeContext, rule: KubeWriteRule, from: Int? = nil, to: Int? = nil,
         meta: KubeObjectMeta? = nil, job: String? = nil, contents: KubeNamespaceContents? = nil, resize: [KubeResize.Change] = [],
         discovery: KubeDiscovery? = nil, note: String? = nil
@@ -987,27 +987,27 @@ struct KubeWriteConfirmation: Equatable, Sendable {
 }
 
 /// How the last write stands, as the page says it.
-enum KubeWriteStatus: Equatable {
+package enum KubeWriteStatus: Equatable {
     case working(String)
     case done(String)
     case failed(String)
 
-    var text: String {
+    package var text: String {
         switch self {
         case .working(let text), .done(let text), .failed(let text): text
         }
     }
 
-    var isFailure: Bool { if case .failed = self { true } else { false } }
-    var isWorking: Bool { if case .working = self { true } else { false } }
+    package var isFailure: Bool { if case .failed = self { true } else { false } }
+    package var isWorking: Bool { if case .working = self { true } else { false } }
 }
 
 /// A new namespace's name, checked as the API server checks it: an RFC
 /// 1123 DNS label — lowercase letters, digits and `-`, starting and ending
 /// with a letter or digit, at most 63 characters. Pure.
-enum KubeNamespaceName {
+package enum KubeNamespaceName {
     /// Why `name` won't do; nil when it will.
-    static func problem(_ name: String) -> String? {
+    package static func problem(_ name: String) -> String? {
         if name.isEmpty { return "A name, please." }
         if name.count > 63 { return "At most 63 characters (this is \(name.count))." }
         let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-")
@@ -1021,10 +1021,10 @@ enum KubeNamespaceName {
 }
 
 /// `N`: a new namespace's name, before the write is asked for.
-struct KubeNamespaceDraft: Equatable {
+package struct KubeNamespaceDraft: Equatable {
     /// The context it is made in: the one shown as the sheet opened.
-    var context: String
-    var name = ""
+    package var context: String
+    package var name = ""
     /// Why what is typed won't do.
-    var problem: String?
+    package var problem: String?
 }

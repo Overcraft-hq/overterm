@@ -1,13 +1,13 @@
 import SwiftUI
 
 /// Add or edit a snippet.
-struct SnippetEditorView: View {
-    @State var snippet: Snippet
-    let isNew: Bool
-    let onSave: (Snippet) -> Void
-    let onCancel: () -> Void
+package struct SnippetEditorView: View {
+    @State package var snippet: Snippet
+    package let isNew: Bool
+    package let onSave: (Snippet) -> Void
+    package let onCancel: () -> Void
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(isNew ? "New Snippet" : "Edit Snippet").font(.headline)
             Form {
@@ -36,16 +36,16 @@ struct SnippetEditorView: View {
 }
 
 /// Asks for a snippet's placeholder values, then runs or inserts it.
-struct SnippetFillView: View {
-    let snippet: Snippet
+package struct SnippetFillView: View {
+    package let snippet: Snippet
     /// (filled command, run?)
-    let onUse: (String, Bool) -> Void
-    let onCancel: () -> Void
+    package let onUse: (String, Bool) -> Void
+    package let onCancel: () -> Void
     @State private var values: [String: String] = [:]
 
     private var filled: String { snippet.filled(with: values) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(snippet.name).font(.headline)
             Form {

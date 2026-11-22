@@ -3,24 +3,24 @@ import SwiftUI
 
 /// Under a `.sql` file in the editor: the connection and schema it runs on,
 /// Run (⌘↩), and what came back — a tab a statement, a grid or a message.
-struct SQLConsoleView: View {
-    @ObservedObject var console: SQLConsole
-    @ObservedObject var store: DatabaseStore
-    @ObservedObject var theme: ChromeTheme
-    let runStatement: () -> Void
-    let runAll: () -> Void
-    let newConnection: () -> Void
+package struct SQLConsoleView: View {
+    @ObservedObject package var console: SQLConsole
+    @ObservedObject package var store: DatabaseStore
+    @ObservedObject package var theme: ChromeTheme
+    package let runStatement: () -> Void
+    package let runAll: () -> Void
+    package let newConnection: () -> Void
     /// A query from the history, written into the console.
-    var insert: (String) -> Void = { _ in }
+    package var insert: (String) -> Void = { _ in }
     /// A trace's id, from a log line — to a Tempo connection's console.
-    var openTrace: (String) -> Void = { _ in }
+    package var openTrace: (String) -> Void = { _ in }
     /// The statement at the caret, or the selection — what Save keeps.
-    var statement: () -> String? = { nil }
+    package var statement: () -> String? = { nil }
     @State private var saving = false
     @State private var savedName = ""
-    @ObservedObject var model = DatabaseModel.shared
+    @ObservedObject package var model = DatabaseModel.shared
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             Rectangle().fill(theme.border).frame(height: 1)
             toolbar
@@ -193,7 +193,7 @@ struct SQLConsoleView: View {
     }
 
     /// A tab's name: the statement's verb and its first table, else its start.
-    static func title(_ run: SQLConsole.Run, index: Int, kind: DatabaseKind = .postgres) -> String {
+    package static func title(_ run: SQLConsole.Run, index: Int, kind: DatabaseKind = .postgres) -> String {
         if kind.isObservability { return kind.subject(of: run.sql) ?? "Query \(index + 1)" }
         // `GET orders/_search`, as it was written.
         if kind.isSearch { return (try? SearchRequest.parse(run.sql)).map { "\($0.method) \($0.route.dropFirst().prefix(40))" } ?? "Request \(index + 1)" }
@@ -242,7 +242,7 @@ struct SQLConsoleView: View {
         }
     }
 
-    static func summary(_ result: QueryResult) -> String {
+    package static func summary(_ result: QueryResult) -> String {
         var parts: [String] = []
         if result.hasRows {
             parts.append(result.truncated ? "first \(result.rows.count) rows" : "\(result.rows.count) row\(result.rows.count == 1 ? "" : "s")")
@@ -256,7 +256,7 @@ struct SQLConsoleView: View {
         return parts.joined(separator: " · ")
     }
 
-    static func duration(_ seconds: TimeInterval) -> String {
+    package static func duration(_ seconds: TimeInterval) -> String {
         seconds < 1 ? "\(Int(seconds * 1000)) ms" : String(format: "%.2f s", seconds)
     }
 
@@ -330,13 +330,13 @@ private struct EditableGrid: View {
 
 /// Beside a result's summary: whether its rows can be edited (and why not),
 /// then — with changes pending — how many, their statements, Discard, Save.
-struct EditBar: View {
-    @ObservedObject var editor: ResultEditor
-    @ObservedObject var theme: ChromeTheme
+package struct EditBar: View {
+    @ObservedObject package var editor: ResultEditor
+    @ObservedObject package var theme: ChromeTheme
     @State private var previewing = false
     @State private var preview = ""
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 6) {
             switch editor.state {
             case .checking:

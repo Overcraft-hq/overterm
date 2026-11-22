@@ -4,15 +4,15 @@ import SwiftUI
 /// revisions (images, the template, restarts, rollbacks), its Helm
 /// release's revisions, scaling and warnings — each with Diff, which opens
 /// it in the changes pane; and two revisions picked to compare.
-struct KubeTimelineView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var timeline: KubeTimelineSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeTimelineView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var timeline: KubeTimelineSession
+    @ObservedObject package var theme: ChromeTheme
     @State private var compareFrom: Int?
     @State private var compareTo: Int?
     @State private var comparesHelm = false
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
@@ -170,16 +170,16 @@ struct KubeTimelineView: View {
 
 /// The changes pane's diff of one change of a workload's timeline: what is
 /// compared, each part's diff — masked.
-struct KubeChangeDiffContent: View {
-    @ObservedObject var pane: KubeManifestPane
-    let change: KubeChangeDiff
-    @ObservedObject var theme: ChromeTheme
-    let onClose: () -> Void
+package struct KubeChangeDiffContent: View {
+    @ObservedObject package var pane: KubeManifestPane
+    package let change: KubeChangeDiff
+    @ObservedObject package var theme: ChromeTheme
+    package let onClose: () -> Void
     @State private var folded: Set<String> = []
 
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text(verbatim: "⎈").foregroundStyle(theme.dimText)

@@ -1,37 +1,37 @@
 import Foundation
 
-struct StorageBucket: Hashable, Sendable {
-    var name: String
-    var created: Date?
+package struct StorageBucket: Hashable, Sendable {
+    package var name: String
+    package var created: Date?
 }
 
-struct StorageObject: Hashable, Sendable {
-    var key: String
-    var size: Int64
-    var modified: Date?
-    var etag: String?
+package struct StorageObject: Hashable, Sendable {
+    package var key: String
+    package var size: Int64
+    package var modified: Date?
+    package var etag: String?
 
     /// The last part of its key: what the tree shows.
-    var name: String { key.split(separator: "/").last.map(String.init) ?? key }
+    package var name: String { key.split(separator: "/").last.map(String.init) ?? key }
 }
 
 /// A folder's contents: its folders (prefixes, `/` at the end) and files,
 /// and where the next page starts when there are more.
-struct StorageListing: Equatable, Sendable {
-    var folders: [String] = []
-    var objects: [StorageObject] = []
-    var next: String?
+package struct StorageListing: Equatable, Sendable {
+    package var folders: [String] = []
+    package var objects: [StorageObject] = []
+    package var next: String?
 }
 
-struct StorageMetadata: Equatable, Sendable {
-    var size: Int64
-    var contentType: String?
-    var modified: Date?
-    var etag: String?
+package struct StorageMetadata: Equatable, Sendable {
+    package var size: Int64
+    package var contentType: String?
+    package var modified: Date?
+    package var etag: String?
 }
 
 /// One bucket store: S3 and its kin (`S3Client`) or GCS's own (`GCSClient`).
-protocol StorageClient: Actor {
+package protocol StorageClient: Actor {
     func connect() async throws
     func buckets() async throws -> [StorageBucket]
     func createBucket(_ name: String) async throws
@@ -52,8 +52,8 @@ protocol StorageClient: Actor {
     nonisolated func path(bucket: String, key: String) -> String
 }
 
-enum StorageClients {
-    static func make(_ connection: DatabaseConnection, secret: String?, serviceAccount: String?) -> any StorageClient {
+package enum StorageClients {
+    package static func make(_ connection: DatabaseConnection, secret: String?, serviceAccount: String?) -> any StorageClient {
         switch connection.kind {
         case .gcs: GCSClient(connection, serviceAccount: serviceAccount)
         default: S3Client(connection, secret: secret)
@@ -62,21 +62,21 @@ enum StorageClients {
 }
 
 /// An S3 answer in XML, as a tree: enough for listings and errors.
-final class XMLTree: NSObject, XMLParserDelegate {
-    final class Node {
-        let name: String
-        var text = ""
-        var children: [Node] = []
-        init(_ name: String) { self.name = name }
+package final class XMLTree: NSObject, XMLParserDelegate {
+    package final class Node {
+        package let name: String
+        package var text = ""
+        package var children: [Node] = []
+        package init(_ name: String) { self.name = name }
 
-        func child(_ name: String) -> Node? { children.first { $0.name == name } }
-        func all(_ name: String) -> [Node] { children.filter { $0.name == name } }
-        func value(_ name: String) -> String? { child(name)?.text }
+        package func child(_ name: String) -> Node? { children.first { $0.name == name } }
+        package func all(_ name: String) -> [Node] { children.filter { $0.name == name } }
+        package func value(_ name: String) -> String? { child(name)?.text }
     }
 
     private var stack: [Node] = [Node("#document")]
 
-    static func parse(_ data: Data) -> Node? {
+    package static func parse(_ data: Data) -> Node? {
         let tree = XMLTree()
         let parser = XMLParser(data: data)
         parser.delegate = tree
@@ -84,29 +84,29 @@ final class XMLTree: NSObject, XMLParserDelegate {
         return tree.stack.first?.children.first
     }
 
-    func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
+    package func parser(_ parser: XMLParser, didStartElement name: String, namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
         let node = Node(name)
         stack.last?.children.append(node)
         stack.append(node)
     }
 
-    func parser(_ parser: XMLParser, foundCharacters string: String) { stack.last?.text += string }
+    package func parser(_ parser: XMLParser, foundCharacters string: String) { stack.last?.text += string }
 
-    func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
+    package func parser(_ parser: XMLParser, didEndElement name: String, namespaceURI: String?, qualifiedName: String?) {
         if stack.count > 1 { stack.removeLast() }
     }
 }
 
 /// ~/.aws/credentials and ~/.aws/config, as the AWS CLI reads them.
-enum AWSProfile {
-    struct Credentials: Equatable {
-        var accessKey: String
-        var secretKey: String
-        var sessionToken: String?
-        var region: String?
+package enum AWSProfile {
+    package struct Credentials: Equatable {
+        package var accessKey: String
+        package var secretKey: String
+        package var sessionToken: String?
+        package var region: String?
     }
 
-    static func load(_ name: String, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Credentials? {
+    package static func load(_ name: String, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Credentials? {
         let profile = name.isEmpty ? "default" : name
         let credentials = ini((try? String(contentsOf: home.appendingPathComponent(".aws/credentials"), encoding: .utf8)) ?? "")
         let config = ini((try? String(contentsOf: home.appendingPathComponent(".aws/config"), encoding: .utf8)) ?? "")
@@ -117,11 +117,11 @@ enum AWSProfile {
     }
 
     /// The profiles ~/.aws/credentials has.
-    static func names(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [String] {
+    package static func names(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [String] {
         ini((try? String(contentsOf: home.appendingPathComponent(".aws/credentials"), encoding: .utf8)) ?? "").keys.sorted()
     }
 
-    static func ini(_ text: String) -> [String: [String: String]] {
+    package static func ini(_ text: String) -> [String: [String: String]] {
         var sections: [String: [String: String]] = [:]
         var current: String?
         for raw in text.components(separatedBy: .newlines) {

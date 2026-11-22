@@ -10,12 +10,12 @@ import SwiftUI
 /// here — its every publish (a list's batch, the selection, usage) would
 /// draw every row again. Read once, when the Overview shows; Refresh reads
 /// again.
-struct KubeTreeView: View {
-    let page: KubernetesPageModel
-    @ObservedObject var tree: KubeTreeSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeTreeView: View {
+    package let page: KubernetesPageModel
+    @ObservedObject package var tree: KubeTreeSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text(verbatim: title).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)

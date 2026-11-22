@@ -5,13 +5,13 @@ import SwiftUI
 /// followed and the cap said above it, include and exclude expressions in
 /// a popover, how far back; then the shared log pane, one stream picked
 /// or all, its options kept for the window, Save As, ⌘L.
-struct KubeMergedLogsView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var logs: KubeMergedLogSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeMergedLogsView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var logs: KubeMergedLogSession
+    @ObservedObject package var theme: ChromeTheme
     @State private var editing = false
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             controls
             Rectangle().fill(theme.border).frame(height: 1)

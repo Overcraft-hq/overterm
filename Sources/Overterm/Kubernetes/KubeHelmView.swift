@@ -9,12 +9,12 @@ import SwiftUI
 /// Secret's data masked, and its writes — Roll Back, Uninstall, helm in a
 /// tab (`KubeHelmWrite`) — greyed with why where they can't be done.
 /// Where Secrets can't be listed it says so, with helm in a terminal offered.
-struct KubeHelmSection: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var helm: KubeHelmSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeHelmSection: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var helm: KubeHelmSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         GeometryReader { geometry in
             HStack(spacing: 0) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -181,9 +181,9 @@ struct KubeHelmSection: View {
         .accessibilityIdentifier("kubernetes.helm.release.\(release.namespace).\(release.name)")
     }
 
-    func statusColor(_ status: String) -> Color { Self.color(status, theme: theme) }
+    package func statusColor(_ status: String) -> Color { Self.color(status, theme: theme) }
 
-    static func color(_ status: String, theme: ChromeTheme) -> Color {
+    package static func color(_ status: String, theme: ChromeTheme) -> Color {
         switch status {
         case "deployed": TabStatusStyle.done
         case "failed": TabStatusStyle.failed
@@ -194,13 +194,13 @@ struct KubeHelmSection: View {
 }
 
 /// One release opened: the revision's record decoded and masked.
-struct KubeHelmDetailView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var helm: KubeHelmSession
-    let opened: KubeHelmSession.Opened
-    @ObservedObject var theme: ChromeTheme
+package struct KubeHelmDetailView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var helm: KubeHelmSession
+    package let opened: KubeHelmSession.Opened
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             tabs
@@ -478,11 +478,11 @@ struct KubeHelmDetailView: View {
 }
 
 /// How many releases the Helm section lists, beside its name.
-struct KubeHelmCount: View {
-    @ObservedObject var helm: KubeHelmSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeHelmCount: View {
+    @ObservedObject package var helm: KubeHelmSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if helm.listState == .live, !helm.releases.isEmpty {
             Text(verbatim: "\(helm.releases.count)").foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
         }

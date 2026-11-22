@@ -10,49 +10,49 @@ import Foundation
 /// records read then (reading a release is reading a Secret: the page asks
 /// first on production). What it holds goes with the detail. GETs only.
 @MainActor
-final class KubeTimelineSession: ObservableObject {
-    enum State: Equatable {
+package final class KubeTimelineSession: ObservableObject {
+    package enum State: Equatable {
         case idle
         case loading
         case loaded
         case failed(String)
     }
 
-    let ref: KubeObjectRef
-    let source: KubeTimeline.Source
-    @Published private(set) var state: State = .idle
-    @Published private(set) var entries: [KubeTimelineEntry] = []
+    package let ref: KubeObjectRef
+    package let source: KubeTimeline.Source
+    @Published package private(set) var state: State = .idle
+    @Published package private(set) var entries: [KubeTimelineEntry] = []
     /// What couldn't be read, or was left out — said over the list.
-    @Published private(set) var notes: [String] = []
+    @Published package private(set) var notes: [String] = []
     /// The template revisions read, oldest first — held for the diffs.
-    @Published private(set) var templates: [KubeTemplateRevision] = []
+    @Published package private(set) var templates: [KubeTemplateRevision] = []
     /// The Helm release the workload says it is part of, and its records.
-    @Published private(set) var release: String?
-    @Published private(set) var helmRecords: [KubeHelmRecord] = []
+    @Published package private(set) var release: String?
+    @Published package private(set) var helmRecords: [KubeHelmRecord] = []
     /// The change whose diff is being made.
-    @Published private(set) var diffing: KubeTimelineChange?
+    @Published package private(set) var diffing: KubeTimelineChange?
     /// Why the last diff couldn't be made.
-    @Published var diffProblem: String?
+    @Published package var diffProblem: String?
 
     private let client: KubeClient?
     private var kind = ""
     private var tasks: [Task<Void, Never>] = []
 
-    init(ref: KubeObjectRef, source: KubeTimeline.Source, client: KubeClient?) {
+    package init(ref: KubeObjectRef, source: KubeTimeline.Source, client: KubeClient?) {
         self.ref = ref
         self.source = source
         self.client = client
     }
 
     /// The object couldn't be read: neither can its history.
-    func fail(_ reason: String) {
+    package func fail(_ reason: String) {
         guard state != .loaded else { return }
         state = .failed(reason)
     }
 
     /// Read once (`again`: Refresh), off the workload's object: its uid,
     /// its selector, its Helm annotations.
-    func load(_ object: [String: Any], again: Bool = false) {
+    package func load(_ object: [String: Any], again: Bool = false) {
         guard state != .loading, again || state == .idle else { return }
         guard let client, let namespace = ref.namespace else { return state = .failed("Kubernetes is off, or the context is gone.") }
         state = .loading
@@ -137,13 +137,13 @@ final class KubeTimelineSession: ObservableObject {
     }
 
     /// The revisions two pickers can compare: the templates', the release's.
-    var templateRevisions: [Int] { templates.map(\.revision) }
-    var helmRevisions: [Int] { helmRecords.map(\.revision) }
+    package var templateRevisions: [Int] { templates.map(\.revision) }
+    package var helmRevisions: [Int] { helmRecords.map(\.revision) }
 
     /// A change's diff made, then handed to `show` — unless the detail
     /// went meanwhile: the task is the session's, so `cancel` ends it,
     /// and with it whatever it was reading.
-    func startDiff(_ change: KubeTimelineChange, production: Bool, show: @escaping @MainActor (KubeChangeDiff) -> Void) {
+    package func startDiff(_ change: KubeTimelineChange, production: Bool, show: @escaping @MainActor (KubeChangeDiff) -> Void) {
         tasks.append(
             Task { [weak self] in
                 guard let diff = await self?.diff(change, production: production), !Task.isCancelled else { return }
@@ -152,7 +152,7 @@ final class KubeTimelineSession: ObservableObject {
     }
 
     /// A change's diff, masked; nil, with why, when it can't be made.
-    func diff(_ change: KubeTimelineChange, production: Bool) async -> KubeChangeDiff? {
+    package func diff(_ change: KubeTimelineChange, production: Bool) async -> KubeChangeDiff? {
         diffProblem = nil
         diffing = change
         defer { diffing = nil }
@@ -221,7 +221,7 @@ final class KubeTimelineSession: ObservableObject {
     }
 
     /// Navigated away: whatever is being read is dropped, and what was read with it.
-    func cancel() {
+    package func cancel() {
         for task in tasks { task.cancel() }
         tasks = []
         templates = []

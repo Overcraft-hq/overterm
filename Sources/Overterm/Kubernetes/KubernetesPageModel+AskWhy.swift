@@ -6,7 +6,7 @@ extension KubernetesPageModel {
     /// Whether a ref is something Ask Why asks about: a pod, a Deployment,
     /// an Argo CD Application or ApplicationSet, a Flux Kustomization or
     /// HelmRelease (gitops.md 6.2).
-    static func asksWhy(_ ref: KubeObjectRef) -> Bool {
+    package static func asksWhy(_ ref: KubeObjectRef) -> Bool {
         ref.isPod || (ref.kind.group == "apps" && ref.kind.kind == "Deployment" && ref.namespace != nil)
             || (KubeGitOpsDetail.isGitOps(ref.kind) && ref.namespace != nil)
     }
@@ -14,7 +14,7 @@ extension KubernetesPageModel {
     /// What `a` and ⌘L act on: the detail's object while it shows one Ask
     /// Why asks about, else the GitOps section's one row picked, else the
     /// list's one selected row of them.
-    var askWhyRef: KubeObjectRef? {
+    package var askWhyRef: KubeObjectRef? {
         if let detail { return Self.asksWhy(detail.ref) ? detail.ref : nil }
         if section == .gitops { return gitOpsSelectedRef.flatMap { Self.asksWhy($0) ? $0 : nil } }
         guard selection.count == 1, let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id), Self.asksWhy(ref) else {
@@ -26,7 +26,7 @@ extension KubernetesPageModel {
     /// Why Ask Why can't be asked about `ref` now; nil when it can. The
     /// detail's object, once read, says it exactly (`KubeTrouble.of`);
     /// else its row — a pod's Status, a Deployment's state off its cells.
-    func askWhyUnavailable(_ ref: KubeObjectRef) -> String? {
+    package func askWhyUnavailable(_ ref: KubeObjectRef) -> String? {
         if askingWhy == ref { return "Reading what to tell the agent…" }
         if KubeGitOpsDetail.isGitOps(ref.kind) { return gitOpsAskWhyUnavailable(ref) }
         if let detail, detail.ref == ref, let json = detail.object?.json { return KubeTrouble.notFailing(object: json) }
@@ -59,7 +59,7 @@ extension KubernetesPageModel {
 
     /// Ask an Agent Why… — the detail's button and the menu's item, greyed
     /// with why while the object isn't failing — as Docker's is.
-    func askWhyVerb(for ref: KubeObjectRef) -> ResourceVerb? {
+    package func askWhyVerb(for ref: KubeObjectRef) -> ResourceVerb? {
         guard Self.asksWhy(ref) else { return nil }
         return ResourceVerb(
             title: "Ask an Agent Why…", label: "Ask Why", symbol: "sparkles", place: .button, key: KubernetesKey.askWhy.key,
@@ -68,7 +68,7 @@ extension KubernetesPageModel {
     }
 
     /// The one row picked: its Ask Why.
-    func askWhyVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+    package func askWhyVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
         guard picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
         return [askWhyVerb(for: ref)].compactMap { $0 }
     }
@@ -78,7 +78,7 @@ extension KubernetesPageModel {
     /// with none picked), which has no object of its own (14.2.6). One that
     /// isn't failing says why over the list; false with nothing to ask about.
     @discardableResult
-    func askWhy() -> Bool {
+    package func askWhy() -> Bool {
         if detail == nil, section == .gitops {
             if let row = gitOpsPicked, row.isMarked { return askWhyMarked(row) }
             if gitOpsPicked == nil, let ranked = markedDetailApp, let context = gitOps.context {
@@ -96,7 +96,7 @@ extension KubernetesPageModel {
     }
 
     /// A failing pod's row, its Ask Why button.
-    func askWhy(row id: String) {
+    package func askWhy(row id: String) {
         guard let ref = ref(for: id) else { return }
         askWhy(ref)
     }
@@ -108,7 +108,7 @@ extension KubernetesPageModel {
     /// be read is said over the list (or under the detail's buttons).
     /// `extra`: what the rail adds about a GitOps object's matched checkout
     /// (gitops.md 6.2) — scrubbed again here, after the brief's own parts.
-    func askWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part] = []) {
+    package func askWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part] = []) {
         commandProblem = nil
         guard askingWhy == nil else { return }
         guard let client = model.client(for: ref.context) else {
@@ -170,7 +170,7 @@ extension KubernetesPageModel {
     /// A row of the GitOps section that is an app read from marks: Ask Why
     /// on the app as the section ranks it.
     @discardableResult
-    func askWhyMarked(_ row: KubeGitOpsRow) -> Bool {
+    package func askWhyMarked(_ row: KubeGitOpsRow) -> Bool {
         guard let key = row.marked?.key, let context = gitOps.context, let ranked = gitOps.marked.apps.first(where: { $0.app.key == key }) else { return false }
         askWhyMarked(markedDetailApp?.app.key == key ? markedDetailRanked ?? ranked : ranked, context: context)
         return true
@@ -178,7 +178,7 @@ extension KubernetesPageModel {
 
     /// The app whose detail shows, its members settled by what the detail
     /// read (the newer of the detail's and the section's reads).
-    var markedDetailRanked: KubeMarkedRanked? {
+    package var markedDetailRanked: KubeMarkedRanked? {
         guard let ranked = markedDetailApp, let ref = markedDetail, markedRead.ref == ref, !markedRead.read.objects.isEmpty else { return nil }
         var read = markedRead.read
         if let store = gitOps.marked.store?.settled {
@@ -194,13 +194,13 @@ extension KubernetesPageModel {
     /// when it can: offered on every one that isn't Ready, Progressing
     /// included — under Argo CD's rules a crash-looping Deployment after a
     /// finished rollout, or a `0/3` StatefulSet, is Progressing, never Failed.
-    func askWhyMarkedUnavailable(_ ranked: KubeMarkedRanked) -> String? {
+    package func askWhyMarkedUnavailable(_ ranked: KubeMarkedRanked) -> String? {
         if askingWhyApp == ranked.app.key { return "Reading what to tell the agent…" }
         return KubeAgentBriefing.markedNotAsked(ranked)
     }
 
     /// The menu's Ask an Agent Why… on an app read from marks, greyed with why while it is Ready.
-    func askWhyMarkedVerb(_ row: KubeGitOpsRow) -> ResourceVerb? {
+    package func askWhyMarkedVerb(_ row: KubeGitOpsRow) -> ResourceVerb? {
         guard let key = row.marked?.key, let ranked = gitOps.marked.apps.first(where: { $0.app.key == key }) else { return nil }
         return ResourceVerb(
             title: "Ask an Agent Why…", label: "Ask Why", symbol: "sparkles", place: .button, key: KubernetesKey.askWhy.key,
@@ -211,7 +211,7 @@ extension KubernetesPageModel {
     /// Why an app is read from marks, in the section's mode's words (14.3):
     /// derived apps Argo CD's whole side, the mode's own line; beside
     /// Applications read, where this one stands.
-    func markedLead(_ key: KubeTrackingID.AppKey, mode: KubeMarkedAppsMode, context: String) -> String? {
+    package func markedLead(_ key: KubeTrackingID.AppKey, mode: KubeMarkedAppsMode, context: String) -> String? {
         switch mode {
         case .only(let reason):
             return reason.line(context: context)
@@ -236,7 +236,7 @@ extension KubernetesPageModel {
     /// whole before anything is sent. `lead`, `whereApplication`, `scope`:
     /// the rail's words when it asks (its place, whose health); else the
     /// section's mode's. `extra`: scrubbed again here.
-    func askWhyMarked(
+    package func askWhyMarked(
         _ ranked: KubeMarkedRanked, context: String, lead: String? = nil, whereApplication: String? = nil, scope: String? = nil, extra: [AskAgentModel.Part] = []
     ) {
         commandProblem = nil
@@ -297,7 +297,7 @@ extension KubernetesPageModel {
     /// before anything is sent. Nothing is read for it: what the chart
     /// already holds. Nil with no detail's Metrics tab.
     @discardableResult
-    func askAboutChart(_ chart: KubePodCharts.Chart, caption: String?, now: Date = Date()) -> KubeAgentBrief? {
+    package func askAboutChart(_ chart: KubePodCharts.Chart, caption: String?, now: Date = Date()) -> KubeAgentBrief? {
         guard let detail, metricsTabShows else { return nil }
         let ref = detail.ref
         // A pod's chart: its section's container, as Expand has it.

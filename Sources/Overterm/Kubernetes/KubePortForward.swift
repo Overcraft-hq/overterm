@@ -6,19 +6,19 @@ import Foundation
 /// resolves to one of its ready pods every time the forward starts — so a
 /// forward follows a rollout instead of dying with its first pod. kubectl
 /// is only ever given `pod/<name>`. Pure.
-enum KubeForwardTarget: Hashable, Sendable, CustomStringConvertible {
+package enum KubeForwardTarget: Hashable, Sendable, CustomStringConvertible {
     case pod(String)
     case service(String)
     case deployment(String)
 
-    var name: String {
+    package var name: String {
         switch self {
         case .pod(let name), .service(let name), .deployment(let name): name
         }
     }
 
     /// kubectl's short word: `pod`, `svc`, `deploy`.
-    var word: String {
+    package var word: String {
         switch self {
         case .pod: "pod"
         case .service: "svc"
@@ -26,7 +26,7 @@ enum KubeForwardTarget: Hashable, Sendable, CustomStringConvertible {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .pod: "Pod"
         case .service: "Service"
@@ -35,15 +35,15 @@ enum KubeForwardTarget: Hashable, Sendable, CustomStringConvertible {
     }
 
     /// `svc/web`.
-    var description: String { "\(word)/\(name)" }
+    package var description: String { "\(word)/\(name)" }
 
     /// Whether it goes to whichever of its pods is ready (a Service's
     /// endpoints, a Deployment's), not one pod: its pod is followed while
     /// it is ready, not only while it runs.
-    var followsEndpoints: Bool { if case .pod = self { false } else { true } }
+    package var followsEndpoints: Bool { if case .pod = self { false } else { true } }
 
     /// The kind a target of this sort is read as.
-    var kind: KubeResourceKind {
+    package var kind: KubeResourceKind {
         switch self {
         case .pod: .pods
         case .service: .services
@@ -53,7 +53,7 @@ enum KubeForwardTarget: Hashable, Sendable, CustomStringConvertible {
 
     /// The target a row of `kind` is: a pod, a Service or a Deployment; nil
     /// for any other kind.
-    static func of(kind: KubeResourceKind, name: String) -> KubeForwardTarget? {
+    package static func of(kind: KubeResourceKind, name: String) -> KubeForwardTarget? {
         switch kind.fullName {
         case "pods": .pod(name)
         case "services": .service(name)
@@ -64,10 +64,10 @@ enum KubeForwardTarget: Hashable, Sendable, CustomStringConvertible {
 }
 
 extension KubeResourceKind {
-    static let services = KubeResourceKind(
+    package static let services = KubeResourceKind(
         group: "", version: "v1", resource: "services", kind: "Service", singular: "service", namespaced: true,
         verbs: ["create", "delete", "get", "list", "patch", "update", "watch"], shortNames: ["svc"], categories: ["all"], subresources: ["proxy", "status"])
-    static let deployments = KubeResourceKind(
+    package static let deployments = KubeResourceKind(
         group: "apps", version: "v1", resource: "deployments", kind: "Deployment", singular: "deployment", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"], shortNames: ["deploy"], categories: ["all"],
         subresources: ["scale", "status"])
@@ -76,16 +76,16 @@ extension KubeResourceKind {
 /// One port a target offers: a container's (a pod's, a Deployment's
 /// template's) or a Service's own. Only TCP: kubectl port-forward forwards
 /// nothing else.
-struct KubeForwardPortOption: Hashable, Sendable {
-    var port: Int
-    var name: String?
+package struct KubeForwardPortOption: Hashable, Sendable {
+    package var port: Int
+    package var name: String?
     /// The container that declares it; nil for a Service's.
-    var container: String?
+    package var container: String?
     /// A Service's port: where it goes in the pod (`targetPort`, a number or a name).
-    var targetPort: String?
+    package var targetPort: String?
 
     /// `80 (http)`, `5432 · db`.
-    var label: String {
+    package var label: String {
         var text = "\(port)"
         if let name, !name.isEmpty { text += " (\(name))" }
         if let container { text += " · \(container)" }
@@ -95,7 +95,7 @@ struct KubeForwardPortOption: Hashable, Sendable {
 
     /// The ports `object` offers as a forward's remote end: a pod's
     /// containers' ports, a Deployment's template's, a Service's own.
-    static func offered(by object: [String: Any], target: KubeForwardTarget) -> [KubeForwardPortOption] {
+    package static func offered(by object: [String: Any], target: KubeForwardTarget) -> [KubeForwardPortOption] {
         switch target {
         case .service:
             let spec = object["spec"] as? [String: Any] ?? [:]
@@ -128,39 +128,39 @@ struct KubeForwardPortOption: Hashable, Sendable {
 /// listens on this Mac. A Service's `remotePort` is the Service's port —
 /// the pod's port is worked out from it each time (its `targetPort`, by
 /// number or by name), as kubectl does.
-struct KubeForwardSpec: Hashable, Sendable, Identifiable {
-    var id = UUID()
-    var context: String
-    var namespace: String
-    var target: KubeForwardTarget
-    var remotePort: Int
-    var localPort: Int
+package struct KubeForwardSpec: Hashable, Sendable, Identifiable {
+    package var id = UUID()
+    package var context: String
+    package var namespace: String
+    package var target: KubeForwardTarget
+    package var remotePort: Int
+    package var localPort: Int
     /// What kubectl listens on: `127.0.0.1` unless changed.
-    var address = KubeForwardAddress.loopback
+    package var address = KubeForwardAddress.loopback
     /// The page it serves is https: what Open and Copy URL say.
-    var https = false
+    package var https = false
     /// Started by `d` for the Database client: its server is a database,
     /// never asked for an API document.
-    var forDatabase = false
+    package var forDatabase = false
     /// The tab whose pane header shows its pill: the one under the page
     /// when it was asked for.
-    var tab: UUID?
+    package var tab: UUID?
 
-    var url: URL? { URL(string: "\(https ? "https" : "http")://\(KubeForwardAddress.host(for: address)):\(localPort)") }
+    package var url: URL? { URL(string: "\(https ? "https" : "http")://\(KubeForwardAddress.host(for: address)):\(localPort)") }
 
     /// Where it is reached, as its URL has it: `127.0.0.1:8080`.
-    var hostPort: String { "\(KubeForwardAddress.host(for: address)):\(localPort)" }
+    package var hostPort: String { "\(KubeForwardAddress.host(for: address)):\(localPort)" }
 
     /// `127.0.0.1:8080 → svc/web:80`.
-    var summary: String { "\(hostPort) → \(target):\(remotePort)" }
+    package var summary: String { "\(hostPort) → \(target):\(remotePort)" }
 }
 
 /// The listen address: an IP literal or `localhost`. Pure.
-enum KubeForwardAddress {
-    static let loopback = "127.0.0.1"
+package enum KubeForwardAddress {
+    package static let loopback = "127.0.0.1"
 
     /// Why `text` can't be one; nil when it can.
-    static func problem(_ text: String) -> String? {
+    package static func problem(_ text: String) -> String? {
         let address = text.trimmingCharacters(in: .whitespaces)
         if address.isEmpty { return "Give an address to listen on (127.0.0.1)." }
         if address == "localhost" { return nil }
@@ -171,14 +171,14 @@ enum KubeForwardAddress {
     }
 
     /// Whether only this Mac can reach it.
-    static func isLoopback(_ address: String) -> Bool {
+    package static func isLoopback(_ address: String) -> Bool {
         ["127.0.0.1", "localhost", "::1"].contains(address) || address.hasPrefix("127.")
     }
 
     /// Who can reach a forward listening on `address` (docs/design/
     /// activity/analysis.md, 6.8's Scope): a wildcard the network, loopback
     /// this Mac, any other address that one.
-    static func scope(_ address: String) -> ListeningPort.Scope {
+    package static func scope(_ address: String) -> ListeningPort.Scope {
         if ["0.0.0.0", "::", "*"].contains(address) { return .network }
         return isLoopback(address) ? .thisMac : .oneAddress
     }
@@ -187,7 +187,7 @@ enum KubeForwardAddress {
     /// `localhost` — which a browser may try as ::1 first, where a forward
     /// on 127.0.0.1 doesn't listen. A wildcard is reached on loopback; an
     /// IPv6 address in brackets.
-    static func host(for address: String) -> String {
+    package static func host(for address: String) -> String {
         switch address {
         case "localhost", "0.0.0.0": return loopback
         case "::", "::1": return "[::1]"
@@ -201,14 +201,14 @@ enum KubeForwardAddress {
 /// (`KubeForwards`), never typed into a tab; through the user's own
 /// kubectl and credentials, never the proxy's socket, which refuses
 /// port-forward on every context. Pure.
-enum KubePortForwardCommand {
+package enum KubePortForwardCommand {
     /// The forward as a process: ready when kubectl says it forwards — pure.
-    static func launch(kubectl: URL, arguments: [String], environment: [String: String]?) -> ManagedProcess.Launch {
+    package static func launch(kubectl: URL, arguments: [String], environment: [String: String]?) -> ManagedProcess.Launch {
         ManagedProcess.Launch(
             executable: kubectl, arguments: arguments, environment: environment, readiness: .line(isReady), timeout: 30, helper: .kubectlPortForward)
     }
 
-    static func arguments(
+    package static func arguments(
         pod: String, localPort: Int, remotePort: Int, context: String, namespace: String, address: String, cacheDirectory: String? = nil
     ) -> [String] {
         var arguments = [
@@ -220,7 +220,7 @@ enum KubePortForwardCommand {
 
     /// The same, as a person would type it (Copy as kubectl).
     /// Every word that isn't ours quoted for zsh, as Copy as kubectl quotes it.
-    static func line(pod: String, localPort: Int, remotePort: Int, context: String, namespace: String, address: String) -> String {
+    package static func line(pod: String, localPort: Int, remotePort: Int, context: String, namespace: String, address: String) -> String {
         let q = KubectlLine.quoted
         return [
             "kubectl", "port-forward", q("pod/\(pod)"), "\(localPort):\(remotePort)", "--context", q(context), "--namespace", q(namespace), "--address",
@@ -229,18 +229,18 @@ enum KubePortForwardCommand {
     }
 
     /// What kubectl prints once it listens: `Forwarding from 127.0.0.1:8080 -> 80`.
-    static func isReady(_ line: String) -> Bool { line.hasPrefix("Forwarding from ") }
+    package static func isReady(_ line: String) -> Bool { line.hasPrefix("Forwarding from ") }
 }
 
 /// Where a Service or a Deployment points now: one of its ready pods, and
 /// the pod's port. Pure over the JSON the API answered.
-enum KubeForwardResolve {
-    struct Pinned: Equatable, Sendable {
-        var pod: String
-        var remotePort: Int
+package enum KubeForwardResolve {
+    package struct Pinned: Equatable, Sendable {
+        package var pod: String
+        package var remotePort: Int
     }
 
-    enum Outcome: Equatable, Sendable {
+    package enum Outcome: Equatable, Sendable {
         /// This pod, this port.
         case pinned(Pinned)
         /// No pod to go to now — none ready, the port not found: tried again.
@@ -249,7 +249,7 @@ enum KubeForwardResolve {
         case gone(String)
     }
 
-    static func int(_ value: Any?) -> Int? {
+    package static func int(_ value: Any?) -> Int? {
         if let value = value as? Int { return value }
         if let value = value as? NSNumber { return value.intValue }
         if let value = value as? String { return Int(value) }
@@ -257,7 +257,7 @@ enum KubeForwardResolve {
     }
 
     /// Whether kubectl can forward to it: running, not going away.
-    static func isRunning(_ pod: [String: Any]) -> Bool {
+    package static func isRunning(_ pod: [String: Any]) -> Bool {
         let metadata = pod["metadata"] as? [String: Any] ?? [:]
         guard metadata["deletionTimestamp"] == nil else { return false }
         return (pod["status"] as? [String: Any])?["phase"] as? String == "Running"
@@ -265,7 +265,7 @@ enum KubeForwardResolve {
 
     /// Ready, as an endpoint is: its Ready condition, else (no conditions
     /// reported) every container ready.
-    static func isReady(_ pod: [String: Any]) -> Bool {
+    package static func isReady(_ pod: [String: Any]) -> Bool {
         guard isRunning(pod) else { return false }
         let status = pod["status"] as? [String: Any] ?? [:]
         if let conditions = status["conditions"] as? [[String: Any]], let ready = conditions.first(where: { $0["type"] as? String == "Ready" }) {
@@ -276,7 +276,7 @@ enum KubeForwardResolve {
     }
 
     /// Why a pod isn't one to forward to, in a few words.
-    static func notReady(_ pod: [String: Any]) -> String {
+    package static func notReady(_ pod: [String: Any]) -> String {
         let name = (pod["metadata"] as? [String: Any])?["name"] as? String ?? "the pod"
         if (pod["metadata"] as? [String: Any])?["deletionTimestamp"] != nil { return "pod \(name) is terminating" }
         let phase = (pod["status"] as? [String: Any])?["phase"] as? String ?? "Unknown"
@@ -284,7 +284,7 @@ enum KubeForwardResolve {
     }
 
     /// A pod target: itself, while it runs. Nil JSON: it is gone (a 404).
-    static func pod(_ name: String, _ json: [String: Any]?, port: Int) -> Outcome {
+    package static func pod(_ name: String, _ json: [String: Any]?, port: Int) -> Outcome {
         guard let json else { return .gone("pod/\(name) is gone") }
         guard isRunning(json) else { return .waiting(notReady(json)) }
         return .pinned(Pinned(pod: name, remotePort: port))
@@ -293,7 +293,7 @@ enum KubeForwardResolve {
     /// The pods an EndpointSlice list says are ready, by name: endpoints
     /// whose `ready` isn't false (nil is ready, the API says), pointing at
     /// a Pod.
-    static func readyPods(slices: [[String: Any]]) -> [String] {
+    package static func readyPods(slices: [[String: Any]]) -> [String] {
         var names: [String] = []
         for slice in slices {
             for endpoint in slice["endpoints"] as? [[String: Any]] ?? [] {
@@ -308,7 +308,7 @@ enum KubeForwardResolve {
 
     /// The same from a legacy Endpoints object: its subsets' `addresses`
     /// (the ready ones; `notReadyAddresses` are not).
-    static func readyPods(endpoints: [String: Any]) -> [String] {
+    package static func readyPods(endpoints: [String: Any]) -> [String] {
         var names: [String] = []
         for subset in endpoints["subsets"] as? [[String: Any]] ?? [] {
             for address in subset["addresses"] as? [[String: Any]] ?? [] {
@@ -321,7 +321,7 @@ enum KubeForwardResolve {
 
     /// The ready pods of a pod list (a Deployment's selector), oldest first,
     /// then by name: the one picked stays put while newer ones come and go.
-    static func readyPods(_ items: [[String: Any]]) -> [String] {
+    package static func readyPods(_ items: [[String: Any]]) -> [String] {
         items.filter(isReady).sorted { lhs, rhs in
             let (a, b) = (created(lhs), created(rhs))
             return a == b ? name(lhs) < name(rhs) : a < b
@@ -333,7 +333,7 @@ enum KubeForwardResolve {
 
     /// The one of `candidates` to pin: the one pinned before while it is
     /// still among them — a forward that works isn't moved — else the first.
-    static func pick(_ candidates: [String], previous: String?) -> String? {
+    package static func pick(_ candidates: [String], previous: String?) -> String? {
         if let previous, candidates.contains(previous) { return previous }
         return candidates.first
     }
@@ -341,7 +341,7 @@ enum KubeForwardResolve {
     /// A `LabelSelector` (a Deployment's `spec.selector`) as the server's
     /// `labelSelector`: `matchLabels` and `matchExpressions` (In, NotIn,
     /// Exists, DoesNotExist). Nil when it selects nothing it can say.
-    static func labelSelector(_ selector: [String: Any]?) -> String? {
+    package static func labelSelector(_ selector: [String: Any]?) -> String? {
         guard let selector else { return nil }
         var terms: [String] = []
         for (key, value) in (selector["matchLabels"] as? [String: Any] ?? [:]).sorted(by: { $0.key < $1.key }) {
@@ -364,7 +364,7 @@ enum KubeForwardResolve {
     /// A Service's port as the pod has it: `targetPort` by number, by name
     /// in the pod's containers, or the Service's port when none is set.
     /// Nil when the Service has no such port, or the pod none by that name.
-    static func targetPort(service: [String: Any], port: Int, pod: [String: Any]) -> Int? {
+    package static func targetPort(service: [String: Any], port: Int, pod: [String: Any]) -> Int? {
         let ports = (service["spec"] as? [String: Any])?["ports"] as? [[String: Any]] ?? []
         guard let entry = ports.first(where: { int($0["port"]) == port }) else { return nil }
         guard let target = entry["targetPort"] else { return port }
@@ -384,17 +384,17 @@ enum KubeForwardResolve {
 /// twice as long each time up to half a minute, back to a second once one
 /// has run a while — and, after `maxFailures` in a row, it stops: no
 /// storm of kubectls (each may run the context's exec plugin). Pure.
-struct KubeForwardBackoff: Equatable, Sendable {
-    static let delays: [TimeInterval] = [1, 2, 4, 8, 15, 30]
+package struct KubeForwardBackoff: Equatable, Sendable {
+    package static let delays: [TimeInterval] = [1, 2, 4, 8, 15, 30]
     /// A forward up this long counts as working: what ended it starts the count again.
-    static let stableAfter: TimeInterval = 30
-    static let maxFailures = 8
+    package static let stableAfter: TimeInterval = 30
+    package static let maxFailures = 8
 
-    private(set) var failures = 0
+    package private(set) var failures = 0
 
     /// The wait before the next start, after a forward that ran `ran`
     /// seconds (0: it never started); nil when it should stop.
-    mutating func next(ran: TimeInterval) -> TimeInterval? {
+    package mutating func next(ran: TimeInterval) -> TimeInterval? {
         if ran >= Self.stableAfter { failures = 0 }
         failures += 1
         guard failures <= Self.maxFailures else { return nil }
@@ -405,11 +405,11 @@ struct KubeForwardBackoff: Equatable, Sendable {
 /// The local port: one asked for, checked, or a free one picked at random
 /// (a quick forward) — never one another forward has, or something on
 /// this Mac holds (`ListeningPorts.isBound`). Pure over what it is given.
-enum KubeForwardPortChoice {
-    static let range = 30000...39999
+package enum KubeForwardPortChoice {
+    package static let range = 30000...39999
 
     /// Why `port` can't be the local end; nil when it can.
-    static func problem(_ port: Int, taken: Set<Int>, isBound: (Int) -> Bool) -> String? {
+    package static func problem(_ port: Int, taken: Set<Int>, isBound: (Int) -> Bool) -> String? {
         guard (1...65535).contains(port) else { return "A port is 1 to 65535." }
         if port < 1024 { return "Ports under 1024 need root; pick one above." }
         if taken.contains(port) { return "Another forward listens on \(port)." }
@@ -419,7 +419,7 @@ enum KubeForwardPortChoice {
 
     /// `preferred` when it is free (the remote port, 8080 → 8080), else one
     /// at random in `range`; nil when none came free in 64 tries.
-    static func free(preferred: Int? = nil, taken: Set<Int>, isBound: (Int) -> Bool, random: () -> Int = { Int.random(in: range) }) -> Int? {
+    package static func free(preferred: Int? = nil, taken: Set<Int>, isBound: (Int) -> Bool, random: () -> Int = { Int.random(in: range) }) -> Int? {
         if let preferred, problem(preferred, taken: taken, isBound: isBound) == nil { return preferred }
         for _ in 0..<64 {
             let port = random()
@@ -432,23 +432,23 @@ enum KubeForwardPortChoice {
 /// The sheet's fields (`f`): the target, the ports it offers, the one
 /// picked, the local port, the address and https — a forward asked for,
 /// or one being edited. Pure.
-struct KubeForwardDraft: Equatable {
-    var context: String
-    var namespace: String
-    var target: KubeForwardTarget
-    var offered: [KubeForwardPortOption]
+package struct KubeForwardDraft: Equatable {
+    package var context: String
+    package var namespace: String
+    package var target: KubeForwardTarget
+    package var offered: [KubeForwardPortOption]
     /// The remote port, as typed or picked.
-    var remote: String
-    var local: String
-    var address = KubeForwardAddress.loopback
-    var https = false
+    package var remote: String
+    package var local: String
+    package var address = KubeForwardAddress.loopback
+    package var https = false
     /// The forward being edited: only the local end changes.
-    var editing: UUID?
+    package var editing: UUID?
     /// Why it can't start yet: `kubectl auth can-i` not answered, or no.
-    var unavailable: String?
+    package var unavailable: String?
 
     /// The spec it makes, or why not.
-    func spec(taken: Set<Int>, isBound: (Int) -> Bool, tab: UUID?) -> Result<KubeForwardSpec, Failure> {
+    package func spec(taken: Set<Int>, isBound: (Int) -> Bool, tab: UUID?) -> Result<KubeForwardSpec, Failure> {
         guard let remotePort = Int(remote.trimmingCharacters(in: .whitespaces)), (1...65535).contains(remotePort) else {
             return .failure(Failure("The remote port is 1 to 65535."))
         }
@@ -462,8 +462,8 @@ struct KubeForwardDraft: Equatable {
         return .success(spec)
     }
 
-    struct Failure: Error, Equatable, CustomStringConvertible {
-        var description: String
-        init(_ description: String) { self.description = description }
+    package struct Failure: Error, Equatable, CustomStringConvertible {
+        package var description: String
+        package init(_ description: String) { self.description = description }
     }
 }

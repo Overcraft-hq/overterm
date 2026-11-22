@@ -2,35 +2,35 @@ import AppKit
 import SwiftUI
 
 /// What the API panel's rows ask the window to do.
-struct APIActions {
-    var open: (URL) -> Void
+package struct APIActions {
+    package var open: (URL) -> Void
     /// Asks for a name (title, initial text); nil when cancelled.
-    var prompt: (_ title: String, _ initial: String, _ done: @escaping (String) -> Void) -> Void
+    package var prompt: (_ title: String, _ initial: String, _ done: @escaping (String) -> Void) -> Void
     /// Something failed: the window says so.
-    var report: (Error) -> Void
+    package var report: (Error) -> Void
     /// Runs requests and folders, in order, into the right-hand pane.
-    var run: (_ items: [APIItem], _ title: String) -> Void
+    package var run: (_ items: [APIItem], _ title: String) -> Void
     /// Says something that went well, with what to know (an import's notes).
-    var inform: (_ title: String, _ detail: String) -> Void
+    package var inform: (_ title: String, _ detail: String) -> Void
     /// The environment's secrets, in a sheet.
-    var editSecrets: (_ environment: String, _ collection: BrunoCollection) -> Void
+    package var editSecrets: (_ environment: String, _ collection: BrunoCollection) -> Void
     /// Renames a request or folder with the editor's tabs following it.
-    var rename: (_ item: APIItem, _ name: String) throws -> URL
+    package var rename: (_ item: APIItem, _ name: String) throws -> URL
     /// Asks, then moves it to the Trash, its tabs closing — as Files does.
-    var trash: (_ item: APIItem) -> Void
+    package var trash: (_ item: APIItem) -> Void
     /// A request's .bru, or a folder's folder.bru, open on its Docs.
-    var openDocs: (URL) -> Void = { _ in }
+    package var openDocs: (URL) -> Void = { _ in }
     /// An MCP server, inspected in the right-hand pane.
-    var openMCP: (MCPServerConfig) -> Void = { _ in }
+    package var openMCP: (MCPServerConfig) -> Void = { _ in }
 }
 
 /// The sidebar's API panel: the checkout's Bruno collection — its
 /// requests by folder, its environments — or, without one, a way to start.
-struct APIPanelView: View {
-    @ObservedObject var workspace: APIWorkspace
-    let group: TabGroup?
-    @ObservedObject var theme: ChromeTheme
-    let actions: APIActions
+package struct APIPanelView: View {
+    @ObservedObject package var workspace: APIWorkspace
+    package let group: TabGroup?
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: APIActions
     /// Open folders, by path; the collection's first level starts open.
     @State private var expanded: Set<String> = []
     @State private var seeded: Set<String> = []
@@ -39,14 +39,14 @@ struct APIPanelView: View {
     @State private var docs: FolderDocs?
 
     /// What the docs sheet shows: whose, and the file they are kept in.
-    struct FolderDocs: Identifiable {
-        let title: String
-        let text: String
-        let file: URL
-        var id: String { file.path }
+    package struct FolderDocs: Identifiable {
+        package let title: String
+        package let text: String
+        package let file: URL
+        package var id: String { file.path }
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             PanelHeader(title: workspace.collection?.name ?? "API", group: group, theme: theme, help: workspace.collection?.root.path) {
                 if workspace.collection != nil {

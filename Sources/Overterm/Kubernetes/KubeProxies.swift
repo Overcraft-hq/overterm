@@ -44,14 +44,14 @@ import NIOHTTP1
 ///   context as told — and a write (`sendWrite`) is refused here, before
 ///   any socket, unless that context is writable (its `writable` setting:
 ///   yes unless it says no, on every class).
-actor KubeProxies {
-    struct Configuration: Equatable, Sendable {
-        var maxProxies = 4
-        var idleTime: TimeInterval = 600
+package actor KubeProxies {
+    package struct Configuration: Equatable, Sendable {
+        package var maxProxies = 4
+        package var idleTime: TimeInterval = 600
         /// `kubernetes.kubectlPath`; empty: found (decision 22).
-        var kubectlPath = ""
+        package var kubectlPath = ""
         /// `kubernetes.kubeconfigs`.
-        var extraKubeconfigs: [String] = []
+        package var extraKubeconfigs: [String] = []
     }
 
     /// Who asks: the page (its context keeps a slot), the background (an
@@ -64,15 +64,15 @@ actor KubeProxies {
     /// slots for good. A spare read (the Overview's pinned cards) is a
     /// watch's kind too, and more: it opens a proxy only in a slot free as
     /// it stands — nothing is closed for it (`noSlot` otherwise).
-    enum Role: Sendable {
+    package enum Role: Sendable {
         case page, background, watch, spare
 
         /// Nobody asked for it: never a browser sign-in, given up for a
         /// request someone made.
-        var unasked: Bool { self == .watch || self == .spare }
+        package var unasked: Bool { self == .watch || self == .spare }
     }
 
-    enum Status: Equatable, Sendable {
+    package enum Status: Equatable, Sendable {
         case closed
         case open
         /// Its first request waits for the browser.
@@ -85,7 +85,7 @@ actor KubeProxies {
         /// Its requests stopped until `retry`.
         case stopped(KubeProxyProblem)
 
-        var reason: String? {
+        package var reason: String? {
             switch self {
             case .closed, .open: nil
             case .signingIn: "Waiting for the browser sign-in"
@@ -98,16 +98,16 @@ actor KubeProxies {
 
     /// What signs a context in at a terminal: kubelogin opens the browser
     /// there and keeps the token for the proxy's next request.
-    static func signInCommand(_ context: String) -> String { "kubectl --context \(KubeProxyProblem.shellQuoted(context)) get ns" }
+    package static func signInCommand(_ context: String) -> String { "kubectl --context \(KubeProxyProblem.shellQuoted(context)) get ns" }
 
     /// How long a first request waits for the browser before the page
     /// says the sign-in is needed.
-    static let signInPatience: TimeInterval = 8
+    package static let signInPatience: TimeInterval = 8
 
-    typealias Plan = @Sendable (KubeContext, Configuration, Int?) async throws -> KubeProxySpec
-    typealias Open = @Sendable (KubeProxySpec) async throws -> KubeProxy
+    package typealias Plan = @Sendable (KubeContext, Configuration, Int?) async throws -> KubeProxySpec
+    package typealias Open = @Sendable (KubeProxySpec) async throws -> KubeProxy
 
-    static let shared = KubeProxies()
+    package static let shared = KubeProxies()
 
     private var configuration: Configuration
     private let plan: Plan
@@ -166,9 +166,9 @@ actor KubeProxies {
     private var current: [String: KubeContext]?
     /// The background proxies closed for the page's slot, the last first
     /// (the last few): what a test and the scenario read.
-    private(set) var closedForPage: [String] = []
+    package private(set) var closedForPage: [String] = []
 
-    init(
+    package init(
         configuration: Configuration = Configuration(), now: @escaping @Sendable () -> Date = { Date() }, sweepEvery: Duration = .seconds(60),
         plan: Plan? = nil, open: @escaping Open = { try await KubeProxy.open($0) }, signInPatience: TimeInterval = KubeProxies.signInPatience
     ) {
@@ -181,12 +181,12 @@ actor KubeProxies {
         self.pool = ManagedProcessPool(open: open)
     }
 
-    func configure(_ configuration: Configuration) {
+    package func configure(_ configuration: Configuration) {
         self.configuration = configuration
     }
 
     /// The context the page shows: its proxy is never closed for another's.
-    func setPage(_ context: String?) {
+    package func setPage(_ context: String?) {
         page = context
     }
 
@@ -200,7 +200,7 @@ actor KubeProxies {
     /// the kubeconfig when it started, so a running one would go on
     /// reaching the old cluster, and a writable one would go on taking
     /// writes for a context that is read-only now.
-    func update(contexts list: KubeContextList) async {
+    package func update(contexts list: KubeContextList) async {
         var named: [String: KubeContext] = [:]
         for context in list.contexts where named[context.name] == nil { named[context.name] = context }
         // A name gone, or now another cluster or user: what was learnt
@@ -246,7 +246,7 @@ actor KubeProxies {
     /// Whether `context` may be written to now: the proxies' own context
     /// writable, and the copy the write comes with the same cluster, user
     /// and class as it — a write reviewed on another reading is refused.
-    func isWritable(_ context: KubeContext) -> Bool {
+    package func isWritable(_ context: KubeContext) -> Bool {
         let planned = self.planned(context)
         guard planned.isWritable else { return false }
         guard current != nil else { return true }
@@ -257,7 +257,7 @@ actor KubeProxies {
     /// socket unless the context is writable (its writable setting). A
     /// read-only context's socket refuses it too: this is the second lock,
     /// not the only one.
-    nonisolated func sendWrite(
+    package nonisolated func sendWrite(
         _ context: KubeContext, role: Role = .page, _ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)] = []
     ) async throws -> HTTPResponse {
         guard method != .GET, await isWritable(context) else {
@@ -272,7 +272,7 @@ actor KubeProxies {
     /// `KubeProxyProblem` when the proxy can't be had or kubectl failed
     /// (a credential failure stops the context); the server's own errors
     /// come back as responses.
-    nonisolated func send(
+    package nonisolated func send(
         _ context: KubeContext, role: Role = .page, _ method: HTTPMethod, _ path: String, body: Data? = nil, headers: [(String, String)] = []
     ) async throws -> HTTPResponse {
         try await request(context, role, prometheus: nil, method, path, body: body, headers: headers)
@@ -285,7 +285,7 @@ actor KubeProxies {
     /// It counts towards `maxProxies` as any proxy does (its own entry,
     /// never the page's kept slot), and is closed by `closePrometheus`
     /// when no chart shows, or idle.
-    nonisolated func sendPrometheus(
+    package nonisolated func sendPrometheus(
         _ context: KubeContext, _ service: KubePrometheusService, role: Role = .page, _ path: String
     ) async throws -> HTTPResponse {
         guard service.allows(path) else { throw KubePrometheusRefused(path: path) }
@@ -326,7 +326,7 @@ actor KubeProxies {
     /// "getting credentials" must not stop the context's requests. Only
     /// kubectl's own stderr can: the credential failure it logged.
     /// Anything else is the chart's problem (`KubePrometheusReader`).
-    nonisolated static func metricsProblem(status: Int, stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
+    package nonisolated static func metricsProblem(status: Int, stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
         guard status == 500 else { return nil }
         let line = stderr.components(separatedBy: .newlines).last {
             let lower = $0.lowercased()
@@ -344,7 +344,7 @@ actor KubeProxies {
     /// An entry's key: the context's name for its proxy, with a mark for its metrics proxy.
     private static let metricsMark = "\u{1}prometheus"
 
-    nonisolated static func key(_ name: String, _ prometheus: KubePrometheusService?) -> String {
+    package nonisolated static func key(_ name: String, _ prometheus: KubePrometheusService?) -> String {
         prometheus == nil ? name : name + metricsMark
     }
 
@@ -362,7 +362,7 @@ actor KubeProxies {
     /// A response read as it arrives — a watch, a followed log — through
     /// `context`'s proxy, which stays in use until the stream ends. Its
     /// pieces are handed on outside the actor.
-    nonisolated func stream(
+    package nonisolated func stream(
         _ context: KubeContext, role: Role = .page, _ method: HTTPMethod = .GET, _ path: String, headers: [(String, String)] = []
     ) -> AsyncThrowingStream<Data, Error> {
         AsyncThrowingStream { continuation in
@@ -508,7 +508,7 @@ actor KubeProxies {
 
     /// The socket `name`'s proxy (with `prometheus`, its metrics proxy)
     /// listens at, once planned: what a test reaches it by directly.
-    func socket(_ name: String, prometheus: KubePrometheusService? = nil) -> String? {
+    package func socket(_ name: String, prometheus: KubePrometheusService? = nil) -> String? {
         entries[Self.key(name, prometheus)]?.spec?.socket
     }
 
@@ -555,14 +555,14 @@ actor KubeProxies {
     /// problem is thrown, nothing starts), and an oidc sign-in waits its
     /// turn behind any other, a proxy's included. True when this run holds
     /// the sign-in: `endShortLived` releases it.
-    func beginShortLived(_ context: KubeContext) async throws -> Bool {
+    package func beginShortLived(_ context: KubeContext) async throws -> Bool {
         if let problem = stopped[context.name] { throw problem }
         return try await signIn(context.name, KubeSignIn(context.auth))
     }
 
     /// After it: a credential failure stops the context, as a proxy's does;
     /// the sign-in released — signed in when kubectl got an answer.
-    func endShortLived(_ name: String, holds: Bool, problem: KubeProxyProblem?, answered: Bool) {
+    package func endShortLived(_ name: String, holds: Bool, problem: KubeProxyProblem?, answered: Bool) {
         if let problem, problem.stopsRequests { stopped[name] = problem }
         if holds { released(name, signedIn: answered && problem == nil) }
     }
@@ -681,7 +681,7 @@ actor KubeProxies {
 
     /// Closes the proxies no request has used for `idleTime`; their contexts.
     @discardableResult
-    func closeIdle() async -> [String] {
+    package func closeIdle() async -> [String] {
         let cutoff = now().addingTimeInterval(-configuration.idleTime)
         let idle = entries.filter { $0.value.inFlight == 0 && $0.value.spec != nil && $0.value.lastUsed <= cutoff }.map(\.key).sorted()
         for name in idle { await closeProxy(name) }
@@ -702,7 +702,7 @@ actor KubeProxies {
 
     // MARK: What the page asks
 
-    func status(of name: String) async -> Status {
+    package func status(of name: String) async -> Status {
         if let problem = stopped[name] { return .stopped(problem) }
         if signingIn == name {
             if let since = signingInSince, now().timeIntervalSince(since) >= signInPatience { return .signInNeeded(context: name) }
@@ -722,23 +722,23 @@ actor KubeProxies {
 
     /// The contexts with a proxy (or one opening) — a metrics proxy's
     /// context too: names `close` takes.
-    var connected: [String] { Set(entries.keys.map(Self.contextName)).sorted() }
+    package var connected: [String] { Set(entries.keys.map(Self.contextName)).sorted() }
 
     /// Every proxy open (or opening), a metrics proxy as `<context>
     /// (prometheus)`: what the tests and the scenario read.
-    var proxyLabels: [String] { entries.keys.map(Self.label).sorted() }
+    package var proxyLabels: [String] { entries.keys.map(Self.label).sorted() }
 
     private static func label(_ key: String) -> String { isMetrics(key) ? contextName(key) + " (prometheus)" : key }
 
     /// Whether `name`'s metrics proxy is open (or opening).
-    func hasPrometheusProxy(_ name: String) -> Bool { entries[Self.key(name, Self.anyService)] != nil }
+    package func hasPrometheusProxy(_ name: String) -> Bool { entries[Self.key(name, Self.anyService)] != nil }
 
     /// Any Service: the key doesn't say which.
     private static let anyService = KubePrometheusService(namespace: "x", name: "x", port: "1")!
 
     /// After the user signed in again: the context's requests may go, on a
     /// new proxy (its metrics proxy too).
-    func retry(_ name: String) async {
+    package func retry(_ name: String) async {
         stopped[name] = nil
         await closeProxy(name)
         await closeProxy(Self.key(name, Self.anyService))
@@ -748,32 +748,32 @@ actor KubeProxies {
     /// waiting in it for a browser are closed, and the context's requests
     /// wait for Try Again (`retry`), whose fresh plugin finds the token
     /// kubelogin kept — the closed one would have waited on for minutes.
-    func signInAtTerminal(_ name: String) async {
+    package func signInAtTerminal(_ name: String) async {
         await closeProxy(name)
         await closeProxy(Self.key(name, Self.anyService))
         stopped[name] = .signingInAtTerminal(context: name)
     }
 
     /// Closes the context's proxy, and its metrics proxy.
-    func close(_ name: String) async {
+    package func close(_ name: String) async {
         await closeProxy(name)
         await closeProxy(Self.key(name, Self.anyService))
     }
 
     /// Closes the context's metrics proxy: no chart shows (it runs only while one does).
-    func closePrometheus(_ name: String) async {
+    package func closePrometheus(_ name: String) async {
         await closeProxy(Self.key(name, Self.anyService))
     }
 
     /// Every proxy, at quit (`ManagedProcess.closeAll` ends them too).
-    nonisolated func closeAll() { pool.closeAll() }
+    package nonisolated func closeAll() { pool.closeAll() }
 }
 
 @MainActor
 extension Settings {
     /// What the proxies are told: `kubernetes.maxProxies`,
     /// `proxyIdleMinutes`, `kubectlPath`, `kubeconfigs`.
-    var kubernetesProxyConfiguration: KubeProxies.Configuration {
+    package var kubernetesProxyConfiguration: KubeProxies.Configuration {
         KubeProxies.Configuration(
             maxProxies: kubernetesMaxProxies, idleTime: TimeInterval(kubernetesProxyIdleMinutes * 60), kubectlPath: kubernetesKubectlPath,
             extraKubeconfigs: kubernetesKubeconfigs)

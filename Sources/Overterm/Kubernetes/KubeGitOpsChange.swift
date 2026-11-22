@@ -5,20 +5,20 @@ import Foundation
 /// gitops.md, 1.1 row 9, G0d): `.spec.prune: false → true`. Its values said
 /// without a URL's userinfo, a map by its scalar leaves, a `kubeConfig` by
 /// its reference's name alone. Pure.
-struct KubeGitOpsChange: Equatable, Sendable {
+package struct KubeGitOpsChange: Equatable, Sendable {
     /// What kind of change it is: what the confirmation warns of.
-    enum Field: Equatable, Sendable {
+    package enum Field: Equatable, Sendable {
         case prune, autoSync, source, path, destination, suspend
     }
 
-    var field: Field
+    package var field: Field
     /// `.spec.prune`, `.spec.template.spec.source.repoURL`.
-    var path: String
-    var before: String
-    var after: String
+    package var path: String
+    package var before: String
+    package var after: String
 
     /// `.spec.prune: false → true`.
-    var said: String { "\(path): \(before) → \(after)" }
+    package var said: String { "\(path): \(before) → \(after)" }
 }
 
 /// What an apply or a YAML save changes in an Argo CD Application or
@@ -29,8 +29,8 @@ struct KubeGitOpsChange: Equatable, Sendable {
 /// auto-sync. Each is a mass delete or a redeploy, so the confirmation
 /// names each change and the name is typed on every class. Only those
 /// paths are read — never a value, a parameter or a patch. Pure.
-enum KubeGitOpsApply {
-    typealias Tool = KubeGitOpsDelete.Tool
+package enum KubeGitOpsApply {
+    package typealias Tool = KubeGitOpsDelete.Tool
 
     /// How a field is read.
     private enum Read {
@@ -95,12 +95,12 @@ enum KubeGitOpsApply {
     }
 
     /// The GitOps kind `kind` is, among the four whose apply is watched.
-    static func tool(_ kind: KubeResourceKind) -> Tool? { KubeGitOpsDelete.tool(kind) }
+    package static func tool(_ kind: KubeResourceKind) -> Tool? { KubeGitOpsDelete.tool(kind) }
 
     /// What changes from `live` to `after` (the dry run's answer, or the
     /// file merged over the live object): nothing for a new object — it
     /// replaces nothing.
-    static func changes(_ tool: Tool, live: [String: Any]?, after: [String: Any]) -> [KubeGitOpsChange] {
+    package static func changes(_ tool: Tool, live: [String: Any]?, after: [String: Any]) -> [KubeGitOpsChange] {
         guard let live else { return [] }
         var out: [KubeGitOpsChange] = []
         for watch in watched(tool) {
@@ -113,7 +113,7 @@ enum KubeGitOpsApply {
     }
 
     /// The confirmation's warning: each change named, then what it does.
-    static func warning(_ changes: [KubeGitOpsChange], tool: Tool, after: [String: Any], spoken: String) -> String? {
+    package static func warning(_ changes: [KubeGitOpsChange], tool: Tool, after: [String: Any], spoken: String) -> String? {
         guard !changes.isEmpty else { return nil }
         let fields = Set(changes.map(\.field))
         var text = "\(spoken)'s source, destination, prune or suspension changes: " + changes.map(\.said).joined(separator: "; ") + "."
@@ -152,7 +152,7 @@ enum KubeGitOpsApply {
 
     // MARK: Reading
 
-    static func value(_ object: [String: Any], _ path: [String]) -> Any? {
+    package static func value(_ object: [String: Any], _ path: [String]) -> Any? {
         var current: Any? = object
         for key in path {
             guard let map = current as? [String: Any] else { return nil }
@@ -220,22 +220,22 @@ enum KubeGitOpsApply {
 /// the review's toggle read decided Resume on, and from its source's
 /// `status.artifact.revision` (one bounded GET, that field alone decoded).
 /// A Kustomization with `spec.prune` has its name typed. Pure.
-struct KubeFluxResume: Equatable, Sendable {
-    var tool: KubeGitOpsDelete.Tool
-    var prune = false
+package struct KubeFluxResume: Equatable, Sendable {
+    package var tool: KubeGitOpsDelete.Tool
+    package var prune = false
     /// What is applied now: a Kustomization's `lastAppliedRevision`, a HelmRelease's `history[0].chartVersion`.
-    var applied: String?
+    package var applied: String?
     /// What was last tried, when it isn't what is applied.
-    var attempted: String?
+    package var attempted: String?
     /// The source it applies from: `gitrepository flux-system/fleet`.
-    var source: String?
+    package var source: String?
     /// What that source holds now.
-    var next: String?
+    package var next: String?
     /// Why the source's revision wasn't read; nil when it was.
-    var unread: String?
+    package var unread: String?
 
     /// The two kinds whose resume applies something.
-    static func tool(_ kind: KubeResourceKind) -> KubeGitOpsDelete.Tool? {
+    package static func tool(_ kind: KubeResourceKind) -> KubeGitOpsDelete.Tool? {
         switch KubeGitOpsDelete.tool(kind) {
         case .kustomization: .kustomization
         case .helmRelease: .helmRelease
@@ -245,7 +245,7 @@ struct KubeFluxResume: Equatable, Sendable {
 
     /// The facts the object says, and the source whose revision says what
     /// it applies (a HelmRelease's chart, as `flux` finds it).
-    static func facts(_ object: [String: Any], tool: KubeGitOpsDelete.Tool, resource: String) -> (KubeFluxResume, KubeGitOps.FluxSource?) {
+    package static func facts(_ object: [String: Any], tool: KubeGitOpsDelete.Tool, resource: String) -> (KubeFluxResume, KubeGitOps.FluxSource?) {
         var facts = KubeFluxResume(tool: tool)
         let spec = object["spec"] as? [String: Any] ?? [:]
         let status = object["status"] as? [String: Any] ?? [:]
@@ -264,7 +264,7 @@ struct KubeFluxResume: Equatable, Sendable {
     }
 
     /// `main@sha1:c03f9aa0…` → `main@c03f9aa`; `sha256:` digests to 12; a chart version as it is.
-    static func short(_ revision: String) -> String {
+    package static func short(_ revision: String) -> String {
         var text = GitRemoteURL.stripUserinfo(inText: revision)
         if let range = text.range(of: "sha1:") {
             let hash = text[range.upperBound...].prefix(7)
@@ -286,7 +286,7 @@ struct KubeFluxResume: Equatable, Sendable {
     }
 
     /// The confirmation's warning.
-    var said: String {
+    package var said: String {
         var text: String
         let from = source.map { "what \($0) holds now" } ?? "what its source holds now"
         // Compared whole (`main@c03f9aa`), said short beside `next` (`c03f9aa`).
@@ -321,30 +321,30 @@ struct KubeFluxResume: Equatable, Sendable {
     }
 
     /// A source's revision alone; nothing else of it is decoded.
-    struct SourceWire: Decodable, Sendable {
-        var status: Status?
+    package struct SourceWire: Decodable, Sendable {
+        package var status: Status?
 
-        struct Status: Decodable, Sendable {
-            var artifact: Artifact?
+        package struct Status: Decodable, Sendable {
+            package var artifact: Artifact?
         }
 
-        struct Artifact: Decodable, Sendable {
-            var revision: String?
+        package struct Artifact: Decodable, Sendable {
+            package var revision: String?
         }
     }
 
-    static let sourceBytes = 4 << 20
+    package static let sourceBytes = 4 << 20
 }
 
 extension KubeClient {
     /// What resuming `object` applies: its source's revision read once,
     /// bounded; a source not served, not named or not readable is said as
     /// unread, never no sentence.
-    func fluxResume(_ read: KubeSpecRead, ref: KubeObjectRef, discovery: KubeDiscovery?) async -> KubeFluxResume? {
+    package func fluxResume(_ read: KubeSpecRead, ref: KubeObjectRef, discovery: KubeDiscovery?) async -> KubeFluxResume? {
         await fluxResume(read.object, ref: ref, discovery: discovery)
     }
 
-    func fluxResume(_ object: [String: Any], ref: KubeObjectRef, discovery: KubeDiscovery?) async -> KubeFluxResume? {
+    package func fluxResume(_ object: [String: Any], ref: KubeObjectRef, discovery: KubeDiscovery?) async -> KubeFluxResume? {
         guard let tool = KubeFluxResume.tool(ref.kind) else { return nil }
         var (facts, source) = KubeFluxResume.facts(object, tool: tool, resource: ref.kind.fullName)
         guard let source else {

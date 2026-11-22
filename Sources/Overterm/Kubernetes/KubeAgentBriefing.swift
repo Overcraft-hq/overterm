@@ -18,12 +18,12 @@ import Foundation
 /// names the brief says anyway — the pod, its containers, its images, its
 /// owners — are kept out of what is taken out (`KubeAgentText.names`).
 @MainActor
-enum KubeAgentBriefing {
+package enum KubeAgentBriefing {
     /// How long one read may take before the brief goes without it.
-    static var readTimeout: Duration = .seconds(10)
+    package static var readTimeout: Duration = .seconds(10)
 
     /// The brief on `ref`: a pod's, or a Deployment's.
-    static func brief(
+    package static func brief(
         _ ref: KubeObjectRef, client: KubeClient, context: KubeBriefContext, discovery: KubeDiscovery? = nil, now: Date = Date()
     ) async throws -> KubeAgentBrief {
         try await read(ref, client: client, context: context, discovery: discovery, now: now).brief
@@ -31,7 +31,7 @@ enum KubeAgentBriefing {
 
     /// The brief on `ref`, and what it read that its usage part reads
     /// too (`KubeMCP.usagePart`): handed on, never read twice.
-    static func read(
+    package static func read(
         _ ref: KubeObjectRef, client: KubeClient, context: KubeBriefContext, discovery: KubeDiscovery? = nil, now: Date = Date()
     ) async throws -> (brief: KubeAgentBrief, reads: KubeBriefReads) {
         guard !ref.isSecret else { throw KubeBriefProblem.unsupported("A Secret is never put in a brief.") }
@@ -49,13 +49,13 @@ enum KubeAgentBriefing {
     // MARK: An Argo CD or Flux object (gitops.md 6.2)
 
     /// The most objects of its chain a brief reads that the summaries lack.
-    static let gitOpsChainReads = 6
+    package static let gitOpsChainReads = 6
 
     /// The order a chain's unsummarised links are read in: the dependency
     /// its conditions name (Flux's `dependency 'ns/name' is not ready` —
     /// the first of its `dependsOn` that isn't), then its sources, then
     /// the rest as they are listed.
-    static func readOrder(_ keys: [KubeGitOpsObject.Key], of object: KubeGitOpsObject) -> [KubeGitOpsObject.Key] {
+    package static func readOrder(_ keys: [KubeGitOpsObject.Key], of object: KubeGitOpsObject) -> [KubeGitOpsObject.Key] {
         var named: Set<String> = []
         for message in object.conditions.compactMap(\.message) {
             var rest = message[...]
@@ -81,7 +81,7 @@ enum KubeAgentBriefing {
     /// each, at most `gitOpsChainReads`, so a Blocked one names its root
     /// cause. Never a Secret, a ConfigMap, a Helm release. Every word
     /// through `Secrets`.
-    static func gitOps(
+    package static func gitOps(
         _ ref: KubeObjectRef, client: KubeClient, context: KubeBriefContext, discovery: KubeDiscovery?, peers given: KubeGitOpsLadder.Peers = [:],
         now: Date = Date()
     ) async throws -> KubeAgentBrief {
@@ -380,7 +380,7 @@ enum KubeAgentBriefing {
 
     /// A pod spec's containers' images (init containers after), as the
     /// deployed commit reads them.
-    static func images(of spec: Any?) -> [String] {
+    package static func images(of spec: Any?) -> [String] {
         let spec = KubeAgentText.map(spec)
         let containers = KubeAgentText.list(spec["containers"]) + KubeAgentText.list(spec["initContainers"])
         var seen = Set<String>()
@@ -393,7 +393,7 @@ enum KubeAgentBriefing {
     /// commit looked up there (`Git.run`, nothing fetched) — as a part of
     /// its own. Nothing is read from the cluster for it; a commit only
     /// the revision label would give (asked for in the rail) isn't here.
-    static func withDeployedCommit(_ brief: KubeAgentBrief, checkout: URL) async -> KubeAgentBrief {
+    package static func withDeployedCommit(_ brief: KubeAgentBrief, checkout: URL) async -> KubeAgentBrief {
         let answer = await KubeDeployedCommit.answer(KubeDeployedCommit.candidates(images: brief.images), in: checkout)
         var brief = brief
         var text = "Checkout \(checkout.path): " + answer.text + (answer.sourceSaid.map { " (\($0))" } ?? "") + "."
@@ -438,18 +438,18 @@ enum KubeAgentBriefing {
 
     /// A container's last lines, as a brief asks for them: bounded in
     /// lines and bytes, read once.
-    static func logQuery(_ target: (container: String, previous: Bool)) -> KubeLogQuery {
+    package static func logQuery(_ target: (container: String, previous: Bool)) -> KubeLogQuery {
         KubeLogQuery(container: target.container, previous: target.previous, tailLines: KubeAgentText.logLines, limitBytes: KubeAgentText.logReadBytes)
     }
 
     /// Whether an owner reference names a Secret: never followed.
-    static func isSecretOwner(apiVersion: String, kind: String) -> Bool {
+    package static func isSecretOwner(apiVersion: String, kind: String) -> Bool {
         kind == "Secret" && (apiVersion == "v1" || apiVersion.isEmpty)
     }
 
     /// An owner's kind, as the context serves it, else Kubernetes' own;
     /// nil for a Secret, which is never read.
-    static func ownerKind(apiVersion: String, kind: String, discovery: KubeDiscovery?) -> KubeResourceKind? {
+    package static func ownerKind(apiVersion: String, kind: String, discovery: KubeDiscovery?) -> KubeResourceKind? {
         guard !isSecretOwner(apiVersion: apiVersion, kind: kind) else { return nil }
         if let served = discovery?.kind(apiVersion: apiVersion, kind: kind) {
             return served.group.isEmpty && served.resource == "secrets" ? nil : served
@@ -459,7 +459,7 @@ enum KubeAgentBriefing {
     }
 
     /// A plain list's items.
-    nonisolated static func items(_ body: Data) -> [[String: Any]] {
+    package nonisolated static func items(_ body: Data) -> [[String: Any]] {
         ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any])?["items"] as? [[String: Any]] ?? []
     }
 
@@ -468,40 +468,40 @@ enum KubeAgentBriefing {
     /// alone, `https://tok@host/…`, has no `:` for `Secrets.maskURLs` to
     /// see — a Flux source's Ready message and events quote one), then
     /// credentials and blobs.
-    nonisolated static func scrubber(env: [(key: String, value: String)], names: Set<String>) -> (String) -> String {
+    package nonisolated static func scrubber(env: [(key: String, value: String)], names: Set<String>) -> (String) -> String {
         { Secrets.scrubCredentials(GitRemoteURL.stripUserinfo(inText: Secrets.scrub($0, env: env, keeping: names))) }
     }
 
     /// A read's failure, as a brief says it.
-    static func said(_ error: Error) -> String {
+    package static func said(_ error: Error) -> String {
         error is KubeBriefTimeout ? "no answer in \(readTimeout)" : KubernetesModel.said(error)
     }
 
     /// One read, or `KubeBriefTimeout` once `readTimeout` has passed — its
     /// request cancelled, and the brief goes on without it.
-    static func within<T: Sendable>(_ read: @escaping @Sendable () async throws -> T) async throws -> T {
+    package static func within<T: Sendable>(_ read: @escaping @Sendable () async throws -> T) async throws -> T {
         try await KubeBriefRace.run(limit: readTimeout, read)
     }
 }
 
 /// What a brief read that its usage part reads too (`KubeMCP.usagePart`,
 /// metrics.md 7): handed on within one Ask Why, so nothing is read twice.
-struct KubeBriefReads: @unchecked Sendable {
+package struct KubeBriefReads: @unchecked Sendable {
     /// The object asked about: the pod's, or the Deployment's.
-    var object: [String: Any]
+    package var object: [String: Any]
     /// Its own events; nil, they couldn't be read.
-    var events: [KubeEvent]?
+    package var events: [KubeEvent]?
     /// A Deployment's ReplicaSets, one page by its selector; nil, not read.
-    var replicaSets: [[String: Any]]?
+    package var replicaSets: [[String: Any]]?
     /// The pod's failing container, as `KubeTrouble` names it.
-    var failingContainer: String?
+    package var failingContainer: String?
 }
 
 /// A read that took longer than the brief waits.
-struct KubeBriefTimeout: Error {}
+package struct KubeBriefTimeout: Error {}
 
 /// A read raced against a clock: whichever ends first answers, once.
-final class KubeBriefRace<T: Sendable>: @unchecked Sendable {
+package final class KubeBriefRace<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<T, Error>?
 
@@ -513,7 +513,7 @@ final class KubeBriefRace<T: Sendable>: @unchecked Sendable {
         waiting?.resume(with: result)
     }
 
-    static func run(limit: Duration, _ read: @escaping @Sendable () async throws -> T) async throws -> T {
+    package static func run(limit: Duration, _ read: @escaping @Sendable () async throws -> T) async throws -> T {
         let race = KubeBriefRace<T>()
         return try await withCheckedThrowingContinuation { continuation in
             race.lock.lock()
@@ -536,22 +536,22 @@ final class KubeBriefRace<T: Sendable>: @unchecked Sendable {
 }
 
 extension KubeResourceKind {
-    static let replicaSets = KubeResourceKind(
+    package static let replicaSets = KubeResourceKind(
         group: "apps", version: "v1", resource: "replicasets", kind: "ReplicaSet", singular: "replicaset", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"], shortNames: ["rs"], categories: ["all"],
         subresources: ["scale", "status"])
-    static let statefulSets = KubeResourceKind(
+    package static let statefulSets = KubeResourceKind(
         group: "apps", version: "v1", resource: "statefulsets", kind: "StatefulSet", singular: "statefulset", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"], shortNames: ["sts"], categories: ["all"],
         subresources: ["scale", "status"])
-    static let daemonSets = KubeResourceKind(
+    package static let daemonSets = KubeResourceKind(
         group: "apps", version: "v1", resource: "daemonsets", kind: "DaemonSet", singular: "daemonset", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"], shortNames: ["ds"], categories: ["all"],
         subresources: ["status"])
-    static let jobs = KubeResourceKind(
+    package static let jobs = KubeResourceKind(
         group: "batch", version: "v1", resource: "jobs", kind: "Job", singular: "job", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"], categories: ["all"], subresources: ["status"])
-    static let cronJobs = KubeResourceKind(
+    package static let cronJobs = KubeResourceKind(
         group: "batch", version: "v1", resource: "cronjobs", kind: "CronJob", singular: "cronjob", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"], shortNames: ["cj"], categories: ["all"],
         subresources: ["status"])
@@ -561,8 +561,8 @@ extension KubeResourceKind {
 /// a tab of a checkout bound to the brief's namespace — the brief's own
 /// checkout's (the selected tab's binding when it is bound there) first —,
 /// then the selected tab's agent, then the others. Pure over what it is given.
-enum KubeBriefTargets {
-    static func ordered<Agent: AnyObject>(
+package enum KubeBriefTargets {
+    package static func ordered<Agent: AnyObject>(
         _ agents: [Agent], selected: Agent?, checkout: (Agent) -> String?, bound: Set<String>, first: String?
     ) -> [Agent] {
         var ordered = agents.filter { checkout($0).map(bound.contains) ?? false }

@@ -7,20 +7,20 @@ import Foundation
 /// `ResourceTable` reports a header moved or resized (`columnsChanged`);
 /// kept here, the next change of the columns — a grouping, a section —
 /// builds them as the person left them. Pure but for `load` and `save`.
-enum ActivityColumns {
+package enum ActivityColumns {
     /// One column as kept: its id and width.
-    struct Kept: Codable, Equatable, Sendable {
-        var id: String
-        var width: Double
+    package struct Kept: Codable, Equatable, Sendable {
+        package var id: String
+        package var width: Double
     }
 
     /// What is kept: each section's columns in their order.
-    typealias Layout = [String: [Kept]]
+    package typealias Layout = [String: [Kept]]
 
-    static let key = "activity.page.columns.v1"
+    package static let key = "activity.page.columns.v1"
 
     /// Every column Processes offers, in its default order.
-    static let processes: [ResourceColumn] = [
+    package static let processes: [ResourceColumn] = [
         ResourceColumn(id: "name", title: "Name", width: 300, minWidth: 140),
         ResourceColumn(id: "pid", title: "PID", width: 64),
         ResourceColumn(id: "cpu", title: "CPU %", width: 64, help: "100% is one core, as htop and Tab Info count"),
@@ -51,10 +51,10 @@ enum ActivityColumns {
     ]
 
     /// Shown until the person picks: 6.5's "on" — User comes with All.
-    static let processDefaults: [String] = ["name", "pid", "cpu", "cpu15", "memory", "threads", "state", "started", "listening"]
+    package static let processDefaults: [String] = ["name", "pid", "cpu", "cpu15", "memory", "threads", "state", "started", "listening"]
 
     /// Every column Listening offers, in its default order (6.8).
-    static let listening: [ResourceColumn] = [
+    package static let listening: [ResourceColumn] = [
         ResourceColumn(id: "port", title: "Port", width: 70),
         ResourceColumn(id: "proto", title: "Proto", width: 52),
         ResourceColumn(id: "address", title: "Scope", width: 130, help: "This Mac: loopback only. Network: whatever can route to this Mac"),
@@ -70,16 +70,16 @@ enum ActivityColumns {
     ]
 
     /// Shown until the person picks: Since and Backlog off.
-    static let listeningDefaults: [String] = ["port", "proto", "address", "families", "owner", "process", "pid", "where", "clients", "note"]
+    package static let listeningDefaults: [String] = ["port", "proto", "address", "families", "owner", "process", "pid", "where", "clients", "note"]
 
     /// Where's comes and goes with the grouping (6.5): shown when grouped
     /// by neither checkout nor tab, never picked.
-    static func showsWhere(_ grouping: ActivityGrouping) -> Bool { grouping != .checkout && grouping != .tab }
+    package static func showsWhere(_ grouping: ActivityGrouping) -> Bool { grouping != .checkout && grouping != .tab }
 
     /// The columns offered in the header's menu: never Name, which every
     /// row needs, nor Where or User, which come and go with the grouping
     /// and with All.
-    static func choices(_ section: ActivityPageModel.Section) -> [ResourceColumn] {
+    package static func choices(_ section: ActivityPageModel.Section) -> [ResourceColumn] {
         switch section {
         case .processes, .leftBehind: processes.filter { $0.id != "name" && $0.id != "where" && $0.id != "user" }
         case .listening: listening.filter { $0.id != "port" }
@@ -91,7 +91,7 @@ enum ActivityColumns {
     /// User while All shows (`everyone`; with Yours every row says the
     /// same user) and Where by the grouping, each at its kept place or
     /// last.
-    static func columns(_ section: ActivityPageModel.Section, kept: [Kept]?, grouping: ActivityGrouping, everyone: Bool) -> [ResourceColumn] {
+    package static func columns(_ section: ActivityPageModel.Section, kept: [Kept]?, grouping: ActivityGrouping, everyone: Bool) -> [ResourceColumn] {
         let all = section == .listening ? listening : processes
         let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
         var shown: [ResourceColumn]
@@ -122,12 +122,12 @@ enum ActivityColumns {
 
     /// The columns as the table reports them, kept: Where's place too, so
     /// it comes back there.
-    static func kept(_ columns: [ResourceColumn]) -> [Kept] {
+    package static func kept(_ columns: [ResourceColumn]) -> [Kept] {
         columns.map { Kept(id: $0.id, width: Double($0.width)) }
     }
 
     /// `section`'s columns with `id` shown or hidden: a new one last.
-    static func toggled(_ id: String, in columns: [ResourceColumn], section: ActivityPageModel.Section) -> [ResourceColumn] {
+    package static func toggled(_ id: String, in columns: [ResourceColumn], section: ActivityPageModel.Section) -> [ResourceColumn] {
         if columns.contains(where: { $0.id == id }) {
             guard columns.count > 1 else { return columns }
             return columns.filter { $0.id != id }
@@ -137,12 +137,12 @@ enum ActivityColumns {
         return columns + [column]
     }
 
-    static func load() -> Layout {
+    package static func load() -> Layout {
         guard let data = AppEnvironment.defaults.data(forKey: key), let layout = try? JSONDecoder().decode(Layout.self, from: data) else { return [:] }
         return layout
     }
 
-    static func save(_ layout: Layout) {
+    package static func save(_ layout: Layout) {
         guard let data = try? JSONEncoder().encode(layout) else { return }
         AppEnvironment.defaults.set(data, forKey: key)
     }

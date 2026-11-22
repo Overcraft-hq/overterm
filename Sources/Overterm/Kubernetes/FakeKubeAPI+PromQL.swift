@@ -9,32 +9,32 @@ import Foundation
 /// is answered without teaching `FakePromQL` its grammar. Without lines it
 /// adds its warnings to what `FakePromQL` evaluates (a Thanos store's
 /// partial answer); with a failure it answers that instead.
-struct FakePromFixture: Sendable {
-    struct Line: Sendable {
-        var labels: [String: String]
-        var value: @Sendable (_ time: Double) -> Double?
+package struct FakePromFixture: Sendable {
+    package struct Line: Sendable {
+        package var labels: [String: String]
+        package var value: @Sendable (_ time: Double) -> Double?
 
-        init(_ labels: [String: String] = [:], value: @escaping @Sendable (_ time: Double) -> Double?) {
+        package init(_ labels: [String: String] = [:], value: @escaping @Sendable (_ time: Double) -> Double?) {
             self.labels = labels
             self.value = value
         }
     }
 
-    struct Failure: Sendable, Equatable {
-        var status: Int
-        var errorType: String
-        var error: String
+    package struct Failure: Sendable, Equatable {
+        package var status: Int
+        package var errorType: String
+        package var error: String
     }
 
-    var fragment: String
-    var lines: [Line]?
-    var warnings: [String] = []
-    var failure: Failure?
+    package var fragment: String
+    package var lines: [Line]?
+    package var warnings: [String] = []
+    package var failure: Failure?
 
     /// An empty fragment matches every query (an agent answers none).
-    func matches(_ query: String) -> Bool { fragment.isEmpty || Self.normalised(query).contains(Self.normalised(fragment)) }
+    package func matches(_ query: String) -> Bool { fragment.isEmpty || Self.normalised(query).contains(Self.normalised(fragment)) }
 
-    static func normalised(_ text: String) -> String { text.filter { !$0.isWhitespace } }
+    package static func normalised(_ text: String) -> String { text.filter { !$0.isWhitespace } }
 }
 
 /// As much PromQL as M0's queries need, evaluated over the fake
@@ -52,28 +52,28 @@ struct FakePromFixture: Sendable {
 /// Anything neither reads is nil — answered `bad_data`, so a query the
 /// fake can't read fails the test that sent it rather than answering
 /// something made up.
-enum FakePromQL {
-    struct Sample: Equatable {
-        var labels: [String: String]
-        var value: Double
+package enum FakePromQL {
+    package struct Sample: Equatable {
+        package var labels: [String: String]
+        package var value: Double
     }
 
-    typealias Series = (metric: String, labels: [String: String], value: Double)
+    package typealias Series = (metric: String, labels: [String: String], value: Double)
 
-    static func evaluate(_ promql: String, _ series: [Series]) -> [Sample]? {
+    package static func evaluate(_ promql: String, _ series: [Series]) -> [Sample]? {
         guard let tokens = tokenize(promql) else { return nil }
         var parser = Parser(tokens: tokens, series: series)
         guard let result = parser.union(), parser.at == tokens.count else { return nil }
         return result.sorted { $0.labels.description < $1.labels.description }
     }
 
-    enum Token: Equatable {
+    package enum Token: Equatable {
         case word(String)
         case text(String)
         case symbol(String)
     }
 
-    static func tokenize(_ text: String) -> [Token]? {
+    package static func tokenize(_ text: String) -> [Token]? {
         var tokens: [Token] = []
         let characters = Array(text)
         var index = 0
@@ -120,10 +120,10 @@ enum FakePromQL {
         return tokens
     }
 
-    struct Parser {
-        let tokens: [Token]
-        let series: [Series]
-        var at = 0
+    package struct Parser {
+        package let tokens: [Token]
+        package let series: [Series]
+        package var at = 0
 
         private var next: Token? { at < tokens.count ? tokens[at] : nil }
 
@@ -152,7 +152,7 @@ enum FakePromQL {
         }
 
         /// `a or b`: a's samples, and b's whose labels a has none of.
-        mutating func union() -> [Sample]? {
+        package mutating func union() -> [Sample]? {
             guard var left = intersection() else { return nil }
             while next == .word("or") {
                 at += 1
@@ -163,7 +163,7 @@ enum FakePromQL {
         }
 
         /// `a and on(…) b`: a's samples that b has one of, matched on those labels (all, without `on`).
-        mutating func intersection() -> [Sample]? {
+        package mutating func intersection() -> [Sample]? {
             guard var left = compare() else { return nil }
             while next == .word("and") {
                 at += 1
@@ -198,7 +198,7 @@ enum FakePromQL {
             return on.allSatisfy { a.labels[$0] == b.labels[$0] }
         }
 
-        mutating func compare() -> [Sample]? {
+        package mutating func compare() -> [Sample]? {
             guard var left = product() else { return nil }
             while take("==") {
                 if case .word(let text)? = next, let number = Double(text) {
@@ -213,7 +213,7 @@ enum FakePromQL {
             return left
         }
 
-        mutating func product() -> [Sample]? {
+        package mutating func product() -> [Sample]? {
             guard var left = unary() else { return nil }
             while take("*") {
                 var on: [String]?
@@ -245,7 +245,7 @@ enum FakePromQL {
             return left
         }
 
-        mutating func unary() -> [Sample]? {
+        package mutating func unary() -> [Sample]? {
             if take("(") {
                 guard let inner = union(), take(")") else { return nil }
                 return inner
@@ -340,7 +340,7 @@ enum FakePromQL {
     }
 
     /// An anchored RE2 match, as Prometheus's.
-    static func matches(_ text: String, _ pattern: String) -> Bool {
+    package static func matches(_ text: String, _ pattern: String) -> Bool {
         guard let regex = try? NSRegularExpression(pattern: "^(?:" + pattern + ")$") else { return false }
         return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }

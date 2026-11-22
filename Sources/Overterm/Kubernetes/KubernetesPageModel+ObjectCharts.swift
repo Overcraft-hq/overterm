@@ -5,16 +5,16 @@ import Foundation
 /// HPA that targets a workload — one HPA Table read in its namespace,
 /// matched on its Reference, never repeated while the tab shows — and a
 /// namespace's ResourceQuota. Only the detail shown's are kept.
-struct KubeChartLookups: Equatable, Sendable {
+package struct KubeChartLookups: Equatable, Sendable {
     /// A workload's HPA: its name, or nil when none targets it.
-    var hpa: [KubeObjectRef: String?] = [:]
-    var quotas: [KubeObjectRef: KubeQuota] = [:]
-    var asked: Set<KubeObjectRef> = []
+    package var hpa: [KubeObjectRef: String?] = [:]
+    package var quotas: [KubeObjectRef: KubeQuota] = [:]
+    package var asked: Set<KubeObjectRef> = []
     /// Changed with each answer: what the charts' cache is keyed by.
-    var version = 0
+    package var version = 0
 
     /// The HPA whose Reference cell names `kind/name` (`Deployment/web`), among a namespace's rows.
-    static func hpa(targeting kind: String, _ name: String, in table: KubeTable) -> String? {
+    package static func hpa(targeting kind: String, _ name: String, in table: KubeTable) -> String? {
         guard let column = table.column(named: "Reference") else { return nil }
         return table.rows.sorted { $0.id < $1.id }.first { row in
             column < row.cells.count && row.cells[column].text == "\(kind)/\(name)"
@@ -24,35 +24,35 @@ struct KubeChartLookups: Equatable, Sendable {
 
 /// "Sample top pods" on a node's tab (metrics.md 2.8, decision 8): its
 /// largest pods' namespaces read every 30 s for 15 minutes, then "Sample again".
-struct KubeTopPodsSampling: Equatable, Sendable {
-    var node: String
-    var since: Date
-    var stopped = false
+package struct KubeTopPodsSampling: Equatable, Sendable {
+    package var node: String
+    package var since: Date
+    package var stopped = false
 }
 
 /// What a workload's, HPA's, node's or namespace's Metrics tab charts were built from. Pure.
-struct KubeObjectChartsKey: Equatable, Sendable {
-    var ref: KubeObjectRef
-    var resourceVersion: String?
-    var bytes: Int
-    var now: Date
-    var range: KubeMetricsRange
-    var view: KubeWorkloadView?
-    var lookups: Int
-    var revisions: Int
-    var topPods: KubeTopPodsSampling?
-    var reads: [Date]
-    var changes: Int
-    var window: KubeChartWindow?
-    var source: KubeChartSource = .sampled
+package struct KubeObjectChartsKey: Equatable, Sendable {
+    package var ref: KubeObjectRef
+    package var resourceVersion: String?
+    package var bytes: Int
+    package var now: Date
+    package var range: KubeMetricsRange
+    package var view: KubeWorkloadView?
+    package var lookups: Int
+    package var revisions: Int
+    package var topPods: KubeTopPodsSampling?
+    package var reads: [Date]
+    package var changes: Int
+    package var window: KubeChartWindow?
+    package var source: KubeChartSource = .sampled
     /// Prometheus' answers' version (`KubeTabReading.version`).
-    var prometheus: Int?
+    package var prometheus: Int?
     /// Whether the page's profile maps node-exporter to nodes (nil,
     /// unknown): a node's disks and network in Live, nothing read yet.
-    var nodeExporter: Bool?
+    package var nodeExporter: Bool?
     /// A workload's: the context's saved queries, and whether Prometheus is on for it.
-    var saved: [KubeSavedChart] = []
-    var prometheusOn = false
+    package var saved: [KubeSavedChart] = []
+    package var prometheusOn = false
 }
 
 /// The Metrics tab beyond pods (stage M3b): a workload's CPU and memory as
@@ -65,11 +65,11 @@ struct KubeObjectChartsKey: Equatable, Sendable {
 /// history, an hour after.
 extension KubernetesPageModel {
     /// A node's tab samples its largest pods' namespaces for this long ("Sample top pods").
-    static let topPodsNamespaces = 4
+    package static let topPodsNamespaces = 4
 
     /// What a tab other than a pod's reads now: nothing until the object is
     /// read where its selector is needed.
-    func objectMetricsDetails(_ session: KubeDetailSession) -> [KubeMetricsDetail] {
+    package func objectMetricsDetails(_ session: KubeDetailSession) -> [KubeMetricsDetail] {
         let ref = session.ref
         // Without metrics-server only an HPA's tab charts anything (its
         // status): the others read nothing they wouldn't draw.
@@ -115,7 +115,7 @@ extension KubernetesPageModel {
 
     /// The largest pods "Sample top pods" reads: those of the first four
     /// namespaces among them — a pod of a fifth isn't sampled, so isn't drawn. Pure.
-    static func topPodsPicked(_ pods: KubeNodePods) -> [KubeRowID] {
+    package static func topPodsPicked(_ pods: KubeNodePods) -> [KubeRowID] {
         var namespaces: [String] = []
         var picked: [KubeRowID] = []
         for pod in pods.largest(KubeNodeCharts.topPods) {
@@ -130,10 +130,10 @@ extension KubernetesPageModel {
     }
 
     /// The page's own list samples every namespace's pods already: the top pods are read from it.
-    var topPodsFromList: Bool { model.metrics.listTargets.contains(.pods(.all, labels: nil)) }
+    package var topPodsFromList: Bool { model.metrics.listTargets.contains(.pods(.all, labels: nil)) }
 
     /// "Sample top pods" pressed (or "Sample again"): read for 15 minutes, then stopped.
-    func sampleTopPods() {
+    package func sampleTopPods() {
         guard let ref = detail?.ref, ref.metricsSubject == .node else { return }
         topPodsSampling = KubeTopPodsSampling(node: ref.name, since: Date())
         topPodsStop?.cancel()
@@ -148,14 +148,14 @@ extension KubernetesPageModel {
     }
 
     /// What the tab's button says.
-    var topPodsTitle: String {
+    package var topPodsTitle: String {
         guard let sampling = topPodsSampling, sampling.node == detail?.ref.name else { return "Sample Top Pods" }
         if sampling.stopped { return "Sample Again" }
         return "Sampling top pods until \(KubeChartTime.clock(sampling.since.addingTimeInterval(Double(topPodsDuration.components.seconds))))"
     }
 
     /// Picked Total or Per pod on a workload's charts: for the page, in memory.
-    func pickWorkloadView(_ view: KubeWorkloadView) {
+    package func pickWorkloadView(_ view: KubeWorkloadView) {
         if workloadChartView != view { workloadChartView = view }
     }
 
@@ -163,7 +163,7 @@ extension KubernetesPageModel {
     /// revisions (the History tab's reads, once), a namespace's quota —
     /// only where the tab charts them (metrics on, metrics-server serving),
     /// and marked asked only once the read is started (else asked again).
-    func askChartLookups() {
+    package func askChartLookups() {
         guard chartsShown, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, metricsTabShows,
             model.metrics.availability == .served || chartsFromPrometheus, let session = detail, !chartLookups.asked.contains(session.ref)
         else { return }
@@ -209,7 +209,7 @@ extension KubernetesPageModel {
 
     /// The tab's charts for a workload, an HPA, a node, a namespace: built
     /// only when what they are built from changes (`KubeObjectChartsKey`).
-    func objectCharts(of session: KubeDetailSession) -> KubeObjectCharts? {
+    package func objectCharts(of session: KubeDetailSession) -> KubeObjectCharts? {
         let ref = session.ref
         guard let subject = ref.metricsSubject, subject != .pod, let object = session.object, let source = metricsSource(of: ref) else { return nil }
         let details = source == .prometheus ? [] : objectMetricsDetails(session)
@@ -329,7 +329,7 @@ extension KubernetesPageModel {
 
     /// Why a tab other than a pod's has nothing: metrics-server absent (an
     /// HPA's needs none), or its reads refused or failing.
-    func objectMetricsProblem(of session: KubeDetailSession) -> String? {
+    package func objectMetricsProblem(of session: KubeDetailSession) -> String? {
         if let source = metricsSource(of: session.ref), source != .sampled, let reading = tabReading(of: session) {
             if let unavailable = reading.unavailable { return unavailable }
             if source == .prometheus, reading.read == nil, let problem = reading.problem { return "Prometheus couldn't be read: \(problem)" }
@@ -355,7 +355,7 @@ extension KubernetesPageModel {
     /// The context's saved queries, for a workload's tab (metrics.md
     /// decision 11): its `kubernetes.contexts` entry's `charts`, as the
     /// user wrote them; none for any other object.
-    func savedCharts(of ref: KubeObjectRef) -> [KubeSavedChart] {
+    package func savedCharts(of ref: KubeObjectRef) -> [KubeSavedChart] {
         guard case .workload = ref.metricsSubject, let context = model.selected, context.name == ref.context else { return [] }
         return context.settings.charts
     }

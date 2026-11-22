@@ -9,26 +9,26 @@ import Foundation
 
 /// A workload's replicas as its status says them (W4): desired, available,
 /// unavailable — a Job's active, succeeded and failed.
-struct KubeReplicaStatus: Equatable, Sendable {
-    struct Value: Equatable, Sendable {
-        var id: String
-        var name: String
-        var value: Double
+package struct KubeReplicaStatus: Equatable, Sendable {
+    package struct Value: Equatable, Sendable {
+        package var id: String
+        package var name: String
+        package var value: Double
     }
 
-    var kind: String
-    var values: [Value]
+    package var kind: String
+    package var values: [Value]
 
-    struct Malformed: Error, LocalizedError {
-        var errorDescription: String? { "The workload's answer isn't an object." }
+    package struct Malformed: Error, LocalizedError {
+        package var errorDescription: String? { "The workload's answer isn't an object." }
     }
 
-    static func read(_ data: Data, kind: String) throws -> KubeReplicaStatus {
+    package static func read(_ data: Data, kind: String) throws -> KubeReplicaStatus {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Malformed() }
         return of(object, kind: kind)
     }
 
-    static func of(_ object: [String: Any], kind: String) -> KubeReplicaStatus {
+    package static func of(_ object: [String: Any], kind: String) -> KubeReplicaStatus {
         let spec = object["spec"] as? [String: Any] ?? [:]
         let status = object["status"] as? [String: Any] ?? [:]
         func int(_ value: Any?) -> Double { Double(KubeRollout.int(value) ?? 0) }
@@ -54,47 +54,47 @@ struct KubeReplicaStatus: Equatable, Sendable {
         }
     }
 
-    var numbers: [String: Double] { Dictionary(values.map { ($0.id, $0.value) }, uniquingKeysWith: { $1 }) }
+    package var numbers: [String: Double] { Dictionary(values.map { ($0.id, $0.value) }, uniquingKeysWith: { $1 }) }
 }
 
 /// A node's pods as objects (metrics.md 2.8, review): one list
 /// (`fieldSelector=spec.nodeName`, at most `limit`), each decoded to its
 /// requests, limits and phase on a background queue — everything else
 /// dropped as it is decoded, env values first; no object kept.
-struct KubeNodePods: Equatable, Sendable {
-    struct Pod: Equatable, Sendable {
-        var id: KubeRowID
-        var phase: String
-        var cpuRequest: Double
-        var memoryRequest: Double
+package struct KubeNodePods: Equatable, Sendable {
+    package struct Pod: Equatable, Sendable {
+        package var id: KubeRowID
+        package var phase: String
+        package var cpuRequest: Double
+        package var memoryRequest: Double
         /// The GPUs its containers are given, by resource (decision 12).
-        var gpus: [String: Double] = [:]
+        package var gpus: [String: Double] = [:]
 
         /// Pending or Running: what the scheduler counts.
-        var isActive: Bool { phase == "Pending" || phase == "Running" }
+        package var isActive: Bool { phase == "Pending" || phase == "Running" }
     }
 
     /// A node holds at most 110 pods on EKS's largest default.
-    static let limit = 250
+    package static let limit = 250
 
-    var pods: [Pod]
+    package var pods: [Pod]
     /// More than `limit`: the requested line is left out.
-    var more: Bool
+    package var more: Bool
 
-    var active: [Pod] { pods.filter(\.isActive) }
+    package var active: [Pod] { pods.filter(\.isActive) }
     /// What its active pods request, added up.
-    var requested: KubeUsage { active.reduce(.zero) { $0 + KubeUsage(cpu: $1.cpuRequest, memory: $1.memoryRequest) } }
+    package var requested: KubeUsage { active.reduce(.zero) { $0 + KubeUsage(cpu: $1.cpuRequest, memory: $1.memoryRequest) } }
 
     /// The active pods requesting the most CPU (then memory): whose usage "Sample top pods" reads.
-    func largest(_ count: Int) -> [Pod] {
+    package func largest(_ count: Int) -> [Pod] {
         Array(active.sorted { ($0.cpuRequest, $0.memoryRequest, $1.id.description) > ($1.cpuRequest, $1.memoryRequest, $0.id.description) }.prefix(count))
     }
 
-    struct Malformed: Error, LocalizedError {
-        var errorDescription: String? { "The node's pods' answer isn't a pod list." }
+    package struct Malformed: Error, LocalizedError {
+        package var errorDescription: String? { "The node's pods' answer isn't a pod list." }
     }
 
-    static func read(_ data: Data) throws -> KubeNodePods {
+    package static func read(_ data: Data) throws -> KubeNodePods {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let items = object["items"] as? [[String: Any]] else {
             throw Malformed()
         }
@@ -116,33 +116,33 @@ struct KubeNodePods: Equatable, Sendable {
 /// A namespace's pods as Metadata rows (metrics.md 2.7, review): each one's
 /// workload — its controller owner, a ReplicaSet's Deployment by its
 /// `pod-template-hash` — and its status, as the row says it.
-struct KubeNamespacePods: Equatable, Sendable {
-    struct Pod: Equatable, Sendable {
-        var name: String
+package struct KubeNamespacePods: Equatable, Sendable {
+    package struct Pod: Equatable, Sendable {
+        package var name: String
         /// `Deployment/web`; a pod of no owner's, `Pod/<name>`.
-        var owner: String
-        var phase: String
+        package var owner: String
+        package var phase: String
     }
 
-    static let pageSize = 500
-    static let pages = 10
+    package static let pageSize = 500
+    package static let pages = 10
 
-    var pods: [Pod]
+    package var pods: [Pod]
     /// Past `pages` pages: the rest not read.
-    var more = false
+    package var more = false
 
     /// Each pod's workload, by its name.
-    var owners: [String: String] { Dictionary(pods.map { ($0.name, $0.owner) }, uniquingKeysWith: { $1 }) }
+    package var owners: [String: String] { Dictionary(pods.map { ($0.name, $0.owner) }, uniquingKeysWith: { $1 }) }
 
     /// How many pods are in each phase.
-    var phases: [String: Double] { pods.reduce(into: [:]) { $0[$1.phase, default: 0] += 1 } }
+    package var phases: [String: Double] { pods.reduce(into: [:]) { $0[$1.phase, default: 0] += 1 } }
 
-    struct Malformed: Error, LocalizedError {
-        var errorDescription: String? { "The namespace's pods' answer isn't a Table." }
+    package struct Malformed: Error, LocalizedError {
+        package var errorDescription: String? { "The namespace's pods' answer isn't a Table." }
     }
 
     /// One page: its pods and where the next starts.
-    static func read(_ data: Data) throws -> (pods: [Pod], continueToken: String?) {
+    package static func read(_ data: Data) throws -> (pods: [Pod], continueToken: String?) {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["kind"] as? String == "Table" else { throw Malformed() }
         let columns = (object["columnDefinitions"] as? [[String: Any]] ?? []).map { $0["name"] as? String ?? "" }
         let nameIndex = columns.firstIndex { $0.lowercased() == "name" } ?? 0
@@ -162,7 +162,7 @@ struct KubeNamespacePods: Equatable, Sendable {
     /// owner — a ReplicaSet named `<deployment>-<pod-template-hash>` is
     /// that Deployment's —; a pod the rows say has no owner, `Pod/<name>`;
     /// a row without its metadata, its name read (`KubeWorkloadName`).
-    static func owner(name: String, metadata: [String: Any]) -> String {
+    package static func owner(name: String, metadata: [String: Any]) -> String {
         guard !metadata.isEmpty else { return KubeWorkloadName.of(pod: name).id }
         let owners = metadata["ownerReferences"] as? [[String: Any]] ?? []
         guard let owner = owners.first(where: { ($0["controller"] as? Bool) == true }) ?? owners.first, let kind = owner["kind"] as? String,
@@ -178,18 +178,18 @@ struct KubeNamespacePods: Equatable, Sendable {
 /// owner (metrics.md 2.7, review): `-<hash>-<5>` a Deployment's, `-<n>` a
 /// StatefulSet's, `-<5>` a DaemonSet's or a Job's (which one, the name
 /// can't say). Pure.
-enum KubeWorkloadName {
-    struct Name: Equatable, Sendable {
-        var kind: String?
-        var name: String
+package enum KubeWorkloadName {
+    package struct Name: Equatable, Sendable {
+        package var kind: String?
+        package var name: String
         /// `Deployment/web`, or the bare name when the kind isn't known.
-        var id: String { kind.map { "\($0)/\(name)" } ?? name }
+        package var id: String { kind.map { "\($0)/\(name)" } ?? name }
     }
 
     /// Kubernetes' safe alphabet for generated names.
     private static let safe = Set("bcdfghjklmnpqrstvwxz2456789")
 
-    static func of(pod: String) -> Name {
+    package static func of(pod: String) -> Name {
         let parts = pod.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
         func generated(_ part: String, _ lengths: ClosedRange<Int>) -> Bool { lengths.contains(part.count) && part.allSatisfy(safe.contains) }
         if parts.count >= 3, generated(parts[parts.count - 1], 5...5), generated(parts[parts.count - 2], 1...10) {
@@ -206,10 +206,10 @@ enum KubeWorkloadName {
 /// A pod's phase as its row's Status says it (the rows carry no status):
 /// Completed is Succeeded; Error, Evicted and the like Failed; waiting to
 /// start Pending; the rest Running. Pure.
-enum KubePodPhase {
-    static let order = ["Running", "Pending", "Succeeded", "Failed", "Unknown"]
+package enum KubePodPhase {
+    package static let order = ["Running", "Pending", "Succeeded", "Failed", "Unknown"]
 
-    static func of(status: String) -> String {
+    package static func of(status: String) -> String {
         switch status {
         case "Running", "Terminating", "CrashLoopBackOff", "NotReady": return "Running"
         case "Completed", "Succeeded": return "Succeeded"
@@ -226,19 +226,19 @@ enum KubePodPhase {
 /// What a node object says of itself for its charts (K1, K2, K4, K5):
 /// allocatable and capacity, how many pods it takes, and since when it is
 /// under pressure or cordoned. Pure.
-struct KubeNodeFacts: Equatable, Sendable {
+package struct KubeNodeFacts: Equatable, Sendable {
     /// A pressure (or the cordon) and since when; nil, not known.
-    struct Spell: Equatable, Sendable {
-        var title: String
-        var since: Date?
+    package struct Spell: Equatable, Sendable {
+        package var title: String
+        package var since: Date?
     }
 
-    var allocatable: KubeUsage?
-    var capacity: KubeUsage?
-    var allocatablePods: Int?
-    var spells: [Spell]
+    package var allocatable: KubeUsage?
+    package var capacity: KubeUsage?
+    package var allocatablePods: Int?
+    package var spells: [Spell]
 
-    static func of(_ node: [String: Any]) -> KubeNodeFacts {
+    package static func of(_ node: [String: Any]) -> KubeNodeFacts {
         let status = node["status"] as? [String: Any] ?? [:]
         let spec = node["spec"] as? [String: Any] ?? [:]
         var spells: [Spell] = []
@@ -259,15 +259,15 @@ struct KubeNodeFacts: Equatable, Sendable {
 
 /// A namespace's ResourceQuota for its requests (N1, N2's reference): the
 /// tightest `requests.cpu` and `requests.memory` hard, and what is used. Pure.
-struct KubeQuota: Equatable, Sendable {
-    var cpuHard: Double?
-    var cpuUsed: Double?
-    var memoryHard: Double?
-    var memoryUsed: Double?
+package struct KubeQuota: Equatable, Sendable {
+    package var cpuHard: Double?
+    package var cpuUsed: Double?
+    package var memoryHard: Double?
+    package var memoryUsed: Double?
 
-    var isEmpty: Bool { cpuHard == nil && memoryHard == nil }
+    package var isEmpty: Bool { cpuHard == nil && memoryHard == nil }
 
-    static func read(_ data: Data) -> KubeQuota {
+    package static func read(_ data: Data) -> KubeQuota {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return KubeQuota() }
         var quota = KubeQuota()
         for item in object["items"] as? [[String: Any]] ?? [] {
@@ -291,7 +291,7 @@ struct KubeQuota: Equatable, Sendable {
 extension KubeHPAStatus.Metric {
     /// Its current and target as numbers in one unit: `45%` a ratio, a
     /// CPU quantity cores, memory bytes, anything else a count.
-    var numbers: (unit: KubeChartUnit, current: Double?, target: Double?) {
+    package var numbers: (unit: KubeChartUnit, current: Double?, target: Double?) {
         let percent = (target ?? current ?? "").hasSuffix("%")
         let unit: KubeChartUnit = percent ? .ratio : name == "cpu" ? .cores : name == "memory" ? .bytes : .count
         func parse(_ text: String?) -> Double? {
@@ -305,7 +305,7 @@ extension KubeHPAStatus.Metric {
 
 extension KubeHPAStatus {
     /// What the history keeps of it: the replicas and each metric's current and target.
-    var numbers: [String: Double] {
+    package var numbers: [String: Double] {
         var out: [String: Double] = ["current": Double(current), "desired": Double(desired), "min": Double(min), "max": Double(max)]
         if scalingLimited { out["limited"] = 1 }
         for metric in metrics {
@@ -318,7 +318,7 @@ extension KubeHPAStatus {
 }
 
 /// Where `KubeStatusHistory` keeps an object's numbers.
-enum KubeStatusKey: Hashable, Sendable {
+package enum KubeStatusKey: Hashable, Sendable {
     case hpa(namespace: String, name: String)
     case replicas(namespace: String, kind: String, name: String)
     /// A node's active pods, and what they request.
@@ -328,10 +328,10 @@ enum KubeStatusKey: Hashable, Sendable {
 }
 
 /// One reading of an object's numbers; a break (no values) ends a run.
-struct KubeStatusPoint: Equatable, Sendable {
-    var time: Date
-    var values: [String: Double]
-    var isBreak: Bool { values.isEmpty }
+package struct KubeStatusPoint: Equatable, Sendable {
+    package var time: Date
+    package var values: [String: Double]
+    package var isBreak: Bool { values.isEmpty }
 }
 
 /// The numbers objects' status gave while their tab showed — an HPA's
@@ -341,23 +341,23 @@ struct KubeStatusPoint: Equatable, Sendable {
 /// weren't read for longer than 2.5 reads, 6 hours, each key forgotten an
 /// hour after it was last fed, at most `keys` (the least recently fed go).
 /// Dropped with the ring. Pure.
-struct KubeStatusHistory: Sendable {
-    static let span: TimeInterval = 6 * 3600
-    static let points = 720
-    static let keys = 50
-    static let keep: TimeInterval = 3600
+package struct KubeStatusHistory: Sendable {
+    package static let span: TimeInterval = 6 * 3600
+    package static let points = 720
+    package static let keys = 50
+    package static let keep: TimeInterval = 3600
 
-    struct Series: Sendable {
-        var points: [KubeStatusPoint] = []
+    package struct Series: Sendable {
+        package var points: [KubeStatusPoint] = []
         /// When the numbers were last read (they held until then).
-        var seen: Date
-        var fed: Date
+        package var seen: Date
+        package var fed: Date
     }
 
     private var series: [KubeStatusKey: Series] = [:]
 
     /// `values` read at `time`; `expected`, how often they are read.
-    mutating func record(_ key: KubeStatusKey, _ values: [String: Double], at time: Date, expected: TimeInterval, now: Date) {
+    package mutating func record(_ key: KubeStatusKey, _ values: [String: Double], at time: Date, expected: TimeInterval, now: Date) {
         guard !values.isEmpty else { return }
         if series[key] == nil, series.count >= Self.keys, let oldest = series.min(by: { $0.value.fed < $1.value.fed })?.key { series[oldest] = nil }
         var kept = series[key] ?? Series(seen: time, fed: now)
@@ -385,7 +385,7 @@ struct KubeStatusHistory: Sendable {
     }
 
     /// A key's points, oldest first, and when they were last read; nil past its hour.
-    func of(_ key: KubeStatusKey, now: Date = Date()) -> (points: [KubeStatusPoint], seen: Date)? {
+    package func of(_ key: KubeStatusKey, now: Date = Date()) -> (points: [KubeStatusPoint], seen: Date)? {
         guard let kept = series[key], kept.fed >= now.addingTimeInterval(-Self.keep) else { return nil }
         return (kept.points, kept.seen)
     }
@@ -393,7 +393,7 @@ struct KubeStatusHistory: Sendable {
     /// One number of a key as chart points: stepped — each value held to
     /// the next reading, the last to when it was last read — broken where
     /// it wasn't read; nil values left out.
-    func points(_ key: KubeStatusKey, _ name: String, from start: Date, now: Date = Date()) -> (points: [KubeSeriesPoint], breaks: Set<Date>) {
+    package func points(_ key: KubeStatusKey, _ name: String, from start: Date, now: Date = Date()) -> (points: [KubeSeriesPoint], breaks: Set<Date>) {
         guard let kept = of(key, now: now) else { return ([], []) }
         var points: [KubeSeriesPoint] = []
         var breaks = Set<Date>()
@@ -419,13 +419,13 @@ struct KubeStatusHistory: Sendable {
         return (points, breaks)
     }
 
-    mutating func prune(now: Date) {
+    package mutating func prune(now: Date) {
         let cutoff = now.addingTimeInterval(-Self.keep)
         series = series.filter { $0.value.fed >= cutoff }
     }
 
-    mutating func removeAll() { series = [:] }
+    package mutating func removeAll() { series = [:] }
 
-    var isEmpty: Bool { series.isEmpty }
-    var count: Int { series.count }
+    package var isEmpty: Bool { series.isEmpty }
+    package var count: Int { series.count }
 }

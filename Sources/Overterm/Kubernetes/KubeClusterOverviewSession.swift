@@ -11,15 +11,15 @@ import Foundation
 /// and what was read goes. A part that can't be read (RBAC refuses
 /// events, a kind not served) says so; the rest stands. Reads only.
 @MainActor
-final class KubeClusterOverviewSession: ObservableObject {
+package final class KubeClusterOverviewSession: ObservableObject {
     /// What the section follows, each a list kept live.
-    enum Part: Hashable, Sendable {
+    package enum Part: Hashable, Sendable {
         case pods(String)
         case workload(String)
         case nodes
         case warnings
 
-        var title: String {
+        package var title: String {
             switch self {
             case .pods(let phase): "\(phase) pods"
             case .workload(let name): KubeClusterOverviewSession.workloadTitles[name] ?? name
@@ -29,29 +29,29 @@ final class KubeClusterOverviewSession: ObservableObject {
         }
     }
 
-    enum State: Equatable {
+    package enum State: Equatable {
         case idle, loading, live
     }
 
-    nonisolated static let workloadKinds = ["deployments.apps", "statefulsets.apps", "daemonsets.apps", "jobs.batch"]
-    nonisolated static let workloadTitles = [
+    package nonisolated static let workloadKinds = ["deployments.apps", "statefulsets.apps", "daemonsets.apps", "jobs.batch"]
+    package nonisolated static let workloadTitles = [
         "deployments.apps": "Deployments", "statefulsets.apps": "StatefulSets", "daemonsets.apps": "DaemonSets", "jobs.batch": "Jobs",
     ]
 
-    @Published private(set) var overview = KubeClusterOverview()
-    @Published private(set) var state: State = .idle
+    @Published package private(set) var overview = KubeClusterOverview()
+    @Published package private(set) var state: State = .idle
     /// The parts that couldn't be read, and why.
-    @Published private(set) var problems: [Part: String] = [:]
+    @Published package private(set) var problems: [Part: String] = [:]
     /// Where it reads: the context and namespace, while shown.
-    private(set) var context: String?
-    private(set) var scope: KubeScope?
+    package private(set) var context: String?
+    package private(set) var scope: KubeScope?
 
     /// How often what came in is folded into the overview.
-    var flushInterval: Duration = .milliseconds(250)
+    package var flushInterval: Duration = .milliseconds(250)
     /// Told, once a show, when a workload's row carries one of Argo CD's
     /// marks (`KubeRow.argoMarked`): what tells the context's GitOps
     /// section that there are marks to read (gitops.md 14.2.1).
-    var sawMarks: ((String) -> Void)?
+    package var sawMarks: ((String) -> Void)?
     private var marksTold = false
 
     private var follows: [Part: Task<Void, Never>] = [:]
@@ -68,11 +68,11 @@ final class KubeClusterOverviewSession: ObservableObject {
     }
     private var shown: Key?
 
-    var isReading: Bool { !follows.isEmpty }
+    package var isReading: Bool { !follows.isEmpty }
 
     /// Shown, on `context` in `scope`: everything followed there — again
     /// only when the context, the namespace or what it serves changed.
-    func show(context: String, scope: KubeScope, discovery: KubeDiscovery?, client: KubeClient?) {
+    package func show(context: String, scope: KubeScope, discovery: KubeDiscovery?, client: KubeClient?) {
         let parts = Self.parts(discovery)
         let key = Key(context: context, scope: scope, parts: parts.map(\.1.fullName) + parts.map(\.0.title))
         if key == shown { return }
@@ -95,13 +95,13 @@ final class KubeClusterOverviewSession: ObservableObject {
     /// namespaces are never ten watches a part. Past it a part is one
     /// watch across the cluster kept to the namespaces — refused, said,
     /// where listing across the cluster isn't allowed. Pure.
-    nonisolated static func watchCap(_ kinds: [KubeResourceKind]) -> Int {
+    package nonisolated static func watchCap(_ kinds: [KubeResourceKind]) -> Int {
         let namespaced = kinds.filter(\.namespaced).count
         return max(1, KubeScope.watchCap / max(1, namespaced))
     }
 
     /// Off screen: nothing followed, nothing kept.
-    func hide() {
+    package func hide() {
         generation += 1
         for task in follows.values { task.cancel() }
         follows = [:]
@@ -122,7 +122,7 @@ final class KubeClusterOverviewSession: ObservableObject {
     /// What it follows of a cluster that serves `discovery`: pods and
     /// nodes always (every cluster has them), the workloads and events
     /// that are served as lists kept live.
-    nonisolated static func parts(_ discovery: KubeDiscovery?) -> [(Part, KubeResourceKind)] {
+    package nonisolated static func parts(_ discovery: KubeDiscovery?) -> [(Part, KubeResourceKind)] {
         var parts: [(Part, KubeResourceKind)] = KubeClusterOverview.phases.map { (.pods($0), .pods) }
         guard let discovery else { return parts }
         func served(_ name: String) -> KubeResourceKind? { discovery.kinds.first { $0.fullName == name && KubeKindCatalog.isOffered($0) } }
@@ -133,7 +133,7 @@ final class KubeClusterOverviewSession: ObservableObject {
     }
 
     /// What a part asks the server for.
-    nonisolated static func options(_ part: Part) -> KubeListOptions {
+    package nonisolated static func options(_ part: Part) -> KubeListOptions {
         switch part {
         case .pods(let phase): KubeListOptions(fieldSelector: "status.phase=\(phase)")
         case .workload: KubeListOptions(metadata: true)
@@ -194,7 +194,7 @@ final class KubeClusterOverviewSession: ObservableObject {
     }
 
     /// Whether an update's rows carry one of Argo CD's marks.
-    nonisolated static func marked(_ update: KubeFollowUpdate) -> Bool {
+    package nonisolated static func marked(_ update: KubeFollowUpdate) -> Bool {
         switch update {
         case .listed(let table): return table.rows.contains(where: \.argoMarked)
         case .changed(let changes, _):
@@ -209,7 +209,7 @@ final class KubeClusterOverviewSession: ObservableObject {
     }
 
     /// An event's Last Seen, counted on from when it came.
-    nonisolated static func lastSeen(_ row: KubeRow, columns: [KubeColumn], received: Date) -> KubeAge.Anchor {
+    package nonisolated static func lastSeen(_ row: KubeRow, columns: [KubeColumn], received: Date) -> KubeAge.Anchor {
         KubeAge.Anchor(created: nil, said: row.cell("Last Seen", in: columns).flatMap { KubeAge.seconds($0.text) }, received: received)
     }
 

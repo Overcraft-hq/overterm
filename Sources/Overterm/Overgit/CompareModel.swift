@@ -6,41 +6,41 @@ import Foundation
 /// `base` has that `head` doesn't. Three dots, as a pull request reads:
 /// against the merge base, so `base` moving on doesn't show as removals.
 @MainActor
-final class CompareModel: ObservableObject {
-    enum Phase: Equatable {
+package final class CompareModel: ObservableObject {
+    package enum Phase: Equatable {
         case idle, loading, loaded
         case failed(String)
     }
 
-    static let maxFiles = DiffModel.maxDiffedFiles
-    static let maxCommits = 300
+    package static let maxFiles = DiffModel.maxDiffedFiles
+    package static let maxCommits = 300
 
-    @Published private(set) var phase: Phase = .idle
-    @Published private(set) var base: String?
-    @Published private(set) var head: String?
+    @Published package private(set) var phase: Phase = .idle
+    @Published package private(set) var base: String?
+    @Published package private(set) var head: String?
     /// Commits `head` has and `base` doesn't, newest first; and the other way.
-    @Published private(set) var ahead: [Commit] = []
-    @Published private(set) var behind: [Commit] = []
-    @Published private(set) var aheadCount = 0
-    @Published private(set) var behindCount = 0
-    @Published private(set) var files: [ChangedFile] = []
-    @Published private(set) var diffs: [String: DiffModel.FileDiff] = [:]
-    @Published private(set) var folded: Set<String> = []
-    private(set) var root: URL?
+    @Published package private(set) var ahead: [Commit] = []
+    @Published package private(set) var behind: [Commit] = []
+    @Published package private(set) var aheadCount = 0
+    @Published package private(set) var behindCount = 0
+    @Published package private(set) var files: [ChangedFile] = []
+    @Published package private(set) var diffs: [String: DiffModel.FileDiff] = [:]
+    @Published package private(set) var folded: Set<String> = []
+    package private(set) var root: URL?
     private var ticket = 0
 
     /// Read only while the pane shows it, as the commit's is.
-    var visible = false {
+    package var visible = false {
         didSet {
             guard visible != oldValue, visible, phase == .idle || phase == .loading else { return }
             Task { await load() }
         }
     }
 
-    var added: Int { files.reduce(0) { $0 + ($1.added ?? 0) } }
-    var removed: Int { files.reduce(0) { $0 + ($1.removed ?? 0) } }
+    package var added: Int { files.reduce(0) { $0 + ($1.added ?? 0) } }
+    package var removed: Int { files.reduce(0) { $0 + ($1.removed ?? 0) } }
 
-    func show(root: URL?, base: String, head: String) {
+    package func show(root: URL?, base: String, head: String) {
         self.root = root
         self.base = base
         self.head = head
@@ -57,19 +57,19 @@ final class CompareModel: ObservableObject {
     }
 
     /// The other way round.
-    func swap() {
+    package func swap() {
         guard let base, let head else { return }
         show(root: root, base: head, head: base)
     }
 
-    func toggleFold(_ path: String) {
+    package func toggleFold(_ path: String) {
         if folded.contains(path) { folded.remove(path) } else { folded.insert(path) }
     }
 
-    func isFolded(_ path: String) -> Bool { folded.contains(path) }
+    package func isFolded(_ path: String) -> Bool { folded.contains(path) }
 
     /// `git rev-list --left-right --count base...head`: "behind\tahead".
-    nonisolated static func counts(_ output: String) -> (behind: Int, ahead: Int) {
+    package nonisolated static func counts(_ output: String) -> (behind: Int, ahead: Int) {
         let parts = output.split(whereSeparator: \.isWhitespace).compactMap { Int($0) }
         return parts.count == 2 ? (parts[0], parts[1]) : (0, 0)
     }

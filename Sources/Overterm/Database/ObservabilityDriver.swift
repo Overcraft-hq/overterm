@@ -10,12 +10,12 @@ import Foundation
 /// what can't be graphed), LogQL backwards from now (lines, or series for a
 /// metric query), TraceQL as a search — or a trace's id, the trace. `.targets`,
 /// `.alerts` and `.rules` are Prometheus's own pages, read as tables.
-actor ObservabilityDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor ObservabilityDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let password: String?
     private let session: URLSession
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
         let configuration = URLSessionConfiguration.ephemeral
@@ -23,10 +23,10 @@ actor ObservabilityDriver: DatabaseDriver {
         session = URLSession(configuration: configuration, delegate: ClickHouseTrust(config: connection), delegateQueue: nil)
     }
 
-    nonisolated var kind: DatabaseKind { config.kind }
+    package nonisolated var kind: DatabaseKind { config.kind }
 
     /// `https://host:port/base/path?query`.
-    nonisolated func url(_ path: String, _ query: [String: String] = [:]) -> URL? {
+    package nonisolated func url(_ path: String, _ query: [String: String] = [:]) -> URL? {
         var components = URLComponents()
         components.scheme = config.sslMode == .disable || config.sslMode == .prefer ? "http" : "https"
         components.host = config.host
@@ -40,7 +40,7 @@ actor ObservabilityDriver: DatabaseDriver {
     }
 
     /// Basic auth with a user, a bearer token without one; the tenant.
-    func request(_ url: URL, accept: String = "application/json") -> URLRequest {
+    package func request(_ url: URL, accept: String = "application/json") -> URLRequest {
         var request = URLRequest(url: url)
         request.setValue(accept, forHTTPHeaderField: "Accept")
         if let password, !password.isEmpty {
@@ -86,13 +86,13 @@ actor ObservabilityDriver: DatabaseDriver {
     }
 
     /// A status the server answered with, and what it said.
-    struct HTTPFailure: LocalizedError {
-        let status: Int
-        let message: String
-        var errorDescription: String? { message }
+    package struct HTTPFailure: LocalizedError {
+        package let status: Int
+        package let message: String
+        package var errorDescription: String? { message }
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         switch kind {
         case .prometheus: _ = try await get("/api/v1/status/buildinfo")
         case .loki: _ = try await get("/loki/api/v1/labels")
@@ -100,13 +100,13 @@ actor ObservabilityDriver: DatabaseDriver {
         }
     }
 
-    func close() async { session.invalidateAndCancel() }
+    package func close() async { session.invalidateAndCancel() }
 
-    func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ sql: String, limit: Int) async throws -> QueryResult {
         try await execute(sql, limit: limit, range: .h1)
     }
 
-    func execute(_ text: String, limit: Int, range: TimeRange) async throws -> QueryResult {
+    package func execute(_ text: String, limit: Int, range: TimeRange) async throws -> QueryResult {
         let query = ObservabilityText.clean(text)
         guard !query.isEmpty else { throw DatabaseError.failed("No query.") }
         let started = Date()
@@ -185,7 +185,7 @@ actor ObservabilityDriver: DatabaseDriver {
     }
 
     /// Lines after `after` (nanoseconds), oldest first — the live tail, polled.
-    func tail(_ text: String, after: Int64, limit: Int) async throws -> [LokiLine] {
+    package func tail(_ text: String, after: Int64, limit: Int) async throws -> [LokiLine] {
         let query = ObservabilityText.clean(text)
         let data = try await get(
             "/loki/api/v1/query_range",
@@ -211,7 +211,7 @@ actor ObservabilityDriver: DatabaseDriver {
         return result
     }
 
-    func trace(_ id: String) async throws -> TraceDetail {
+    package func trace(_ id: String) async throws -> TraceDetail {
         do {
             return try ObservabilityParse.tempoTrace(await get("/api/v2/traces/\(id)"), id: id)
         } catch let error as HTTPFailure where error.status == 404 {
@@ -224,7 +224,7 @@ actor ObservabilityDriver: DatabaseDriver {
     // MARK: The catalog
 
     /// The tree's folders: Prometheus's metrics; Loki's labels; Tempo's tags.
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         switch kind {
         case .prometheus: ["metrics"]
         case .loki: ["labels"]
@@ -233,11 +233,11 @@ actor ObservabilityDriver: DatabaseDriver {
     }
 
     /// Metric names, label names, tag names.
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         try await names().map { CatalogTable(schema: schema, name: $0) }
     }
 
-    func names() async throws -> [String] {
+    package func names() async throws -> [String] {
         let (start, end) = TimeRange.h6.window()
         switch kind {
         case .prometheus:
@@ -254,7 +254,7 @@ actor ObservabilityDriver: DatabaseDriver {
     }
 
     /// A label's values (Loki), a tag's (Tempo), a metric's labels (Prometheus).
-    func values(of name: String) async throws -> [String] {
+    package func values(of name: String) async throws -> [String] {
         let (start, end) = TimeRange.h6.window()
         switch kind {
         case .prometheus:
@@ -273,5 +273,5 @@ actor ObservabilityDriver: DatabaseDriver {
         }
     }
 
-    func columns(in schema: String) async throws -> [CatalogColumn] { [] }
+    package func columns(in schema: String) async throws -> [CatalogColumn] { [] }
 }

@@ -9,101 +9,101 @@ import GhosttyKit
 /// NSTextInputClient) has enough traps that we follow the reference closely
 /// rather than simplify it.
 @MainActor
-final class TerminalView: NSView {
-    private(set) var surface: ghostty_surface_t?
+package final class TerminalView: NSView {
+    package private(set) var surface: ghostty_surface_t?
 
     /// What the shell was started with besides the app's own environment
     /// (and the tag below): a Terminal in this context's `KUBECONFIG`.
-    let environment: [String: String]
+    package let environment: [String: String]
     /// The Kubernetes context this pane's `KUBECONFIG` pins, if any — what
     /// a plain kubectl there reaches now: followed when the pin's file
     /// changes (a `use-context` typed in the pane; `KubeTerminalFollow`).
-    var kubePin: KubeTerminalPin?
+    package var kubePin: KubeTerminalPin?
     /// A pin that couldn't be restored: the pane's `KUBECONFIG` reaches no
     /// cluster, and its header says so (`KubeTerminalLost`).
-    let kubePinLost: KubeTerminalLost?
+    package let kubePinLost: KubeTerminalLost?
     /// Terminal in this root (Terraform, analysis 4.9): the root it was
     /// opened at, said by its header and its tab's icon. Not a pin: no
     /// `TF_WORKSPACE`, the root's own `.terraform/environment` selects.
-    var terraformRoot: String?
+    package var terraformRoot: String?
     /// It ran what prints a Terraform secret in clear — `terraform output`,
     /// `show`, `console`, `state show|pull` — or Terraform asked it for a
     /// value (5.6 rule 6): saved at quit without its text, and ⌘L over it
     /// scrubbed. Never cleared while the pane lives.
-    var terraformSensitive = false
+    package var terraformSensitive = false
     /// An agent started here and how Terraform's writes were guarded at
     /// its launch (`TerraformAgentGuard`, 3.4): its header says when not.
-    var terraformAgentGuard: TerraformAgentGuard.Launch = .none
+    package var terraformAgentGuard: TerraformAgentGuard.Launch = .none
     /// A pod's tab (`e`, `A`, `t`): the pod's plain env values, which ⌘L
     /// on its output scrubs as the page's Logs tab does. In memory only.
-    var kubePodEnv: [(key: String, value: String)] = []
+    package var kubePodEnv: [(key: String, value: String)] = []
 
     /// Find-in-terminal (⌘F) for this terminal.
-    private(set) lazy var search = TerminalSearch(terminal: self)
+    package private(set) lazy var search = TerminalSearch(terminal: self)
 
     /// Put in the shell's environment as OVERTERM_TAB_ID; every process
     /// started from this terminal inherits it, which is how Tab Info finds
     /// them (ProcessInspector).
-    let processTag = UUID().uuidString
+    package let processTag = UUID().uuidString
 
     /// What every pane's environment carries first: its tag
     /// (`OVERTERM_TAB_ID`) and this run's marker (`OVERTERM_RUN`) — never
     /// `OVERTERM_HELPER`: a pane is no helper.
-    nonisolated static func paneMarkers(tag: String, run: OvertermRun = .current) -> [(key: String, value: String)] {
+    package nonisolated static func paneMarkers(tag: String, run: OvertermRun = .current) -> [(key: String, value: String)] {
         [(ProcessInspector.tagVariable, tag), (OvertermRun.variable, run.marker)]
     }
 
     /// What Suspend Tab stopped in this pane, parents first, each by the
     /// identity it was listed with (TabSuspension); nil while it runs.
-    var suspended: [ActivitySignalTarget]?
+    package var suspended: [ActivitySignalTarget]?
 
     /// Its pty's device (`st_rdev` of `ghostty_surface_tty_name`'s path),
     /// which the census compares with every process's controlling terminal
     /// (docs/design/activity/analysis.md, 7.10): read once, on the main
     /// thread, once its `login` is paired (`readTerminalDeviceOncePaired`).
     /// Nil until then, or when the name couldn't be read.
-    private(set) var terminalDevice: dev_t?
+    package private(set) var terminalDevice: dev_t?
     /// How often it was asked with no device to show for it: asked again
     /// at each context build until `terminalDeviceAttempts`.
     private var terminalDeviceAsks = 0
     /// Enough for a pty its IO thread opens late; not a read at every
     /// build for a pane whose name never comes.
-    static let terminalDeviceAttempts = 20
+    package static let terminalDeviceAttempts = 20
 
     /// Last directory the shell reported (OSC 7 via shell integration);
     /// the starting directory until it reports one.
-    var workingDirectory: String? {
+    package var workingDirectory: String? {
         didSet {
             if let workingDirectory, workingDirectory != oldValue { onWorkingDirectoryChange?(workingDirectory) }
         }
     }
     /// The shell has reported a directory at least once: its integration is
     /// loaded and it drew a prompt. Keys typed before that can be lost.
-    private(set) var shellReported = false
+    package private(set) var shellReported = false
     /// When it first did.
-    private(set) var shellReportedAt: Date?
-    func markShellReported() {
+    package private(set) var shellReportedAt: Date?
+    package func markShellReported() {
         if !shellReported { shellReportedAt = Date() }
         shellReported = true
     }
 
-    var onTitleChange: ((String) -> Void)?
+    package var onTitleChange: ((String) -> Void)?
     /// What the shell last set as the title (OSC 0/2).
-    var title: String?
+    package var title: String?
     /// It took the keyboard: in a split, it is now the focused pane.
-    var onFocus: (() -> Void)?
-    var onWorkingDirectoryChange: ((String) -> Void)?
+    package var onFocus: (() -> Void)?
+    package var onWorkingDirectoryChange: ((String) -> Void)?
     /// ⌘F (Ghostty's start_search), with any needle it carries. The window
     /// answers with its search overlay; unset, the compact bar opens.
-    var onSearchRequest: ((String?) -> Void)?
+    package var onSearchRequest: ((String?) -> Void)?
     /// A ⌘-clicked link, as libghostty matched it; true when handled (a
     /// file opened in the editor), else it goes to the system opener.
-    var onOpenLink: ((String) -> Bool)?
+    package var onOpenLink: ((String) -> Bool)?
     /// Bell, desktop notification, progress, long command finished.
-    var onEvent: ((TerminalEvent) -> Void)?
+    package var onEvent: ((TerminalEvent) -> Void)?
     /// Called when the surface asks to close — the process exited, or the user
     /// pressed a close binding. The argument is whether the process is alive.
-    var onClose: ((Bool) -> Void)?
+    package var onClose: ((Bool) -> Void)?
 
     private var focused = false
     private var markedText = NSMutableAttributedString()
@@ -116,22 +116,22 @@ final class TerminalView: NSView {
     private var cursorShape: NSCursor = .iBeam
 
     /// Over the pane while something is dragged onto it.
-    private(set) var dropHighlight: DropHighlightView?
+    package private(set) var dropHighlight: DropHighlightView?
     /// What the drag hovering over the pane carries.
     private var dropPayload: TerminalDrop.Payload?
     /// What runs in the pane, as last looked at: the highlight's label
     /// follows it. A drop looks again.
-    private(set) var dropProgram: TerminalDrop.Program = .other
+    package private(set) var dropProgram: TerminalDrop.Program = .other
     /// Drops not typed in yet, in the order they came. Each waits for a
     /// look at the pane, or for its promised files: none may overtake one
     /// before it.
     private var pendingDrops: [(id: Int, text: String?)] = []
     private var lastDropID = 0
     /// A drop is still to be typed in.
-    var hasPendingDrops: Bool { !pendingDrops.isEmpty }
+    package var hasPendingDrops: Bool { !pendingDrops.isEmpty }
     /// The modifier keys, read when a drag moves and at the drop (⌥: plain
     /// paths). An E2E run stands in for the keyboard.
-    static var dropModifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
+    package static var dropModifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
 
     /// - Parameters:
     ///   - workingDirectory: where the shell starts; home when nil.
@@ -149,7 +149,7 @@ final class TerminalView: NSView {
     ///     header to say (`KubeTerminalPin`).
     ///   - kubePinLost: a saved pin that couldn't be restored (then
     ///     `environment` is `KubeTerminalLost.environment`).
-    init(
+    package init(
         workingDirectory: String? = nil, initialInput: String? = nil, fontSize: Float? = nil, restoring: URL? = nil,
         environment: [String: String] = [:], kubePin: KubeTerminalPin? = nil, kubePinLost: KubeTerminalLost? = nil
     ) {
@@ -251,7 +251,7 @@ final class TerminalView: NSView {
     /// How many times a reloaded config has reached this surface. The E2E
     /// run asserts a theme picked in Settings got here, which nothing on
     /// the screen can be asked about.
-    private(set) var appliedConfigs = 0
+    package private(set) var appliedConfigs = 0
 
     /// The font, the colours, the padding as they are now: a surface keeps
     /// the config it was made with until it is given another.
@@ -264,7 +264,7 @@ final class TerminalView: NSView {
     /// A theme of this pane's own, over the app's: its tab's group's, or a
     /// folder rule's (TerminalWindowController.applyTabThemes). Nil: the
     /// app's, as every pane had.
-    var themeName: String? {
+    package var themeName: String? {
         didSet {
             guard themeName != oldValue else { return }
             applyConfig()
@@ -279,13 +279,13 @@ final class TerminalView: NSView {
         ghostty_surface_set_color_scheme(surface, GhosttyRuntime.shared.colorScheme)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
     /// Frees the surface, which also ends its pty. Call before dropping the
     /// view; libghostty holds a raw pointer to it until then.
-    func close() {
+    package func close() {
         // A stopped process would sit on the hangup until continued.
         resume()
         BrowserBridge.shared.removeConfig(forPane: processTag)
@@ -297,7 +297,7 @@ final class TerminalView: NSView {
 
     /// What a new tab opened from this one should start with: the shell's
     /// current directory and this tab's font size.
-    func inheritedSettings() -> (workingDirectory: String?, fontSize: Float?) {
+    package func inheritedSettings() -> (workingDirectory: String?, fontSize: Float?) {
         guard let surface else { return (workingDirectory, nil) }
         let config = ghostty_surface_inherited_config(surface, GHOSTTY_SURFACE_CONTEXT_TAB)
         let cwd = config.working_directory.map { String(cString: $0) } ?? workingDirectory
@@ -306,7 +306,7 @@ final class TerminalView: NSView {
 
     /// Types `text` into the terminal as if pasted (bracketed-paste aware),
     /// without pressing return.
-    func insertText(_ text: String) {
+    package func insertText(_ text: String) {
         guard let surface else { return }
         text.withCString { ptr in
             ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
@@ -315,7 +315,7 @@ final class TerminalView: NSView {
 
     /// Presses Return. Needed to run something typed with insertText: with
     /// bracketed paste on, a newline inside the pasted text is literal.
-    func pressReturn() {
+    package func pressReturn() {
         guard let surface else { return }
         var ev = ghostty_input_key_s()
         ev.keycode = 0x24  // kVK_Return
@@ -333,7 +333,7 @@ final class TerminalView: NSView {
     /// terminal makes it SIGINT for the foreground job, and a full-screen
     /// program that reads ⌃C as a byte gets the byte. Never a SIGINT to
     /// the group from here.
-    func pressControlC() {
+    package func pressControlC() {
         guard let surface else { return }
         var ev = ghostty_input_key_s()
         ev.keycode = 0x08  // kVK_ANSI_C
@@ -348,11 +348,11 @@ final class TerminalView: NSView {
 
     /// The pane's foreground process group (`tcgetpgrp` of its pty, through
     /// libghostty); nil when it has none or no surface.
-    var foregroundGroup: pid_t? { surface.flatMap { ImagePaste.foregroundGroup(of: $0) } }
+    package var foregroundGroup: pid_t? { surface.flatMap { ImagePaste.foregroundGroup(of: $0) } }
 
     /// Hidden tabs stop rendering; libghostty keeps the pty running.
     /// Becoming visible draws a frame at once, so nothing stale is shown.
-    func setVisible(_ visible: Bool) {
+    package func setVisible(_ visible: Bool) {
         isHidden = !visible
         if let surface { ghostty_surface_set_occlusion(surface, visible) }
     }
@@ -361,50 +361,50 @@ final class TerminalView: NSView {
     /// whoever asked for this draws the pane itself (`drawNow`). Tab peek
     /// uses it past its live limit, so twenty previews don't all run at
     /// full rate.
-    func setPreviewing(_ previewing: Bool) {
+    package func setPreviewing(_ previewing: Bool) {
         isHidden = !previewing
     }
 
     /// One frame, now, on this thread — the only way to refresh an occluded
     /// surface (libghostty's renderer skips the draw while it is hidden).
-    func drawNow() {
+    package func drawNow() {
         guard let surface, !frame.isEmpty else { return }
         ghostty_surface_draw(surface)
     }
 
     /// Whether the shell/command has exited (as opposed to a close being
     /// requested while it runs).
-    var processExited: Bool {
+    package var processExited: Bool {
         guard let surface else { return true }
         return ghostty_surface_process_exited(surface)
     }
 
     /// Whether closing now would kill a running process (per the user's
     /// confirm-close-surface config).
-    var needsConfirmClose: Bool {
+    package var needsConfirmClose: Bool {
         guard let surface else { return false }
         return ghostty_surface_needs_confirm_quit(surface)
     }
 
-    static func from(userdata: UnsafeMutableRawPointer?) -> TerminalView? {
+    package static func from(userdata: UnsafeMutableRawPointer?) -> TerminalView? {
         guard let userdata else { return nil }
         return Unmanaged<TerminalView>.fromOpaque(userdata).takeUnretainedValue()
     }
 
-    static func from(surface: ghostty_surface_t?) -> TerminalView? {
+    package static func from(surface: ghostty_surface_t?) -> TerminalView? {
         guard let surface else { return nil }
         return from(userdata: ghostty_surface_userdata(surface))
     }
 
     // MARK: Focus and size
 
-    override var acceptsFirstResponder: Bool { true }
+    package override var acceptsFirstResponder: Bool { true }
 
     /// The window is full-size-content; a click in the terminal must never
     /// start a window drag.
-    override var mouseDownCanMoveWindow: Bool { false }
+    package override var mouseDownCanMoveWindow: Bool { false }
 
-    override func becomeFirstResponder() -> Bool {
+    package override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         if result {
             setFocused(true)
@@ -413,7 +413,7 @@ final class TerminalView: NSView {
         return result
     }
 
-    override func resignFirstResponder() -> Bool {
+    package override func resignFirstResponder() -> Bool {
         let result = super.resignFirstResponder()
         if result { setFocused(false) }
         return result
@@ -425,18 +425,18 @@ final class TerminalView: NSView {
         ghostty_surface_set_focus(surface, value)
     }
 
-    override func setFrameSize(_ newSize: NSSize) {
+    package override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         updateSurfaceSize()
         dropHighlight?.frame = frame
     }
 
-    override func setFrameOrigin(_ newOrigin: NSPoint) {
+    package override func setFrameOrigin(_ newOrigin: NSPoint) {
         super.setFrameOrigin(newOrigin)
         dropHighlight?.frame = frame
     }
 
-    override func viewDidChangeBackingProperties() {
+    package override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         if let window {
             // We scale the framebuffer ourselves; stop the compositor from also
@@ -461,7 +461,7 @@ final class TerminalView: NSView {
 
     // MARK: Mouse
 
-    override func updateTrackingAreas() {
+    package override func updateTrackingAreas() {
         trackingAreas.forEach { removeTrackingArea($0) }
         addTrackingArea(
             NSTrackingArea(
@@ -472,11 +472,11 @@ final class TerminalView: NSView {
         super.updateTrackingAreas()
     }
 
-    override func resetCursorRects() {
+    package override func resetCursorRects() {
         addCursorRect(bounds, cursor: cursorShape)
     }
 
-    func setMouseShape(_ shape: ghostty_action_mouse_shape_e) {
+    package func setMouseShape(_ shape: ghostty_action_mouse_shape_e) {
         switch shape {
         case GHOSTTY_MOUSE_SHAPE_POINTER: cursorShape = .pointingHand
         case GHOSTTY_MOUSE_SHAPE_TEXT: cursorShape = .iBeam
@@ -485,12 +485,12 @@ final class TerminalView: NSView {
         window?.invalidateCursorRects(for: self)
     }
 
-    override func mouseDown(with event: NSEvent) {
+    package override func mouseDown(with event: NSEvent) {
         if !focused { window?.makeFirstResponder(self) }
         sendMouseButton(GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, event)
     }
 
-    override func mouseUp(with event: NSEvent) {
+    package override func mouseUp(with event: NSEvent) {
         sendMouseButton(GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, event)
         if let surface { ghostty_surface_mouse_pressure(surface, 0, 0) }
         // After libghostty has seen the release, so the selection it
@@ -498,19 +498,19 @@ final class TerminalView: NSView {
         DispatchQueue.main.async { [weak self] in self?.onSelectionChanged?() }
     }
 
-    override func rightMouseDown(with event: NSEvent) {
+    package override func rightMouseDown(with event: NSEvent) {
         if !sendMouseButton(GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, event) { super.rightMouseDown(with: event) }
     }
 
-    override func rightMouseUp(with event: NSEvent) {
+    package override func rightMouseUp(with event: NSEvent) {
         if !sendMouseButton(GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, event) { super.rightMouseUp(with: event) }
     }
 
-    override func otherMouseDown(with event: NSEvent) {
+    package override func otherMouseDown(with event: NSEvent) {
         sendMouseButton(GHOSTTY_MOUSE_PRESS, GhosttyInput.mouseButton(event.buttonNumber), event)
     }
 
-    override func otherMouseUp(with event: NSEvent) {
+    package override func otherMouseUp(with event: NSEvent) {
         sendMouseButton(GHOSTTY_MOUSE_RELEASE, GhosttyInput.mouseButton(event.buttonNumber), event)
     }
 
@@ -520,19 +520,19 @@ final class TerminalView: NSView {
         return ghostty_surface_mouse_button(surface, state, button, GhosttyInput.mods(event.modifierFlags))
     }
 
-    override func mouseMoved(with event: NSEvent) {
+    package override func mouseMoved(with event: NSEvent) {
         guard let surface else { return }
         // AppKit is bottom-left origin; libghostty is top-left.
         let pos = convert(event.locationInWindow, from: nil)
         ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, GhosttyInput.mods(event.modifierFlags))
     }
 
-    override func mouseDragged(with event: NSEvent) { mouseMoved(with: event) }
-    override func rightMouseDragged(with event: NSEvent) { mouseMoved(with: event) }
-    override func otherMouseDragged(with event: NSEvent) { mouseMoved(with: event) }
-    override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
+    package override func mouseDragged(with event: NSEvent) { mouseMoved(with: event) }
+    package override func rightMouseDragged(with event: NSEvent) { mouseMoved(with: event) }
+    package override func otherMouseDragged(with event: NSEvent) { mouseMoved(with: event) }
+    package override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
 
-    override func mouseExited(with event: NSEvent) {
+    package override func mouseExited(with event: NSEvent) {
         // Keep reporting while a drag leaves the view (selection).
         guard let surface, NSEvent.pressedMouseButtons == 0 else { return }
         ghostty_surface_mouse_pos(surface, -1, -1, GhosttyInput.mods(event.modifierFlags))
@@ -544,18 +544,18 @@ final class TerminalView: NSView {
     /// ended)`. It answers whether the swipe was its own, which is only ever
     /// true for the configured finger count — two-finger scrolling is a
     /// scroll event and never reaches this at all.
-    var onTouches: ((Int, CGFloat, Bool) -> Bool)?
+    package var onTouches: ((Int, CGFloat, Bool) -> Bool)?
 
-    override func touchesBegan(with event: NSEvent) {
+    package override func touchesBegan(with event: NSEvent) {
         if !report(event, ended: false) { super.touchesBegan(with: event) }
     }
-    override func touchesMoved(with event: NSEvent) {
+    package override func touchesMoved(with event: NSEvent) {
         if !report(event, ended: false) { super.touchesMoved(with: event) }
     }
-    override func touchesEnded(with event: NSEvent) {
+    package override func touchesEnded(with event: NSEvent) {
         if !report(event, ended: true) { super.touchesEnded(with: event) }
     }
-    override func touchesCancelled(with event: NSEvent) {
+    package override func touchesCancelled(with event: NSEvent) {
         if !report(event, ended: true) { super.touchesCancelled(with: event) }
     }
 
@@ -565,7 +565,7 @@ final class TerminalView: NSView {
         return onTouches(touches.count, TabPeekTouches.averageY(touches), ended)
     }
 
-    override func scrollWheel(with event: NSEvent) {
+    package override func scrollWheel(with event: NSEvent) {
         guard let surface else { return }
         var x = event.scrollingDeltaX
         var y = event.scrollingDeltaY
@@ -579,7 +579,7 @@ final class TerminalView: NSView {
 
     // MARK: Keyboard
 
-    override func keyDown(with event: NSEvent) {
+    package override func keyDown(with event: NSEvent) {
         // Nobody would read it until Resume — then all at once.
         if isSuspended { return NSSound.beep() }
         guard let surface else {
@@ -637,11 +637,11 @@ final class TerminalView: NSView {
         }
     }
 
-    override func keyUp(with event: NSEvent) {
+    package override func keyUp(with event: NSEvent) {
         sendKey(GHOSTTY_ACTION_RELEASE, event: event)
     }
 
-    override func flagsChanged(with event: NSEvent) {
+    package override func flagsChanged(with event: NSEvent) {
         let mod: UInt32
         switch event.keyCode {
         case 0x39: mod = GHOSTTY_MODS_CAPS.rawValue
@@ -674,7 +674,7 @@ final class TerminalView: NSView {
     /// A Ghostty binding (copy, paste, font size, ...) is handled right away.
     /// Anything else goes to the menu first; if nothing takes it, AppKit
     /// comes back via doCommand and we route it to keyDown by timestamp.
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    package override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.type == .keyDown, focused, let surface else { return false }
 
         // The paste key with only a picture to paste, into an agent: ⌃V,
@@ -780,8 +780,8 @@ final class TerminalView: NSView {
 
     // MARK: Edit menu
 
-    @objc func copy(_ sender: Any?) { performBinding("copy_to_clipboard") }
-    @objc func paste(_ sender: Any?) { performBinding("paste_from_clipboard") }
+    @objc package func copy(_ sender: Any?) { performBinding("copy_to_clipboard") }
+    @objc package func paste(_ sender: Any?) { performBinding("paste_from_clipboard") }
 
     /// Whether `event` is the key Paste is on (⌘V, unless rebound).
     private func isPasteKey(_ event: NSEvent) -> Bool {
@@ -790,11 +790,11 @@ final class TerminalView: NSView {
         }
         return KeyCombo(event: event) == key
     }
-    @objc override func selectAll(_ sender: Any?) { performBinding("select_all") }
+    @objc package override func selectAll(_ sender: Any?) { performBinding("select_all") }
 
     /// Runs a Ghostty binding action by name (`copy_to_clipboard`,
     /// `search:foo`, `navigate_search:next`, …).
-    func perform(binding action: String) {
+    package func perform(binding action: String) {
         guard let surface else { return }
         _ = ghostty_surface_binding_action(surface, action, UInt(action.utf8.count))
     }
@@ -802,10 +802,10 @@ final class TerminalView: NSView {
     private func performBinding(_ action: String) { perform(binding: action) }
 
     /// The text on screen now (the viewport), one line per row.
-    var visibleText: String? { text(of: GHOSTTY_POINT_VIEWPORT) }
+    package var visibleText: String? { text(of: GHOSTTY_POINT_VIEWPORT) }
 
     /// Everything the pane holds: scrollback and screen.
-    var scrollbackText: String? { text(of: GHOSTTY_POINT_SCREEN) }
+    package var scrollbackText: String? { text(of: GHOSTTY_POINT_SCREEN) }
 
     private func text(of region: ghostty_point_tag_e) -> String? {
         guard let surface else { return nil }
@@ -831,7 +831,7 @@ final class TerminalView: NSView {
     /// What is selected right now, or nil if nothing is. The selection
     /// lives in libghostty — Overterm never had a reason to read it before
     /// (copy goes through Ghostty's own binding).
-    var selectionText: String? { selection?.text }
+    package var selectionText: String? { selection?.text }
 
     /// What is selected, and where its top-left corner is in this view.
     ///
@@ -839,7 +839,7 @@ final class TerminalView: NSView {
     /// (`ghostty_text_s.tl_px_x/y`), and only while the selection is on
     /// screen — scrolled out of view it reports (-1, -1), and then there
     /// is nowhere to put a toolbar.
-    var selection: (text: String, origin: CGPoint)? {
+    package var selection: (text: String, origin: CGPoint)? {
         guard let surface, ghostty_surface_has_selection(surface) else { return nil }
         var text = ghostty_text_s()
         guard ghostty_surface_read_selection(surface, &text) else { return nil }
@@ -852,16 +852,16 @@ final class TerminalView: NSView {
     }
 
     /// Called when a drag or a click may have changed the selection.
-    var onSelectionChanged: (() -> Void)?
+    package var onSelectionChanged: (() -> Void)?
 
-    var hasSelection: Bool {
+    package var hasSelection: Bool {
         guard let surface else { return false }
         return ghostty_surface_has_selection(surface)
     }
 
     /// One cell, in points. Everything that draws *over* the grid — a block's
     /// frame, the scroll map's marks — turns a row number into a y with it.
-    var cellSize: CGSize {
+    package var cellSize: CGSize {
         guard let surface else { return .zero }
         let size = ghostty_surface_size(surface)
         let scale = window?.backingScaleFactor ?? 2
@@ -870,7 +870,7 @@ final class TerminalView: NSView {
 
     /// How many rows fit on screen, which is what the viewport's height is
     /// measured in.
-    var rowCount: Int {
+    package var rowCount: Int {
         guard let surface else { return 0 }
         return Int(ghostty_surface_size(surface).rows)
     }
@@ -880,14 +880,14 @@ final class TerminalView: NSView {
     /// Files paste as their paths, which is what an agent prompt wants when
     /// you paste a screenshot in — quoted as a drop's are: a file named
     /// `x;$(…)` must not become a command once Return is pressed.
-    nonisolated static func pastedPaths(_ urls: [URL]) -> String {
+    package nonisolated static func pastedPaths(_ urls: [URL]) -> String {
         urls.map { TerminalWindowController.shellQuoted($0.path) }.joined(separator: " ")
     }
 
     /// A read libghostty asks for: the text (`text/plain` — files as their
     /// paths), when it asked for that; a listing of what there is, when it
     /// asked for one. Overterm serves text alone.
-    func readClipboard(_ location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?, mimes: [String], list: Bool) -> ghostty_clipboard_read_result_e {
+    package func readClipboard(_ location: ghostty_clipboard_e, state: UnsafeMutableRawPointer?, mimes: [String], list: Bool) -> ghostty_clipboard_read_result_e {
         guard let surface, let pasteboard = GhosttyRuntime.pasteboard(location) else { return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED }
         var string: String?
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
@@ -905,15 +905,15 @@ final class TerminalView: NSView {
 // MARK: - NSTextInputClient
 
 extension TerminalView: @preconcurrency NSTextInputClient {
-    func hasMarkedText() -> Bool { markedText.length > 0 }
+    package func hasMarkedText() -> Bool { markedText.length > 0 }
 
-    func markedRange() -> NSRange {
+    package func markedRange() -> NSRange {
         markedText.length > 0 ? NSRange(location: 0, length: markedText.length) : NSRange()
     }
 
-    func selectedRange() -> NSRange { NSRange() }
+    package func selectedRange() -> NSRange { NSRange() }
 
-    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+    package func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         switch string {
         case let v as NSAttributedString: markedText = NSMutableAttributedString(attributedString: v)
         case let v as String: markedText = NSMutableAttributedString(string: v)
@@ -923,20 +923,20 @@ extension TerminalView: @preconcurrency NSTextInputClient {
         if keyTextAccumulator == nil { syncPreedit() }
     }
 
-    func unmarkText() {
+    package func unmarkText() {
         guard markedText.length > 0 else { return }
         markedText.mutableString.setString("")
         syncPreedit()
     }
 
-    func validAttributesForMarkedText() -> [NSAttributedString.Key] { [] }
+    package func validAttributesForMarkedText() -> [NSAttributedString.Key] { [] }
 
-    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? { nil }
+    package func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? { nil }
 
-    func characterIndex(for point: NSPoint) -> Int { 0 }
+    package func characterIndex(for point: NSPoint) -> Int { 0 }
 
     /// Where the IME candidate window goes: at the terminal cursor.
-    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+    package func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         guard let surface else { return .zero }
         var x = 0.0, y = 0.0, width = 0.0, height = 0.0
         ghostty_surface_ime_point(surface, &x, &y, &width, &height)
@@ -945,7 +945,7 @@ extension TerminalView: @preconcurrency NSTextInputClient {
         return window?.convertToScreen(windowRect) ?? windowRect
     }
 
-    func insertText(_ string: Any, replacementRange: NSRange) {
+    package func insertText(_ string: Any, replacementRange: NSRange) {
         guard NSApp.currentEvent != nil, let surface else { return }
         let chars: String
         switch string {
@@ -966,7 +966,7 @@ extension TerminalView: @preconcurrency NSTextInputClient {
     /// Swallows AppKit's default selectors (no beep). If the event was a
     /// command/control key AppKit bounced back from performKeyEquivalent,
     /// re-dispatch it so keyDown encodes it for the terminal.
-    override func doCommand(by selector: Selector) {
+    package override func doCommand(by selector: Selector) {
         if let last = lastPerformKeyEvent, let current = NSApp.currentEvent, last == current.timestamp {
             NSApp.sendEvent(current)
         }
@@ -978,7 +978,7 @@ extension TerminalView: @preconcurrency NSTextInputClient {
 extension TerminalView {
     /// A drag comes over the pane: highlight it, saying what a drop does —
     /// and look at what runs here, which decides that.
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    package override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard let payload = TerminalDrop.payload(from: sender.draggingPasteboard) else { return [] }
         dropPayload = payload
         showDropHighlight()
@@ -991,7 +991,7 @@ extension TerminalView {
     }
 
     /// ⌥ may have been pressed or let go.
-    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+    package override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard dropPayload != nil else { return [] }
         updateDropHighlight()
         return Self.dropOperation(sender)
@@ -1003,17 +1003,17 @@ extension TerminalView {
         return [NSDragOperation.copy, .generic, .link].first { allowed.contains($0) } ?? .copy
     }
 
-    override func draggingExited(_ sender: NSDraggingInfo?) {
+    package override func draggingExited(_ sender: NSDraggingInfo?) {
         endDropHover()
     }
 
-    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    package override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
         dropPayload != nil
     }
 
     /// Types the drop's references in, with the keyboard in this pane.
     /// Promised files are written into a drops folder first.
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    package override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let plain = Self.dropModifierFlags().contains(.option)
         endDropHover()
         guard surface != nil, let payload = TerminalDrop.payload(from: sender.draggingPasteboard) else { return false }
@@ -1031,18 +1031,18 @@ extension TerminalView {
         return true
     }
 
-    override func concludeDragOperation(_ sender: NSDraggingInfo?) {
+    package override func concludeDragOperation(_ sender: NSDraggingInfo?) {
         endDropHover()
     }
 
-    override func draggingEnded(_ sender: NSDraggingInfo) {
+    package override func draggingEnded(_ sender: NSDraggingInfo) {
         endDropHover()
     }
 
     /// What runs in the pane now: its terminal's foreground group read
     /// here, from the surface; its processes looked up in the census off
     /// the main thread (`TerminalDrop.program`), the answer back on it.
-    func lookAtProgram(_ done: @escaping @MainActor (TerminalDrop.Program) -> Void) {
+    package func lookAtProgram(_ done: @escaping @MainActor (TerminalDrop.Program) -> Void) {
         let pane = processTag
         let foreground = surface.flatMap { ImagePaste.foregroundGroup(of: $0) }
         // A pane just made is in the context the lookup reads, and one not
@@ -1123,7 +1123,7 @@ extension TerminalView {
     /// other's `login` before its own pty is open: an empty name is asked
     /// again at the next build, bounded, never given up at once — the tty
     /// is what shows such a pairing wrong.
-    func readTerminalDeviceOncePaired() {
+    package func readTerminalDeviceOncePaired() {
         guard terminalDevice == nil, terminalDeviceAsks < Self.terminalDeviceAttempts, let surface else { return }
         terminalDeviceAsks += 1
         let name = ghostty_surface_tty_name(surface)
@@ -1137,7 +1137,7 @@ extension TerminalView {
     /// A terminal's device from its path: `st_rdev` of a character device
     /// under `/dev`, what `KERN_PROC_ALL` says as `e_tdev`; nil for
     /// anything else.
-    nonisolated static func device(ofTerminal path: String) -> dev_t? {
+    package nonisolated static func device(ofTerminal path: String) -> dev_t? {
         guard path.hasPrefix("/dev/"), !path.split(separator: "/").contains("..") else { return nil }
         var info = stat()
         guard stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFCHR else { return nil }

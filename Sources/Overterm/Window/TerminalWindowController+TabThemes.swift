@@ -7,7 +7,7 @@ import Combine
 /// tab takes it (`TerminalView.themeName`), and the window dresses in it
 /// while the tab is in front.
 extension TerminalWindowController {
-    func themeName(for tab: Tab) -> String? {
+    package func themeName(for tab: Tab) -> String? {
         if let group = store.group(of: tab), let theme = group.theme { return theme }
         let lines = Settings.shared.value("appearance.folderThemes")?.list ?? []
         guard !lines.isEmpty else { return nil }
@@ -17,7 +17,7 @@ extension TerminalWindowController {
 
     /// Every pane its tab's theme; the window the selected tab's. Cheap
     /// when nothing changed: a pane is told only when its theme differs.
-    func applyTabThemes() {
+    package func applyTabThemes() {
         var selectedChanged = false
         for tab in store.tabs {
             let name = themeName(for: tab)
@@ -33,7 +33,7 @@ extension TerminalWindowController {
     }
 
     /// The group's menu ▸ Terminal Theme: nil for the window's own.
-    func setTheme(_ name: String?, of group: TabGroup) {
+    package func setTheme(_ name: String?, of group: TabGroup) {
         group.theme = name
         applyTabThemes()
     }
@@ -43,7 +43,7 @@ extension TerminalWindowController {
     /// (a folder rule follows where it works), or its panes (a split's new
     /// pane takes its tab's theme). The poll that walked the selected tab
     /// every 2 s did both of the last, only for that tab.
-    func wireTabThemes() {
+    package func wireTabThemes() {
         store.$tabs
             .combineLatest(store.$selectedID)
             .receive(on: DispatchQueue.main)

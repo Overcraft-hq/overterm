@@ -4,25 +4,25 @@
 
 /// A series' point: `Charts/`' own, so a chart's data needs nothing of
 /// Kubernetes' files; Kubernetes' answers keep the name.
-typealias KubeSeriesPoint = TimeChartPoint
-typealias KubeChartRole = TimeChartRole
-typealias KubeChartUnit = TimeChartUnit
-typealias KubeChartBand = TimeChartBand
-typealias KubeChartSeries = TimeChartSeries
-typealias KubeChartData = TimeChartData
-typealias KubePlotPath = TimePlotPath
-typealias KubePlot = TimePlot
-typealias KubeChartTooltip = TimeChartTooltip
-typealias KubeChartTime = TimeChartTime
-typealias KubeChartSummary = TimeChartSummary
-typealias KubeChartPalette = TimeChartPalette
-typealias KubeChartCursor = TimeChartCursor
-typealias KubeChartDraws = TimeChartDraws
-typealias KubeChartState = TimeChartState
-typealias KubeChartRegistry = TimeChartRegistry
-typealias KubeChartView = TimeChartView
-typealias KubeChartHoverMemo = TimeChartHoverMemo
-typealias KubeChartChip = TimeChartChip
-typealias KubeChartOverlay = TimeChartOverlay
-typealias KubeChartDescriptor = TimeChartDescriptor
-typealias KubeFlowLayout = ChartFlowLayout
+package typealias KubeSeriesPoint = TimeChartPoint
+package typealias KubeChartRole = TimeChartRole
+package typealias KubeChartUnit = TimeChartUnit
+package typealias KubeChartBand = TimeChartBand
+package typealias KubeChartSeries = TimeChartSeries
+package typealias KubeChartData = TimeChartData
+package typealias KubePlotPath = TimePlotPath
+package typealias KubePlot = TimePlot
+package typealias KubeChartTooltip = TimeChartTooltip
+package typealias KubeChartTime = TimeChartTime
+package typealias KubeChartSummary = TimeChartSummary
+package typealias KubeChartPalette = TimeChartPalette
+package typealias KubeChartCursor = TimeChartCursor
+package typealias KubeChartDraws = TimeChartDraws
+package typealias KubeChartState = TimeChartState
+package typealias KubeChartRegistry = TimeChartRegistry
+package typealias KubeChartView = TimeChartView
+package typealias KubeChartHoverMemo = TimeChartHoverMemo
+package typealias KubeChartChip = TimeChartChip
+package typealias KubeChartOverlay = TimeChartOverlay
+package typealias KubeChartDescriptor = TimeChartDescriptor
+package typealias KubeFlowLayout = ChartFlowLayout

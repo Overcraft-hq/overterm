@@ -9,7 +9,7 @@ extension DockerPageModel {
     /// in it. `detail`: its inspect, when someone else's detail has read it
     /// (the panel's; the page's own is known). `act`: who starts and stops
     /// it, and says when that failed (the panel has its own).
-    func verbs(
+    package func verbs(
         for container: ContainerSummary, targets: [ContainerSummary]? = nil, detail: ContainerDetail? = nil,
         act: ((DockerEngine.ContainerAction) -> Void)? = nil
     ) -> [ResourceVerb] {
@@ -126,7 +126,7 @@ extension DockerPageModel {
     /// What runs an emulated container natively (`DockerCommands.native`),
     /// its project's files as the store says them; nil when it runs
     /// natively, or its image has no name left to pull.
-    func nativeCommand(for container: ContainerSummary, detail: ContainerDetail? = nil) -> (command: String, folder: URL?)? {
+    package func nativeCommand(for container: ContainerSummary, detail: ContainerDetail? = nil) -> (command: String, folder: URL?)? {
         guard let emulation = docker.emulation(of: container) else { return nil }
         let project = container.composeProject.flatMap { name in docker.projects.first { $0.name == name } }
         let command = DockerCommands.native(
@@ -139,7 +139,7 @@ extension DockerPageModel {
     /// an image's name can't say — `image:` names what `build:` makes, and
     /// a tag moves on. Nil while they aren't read, or can't be; false for
     /// a container that is no service.
-    func builds(_ container: ContainerSummary) -> Bool? {
+    package func builds(_ container: ContainerSummary) -> Bool? {
         guard DockerEmulation.isService(container), let name = container.composeProject, let service = container.composeService else { return false }
         guard let project = docker.projects.first(where: { $0.name == name }) else { return nil }
         return composeFacts(for: project)?.built.map { $0.contains(service) }
@@ -147,7 +147,7 @@ extension DockerPageModel {
 
     /// Its verb: in a tab in its project's folder, once its files have
     /// said what they build and the project's override is as they are now.
-    func runNatively(_ container: ContainerSummary, detail: ContainerDetail? = nil) {
+    package func runNatively(_ container: ContainerSummary, detail: ContainerDetail? = nil) {
         let run: @MainActor @Sendable () -> Void = { [weak self] in
             guard let self, let native = self.nativeCommand(for: container, detail: detail) else { return }
             self.actions?.run(native.command, native.folder)
@@ -166,7 +166,7 @@ extension DockerPageModel {
     /// its own); `report`: where Check for Updates says what it couldn't
     /// do (the panel's line; the page's banners when nil). Watch and Up
     /// With Profiles… are there when its files say so (`composeFacts(for:)`).
-    func verbs(
+    package func verbs(
         for project: ComposeProject, act: ((DockerEngine.ContainerAction, [ContainerSummary]) -> Void)? = nil, report: ((String) -> Void)? = nil
     ) -> [ResourceVerb] {
         if project.planned { return verbs(planned: project, report: report) }
@@ -240,7 +240,7 @@ extension DockerPageModel {
     }
 
     /// A check under way, stopped: what it asked stays.
-    var stopCheckingVerb: ResourceVerb {
+    package var stopCheckingVerb: ResourceVerb {
         ResourceVerb(title: "Stop Checking for Updates", symbol: "stop.circle") { [weak self] in self?.updates.cancel() }
     }
 
@@ -302,7 +302,7 @@ extension DockerPageModel {
     /// once, pulled, its logs followed — in a tab in the project's folder;
     /// restarted here, through the engine, as the project's Restart is; its
     /// logs shown in the project's Logs tab, narrowed to it.
-    func verbs(for service: ComposeService, in project: ComposeProject) -> [ResourceVerb] {
+    package func verbs(for service: ComposeService, in project: ComposeProject) -> [ResourceVerb] {
         let lasting = service.containers.filter { !$0.isOneOff }
         let never = service.containers.isEmpty ? "Nothing of it has run yet." : nil
         return [
@@ -328,7 +328,7 @@ extension DockerPageModel {
 
     /// A test run's: Stop All leaves Ryuk, so it still removes them when the
     /// run ends; Remove All is what Ryuk does then (`remove(session:)`).
-    func verbs(for session: TestcontainersSession) -> [ResourceVerb] {
+    package func verbs(for session: TestcontainersSession) -> [ResourceVerb] {
         let up = session.members.filter { $0.state.isUp }
         return [
             ResourceVerb(title: "Stop All", symbol: "stop.fill", place: .button, unavailable: up.isEmpty ? "Nothing in it runs." : nil) { [weak self] in
@@ -347,7 +347,7 @@ extension DockerPageModel {
     // MARK: Images
 
     /// `targets`: what Remove removes — the selection when the image is in it.
-    func verbs(for image: ImageSummary, targets: [ImageSummary]? = nil) -> [ResourceVerb] {
+    package func verbs(for image: ImageSummary, targets: [ImageSummary]? = nil) -> [ResourceVerb] {
         let name = image.tags.first
         let endpoint = docker.endpoint
         let busy = docker.containers(using: image).filter { $0.state.isUp }
@@ -428,7 +428,7 @@ extension DockerPageModel {
 
     // MARK: Volumes
 
-    func verbs(for volume: VolumeSummary) -> [ResourceVerb] {
+    package func verbs(for volume: VolumeSummary) -> [ResourceVerb] {
         let users = docker.containers(mounting: volume)
         let endpoint = docker.endpoint
         return [
@@ -460,7 +460,7 @@ extension DockerPageModel {
     }
 
     /// A tar an export wrote, into a volume made for it.
-    func importVolumeAsking() {
+    package func importVolumeAsking() {
         actions?.pickOpen { [weak self] file in
             self?.actions?.askName("Import “\(file.lastPathComponent)”", "Into a new volume called:", file.deletingPathExtension().lastPathComponent) {
                 self?.importVolume($0, from: file)
@@ -470,7 +470,7 @@ extension DockerPageModel {
 
     // MARK: Networks
 
-    func verbs(for network: NetworkSummary) -> [ResourceVerb] {
+    package func verbs(for network: NetworkSummary) -> [ResourceVerb] {
         let members = docker.containers(on: network)
         // A container on host or none has no other network to have.
         let fixed = network.Name == "host" || network.Name == "none"
@@ -498,7 +498,7 @@ extension DockerPageModel {
         return verbs
     }
 
-    func connect(_ container: ContainerSummary, to network: NetworkSummary) {
+    package func connect(_ container: ContainerSummary, to network: NetworkSummary) {
         changeNetwork {
             try await $0.connect(container: container.Id, to: network.Id)
         } failed: {
@@ -506,7 +506,7 @@ extension DockerPageModel {
         }
     }
 
-    func disconnect(_ container: ContainerSummary, from network: NetworkSummary) {
+    package func disconnect(_ container: ContainerSummary, from network: NetworkSummary) {
         changeNetwork {
             try await $0.disconnect(container: container.Id, from: network.Id)
         } failed: {
@@ -533,7 +533,7 @@ extension DockerPageModel {
 
     /// What the detail's session knows of it — its inspect, its steps —
     /// when it is the build the detail shows.
-    func verbs(for build: DockerBuildRecord) -> [ResourceVerb] {
+    package func verbs(for build: DockerBuildRecord) -> [ResourceVerb] {
         let endpoint = docker.endpoint
         let session = buildSession.flatMap { $0.ref == build.shortRef ? $0 : nil }
         let detail = session?.detail
@@ -574,7 +574,7 @@ extension DockerPageModel {
 
     // MARK: Models
 
-    func verbs(for model: RunnerModel) -> [ResourceVerb] {
+    package func verbs(for model: RunnerModel) -> [ResourceVerb] {
         var verbs = [
             ResourceVerb(title: "Chat in a Tab", label: "Chat", symbol: "bubble.left.and.bubble.right", place: .button, key: "n") { [weak self] in
                 self?.runModel(model)

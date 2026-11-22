@@ -8,24 +8,24 @@ import Foundation
 /// model's monitor, only while the page is on screen. Only where the
 /// context opts in; elsewhere none of it shows and nothing is asked.
 extension KubernetesPageModel {
-    static let volumeColumn = "prometheus.volume"
-    static let claimsKind = "persistentvolumeclaims"
+    package static let volumeColumn = "prometheus.volume"
+    package static let claimsKind = "persistentvolumeclaims"
 
     /// Whether the context shown opts in to Prometheus.
-    var prometheusOn: Bool {
+    package var prometheusOn: Bool {
         guard let context = model.selected else { return false }
         return KubePrometheusUse.of(context.settings).isOn
     }
 
     /// The chart a detail's Overview shows, for the object open: a claim's
     /// (a pod's are its Metrics tab's).
-    func chart(for ref: KubeObjectRef) -> KubeChart? {
+    package func chart(for ref: KubeObjectRef) -> KubeChart? {
         guard let namespace = ref.namespace, ref.kind.group.isEmpty, ref.kind.resource == Self.claimsKind else { return nil }
         return .volume(namespace: namespace, claim: ref.name)
     }
 
     /// What the page shows now that reads Prometheus.
-    var prometheusWants: Set<KubePrometheusMonitor.Want> {
+    package var prometheusWants: Set<KubePrometheusMonitor.Want> {
         guard windowVisible, prometheusOn else { return [] }
         // The page hidden: only its Metrics tab's, for a chart expanded into the right slot (M9).
         guard visible else { return metricsTabWant.map { [.tab($0)] } ?? [] }
@@ -54,41 +54,41 @@ extension KubernetesPageModel {
     /// The Overview's charts over Prometheus: the cluster's (X1, X2), its
     /// CPU by namespace — the namespaces picked, or every one — (X3) and
     /// its nodes (X4).
-    var overviewCharts: [KubeChart] { [.cluster, namespacesChart, .nodes] }
+    package var overviewCharts: [KubeChart] { [.cluster, namespacesChart, .nodes] }
 
     /// X3 for the namespaces picked: one, several, or (none) every one.
-    var namespacesChart: KubeChart { .namespaces(model.scope.names ?? []) }
+    package var namespacesChart: KubeChart { .namespaces(model.scope.names ?? []) }
 
-    func updatePrometheusWanted() {
+    package func updatePrometheusWanted() {
         // Sizing left before it answered: dropped, asked again only by another press.
         if let asked = sizingAsked, sizingWant == nil, model.prometheus.sizings[asked]?.done != true { sizingAsked = nil }
         model.prometheus.want(prometheusWants, for: self)
     }
 
     /// The PVC list gets a Used column where the context opts in.
-    var showsVolumeColumn: Bool { model.kind.fullName == Self.claimsKind && prometheusOn }
+    package var showsVolumeColumn: Bool { model.kind.fullName == Self.claimsKind && prometheusOn }
 
-    static var volumeColumnSpec: ResourceColumn {
+    package static var volumeColumnSpec: ResourceColumn {
         ResourceColumn(
             id: volumeColumn, title: "Used", width: 180, minWidth: 40,
             help: "What the volume holds against its capacity, from Prometheus (kubelet_volume_stats_used_bytes and _capacity_bytes). Read every minute while shown.")
     }
 
-    func volumeUsage(of row: KubeListRow) -> KubeUsageCell {
+    package func volumeUsage(of row: KubeListRow) -> KubeUsageCell {
         model.prometheus.volumeCell(row.row.id)
     }
 
     /// The range every chart shows; picking one asks again.
-    var chartRange: KubeChartRange {
+    package var chartRange: KubeChartRange {
         get { model.prometheus.range }
         set { model.prometheus.range = newValue }
     }
 
     /// Whether charts read Prometheus here (a picker), or only what was sampled while shown.
-    var chartsFromPrometheus: Bool { prometheusOn && model.prometheus.service != nil }
+    package var chartsFromPrometheus: Bool { prometheusOn && model.prometheus.service != nil }
 
     /// Why the PVC list's column has no numbers: Prometheus not found, or not asked yet.
-    var volumeNote: String? {
+    package var volumeNote: String? {
         guard showsVolumeColumn, showsSection else { return nil }
         if case .unavailable(let why) = model.prometheus.state { return why }
         return model.prometheus.volumes?.problem.map { "Volume usage couldn't be read: \($0)" }

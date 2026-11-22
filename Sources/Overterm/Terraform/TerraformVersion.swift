@@ -4,12 +4,12 @@ import Foundation
 /// version pill): `required_version`'s constraints (`>= 1.5, < 2.0`,
 /// `~> 1.9`, `= 1.9.0`, `!= 1.10.0`) and the pins a version manager reads
 /// (`.terraform-version`, `.tool-versions`, `mise.toml`). Pure.
-struct TerraformVersion: Comparable, Hashable, Sendable, CustomStringConvertible {
-    var parts: [Int]
+package struct TerraformVersion: Comparable, Hashable, Sendable, CustomStringConvertible {
+    package var parts: [Int]
     /// `-alpha20260101`, `-rc1`: a pre-release sorts before its release.
-    var prerelease: String?
+    package var prerelease: String?
 
-    init?(_ text: String) {
+    package init?(_ text: String) {
         var text = text.trimmingCharacters(in: .whitespaces)
         if text.hasPrefix("v") { text.removeFirst() }
         let split = text.split(separator: "-", maxSplits: 1)
@@ -20,11 +20,11 @@ struct TerraformVersion: Comparable, Hashable, Sendable, CustomStringConvertible
         prerelease = split.count > 1 ? String(split[1]) : nil
     }
 
-    var description: String { parts.map(String.init).joined(separator: ".") + (prerelease.map { "-" + $0 } ?? "") }
+    package var description: String { parts.map(String.init).joined(separator: ".") + (prerelease.map { "-" + $0 } ?? "") }
 
     private func padded(_ count: Int) -> [Int] { parts + Array(repeating: 0, count: max(0, count - parts.count)) }
 
-    static func < (a: TerraformVersion, b: TerraformVersion) -> Bool {
+    package static func < (a: TerraformVersion, b: TerraformVersion) -> Bool {
         let (x, y) = (a.padded(3), b.padded(3))
         if x != y { return x.lexicographicallyPrecedes(y) }
         switch (a.prerelease, b.prerelease) {
@@ -34,8 +34,8 @@ struct TerraformVersion: Comparable, Hashable, Sendable, CustomStringConvertible
         }
     }
 
-    static func == (a: TerraformVersion, b: TerraformVersion) -> Bool { a.padded(3) == b.padded(3) && a.prerelease == b.prerelease }
-    func hash(into hasher: inout Hasher) {
+    package static func == (a: TerraformVersion, b: TerraformVersion) -> Bool { a.padded(3) == b.padded(3) && a.prerelease == b.prerelease }
+    package func hash(into hasher: inout Hasher) {
         hasher.combine(padded(3))
         hasher.combine(prerelease)
     }
@@ -43,7 +43,7 @@ struct TerraformVersion: Comparable, Hashable, Sendable, CustomStringConvertible
     /// Whether this version satisfies every comma-separated constraint of
     /// `constraint`; nil when one can't be read (said as unknown, never a
     /// mismatch).
-    func satisfies(_ constraint: String) -> Bool? {
+    package func satisfies(_ constraint: String) -> Bool? {
         var all = true
         for piece in constraint.split(separator: ",") {
             let term = piece.trimmingCharacters(in: .whitespaces)
@@ -77,27 +77,27 @@ struct TerraformVersion: Comparable, Hashable, Sendable, CustomStringConvertible
 
     /// Whether a pin (`1.9`, `1.9.3`) names this version: equal on every
     /// part it gives. `latest`, `min-required` and the like say nothing.
-    func matchesPin(_ pin: String) -> Bool? {
+    package func matchesPin(_ pin: String) -> Bool? {
         guard let wanted = TerraformVersion(pin) else { return nil }
         return Array(parts.prefix(wanted.parts.count)) == wanted.parts && (wanted.prerelease == nil || wanted.prerelease == prerelease)
     }
 }
 
 /// Where a root's version is asked for, and what each says.
-struct TerraformVersionPins: Equatable, Sendable {
+package struct TerraformVersionPins: Equatable, Sendable {
     /// `required_version`.
-    var required: String?
+    package var required: String?
     /// The pin a version manager reads, and its file: `1.9.0 (.terraform-version)`.
-    var pin: String?
-    var pinFile: String?
+    package var pin: String?
+    package var pinFile: String?
 
     /// `.terraform-version`'s first line.
-    static func terraformVersionFile(_ text: String) -> String? {
+    package static func terraformVersionFile(_ text: String) -> String? {
         text.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) }.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     /// `.tool-versions`' `terraform 1.9.0` line.
-    static func toolVersions(_ text: String) -> String? {
+    package static func toolVersions(_ text: String) -> String? {
         for line in text.split(whereSeparator: \.isNewline) {
             let words = line.split(separator: " ", omittingEmptySubsequences: true)
             if words.count >= 2, words[0] == "terraform" { return String(words[1]) }
@@ -106,7 +106,7 @@ struct TerraformVersionPins: Equatable, Sendable {
     }
 
     /// `mise.toml`'s `terraform = "1.9"` under `[tools]`.
-    static func miseToml(_ text: String) -> String? {
+    package static func miseToml(_ text: String) -> String? {
         var inTools = false
         for raw in text.split(whereSeparator: \.isNewline) {
             let line = raw.trimmingCharacters(in: .whitespaces)
@@ -125,7 +125,7 @@ struct TerraformVersionPins: Equatable, Sendable {
 
     /// What the pill says against `version`: nil when nothing is asked or
     /// all agree; else "1.17.1 ≠ required ~> 1.9".
-    func mismatch(_ version: TerraformVersion?) -> String? {
+    package func mismatch(_ version: TerraformVersion?) -> String? {
         guard let version else { return nil }
         if let required, version.satisfies(required) == false { return "\(version) ≠ required \(required)" }
         if let pin, version.matchesPin(pin) == false { return "\(version) ≠ \(pin) (\(pinFile ?? "pinned"))" }

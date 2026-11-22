@@ -2,7 +2,7 @@ import Foundation
 
 /// What a bound release's upgrade asks of its window.
 @MainActor
-protocol KubeHelmUpgradeHost: AnyObject {
+package protocol KubeHelmUpgradeHost: AnyObject {
     /// The write's confirmation (`WriteConfirmation`): what was typed when
     /// the button was pressed, nil for Cancel.
     func askHelmUpgrade(_ confirmation: KubeWriteConfirmation) async -> String?
@@ -25,49 +25,49 @@ protocol KubeHelmUpgradeHost: AnyObject {
 /// the context and namespace (the name typed on production), the context
 /// checked again at the button, then `helm upgrade` in a pinned tab.
 @MainActor
-final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
-    typealias State = KubeManifestSession.State
+package final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
+    package typealias State = KubeManifestSession.State
 
     /// One diff made: against what, and what would change.
-    struct Diffed: Equatable {
-        var context: String
-        var production: Bool
-        var release: String
-        var namespace: String
-        var storage: KubeHelmStorage
-        var revision: Int
-        var chart: URL
-        var chartSaid: String?
-        var diff: KubeHelmDiff
+    package struct Diffed: Equatable {
+        package var context: String
+        package var production: Bool
+        package var release: String
+        package var namespace: String
+        package var storage: KubeHelmStorage
+        package var revision: Int
+        package var chart: URL
+        package var chartSaid: String?
+        package var diff: KubeHelmDiff
         /// What the server serves (the page's, else read for the diff): the
         /// render's `--api-versions`, and the kinds its access review asks about.
-        var discovery: KubeDiscovery?
+        package var discovery: KubeDiscovery?
         /// The chart folder as it was rendered (`KubeChartPrint`): the
         /// upgrade runs only while it is still so.
-        var chartPrint: String = ""
+        package var chartPrint: String = ""
     }
 
-    let id = UUID()
-    let binding: KubeBinding
-    let checkout: URL
-    let model: KubernetesModel
-    @Published private(set) var state: State = .idle
-    @Published private(set) var result: Diffed?
+    package let id = UUID()
+    package let binding: KubeBinding
+    package let checkout: URL
+    package let model: KubernetesModel
+    @Published package private(set) var state: State = .idle
+    @Published package private(set) var result: Diffed?
     /// Each object's diff, made for the pane once.
-    @Published private(set) var fileDiffs: [String: DiffModel.FileDiff] = [:]
-    weak var host: KubeHelmUpgradeHost?
+    @Published package private(set) var fileDiffs: [String: DiffModel.FileDiff] = [:]
+    package weak var host: KubeHelmUpgradeHost?
 
     /// What a read goes through: the context's proxy in a background slot, or a test's connection.
-    var client: (KubeContext) -> KubeClient
+    package var client: (KubeContext) -> KubeClient
     /// The checkout's chart for the release (a bounded walk, off the main thread).
-    var findChart: (URL, String) async -> URL?
+    package var findChart: (URL, String) async -> URL?
     /// The chart rendered with the release's values and the cluster's
     /// version and groups (`KubeHelmTemplate`); a test's stands in.
-    var render: (URL, String, String, Data, KubeContext, KubeHelmCapabilities) async throws -> String
+    package var render: (URL, String, String, Data, KubeContext, KubeHelmCapabilities) async throws -> String
     /// What the session is told when its tab opens (the scenario).
-    var onUpgrade: ((String) -> Void)?
+    package var onUpgrade: ((String) -> Void)?
 
-    init(binding: KubeBinding, checkout: URL, model: KubernetesModel) {
+    package init(binding: KubeBinding, checkout: URL, model: KubernetesModel) {
         self.binding = binding
         self.checkout = checkout
         self.model = model
@@ -82,17 +82,17 @@ final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
         }
     }
 
-    var release: String? { binding.release }
+    package var release: String? { binding.release }
 
     /// `Helm release shop/web`.
-    var title: String { "Helm release \(binding.namespace)/\(binding.release ?? "?")" }
+    package var title: String { "Helm release \(binding.namespace)/\(binding.release ?? "?")" }
 
     // MARK: Diff Chart with Release
 
-    func diff() { Task { _ = await runDiff() } }
+    package func diff() { Task { _ = await runDiff() } }
 
     @discardableResult
-    func runDiff(show: Bool = true) async -> Diffed? {
+    package func runDiff(show: Bool = true) async -> Diffed? {
         guard let release = binding.release else {
             state = .failed("The binding names no Helm release.")
             return nil
@@ -163,7 +163,7 @@ final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
         state = .failed(said)
     }
 
-    static func said(_ error: Error) -> String {
+    package static func said(_ error: Error) -> String {
         switch error {
         case let problem as KubeHelmTemplate.Problem: problem.description
         case let problem as KubeHelmProblem: problem.localizedDescription
@@ -172,7 +172,7 @@ final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
     }
 
     /// The release's records (Secrets, else ConfigMaps), as a release.
-    static func release(_ name: String, namespace: String, client: KubeClient) async throws -> KubeHelmRelease {
+    package static func release(_ name: String, namespace: String, client: KubeClient) async throws -> KubeHelmRelease {
         for storage in [KubeHelmStorage.secret, .configMap] {
             let records = try await client.helmRecords(storage, in: .namespace(namespace))
             if let found = KubeHelm.releases(records).first(where: { $0.name == name && $0.namespace == namespace }) { return found }
@@ -196,14 +196,14 @@ final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
     // MARK: Upgrade…
 
     /// Why Upgrade… can't be offered now (the class check); nil when it can.
-    func upgradeRefusal(_ context: KubeContext?) -> String? {
+    package func upgradeRefusal(_ context: KubeContext?) -> String? {
         guard let context else { return nil }
         return KubeProcessCheck.rule(.helmUpgrade, for: context).refused
     }
 
-    func upgrade() { Task { await runUpgrade() } }
+    package func upgrade() { Task { await runUpgrade() } }
 
-    func runUpgrade() async {
+    package func runUpgrade() async {
         guard !state.isWorking, let release = binding.release else { return }
         state = .working("Checking… \(title)")
         guard let context = await contextNow() else { return }

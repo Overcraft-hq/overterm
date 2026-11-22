@@ -8,8 +8,8 @@ import Foundation
 /// plans, per checkout and root (stage 1d, "Missing variables"), by name;
 /// and whether they took the plugin cache (4.13). One for the app.
 @MainActor
-final class TerraformRootStore {
-    static let shared = TerraformRootStore(url: AppEnvironment.terraformRootsFile)
+package final class TerraformRootStore {
+    package static let shared = TerraformRootStore(url: AppEnvironment.terraformRootsFile)
 
     private struct File: Codable {
         var productionIdentities: [TerraformStateIdentity] = []
@@ -19,10 +19,10 @@ final class TerraformRootStore {
         var pluginCache: Bool? = nil
     }
 
-    let url: URL
+    package let url: URL
     private var file: File?
 
-    init(url: URL) {
+    package init(url: URL) {
         self.url = url
     }
 
@@ -33,14 +33,14 @@ final class TerraformRootStore {
         return read
     }
 
-    var productionIdentities: Set<TerraformStateIdentity> { Set(load().productionIdentities) }
+    package var productionIdentities: Set<TerraformStateIdentity> { Set(load().productionIdentities) }
 
-    static func key(checkout: URL, root: String) -> String { checkout.standardizedFileURL.path + "\u{0}" + root }
+    package static func key(checkout: URL, root: String) -> String { checkout.standardizedFileURL.path + "\u{0}" + root }
 
     /// The var files chosen for a root's plans in a checkout.
-    func varFiles(checkout: URL, root: String) -> [String] { load().varFiles?[Self.key(checkout: checkout, root: root)] ?? [] }
+    package func varFiles(checkout: URL, root: String) -> [String] { load().varFiles?[Self.key(checkout: checkout, root: root)] ?? [] }
 
-    func setVarFiles(_ files: [String], checkout: URL, root: String) {
+    package func setVarFiles(_ files: [String], checkout: URL, root: String) {
         var current = load()
         var all = current.varFiles ?? [:]
         let key = Self.key(checkout: checkout, root: root)
@@ -54,9 +54,9 @@ final class TerraformRootStore {
     }
 
     /// The plugin cache's offer, as answered; nil when it never was.
-    var pluginCache: Bool? { load().pluginCache }
+    package var pluginCache: Bool? { load().pluginCache }
 
-    func setPluginCache(_ taken: Bool) {
+    package func setPluginCache(_ taken: Bool) {
         var current = load()
         current.pluginCache = taken
         save(current)
@@ -77,7 +77,7 @@ final class TerraformRootStore {
     /// 5.13 rule 12). An identity is a backend's names — a hundred bytes —
     /// and only what the classifier called production by the root's own
     /// signals is kept (`TerraformRootCard.identityToRemember`).
-    func rememberProduction(_ identities: [TerraformStateIdentity]) {
+    package func rememberProduction(_ identities: [TerraformStateIdentity]) {
         var current = load()
         var known = Set(current.productionIdentities)
         var added = false
@@ -91,5 +91,5 @@ final class TerraformRootStore {
 }
 
 extension TerraformRootStore {
-    func rememberProduction(_ identity: TerraformStateIdentity) { rememberProduction([identity]) }
+    package func rememberProduction(_ identity: TerraformStateIdentity) { rememberProduction([identity]) }
 }

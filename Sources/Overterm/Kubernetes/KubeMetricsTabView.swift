@@ -7,18 +7,18 @@ import SwiftUI
 /// sections past four containers. Its charts share one crosshair, held in
 /// `@State` and not observed, so a hover redraws the charts' overlays and
 /// never this body; a drag across one zooms them all.
-struct KubeMetricsTabView: View {
-    static let identifier = "kubernetes.detail.metrics"
+package struct KubeMetricsTabView: View {
+    package static let identifier = "kubernetes.detail.metrics"
 
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var metrics: KubeMetricsMonitor
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var metrics: KubeMetricsMonitor
     /// Its Prometheus answers land here: observed, as the samples are.
-    @ObservedObject var prometheus: KubePrometheusMonitor
-    @ObservedObject var session: KubeDetailSession
-    @ObservedObject var theme: ChromeTheme
+    @ObservedObject package var prometheus: KubePrometheusMonitor
+    @ObservedObject package var session: KubeDetailSession
+    @ObservedObject package var theme: ChromeTheme
     @State private var cursor = KubeChartCursor()
 
-    var body: some View {
+    package var body: some View {
         // Counted: `kubernetesCharts` checks a hover never runs it.
         let _ = KubeChartDraws.shared.composed(Self.identifier, window: ObjectIdentifier(theme))
         if session.ref.isPod {
@@ -270,25 +270,25 @@ struct KubeMetricsTabView: View {
 /// The charts themselves, from `KubePodCharts` alone — what the page and
 /// `kubernetesPerf` host: the pod's two, then a section a container, in a
 /// `LazyVStack` so a chart scrolled off isn't built.
-struct KubePodChartsList: View {
-    var charts: KubePodCharts
-    let cursor: KubeChartCursor
-    @ObservedObject var theme: ChromeTheme
-    var openMarker: ((KubeChartMarker) -> Void)?
-    var showAround: ((KubeChartMarker) -> Void)?
-    var logsFromHere: ((String?, Date) -> Void)?
+package struct KubePodChartsList: View {
+    package var charts: KubePodCharts
+    package let cursor: KubeChartCursor
+    @ObservedObject package var theme: ChromeTheme
+    package var openMarker: ((KubeChartMarker) -> Void)?
+    package var showAround: ((KubeChartMarker) -> Void)?
+    package var logsFromHere: ((String?, Date) -> Void)?
     /// A drag across a chart: its two times and the chart's data.
-    var zoom: ((Date, Date, KubeChartData) -> Void)?
+    package var zoom: ((Date, Date, KubeChartData) -> Void)?
     /// A chart's Copy PromQL and Copy Values as CSV; its ⤢ (M9).
-    var copy: ((String) -> Void)? = nil
-    var expand: ((KubePodCharts.Chart) -> Void)? = nil
+    package var copy: ((String) -> Void)? = nil
+    package var expand: ((KubePodCharts.Chart) -> Void)? = nil
     /// A chart's "Ask Agent About This Chart" (M11).
-    var ask: ((KubePodCharts.Chart) -> Void)? = nil
+    package var ask: ((KubePodCharts.Chart) -> Void)? = nil
     @State private var picked: String?
 
-    static let height: CGFloat = 140
+    package static let height: CGFloat = 140
 
-    var body: some View {
+    package var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 caption("Pod")
@@ -342,20 +342,20 @@ struct KubePodChartsList: View {
 /// A workload's, an HPA's, a node's or a namespace's charts: a section a
 /// group, then the sentences that say why a chart is left out — in a
 /// `LazyVStack`, so a chart scrolled off isn't built.
-struct KubeObjectChartsList: View {
-    var charts: KubeObjectCharts
-    let cursor: KubeChartCursor
-    @ObservedObject var theme: ChromeTheme
-    var openMarker: ((KubeChartMarker) -> Void)?
-    var showAround: ((KubeChartMarker) -> Void)?
-    var zoom: ((Date, Date, KubeChartData) -> Void)?
+package struct KubeObjectChartsList: View {
+    package var charts: KubeObjectCharts
+    package let cursor: KubeChartCursor
+    @ObservedObject package var theme: ChromeTheme
+    package var openMarker: ((KubeChartMarker) -> Void)?
+    package var showAround: ((KubeChartMarker) -> Void)?
+    package var zoom: ((Date, Date, KubeChartData) -> Void)?
     /// A group read only while on screen came into view, or left it.
-    var groupShown: ((String, Bool) -> Void)?
+    package var groupShown: ((String, Bool) -> Void)?
     /// A chart's Copy PromQL and Copy Values as CSV; its ⤢ (M9).
-    var copy: ((String) -> Void)? = nil
-    var expand: ((KubePodCharts.Chart) -> Void)? = nil
+    package var copy: ((String) -> Void)? = nil
+    package var expand: ((KubePodCharts.Chart) -> Void)? = nil
     /// A chart's "Ask Agent About This Chart" (M11).
-    var ask: ((KubePodCharts.Chart) -> Void)? = nil
+    package var ask: ((KubePodCharts.Chart) -> Void)? = nil
 
     private static let space = "kubernetes.metrics.charts"
 
@@ -367,11 +367,11 @@ struct KubeObjectChartsList: View {
     /// Built isn't shown: the lazy stack builds rows below the fold ahead
     /// of a scroll — a workload's saved queries were asked with their
     /// header 350 pt under it.
-    static func onScreen(_ frame: CGRect, viewport: CGFloat) -> Bool {
+    package static func onScreen(_ frame: CGRect, viewport: CGFloat) -> Bool {
         viewport > 0 && frame.maxY > 0 && frame.minY < viewport
     }
 
-    var body: some View {
+    package var body: some View {
         // Its height read around it: what a header is on screen in.
         GeometryReader { outer in
             list(viewport: outer.size.height)
@@ -455,14 +455,14 @@ private struct KubeShownGroupRow: ViewModifier {
 /// A detail's GPUs as its objects say them: each resource allocated
 /// against what is offered, who holds them (a node's pods open on a
 /// click), and how the numbers were read.
-struct KubeGPUAllocationView: View {
-    static let identifier = "kubernetes.metrics.gpus"
+package struct KubeGPUAllocationView: View {
+    package static let identifier = "kubernetes.metrics.gpus"
 
-    var allocation: KubeGPUAllocation
-    @ObservedObject var theme: ChromeTheme
-    var open: ((KubeRowID) -> Void)?
+    package var allocation: KubeGPUAllocation
+    @ObservedObject package var theme: ChromeTheme
+    package var open: ((KubeRowID) -> Void)?
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(verbatim: "GPUs").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
             ForEach(allocation.resources) { resource in
@@ -500,14 +500,14 @@ struct KubeGPUAllocationView: View {
 /// Custom's popover: two dates and times, checked (`KubeChartWindow.custom`)
 /// — the start before the end, the end not in the future, the start within
 /// what Prometheus keeps — and applied as the tab's window.
-struct KubeCustomRangeView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
-    @State var start: Date
-    @State var end: Date
+package struct KubeCustomRangeView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
+    @State package var start: Date
+    @State package var end: Date
     @State private var problem: String?
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(verbatim: "Custom range").font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text)
             DatePicker("From", selection: $start, displayedComponents: [.date, .hourAndMinute])
@@ -535,11 +535,11 @@ struct KubeCustomRangeView: View {
 /// proxy's filter) refused a query: the query as sent, to the clipboard
 /// only — the bug report metrics.md 4.7 offers for `bad_data` and the
 /// filter's 403, where no chart is drawn to carry it in its menu.
-struct KubeCopyPromQLButton: View {
-    let promQL: String
-    let copy: (String) -> Void
+package struct KubeCopyPromQLButton: View {
+    package let promQL: String
+    package let copy: (String) -> Void
 
-    var body: some View {
+    package var body: some View {
         Button("Copy PromQL") { copy(promQL) }
             .controlSize(.small)
             .help("The query that was refused, exactly as sent: to report it, or try it in Grafana")

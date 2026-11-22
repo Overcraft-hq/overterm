@@ -2,20 +2,20 @@ import AppKit
 import SwiftUI
 
 /// What the database pages ask the window to do.
-struct DatabaseSlotActions {
+package struct DatabaseSlotActions {
     /// Asked with the window's write confirmation; `then` runs on its
     /// button, with what was typed (when a name was asked, the caller checks it).
-    var confirm: (_ confirmation: WriteConfirmation, _ then: @escaping (_ typed: String) -> Void) -> Void
-    var close: () -> Void
+    package var confirm: (_ confirmation: WriteConfirmation, _ then: @escaping (_ typed: String) -> Void) -> Void
+    package var close: () -> Void
 }
 
 /// The right-hand slot's database page: a connection's Server or Users page.
-struct DatabaseSlotView: View {
-    @ObservedObject var model: DatabaseSlotModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DatabaseSlotActions
+package struct DatabaseSlotView: View {
+    @ObservedObject package var model: DatabaseSlotModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DatabaseSlotActions
 
-    var body: some View {
+    package var body: some View {
         Group {
             switch model.page {
             case .server: DatabaseServerView(model: model.server, theme: theme, actions: actions)
@@ -30,11 +30,11 @@ struct DatabaseSlotView: View {
 
 /// The pieces the database pages share.
 @MainActor
-struct OpsChrome {
-    let theme: ChromeTheme
+package struct OpsChrome {
+    package let theme: ChromeTheme
 
     /// Why a part is empty, and the line that turns it on.
-    func gap(_ gap: MonitorGap) -> some View {
+    package func gap(_ gap: MonitorGap) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label {
                 Text(verbatim: gap.reason).fixedSize(horizontal: false, vertical: true)
@@ -64,7 +64,7 @@ struct OpsChrome {
         .accessibilityIdentifier("opsGap")
     }
 
-    func stat(_ fact: ServerFact) -> some View {
+    package func stat(_ fact: ServerFact) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(verbatim: fact.title).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.dimText)
             Text(verbatim: fact.value).font(.system(size: ChromeMetrics.text(15), weight: .semibold, design: .rounded)).foregroundStyle(theme.text)
@@ -77,30 +77,30 @@ struct OpsChrome {
         .background(RoundedRectangle(cornerRadius: 7).fill(theme.rowHover.opacity(0.6)))
     }
 
-    func statement(_ text: String?, lines: Int = 2) -> some View {
+    package func statement(_ text: String?, lines: Int = 2) -> some View {
         Text(verbatim: OpsText.statement(text, limit: 600)).font(.system(size: ChromeMetrics.text(11), design: .monospaced))
             .foregroundStyle(text == nil ? theme.dimText : theme.text).lineLimit(lines).textSelection(.enabled)
     }
 
-    func caption(_ text: String) -> some View {
+    package func caption(_ text: String) -> some View {
         Text(verbatim: text).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.dimText)
     }
 
-    func section(_ title: String) -> some View {
+    package func section(_ title: String) -> some View {
         Text(verbatim: title).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.dimText)
     }
 }
 
 // MARK: The Server page
 
-struct DatabaseServerView: View {
-    @ObservedObject var model: DatabaseServerModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DatabaseSlotActions
+package struct DatabaseServerView: View {
+    @ObservedObject package var model: DatabaseServerModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DatabaseSlotActions
 
     private var chrome: OpsChrome { OpsChrome(theme: theme) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             RedisChrome(theme: theme).header(model.name, close: actions.close) {
                 Image(systemName: "server.rack").foregroundStyle(theme.dimText)
@@ -368,17 +368,17 @@ struct DatabaseServerView: View {
 
 // MARK: The Users page
 
-struct DatabaseUsersView: View {
-    @ObservedObject var model: DatabaseUsersModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DatabaseSlotActions
+package struct DatabaseUsersView: View {
+    @ObservedObject package var model: DatabaseUsersModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DatabaseSlotActions
     @State private var sheet: UsersSheet?
 
     private var chrome: OpsChrome { OpsChrome(theme: theme) }
 
-    enum UsersSheet: Identifiable {
+    package enum UsersSheet: Identifiable {
         case create, password(DatabaseUser), grant(DatabaseUser), grantRole(DatabaseUser)
-        var id: String {
+        package var id: String {
             switch self {
             case .create: "create"
             case .password(let user): "password \(user.id)"
@@ -388,7 +388,7 @@ struct DatabaseUsersView: View {
         }
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             RedisChrome(theme: theme).header(model.name, close: actions.close) {
                 Image(systemName: "person.2").foregroundStyle(theme.dimText)
@@ -536,8 +536,8 @@ struct DatabaseUsersView: View {
 /// A user statement's confirmation: every statement as shown (passwords
 /// masked), then sent.
 @MainActor
-enum UsersConfirm {
-    static func ask(_ title: String, _ statements: [UserStatement], button: String, model: DatabaseUsersModel, actions: DatabaseSlotActions) {
+package enum UsersConfirm {
+    package static func ask(_ title: String, _ statements: [UserStatement], button: String, model: DatabaseUsersModel, actions: DatabaseSlotActions) {
         let end = model.statementsAreSQL ? ";" : ""
         let confirmation = WriteConfirmation(
             title: title, scope: model.name, detail: statements.map { $0.shown + end }.joined(separator: "\n"), button: button)
@@ -546,8 +546,8 @@ enum UsersConfirm {
 }
 
 /// A grant's object, as a target a REVOKE names. Pure.
-enum GrantTargets {
-    static func target(of grant: DatabaseGrant, dialect: UserDialect) -> GrantTarget? {
+package enum GrantTargets {
+    package static func target(of grant: DatabaseGrant, dialect: UserDialect) -> GrantTarget? {
         if let target = grant.target { return target }
         switch grant.kind {
         case "server": return dialect.isMySQL ? .server : nil

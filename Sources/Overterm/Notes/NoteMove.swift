@@ -2,11 +2,11 @@ import Foundation
 
 /// A drop in the Notes panel: what moves where. Pure — the panel and its
 /// checks read the same answer.
-enum NoteMove {
+package enum NoteMove {
     /// Where `item` goes when dropped on `folder` — nil when it can't: from
     /// outside the vault, onto itself or into its own folders, or already
     /// there.
-    static func target(of item: URL, into folder: URL, vault root: URL) -> URL? {
+    package static func target(of item: URL, into folder: URL, vault root: URL) -> URL? {
         let item = item.standardizedFileURL
         let folder = folder.standardizedFileURL
         let root = root.standardizedFileURL.path
@@ -24,8 +24,8 @@ enum NoteMove {
 /// nonisolated: the providers answer on a queue of their own, and a closure
 /// written in a view is main-actor-isolated — Swift 6 traps when the system
 /// calls it there (CLAUDE.md).
-enum DroppedURLs {
-    nonisolated static func load(_ providers: [NSItemProvider], then: @escaping @MainActor @Sendable ([URL]) -> Void) {
+package enum DroppedURLs {
+    package nonisolated static func load(_ providers: [NSItemProvider], then: @escaping @MainActor @Sendable ([URL]) -> Void) {
         let group = DispatchGroup()
         let lock = NSLock()
         nonisolated(unsafe) var urls: [URL] = []

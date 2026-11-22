@@ -7,14 +7,14 @@ import Foundation
 /// `state` is the ladder's (`KubeGitOpsLadder`), set by
 /// `KubeGitOpsSummary.ranked` — again on every tick, with no read. Pure,
 /// Sendable.
-struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
-    enum Tool: String, Equatable, Hashable, Sendable {
+package struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
+    package enum Tool: String, Equatable, Hashable, Sendable {
         case argo, flux
 
-        var said: String { self == .argo ? "Argo CD" : "Flux" }
+        package var said: String { self == .argo ? "Argo CD" : "Flux" }
     }
 
-    enum Role: Equatable, Hashable, Sendable {
+    package enum Role: Equatable, Hashable, Sendable {
         case application, applicationSet, kustomization, helmRelease
         /// A Flux source, by its kind: `GitRepository`, `OCIRepository`, `HelmRepository`, `HelmChart`, `Bucket`.
         case source(String)
@@ -24,7 +24,7 @@ struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
         case markedApp
 
         /// What the Kind column says.
-        var short: String {
+        package var short: String {
             switch self {
             case .markedApp: "Marks"
             case .application: "App"
@@ -42,175 +42,175 @@ struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
     }
 
     /// A condition, its message through 5.3 (at most 4 KB).
-    struct Condition: Equatable, Sendable {
-        var type: String
-        var status: String
-        var reason: String?
-        var message: String?
-        var since: Date?
+    package struct Condition: Equatable, Sendable {
+        package var type: String
+        package var status: String
+        package var reason: String?
+        package var message: String?
+        package var since: Date?
 
-        var isTrue: Bool { status == "True" }
-        var isFalse: Bool { status == "False" }
+        package var isTrue: Bool { status == "True" }
+        package var isFalse: Bool { status == "False" }
     }
 
-    struct AutoSync: Equatable, Sendable {
-        var enabled: Bool
-        var prune: Bool
-        var selfHeal: Bool
+    package struct AutoSync: Equatable, Sendable {
+        package var enabled: Bool
+        package var prune: Bool
+        package var selfHeal: Bool
     }
 
-    struct Suspension: Equatable, Sendable {
+    package struct Suspension: Equatable, Sendable {
         /// When `spec.suspend` was last set, and by whom (managedFields').
-        var at: Date?
-        var by: String?
+        package var at: Date?
+        package var by: String?
     }
 
-    struct Destination: Equatable, Sendable {
+    package struct Destination: Equatable, Sendable {
         /// The server's URL or the cluster's name, as written.
-        var cluster: String?
-        var namespace: String?
-        var inCluster: Bool
+        package var cluster: String?
+        package var namespace: String?
+        package var inCluster: Bool
     }
 
-    struct Revisions: Equatable, Sendable {
+    package struct Revisions: Equatable, Sendable {
         /// What is applied: Argo CD's live revision(s) (history's last, else
         /// the last operation's); a Kustomization's `lastAppliedRevision`.
-        var applied: [String] = []
+        package var applied: [String] = []
         /// Flux's `lastAttemptedRevision`.
-        var attempted: String?
+        package var attempted: String?
         /// A HelmRelease's `lastAttemptedRevisionDigest`: its `chartRef`'s OCI digest.
-        var attemptedDigest: String?
+        package var attemptedDigest: String?
         /// What git has now: Argo CD's `sync.revision(s)`.
-        var wanted: [String] = []
+        package var wanted: [String] = []
         /// A HelmRelease's newest history entry.
-        var helmHistory: HelmHistory?
+        package var helmHistory: HelmHistory?
     }
 
-    struct HelmHistory: Equatable, Sendable {
-        var chartVersion: String?
-        var status: String?
-        var lastDeployed: Date?
+    package struct HelmHistory: Equatable, Sendable {
+        package var chartVersion: String?
+        package var status: String?
+        package var lastDeployed: Date?
     }
 
-    struct Artifact: Equatable, Sendable {
-        var revision: String?
-        var lastUpdateTime: Date?
+    package struct Artifact: Equatable, Sendable {
+        package var revision: String?
+        package var lastUpdateTime: Date?
     }
 
-    struct Operation: Equatable, Sendable {
-        var phase: String
-        var startedAt: Date?
-        var finishedAt: Date?
+    package struct Operation: Equatable, Sendable {
+        package var phase: String
+        package var startedAt: Date?
+        package var finishedAt: Date?
         /// The revision(s) it synced (`syncResult`).
-        var revisions: [String]
-        var message: String?
-        var retryCount: Int?
-        var startedBy: String?
-        var automated: Bool
+        package var revisions: [String]
+        package var message: String?
+        package var retryCount: Int?
+        package var startedBy: String?
+        package var automated: Bool
         /// The first resource whose sync failed: `Deployment/acme-web: …`.
-        var failedResource: String?
+        package var failedResource: String?
     }
 
-    struct Origin: Equatable, Sendable {
-        var repo: GitRemoteURL
-        var revision: String?
+    package struct Origin: Equatable, Sendable {
+        package var repo: GitRemoteURL
+        package var revision: String?
     }
 
     /// A Flux object's or Argo source's key among the summaries.
-    struct Key: Hashable, Sendable, CustomStringConvertible {
-        var kind: String
-        var namespace: String?
-        var name: String
+    package struct Key: Hashable, Sendable, CustomStringConvertible {
+        package var kind: String
+        package var namespace: String?
+        package var name: String
 
-        var description: String { "\(kind) \(namespace.map { "\($0)/" } ?? "")\(name)" }
+        package var description: String { "\(kind) \(namespace.map { "\($0)/" } ?? "")\(name)" }
     }
 
     // Identity
-    var ref: KubeRowID
+    package var ref: KubeRowID
     /// `applications.argoproj.io`.
-    var resource: String
-    var kind: String
-    var apiVersion: String
-    var role: Role
-    var tool: Tool
-    var uid: String?
-    var resourceVersion: String?
-    var generation: Int?
-    var observedGeneration: Int?
+    package var resource: String
+    package var kind: String
+    package var apiVersion: String
+    package var role: Role
+    package var tool: Tool
+    package var uid: String?
+    package var resourceVersion: String?
+    package var generation: Int?
+    package var observedGeneration: Int?
     /// When `spec` last changed, from the newest managedFields entry that owns it.
-    var generationChangedAt: Date?
-    var created: Date?
-    var deleting = false
+    package var generationChangedAt: Date?
+    package var created: Date?
+    package var deleting = false
     /// The cells the summary was taken with, date columns left out (set by the reader).
-    var cells: [String] = []
+    package var cells: [String] = []
 
     // The ladder's
-    var state: KubeGitOpsState = .unknown
-    var why = ""
-    var stateSince: Date?
-    var tags: [KubeGitOpsTag] = []
+    package var state: KubeGitOpsState = .unknown
+    package var why = ""
+    package var stateSince: Date?
+    package var tags: [KubeGitOpsTag] = []
 
     // Argo CD
-    var sync: String?
-    var health: String?
-    var healthMessage: String?
-    var autoSync: AutoSync?
-    var retryLimit: Int?
-    var reconciledAt: Date?
-    var operation: Operation?
-    var healthElsewhere = false
-    var images: [String] = []
-    var manifestPaths: [String] = []
-    var pruneNeeded = 0
+    package var sync: String?
+    package var health: String?
+    package var healthMessage: String?
+    package var autoSync: AutoSync?
+    package var retryLimit: Int?
+    package var reconciledAt: Date?
+    package var operation: Operation?
+    package var healthElsewhere = false
+    package var images: [String] = []
+    package var manifestPaths: [String] = []
+    package var pruneNeeded = 0
 
     // Both
-    var conditions: [Condition] = []
-    var sources: [KubeGitOpsSource] = []
-    var destination: Destination?
+    package var conditions: [Condition] = []
+    package var sources: [KubeGitOpsSource] = []
+    package var destination: Destination?
     /// Deploys to another cluster: said, never followed, never scope.
-    var remote: String?
-    var managedNamespaces: Set<String> = []
-    var managedCount: Int?
-    var revisions = Revisions()
-    var parentOwner: KubeGitOpsOwner?
-    var ownerAppSet: KubeRowID?
+    package var remote: String?
+    package var managedNamespaces: Set<String> = []
+    package var managedCount: Int?
+    package var revisions = Revisions()
+    package var parentOwner: KubeGitOpsOwner?
+    package var ownerAppSet: KubeRowID?
 
     // Flux
-    var suspended = false
-    var suspension: Suspension?
-    var interval: TimeInterval?
-    var retryInterval: TimeInterval?
-    var prune = false
-    var sourceRef: KubeGitOps.FluxSource?
-    var chartRef: KubeGitOps.FluxSource?
-    var dependsOn: [Key] = []
-    var tracks: String?
-    var artifact: Artifact?
-    var artifactOrigin: Origin?
+    package var suspended = false
+    package var suspension: Suspension?
+    package var interval: TimeInterval?
+    package var retryInterval: TimeInterval?
+    package var prune = false
+    package var sourceRef: KubeGitOps.FluxSource?
+    package var chartRef: KubeGitOps.FluxSource?
+    package var dependsOn: [Key] = []
+    package var tracks: String?
+    package var artifact: Artifact?
+    package var artifactOrigin: Origin?
 
     /// The first message that says something (2.4), through 5.3, at most 300 characters.
-    var lastError: String?
+    package var lastError: String?
     /// When the summary was read.
-    var readAt: Date
+    package var readAt: Date
 
-    var id: KubeRowID { ref }
+    package var id: KubeRowID { ref }
 
     /// What it is, whatever its state: several sources, values from a repository.
-    var ownTags: [KubeGitOpsTag] {
+    package var ownTags: [KubeGitOpsTag] {
         guard role == .application else { return [] }
         var tags: [KubeGitOpsTag] = []
         if sources.count > 1 { tags.append(.multiSource) }
         if sources.contains(where: \.isValuesRef) { tags.append(.valuesRef) }
         return tags
     }
-    var key: Key { Key(kind: kind, namespace: ref.namespace, name: ref.name) }
+    package var key: Key { Key(kind: kind, namespace: ref.namespace, name: ref.name) }
 
-    func condition(_ type: String) -> Condition? { conditions.first { $0.type == type } }
+    package func condition(_ type: String) -> Condition? { conditions.first { $0.type == type } }
 
     // MARK: From the wire
 
     /// The kinds a summary is made of, by group: Argo CD's and Flux's.
-    static func role(group: String, kind: String) -> (Role, Tool)? {
+    package static func role(group: String, kind: String) -> (Role, Tool)? {
         switch (group, kind) {
         case ("argoproj.io", "Application"): (.application, .argo)
         case ("argoproj.io", "ApplicationSet"): (.applicationSet, .argo)
@@ -223,7 +223,7 @@ struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
 
     /// A summary of `wire`; nil for a kind that isn't Argo CD's or Flux's,
     /// or an object with no name.
-    init?(_ wire: KubeGitOpsWire.Object, readAt: Date) {
+    package init?(_ wire: KubeGitOpsWire.Object, readAt: Date) {
         let apiVersion = wire.apiVersion ?? ""
         let group = apiVersion.contains("/") ? String(apiVersion.split(separator: "/").first ?? "") : ""
         guard let kind = wire.kind, let (role, tool) = Self.role(group: group, kind: kind), let name = wire.metadata?.name, !name.isEmpty else {
@@ -455,7 +455,7 @@ struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
 }
 
 /// A tag beside a row's state: what doesn't change its state but is worth saying.
-enum KubeGitOpsTag: Equatable, Hashable, Sendable {
+package enum KubeGitOpsTag: Equatable, Hashable, Sendable {
     /// Argo CD's sync by hand (no auto-sync): a choice, not a state.
     case manual
     case multiSource
@@ -474,7 +474,7 @@ enum KubeGitOpsTag: Equatable, Hashable, Sendable {
     /// stands beside the Applications read.
     case text(String)
 
-    func said(now: Date) -> String {
+    package func said(now: Date) -> String {
         switch self {
         case .text(let text): text
         case .manual: "manual"
@@ -492,11 +492,11 @@ enum KubeGitOpsTag: Equatable, Hashable, Sendable {
 /// first manifest line, every URL's password masked and userinfo dropped,
 /// credentials scrubbed, then cut to its length — 300 characters in a row,
 /// 4 KB where it is read whole (the hover, a condition, a brief). Pure.
-enum KubeGitOpsMessage {
-    static let rowLimit = 300
-    static let hoverLimit = 4096
+package enum KubeGitOpsMessage {
+    package static let rowLimit = 300
+    package static let hoverLimit = 4096
 
-    static func scrubbed(_ message: String, limit: Int) -> String {
+    package static func scrubbed(_ message: String, limit: Int) -> String {
         var text = KubeHealth.cutAtManifest(message)
         text = Secrets.maskURLs(in: text)
         text = GitRemoteURL.stripUserinfo(inText: text)
@@ -508,7 +508,7 @@ enum KubeGitOpsMessage {
 
     /// Already-scrubbed text as one row's line: every run of whitespace
     /// (newlines too) one space, cut to `limit`.
-    static func oneLine(_ text: String, limit: Int) -> String {
+    package static func oneLine(_ text: String, limit: Int) -> String {
         let folded = text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ")
         guard folded.count > limit else { return folded }
         return String(folded.prefix(limit - 1)) + "…"
@@ -516,9 +516,9 @@ enum KubeGitOpsMessage {
 }
 
 /// The times and durations Argo CD and Flux write. Pure.
-enum KubeGitOpsTime {
+package enum KubeGitOpsTime {
     /// RFC 3339, with or without a fraction.
-    static func date(_ text: String?) -> Date? {
+    package static func date(_ text: String?) -> Date? {
         guard let text, !text.isEmpty else { return nil }
         if let date = try? Date(text, strategy: .iso8601) { return date }
         let fractional = ISO8601DateFormatter()
@@ -527,7 +527,7 @@ enum KubeGitOpsTime {
     }
 
     /// Go's duration (`10m`, `1h0m0s`, `30s`, `500ms`, `1.5h`) in seconds; nil for anything else.
-    static func duration(_ text: String) -> TimeInterval? {
+    package static func duration(_ text: String) -> TimeInterval? {
         let units: [(String, TimeInterval)] = [("ms", 0.001), ("us", 0.000_001), ("µs", 0.000_001), ("ns", 0.000_000_001), ("h", 3600), ("m", 60), ("s", 1)]
         var rest = Substring(text.trimmingCharacters(in: .whitespaces))
         guard !rest.isEmpty else { return nil }

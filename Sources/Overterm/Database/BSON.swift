@@ -3,7 +3,7 @@ import Foundation
 /// BSON, as MongoDB's wire carries it — pure, so it is tested without a
 /// server: values, documents in their order, bytes both ways, and each
 /// value said as mongosh writes it (which the console reads back).
-indirect enum BSONValue: Equatable, Sendable {
+package indirect enum BSONValue: Equatable, Sendable {
     case double(Double)
     case string(String)
     case document(BSONDocument)
@@ -26,7 +26,7 @@ indirect enum BSONValue: Equatable, Sendable {
     case minKey, maxKey
 
     /// The type's name as `$type` and mongosh name it.
-    var typeName: String {
+    package var typeName: String {
         switch self {
         case .double: "double"
         case .string: "string"
@@ -50,12 +50,12 @@ indirect enum BSONValue: Equatable, Sendable {
         }
     }
 
-    var document: BSONDocument? { if case .document(let d) = self { d } else { nil } }
-    var array: [BSONValue]? { if case .array(let a) = self { a } else { nil } }
-    var string: String? { if case .string(let s) = self { s } else { nil } }
+    package var document: BSONDocument? { if case .document(let d) = self { d } else { nil } }
+    package var array: [BSONValue]? { if case .array(let a) = self { a } else { nil } }
+    package var string: String? { if case .string(let s) = self { s } else { nil } }
 
     /// A number, whatever its width: ok, n, cursor ids, counts.
-    var int: Int? {
+    package var int: Int? {
         switch self {
         case .int32(let n): Int(n)
         case .int64(let n): Int(n)
@@ -64,7 +64,7 @@ indirect enum BSONValue: Equatable, Sendable {
         }
     }
 
-    var bool: Bool? {
+    package var bool: Bool? {
         switch self {
         case .bool(let b): b
         case .int32, .int64, .double: int.map { $0 != 0 }
@@ -74,15 +74,15 @@ indirect enum BSONValue: Equatable, Sendable {
 }
 
 /// Twelve bytes: a time, a random value, a counter.
-struct ObjectID: Equatable, Hashable, Sendable {
-    let bytes: [UInt8]
+package struct ObjectID: Equatable, Hashable, Sendable {
+    package let bytes: [UInt8]
 
-    init?(bytes: [UInt8]) {
+    package init?(bytes: [UInt8]) {
         guard bytes.count == 12 else { return nil }
         self.bytes = bytes
     }
 
-    init?(hex: String) {
+    package init?(hex: String) {
         guard hex.count == 24 else { return nil }
         var out: [UInt8] = []
         var index = hex.startIndex
@@ -95,7 +95,7 @@ struct ObjectID: Equatable, Hashable, Sendable {
         bytes = out
     }
 
-    var hex: String { bytes.map { String(format: "%02x", $0) }.joined() }
+    package var hex: String { bytes.map { String(format: "%02x", $0) }.joined() }
 
     // What drivers make an `_id` of: seconds, five random bytes for this
     // process, a counter from a random start.
@@ -103,7 +103,7 @@ struct ObjectID: Equatable, Hashable, Sendable {
     nonisolated(unsafe) private static var counter = UInt32.random(in: 0...0xFFFFFF)
     private static let lock = NSLock()
 
-    static func generate(now: Date = Date()) -> ObjectID {
+    package static func generate(now: Date = Date()) -> ObjectID {
         let seconds = UInt32(truncatingIfNeeded: Int64(now.timeIntervalSince1970))
         let count = lock.withLock {
             counter = (counter &+ 1) & 0xFFFFFF
@@ -118,11 +118,11 @@ struct ObjectID: Equatable, Hashable, Sendable {
 
 /// IEEE 754-2008's decimal128, BID encoded as BSON has it: read for its
 /// text, made from one (`NumberDecimal("1.50")`).
-struct Decimal128: Equatable, Sendable {
-    var high: UInt64
-    var low: UInt64
+package struct Decimal128: Equatable, Sendable {
+    package var high: UInt64
+    package var low: UInt64
 
-    init(high: UInt64, low: UInt64) {
+    package init(high: UInt64, low: UInt64) {
         self.high = high
         self.low = low
     }
@@ -131,7 +131,7 @@ struct Decimal128: Equatable, Sendable {
 
     /// "1.50", "-0.001", "1E+3", "NaN", "Infinity"; nil when it isn't one
     /// or needs more than 34 digits.
-    init?(_ text: String) {
+    package init?(_ text: String) {
         var s = Substring(text.trimmingCharacters(in: .whitespaces))
         var negative = false
         if s.first == "-" || s.first == "+" {
@@ -185,7 +185,7 @@ struct Decimal128: Equatable, Sendable {
         self.init(high: high, low: low)
     }
 
-    var text: String {
+    package var text: String {
         let negative = high >> 63 == 1
         let sign = negative ? "-" : ""
         let combination = (high >> 58) & 0x1F
@@ -232,20 +232,20 @@ struct Decimal128: Equatable, Sendable {
 
 /// A document: its fields in the order they were written — a command's
 /// name must come first, and a sort's keys mean their order.
-struct BSONDocument: Equatable, Sendable, ExpressibleByDictionaryLiteral {
-    var fields: [(key: String, value: BSONValue)] = []
+package struct BSONDocument: Equatable, Sendable, ExpressibleByDictionaryLiteral {
+    package var fields: [(key: String, value: BSONValue)] = []
 
-    init(_ fields: [(String, BSONValue)] = []) { self.fields = fields.map { (key: $0.0, value: $0.1) } }
-    init(dictionaryLiteral elements: (String, BSONValue)...) { self.init(elements) }
+    package init(_ fields: [(String, BSONValue)] = []) { self.fields = fields.map { (key: $0.0, value: $0.1) } }
+    package init(dictionaryLiteral elements: (String, BSONValue)...) { self.init(elements) }
 
-    static func == (a: BSONDocument, b: BSONDocument) -> Bool {
+    package static func == (a: BSONDocument, b: BSONDocument) -> Bool {
         a.fields.count == b.fields.count && zip(a.fields, b.fields).allSatisfy { $0.key == $1.key && $0.value == $1.value }
     }
 
-    var keys: [String] { fields.map(\.key) }
-    var isEmpty: Bool { fields.isEmpty }
+    package var keys: [String] { fields.map(\.key) }
+    package var isEmpty: Bool { fields.isEmpty }
 
-    subscript(key: String) -> BSONValue? {
+    package subscript(key: String) -> BSONValue? {
         get { fields.first { $0.key == key }?.value }
         set {
             if let index = fields.firstIndex(where: { $0.key == key }) {
@@ -258,24 +258,24 @@ struct BSONDocument: Equatable, Sendable, ExpressibleByDictionaryLiteral {
 
     // MARK: Bytes
 
-    func encoded() -> Data {
+    package func encoded() -> Data {
         var out = Data()
         BSON.write(self, into: &out)
         return out
     }
 
-    static func decode(_ data: Data) throws -> BSONDocument {
+    package static func decode(_ data: Data) throws -> BSONDocument {
         var reader = BSON.Reader(bytes: [UInt8](data))
         return try reader.document()
     }
 }
 
-enum BSON {
-    struct DecodeError: Error, CustomStringConvertible {
-        let description: String
+package enum BSON {
+    package struct DecodeError: Error, CustomStringConvertible {
+        package let description: String
     }
 
-    static func write(_ document: BSONDocument, into out: inout Data) {
+    package static func write(_ document: BSONDocument, into out: inout Data) {
         let start = out.count
         out.append(contentsOf: [0, 0, 0, 0])
         for (key, value) in document.fields { write(key, value, into: &out) }
@@ -368,37 +368,37 @@ enum BSON {
         }
     }
 
-    struct Reader {
-        let bytes: [UInt8]
-        var at = 0
+    package struct Reader {
+        package let bytes: [UInt8]
+        package var at = 0
 
-        mutating func take(_ count: Int) throws -> ArraySlice<UInt8> {
+        package mutating func take(_ count: Int) throws -> ArraySlice<UInt8> {
             guard count >= 0, at + count <= bytes.count else { throw DecodeError(description: "BSON ends early") }
             defer { at += count }
             return bytes[at..<(at + count)]
         }
 
-        mutating func little<T: FixedWidthInteger>(_: T.Type) throws -> T {
+        package mutating func little<T: FixedWidthInteger>(_: T.Type) throws -> T {
             let slice = try take(MemoryLayout<T>.size)
             var value: T = 0
             for (shift, byte) in slice.enumerated() { value |= T(truncatingIfNeeded: byte) << (shift * 8) }
             return value
         }
 
-        mutating func cstring() throws -> String {
+        package mutating func cstring() throws -> String {
             guard let end = bytes[at...].firstIndex(of: 0) else { throw DecodeError(description: "a name with no end") }
             defer { at = end + 1 }
             return String(decoding: bytes[at..<end], as: UTF8.self)
         }
 
-        mutating func string() throws -> String {
+        package mutating func string() throws -> String {
             let length = Int(try little(Int32.self))
             guard length >= 1 else { throw DecodeError(description: "a string of length \(length)") }
             let slice = try take(length)
             return String(decoding: slice.dropLast(), as: UTF8.self)
         }
 
-        mutating func document() throws -> BSONDocument {
+        package mutating func document() throws -> BSONDocument {
             let start = at
             let length = Int(try little(Int32.self))
             guard length >= 5, start + length <= bytes.count else { throw DecodeError(description: "a document of length \(length)") }
@@ -414,7 +414,7 @@ enum BSON {
             return document
         }
 
-        mutating func value(_ type: UInt8) throws -> BSONValue {
+        package mutating func value(_ type: UInt8) throws -> BSONValue {
             switch type {
             case 0x01: return .double(Double(bitPattern: try little(UInt64.self)))
             case 0x02: return .string(try string())
@@ -465,11 +465,11 @@ enum BSON {
 extension BSONValue {
     /// The value as the console would take it back: `ObjectId("…")`,
     /// `ISODate("…")`, `{ a: 1 }` with its keys quoted as JSON.
-    var shell: String { BSONText.shell(self) }
+    package var shell: String { BSONText.shell(self) }
 
     /// For a cell of the grid: a string as itself, a date as its ISO time,
     /// anything else as `shell`. nil for a null.
-    var cell: String? {
+    package var cell: String? {
         switch self {
         case .null, .undefined: nil
         case .string(let s), .symbol(let s): s
@@ -479,15 +479,15 @@ extension BSONValue {
     }
 }
 
-enum BSONText {
-    static func iso(_ ms: Int64) -> String {
+package enum BSONText {
+    package static func iso(_ ms: Int64) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: Date(timeIntervalSince1970: TimeInterval(ms) / 1000))
     }
 
-    static func quoted(_ text: String) -> String {
+    package static func quoted(_ text: String) -> String {
         var out = "\""
         for scalar in text.unicodeScalars {
             switch scalar {
@@ -503,13 +503,13 @@ enum BSONText {
         return out + "\""
     }
 
-    static func number(_ d: Double) -> String {
+    package static func number(_ d: Double) -> String {
         if d.isNaN { return "NaN" }
         if d.isInfinite { return d > 0 ? "Infinity" : "-Infinity" }
         return String(d)
     }
 
-    static func shell(_ value: BSONValue) -> String {
+    package static func shell(_ value: BSONValue) -> String {
         switch value {
         case .double(let d): return number(d)
         case .string(let s), .symbol(let s): return quoted(s)
@@ -536,7 +536,7 @@ enum BSONText {
         }
     }
 
-    static func uuid(_ data: Data) -> String {
+    package static func uuid(_ data: Data) -> String {
         let hex = data.map { String(format: "%02x", $0) }.joined()
         let parts = [0..<8, 8..<12, 12..<16, 16..<20, 20..<32].map { range in
             String(hex[hex.index(hex.startIndex, offsetBy: range.lowerBound)..<hex.index(hex.startIndex, offsetBy: range.upperBound)])

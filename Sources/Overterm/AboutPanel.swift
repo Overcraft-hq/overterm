@@ -5,12 +5,12 @@ import AppKit
 /// count) — with the commit the app was built from and the day as credits.
 /// Scripts/make-app.sh writes all four keys (docs/architecture.md, Build
 /// metadata).
-enum AboutPanel {
-    static let commitKey = "OvertermCommit"
-    static let buildDateKey = "OvertermBuildDate"
+package enum AboutPanel {
+    package static let commitKey = "OvertermCommit"
+    package static let buildDateKey = "OvertermBuildDate"
 
     @MainActor
-    static func show() {
+    package static func show() {
         var options: [NSApplication.AboutPanelOptionKey: Any] = [:]
         if let text = credits(for: .main) {
             let centred = NSMutableParagraphStyle()
@@ -27,7 +27,7 @@ enum AboutPanel {
         NSApp.orderFrontStandardAboutPanel(options: options)
     }
 
-    static func credits(for bundle: Bundle) -> String? {
+    package static func credits(for bundle: Bundle) -> String? {
         credits(commit: bundle.object(forInfoDictionaryKey: commitKey) as? String, date: bundle.object(forInfoDictionaryKey: buildDateKey) as? String)
     }
 
@@ -35,7 +35,7 @@ enum AboutPanel {
     /// "-dirty" when built with uncommitted changes, or "unknown" without
     /// git) and OvertermBuildDate (an ISO date). What is missing is left out;
     /// nil when both are — no credits.
-    static func credits(commit: String?, date: String?) -> String? {
+    package static func credits(commit: String?, date: String?) -> String? {
         let commit = commit?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let date = date?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         var parts: [String] = []
@@ -46,7 +46,7 @@ enum AboutPanel {
 
     /// "2026-09-26" → "26 Sep 2026": English like the rest of the app, in any
     /// locale. Nil for anything but an ISO date.
-    static func day(_ iso: String) -> String? {
+    package static func day(_ iso: String) -> String? {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")

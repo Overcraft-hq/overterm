@@ -1,7 +1,7 @@
 import Foundation
 
 /// Something a terminal reported that can matter to someone not looking.
-enum TerminalEvent: Equatable {
+package enum TerminalEvent: Equatable {
     case bell
     case notification(title: String, body: String)
     /// OSC 9;4. `active` for set/indeterminate/pause, false for remove.
@@ -24,10 +24,10 @@ enum TerminalEvent: Equatable {
 /// sends Ghostty's OSC 777 desktop notification when it wants input, and
 /// its default-on terminalProgressBarEnabled emits OSC 9;4 while working —
 /// spinner while it works, flagged when it finishes out of sight.
-struct TabActivity: Equatable {
+package struct TabActivity: Equatable {
     /// What a tab has to tell you, by urgency. A tab shows the most urgent
     /// one it has had since you last looked.
-    enum Mark: Int, Comparable {
+    package enum Mark: Int, Comparable {
         case none
         /// Finished while you weren't looking.
         case done
@@ -37,11 +37,11 @@ struct TabActivity: Equatable {
         /// prompt, a question, "waiting for your input").
         case waiting
 
-        static func < (a: Mark, b: Mark) -> Bool { a.rawValue < b.rawValue }
+        package static func < (a: Mark, b: Mark) -> Bool { a.rawValue < b.rawValue }
     }
 
-    private(set) var isWorking = false
-    private(set) var mark: Mark = .none {
+    package private(set) var isWorking = false
+    package private(set) var mark: Mark = .none {
         didSet {
             if mark != .waiting {
                 waitingSince = nil
@@ -52,34 +52,34 @@ struct TabActivity: Equatable {
     }
     /// Since when the tab waits for you (`.waiting`): what Activity's "idle
     /// but burning" counts from (docs/design/activity/analysis.md, 6.11).
-    private(set) var waitingSince: Date?
+    package private(set) var waitingSince: Date?
     /// What to say about it, when there is something specific.
-    private(set) var note: String?
+    package private(set) var note: String?
     /// The mark is a cluster's (`clusterFailed`): it goes on its own once
     /// what failed has (`clusterRecovered`).
-    private(set) var fromCluster = false
+    package private(set) var fromCluster = false
     /// The mark is a Terraform ask's (`terraformAsked`): it goes once the
     /// ask has left the screen (`terraformAnswered`).
-    private(set) var fromTerraform = false
+    package private(set) var fromTerraform = false
     /// The mark is Left Behind's (`leftBehind`): an agent run that ended
     /// left processes running (docs/design/activity/analysis.md, 6.9, D-17).
-    private(set) var fromLeftBehind = false
+    package private(set) var fromLeftBehind = false
     /// The mark is the screen check's (`agentAsked`, `AgentScreenCheck`):
     /// it goes once the question has left the screen (`agentAnswered`).
-    private(set) var fromScreen = false
+    package private(set) var fromScreen = false
 
     /// Anything to tell you — the Dock badge counts these.
-    var needsAttention: Bool { mark != .none }
+    package var needsAttention: Bool { mark != .none }
 
     /// A foreground command shorter than this finishing is not news.
-    static let longCommand: Double = 10
+    package static let longCommand: Double = 10
 
     /// Applies an event. `visible`: the tab is selected in the key window of
     /// the active app — then nothing needs marking, you saw it happen.
     /// Working state is tracked either way. Returns true when the mark just
     /// went up (the moment to notify).
     @discardableResult
-    mutating func handle(_ event: TerminalEvent, visible: Bool) -> Bool {
+    package mutating func handle(_ event: TerminalEvent, visible: Bool) -> Bool {
         var raised: Mark = .none
         var text: String?
         switch event {
@@ -129,7 +129,7 @@ struct TabActivity: Equatable {
     /// Left Behind note says itself over the last. True when the mark or
     /// its words just changed and nobody is looking (the moment to notify).
     @discardableResult
-    mutating func leftBehind(_ text: String, visible: Bool) -> Bool {
+    package mutating func leftBehind(_ text: String, visible: Bool) -> Bool {
         guard mark < .done || (mark == .done && (fromLeftBehind || note != text)) else { return false }
         let changed = mark != .done || note != text
         mark = .done
@@ -147,7 +147,7 @@ struct TabActivity: Equatable {
     /// an agent's. True when the mark or its words just changed and nobody
     /// is looking (the moment to notify).
     @discardableResult
-    mutating func terraformAsked(_ text: String, visible: Bool) -> Bool {
+    package mutating func terraformAsked(_ text: String, visible: Bool) -> Bool {
         let changed = mark != .waiting || note != text
         mark = .waiting
         note = text
@@ -161,7 +161,7 @@ struct TabActivity: Equatable {
     /// The ask left the screen (answered, in the tab): its mark goes,
     /// unless something else has marked the tab since.
     @discardableResult
-    mutating func terraformAnswered() -> Bool {
+    package mutating func terraformAnswered() -> Bool {
         guard fromTerraform, mark == .waiting else { return false }
         seen()
         return true
@@ -172,7 +172,7 @@ struct TabActivity: Equatable {
     /// tab is in front of you. True when the mark or its words just
     /// changed (the moment to notify).
     @discardableResult
-    mutating func agentAsked(_ text: String, visible: Bool) -> Bool {
+    package mutating func agentAsked(_ text: String, visible: Bool) -> Bool {
         guard !visible, mark < .waiting || (mark == .waiting && fromScreen && note != text) else { return false }
         mark = .waiting
         note = text
@@ -186,7 +186,7 @@ struct TabActivity: Equatable {
     /// The question left the screen (answered, in the tab): its mark goes,
     /// unless something else has marked the tab since.
     @discardableResult
-    mutating func agentAnswered() -> Bool {
+    package mutating func agentAnswered() -> Bool {
         guard fromScreen, mark == .waiting else { return false }
         seen()
         return true
@@ -196,7 +196,7 @@ struct TabActivity: Equatable {
     /// (DockerAttention): a failure, as a long command failing is. Returns
     /// true when the mark just went up.
     @discardableResult
-    mutating func containerFailed(_ text: String, visible: Bool) -> Bool {
+    package mutating func containerFailed(_ text: String, visible: Bool) -> Bool {
         guard !visible, Mark.failed > mark else { return false }
         mark = .failed
         note = text
@@ -212,7 +212,7 @@ struct TabActivity: Equatable {
     /// says itself over the last cluster mark, which isn't news any more.
     /// Returns true when the mark just went up (or said something new).
     @discardableResult
-    mutating func clusterFailed(_ text: String, visible: Bool) -> Bool {
+    package mutating func clusterFailed(_ text: String, visible: Bool) -> Bool {
         guard !visible else { return false }
         guard Mark.failed > mark || (mark == .failed && fromCluster && note != text) else { return false }
         mark = .failed
@@ -228,7 +228,7 @@ struct TabActivity: Equatable {
     /// else's — an agent waiting for you (higher), a command that failed:
     /// the mark stays what it is, but the failure is still news and is
     /// told (`markClusterFailure`), with Ask Why on the tab's alerts.
-    func clusterNewsUnderOtherMark(visible: Bool) -> Bool {
+    package func clusterNewsUnderOtherMark(visible: Bool) -> Bool {
         !visible && (mark > .failed || (mark == .failed && !fromCluster))
     }
 
@@ -236,14 +236,14 @@ struct TabActivity: Equatable {
     /// its rollout progressing): the mark goes, unless something else has
     /// marked the tab since.
     @discardableResult
-    mutating func clusterRecovered() -> Bool {
+    package mutating func clusterRecovered() -> Bool {
         guard fromCluster, mark == .failed else { return false }
         seen()
         return true
     }
 
     /// You looked at the tab.
-    mutating func seen() {
+    package mutating func seen() {
         mark = .none
         note = nil
         fromCluster = false

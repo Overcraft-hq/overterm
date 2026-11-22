@@ -3,10 +3,10 @@ import Foundation
 /// What a root and workspace reach, and so what Overterm may do there
 /// (analysis 5.1). A class belongs to a (root, workspace): one folder with
 /// three workspaces can be three classes.
-enum TerraformClass: String, CaseIterable, Sendable, Comparable {
+package enum TerraformClass: String, CaseIterable, Sendable, Comparable {
     case local, remote, production
 
-    var title: String {
+    package var title: String {
         switch self {
         case .production: "Production"
         case .remote: "Remote"
@@ -23,21 +23,21 @@ enum TerraformClass: String, CaseIterable, Sendable, Comparable {
         }
     }
 
-    static func < (a: TerraformClass, b: TerraformClass) -> Bool { a.rank < b.rank }
+    package static func < (a: TerraformClass, b: TerraformClass) -> Bool { a.rank < b.rank }
 }
 
 /// A root's own settings: its entry in `terraform.roots`, by its path in
 /// the repository (`infra/envs/prod`). Read-only to Overterm; any agent can
 /// write settings.json, so the setting is held until confirmed (5.8).
-struct TerraformRootSettings: Equatable, Sendable {
+package struct TerraformRootSettings: Equatable, Sendable {
     /// Set by hand: only ever raises the class its names give.
-    var rootClass: TerraformClass?
-    var displayName: String?
+    package var rootClass: TerraformClass?
+    package var displayName: String?
     /// Whether Overterm may apply shown plans here (5.1, 5.3): yes unless
     /// it says no, on every class; `false` makes the root plan-only.
-    var writable = true
+    package var writable = true
 
-    static let fields: [SettingField] = [
+    package static let fields: [SettingField] = [
         SettingField(
             name: "class", kind: .choice([TerraformClass.production, .remote].map { SettingOption(value: $0.rawValue, label: $0.title) }),
             help: "production or remote: raises the class the names give, never lowers it."),
@@ -49,41 +49,41 @@ struct TerraformRootSettings: Equatable, Sendable {
         ),
     ]
 
-    init(rootClass: TerraformClass? = nil, displayName: String? = nil, writable: Bool = true) {
+    package init(rootClass: TerraformClass? = nil, displayName: String? = nil, writable: Bool = true) {
         self.rootClass = rootClass
         self.displayName = displayName
         self.writable = writable
     }
 
-    init(fields: [String: SettingValue]) {
+    package init(fields: [String: SettingValue]) {
         rootClass = fields["class"]?.string.flatMap(TerraformClass.init(rawValue:))
         displayName = fields["displayName"]?.string.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
         writable = fields["writable"]?.bool ?? true
     }
 
-    static func all(from value: SettingValue?) -> [String: TerraformRootSettings] {
+    package static func all(from value: SettingValue?) -> [String: TerraformRootSettings] {
         (value?.entries ?? [:]).mapValues(TerraformRootSettings.init(fields:))
     }
 }
 
 /// Everything 5.1's signals are read from, by name only — never a
 /// credential file, never Terraform run.
-struct TerraformSignals: Equatable, Sendable {
+package struct TerraformSignals: Equatable, Sendable {
     /// The workspace the root selects (`.terraform/environment`, else `default`).
-    var workspace: String
+    package var workspace: String
     /// The root's path in its repository: `infra/envs/prod/network`.
-    var path: String
+    package var path: String
     /// The backend's location keys, the HCL's and the init record's.
-    var backends: [TerraformConfigFacts.Backend] = []
+    package var backends: [TerraformConfigFacts.Backend] = []
     /// The var files a run uses (`terraform.tfvars`, `*.auto.tfvars`, the
     /// ones chosen) and backend-config files, by name.
-    var varFiles: [String] = []
+    package var varFiles: [String] = []
     /// `AWS_PROFILE` in the run's environment: the profile's name, never its contents.
-    var awsProfile: String?
-    var config = TerraformConfigFacts()
+    package var awsProfile: String?
+    package var config = TerraformConfigFacts()
     /// The repository is a Terragrunt tree (`root.hcl` or a top-level
     /// `terragrunt.hcl`): its top folder `live` is structure, not a signal.
-    var terragruntTree = false
+    package var terragruntTree = false
 }
 
 /// Which class a root and workspace are (5.1's precedence, first match wins):
@@ -94,15 +94,15 @@ struct TerraformSignals: Equatable, Sendable {
 /// 4. remote.
 ///
 /// The branch is not a signal: branches name the work, not the target.
-enum TerraformClassifier {
+package enum TerraformClassifier {
     /// Kubernetes' pattern with a trailing digit run allowed: `prod1`,
     /// `prd01`, `prod2-eu`, `production2` match; `product-catalog`,
     /// `delivery`, `reproduce` don't.
-    static let defaultPattern = #"(^|[-_/.:@])(prod|prd|production|live)\d*([-_/.:@]|$)"#
+    package static let defaultPattern = #"(^|[-_/.:@])(prod|prd|production|live)\d*([-_/.:@]|$)"#
 
     /// The setting's pattern, or the default when it is empty or doesn't
     /// compile — a broken pattern never makes nothing production.
-    static func pattern(_ setting: String) -> NSRegularExpression {
+    package static func pattern(_ setting: String) -> NSRegularExpression {
         let trimmed = setting.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty, let regex = try? NSRegularExpression(pattern: trimmed, options: [.caseInsensitive]) { return regex }
         return defaultRegex
@@ -110,13 +110,13 @@ enum TerraformClassifier {
 
     private static let defaultRegex = try! NSRegularExpression(pattern: defaultPattern, options: [.caseInsensitive])
 
-    static func matches(_ name: String, _ pattern: NSRegularExpression) -> Bool {
+    package static func matches(_ name: String, _ pattern: NSRegularExpression) -> Bool {
         !name.isEmpty && pattern.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) != nil
     }
 
     /// The signal that makes it production, said for the card ("workspace
     /// prod", "backend key prod/network.tfstate"); nil when none does.
-    static func productionSignal(
+    package static func productionSignal(
         _ signals: TerraformSignals, pattern: NSRegularExpression, accounts: Set<String>, kubeContexts: [String: KubeContextClass] = [:]
     ) -> String? {
         if matches(signals.workspace, pattern) { return "workspace \(signals.workspace)" }
@@ -156,7 +156,7 @@ enum TerraformClassifier {
     /// A literal Kubernetes context as Kubernetes classes it (4.11, 5.1):
     /// `kubernetes.contexts`' class set by hand, else `KubeClassifier`'s
     /// names. Never a kubeconfig read: the context's name is the signal.
-    static func isProductionContext(_ context: String, _ kubeContexts: [String: KubeContextClass]) -> Bool {
+    package static func isProductionContext(_ context: String, _ kubeContexts: [String: KubeContextClass]) -> Bool {
         guard !context.isEmpty, !context.contains("${") else { return false }
         return KubeClassifier.classify(context: context, cluster: nil, set: kubeContexts[context]) == .production
     }
@@ -168,13 +168,13 @@ enum TerraformClassifier {
     }
 
     /// The providers a local root may use: (namespace, type) on either registry.
-    static let localProviders: Set<String> = ["null", "random", "local", "time", "tls", "terraform"]
+    package static let localProviders: Set<String> = ["null", "random", "local", "time", "tls", "terraform"]
 
     /// Why a root isn't local, or nil when it is (5.1, strict): a local
     /// backend inside the checkout, no provisioner, nothing that runs a
     /// command or reads the network, no other state read unless local
     /// inside the checkout, only the local providers, pinned by a lock file.
-    static func notLocal(
+    package static func notLocal(
         config: TerraformConfigFacts, backend: TerraformConfigFacts.Backend, lockProviders: [TerraformLockFile.Provider]?, rootPath: String
     ) -> String? {
         guard backend.type == "local" else { return "its backend is \(backend.type)" }
@@ -216,7 +216,7 @@ enum TerraformClassifier {
 
     /// A path in the root's config that stays inside the checkout: relative,
     /// and its `..` never climbing above the repository's top.
-    static func isInside(_ path: String, rootPath: String) -> Bool {
+    package static func isInside(_ path: String, rootPath: String) -> Bool {
         guard !path.hasPrefix("/"), !path.hasPrefix("~"), !path.contains("${") else { return false }
         var depth = rootPath.split(separator: "/").count
         for part in path.split(separator: "/") {
@@ -230,13 +230,13 @@ enum TerraformClassifier {
         return true
     }
 
-    struct Verdict: Equatable, Sendable {
-        var rootClass: TerraformClass
+    package struct Verdict: Equatable, Sendable {
+        package var rootClass: TerraformClass
         /// Why, in words: the signal, "set by hand", "seen production as …", the local rule's.
-        var reason: String
+        package var reason: String
     }
 
-    static func classify(
+    package static func classify(
         _ signals: TerraformSignals, backend: TerraformConfigFacts.Backend, lockProviders: [TerraformLockFile.Provider]?,
         identity: TerraformStateIdentity?, productionIdentities: Set<TerraformStateIdentity>, set: TerraformClass?,
         pattern: NSRegularExpression, accounts: Set<String>, kubeContexts: [String: KubeContextClass] = [:]

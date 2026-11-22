@@ -11,28 +11,28 @@ import Foundation
 /// Each is confirmed in the window naming the context, namespace, pod,
 /// container and both paths, then typed into a tab pinned to the context
 /// (`KubernetesPageModel.copyFiles`). Pure.
-struct KubePodCopy: Equatable, Sendable {
-    enum Direction: Equatable, Sendable {
+package struct KubePodCopy: Equatable, Sendable {
+    package enum Direction: Equatable, Sendable {
         /// Out of the container, onto this Mac.
         case out
         /// From this Mac, into the container.
         case into
     }
 
-    var direction: Direction
-    var pod: String
-    var namespace: String
+    package var direction: Direction
+    package var pod: String
+    package var namespace: String
     /// Nil: kubectl's own choice (a pod read without a spec).
-    var container: String?
+    package var container: String?
     /// In the container: absolute, or kubectl's relative to its working directory.
-    var remotePath: String
+    package var remotePath: String
     /// On this Mac: absolute, as a save or open panel gives it.
-    var localPath: String
+    package var localPath: String
 
     /// The verbs, as the pod's menu orders them.
-    static let verbs: [KubeProcessVerb] = [.copyOut, .copyIn]
+    package static let verbs: [KubeProcessVerb] = [.copyOut, .copyIn]
 
-    static func direction(of verb: KubeProcessVerb) -> Direction? {
+    package static func direction(of verb: KubeProcessVerb) -> Direction? {
         switch verb {
         case .copyOut: .out
         case .copyIn: .into
@@ -40,32 +40,32 @@ struct KubePodCopy: Equatable, Sendable {
         }
     }
 
-    static func title(_ verb: KubeProcessVerb) -> String {
+    package static func title(_ verb: KubeProcessVerb) -> String {
         verb == .copyIn ? "Copy into Container in a Tab…" : "Copy from Container in a Tab…"
     }
 
-    static func label(_ verb: KubeProcessVerb) -> String {
+    package static func label(_ verb: KubeProcessVerb) -> String {
         verb == .copyIn ? "Copy In" : "Copy Out"
     }
 
-    static func symbol(_ verb: KubeProcessVerb) -> String {
+    package static func symbol(_ verb: KubeProcessVerb) -> String {
         verb == .copyIn ? "square.and.arrow.down.on.square" : "square.and.arrow.up.on.square"
     }
 
     /// `pod/container:path`, as the confirmation says the container's side.
-    var remoteSpoken: String {
+    package var remoteSpoken: String {
         "pod \(namespace)/\(pod)" + (container.map { ", container \($0)," } ?? "") + " " + remotePath
     }
 
     /// kubectl's word for the container's side: `POD:PATH`, the namespace
     /// left to `-n` (kubectl reads a `NS/POD:` prefix too, never needed).
-    var remoteWord: String { pod + ":" + remotePath }
+    package var remoteWord: String { pod + ":" + remotePath }
 
     /// The last part of a container's path, for a save panel's name: `app.log`
     /// for `/var/log/app.log`, `log` for `/var/log/`, `copy` for `/`. A colon
     /// becomes `-` (`app-10-00.log` for `app-10:00.log`): a local path with one
     /// is refused (`problem`), so the name suggested must never have one.
-    static func suggestedName(for remote: String) -> String {
+    package static func suggestedName(for remote: String) -> String {
         let parts = remote.split(separator: "/").filter { $0 != "." && $0 != ".." }
         let name = parts.last.map { $0.replacingOccurrences(of: ":", with: "-") } ?? ""
         return name.isEmpty ? "copy" : name
@@ -73,7 +73,7 @@ struct KubePodCopy: Equatable, Sendable {
 
     /// Where a local file goes in the container unless the user says
     /// otherwise: `/tmp/<its name>`.
-    static func suggestedRemote(for local: String) -> String {
+    package static func suggestedRemote(for local: String) -> String {
         "/tmp/" + ((local as NSString).lastPathComponent.isEmpty ? "copy" : (local as NSString).lastPathComponent)
     }
 
@@ -81,7 +81,7 @@ struct KubePodCopy: Equatable, Sendable {
     /// when they can. A control character would break the line typed into
     /// the tab; kubectl reads the first `:` of an argument as the end of a
     /// pod's name, so a local path with one would be taken for a pod.
-    static func problem(remote: String, local: String) -> String? {
+    package static func problem(remote: String, local: String) -> String? {
         if remote.trimmingCharacters(in: .whitespaces).isEmpty { return "A path in the container, please." }
         if hasControl(remote) { return "The container's path has a control character (a newline, a tab): kubectl cp can't be given it." }
         if local.isEmpty { return "A place on this Mac, please." }
@@ -96,7 +96,7 @@ struct KubePodCopy: Equatable, Sendable {
     /// Why a copy out of this path is refused, beyond `problem`: the container's
     /// whole root (`/`, `/.`, `//`, `/..`) would be tarred over exec onto this
     /// Mac — `/proc` and `/sys` with it —, never what was meant.
-    static func outProblem(remote: String) -> String? {
+    package static func outProblem(remote: String) -> String? {
         let path = remote.trimmingCharacters(in: .whitespaces)
         guard path.hasPrefix("/") else { return nil }
         let parts = path.split(separator: "/").filter { $0 != "." && $0 != ".." }
@@ -109,18 +109,18 @@ struct KubePodCopy: Equatable, Sendable {
 }
 
 extension KubePodCopy: KubeTabCommand {
-    var verb: KubeProcessVerb { direction == .out ? .copyOut : .copyIn }
+    package var verb: KubeProcessVerb { direction == .out ? .copyOut : .copyIn }
 
-    var name: String { pod }
+    package var name: String { pod }
 
-    var refused: String? {
+    package var refused: String? {
         Self.problem(remote: remotePath, local: localPath) ?? (direction == .out ? Self.outProblem(remote: remotePath) : nil)
     }
 
     /// The words, unchecked (`KubeCommands.command(_:in:)` checks them first):
     /// - out: `kubectl cp POD:PATH LOCAL -c C --context CTX -n NS`
     /// - into: `kubectl cp LOCAL POD:PATH -c C --context CTX -n NS`
-    func line(context: String) -> String {
+    package func line(context: String) -> String {
         let q = KubeCommands.quoted
         var words = ["kubectl", "cp"]
         switch direction {
@@ -134,7 +134,7 @@ extension KubePodCopy: KubeTabCommand {
 
     /// The context and namespace — production in capitals —, the pod, the
     /// container, both paths, and the command the tab runs.
-    func confirmation(context: KubeContext, rule: KubeProcessRule) -> KubeWriteConfirmation {
+    package func confirmation(context: KubeContext, rule: KubeProcessRule) -> KubeWriteConfirmation {
         let command = line(context: context.name)
         let place = (context.isProduction ? KubeWriteConfirmation.productionMark : "") + context.name + " · namespace \(namespace)"
         let local = (localPath as NSString).abbreviatingWithTildeInPath
@@ -165,7 +165,7 @@ extension KubePodCopy: KubeTabCommand {
             production: context.isProduction, kubectl: command)
     }
 
-    func opened(context: String) -> String {
+    package func opened(context: String) -> String {
         switch direction {
         case .out: "Copying \(remotePath) out of pod \(namespace)/\(pod) in a new tab, in \(context)."
         case .into: "Copying \((localPath as NSString).lastPathComponent) into pod \(namespace)/\(pod) in a new tab, in \(context)."

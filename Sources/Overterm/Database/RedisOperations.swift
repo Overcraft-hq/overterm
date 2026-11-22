@@ -7,9 +7,9 @@ import Foundation
 /// tools read. Its users are ACL's. No rows are edited: a key has its own
 /// page. docs/architecture.md, Database: Server page, Users and roles.
 extension RedisDriver: DatabaseMonitoring, DatabaseUserManagement {
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .slowQueries] }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .slowQueries] }
 
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
         [
             SessionStop(
                 terminate: true, menu: "Kill Client…", title: "Disconnect client \(session.id)?", command: "CLIENT KILL ID \(session.id)",
@@ -25,7 +25,7 @@ extension RedisDriver: DatabaseMonitoring, DatabaseUserManagement {
         return MonitorGap(reason: "Redis refused \(what): \(message)")
     }
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         let replies = try await pipeline([["INFO"], ["CONFIG", "GET", "maxclients"]])
         guard case .bulk(let data?) = replies[0] else {
             throw DatabaseError.failed(replies[0].text ?? "Redis didn't answer INFO.")
@@ -35,7 +35,7 @@ extension RedisDriver: DatabaseMonitoring, DatabaseUserManagement {
         return RedisOps.overview(RedisInfo(RedisValue.string(data)), maxClients: maxClients)
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         let replies = try await pipeline([["CLIENT", "ID"], ["CLIENT", "LIST"]])
         if let gap = refused(replies[1], "CLIENT LIST", fix: "ACL SETUSER \(config.user.isEmpty ? "default" : config.user) +client|list") {
             return .unavailable(gap)
@@ -45,7 +45,7 @@ extension RedisDriver: DatabaseMonitoring, DatabaseUserManagement {
         return .value(RedisOps.activity(RedisClients.parse(RedisValue.string(data)), own: own))
     }
 
-    func slowQueries() async throws -> Monitored<[SlowQuery]> {
+    package func slowQueries() async throws -> Monitored<[SlowQuery]> {
         let reply = try await command(["SLOWLOG", "GET", "128"])
         if let gap = refused(reply, "SLOWLOG GET", fix: "ACL SETUSER \(config.user.isEmpty ? "default" : config.user) +slowlog") {
             return .unavailable(gap)
@@ -53,7 +53,7 @@ extension RedisDriver: DatabaseMonitoring, DatabaseUserManagement {
         return .value(RedisOps.slowQueries(RedisSlowEntry.parse(reply)))
     }
 
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("CLIENT KILL") }
         guard Int(session) != nil else { throw DatabaseError.failed("\(session) isn't a client's id.") }
         if case .integer(let own) = try await command(["CLIENT", "ID"]), String(own) == session {
@@ -66,18 +66,18 @@ extension RedisDriver: DatabaseMonitoring, DatabaseUserManagement {
 
     // MARK: Users (ACL)
 
-    func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
+    package func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
 
-    func userStatements() async -> any UserStatementMaking { RedisUserStatements() }
+    package func userStatements() async -> any UserStatementMaking { RedisUserStatements() }
 
-    func users() async throws -> Monitored<[DatabaseUser]> {
+    package func users() async throws -> Monitored<[DatabaseUser]> {
         switch try await aclList() {
         case .value(let users): return .value(users.map(\.user))
         case .unavailable(let gap): return .unavailable(gap)
         }
     }
 
-    func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
+    package func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
         switch try await aclList() {
         case .value(let users):
             guard let found = users.first(where: { $0.name == user.name }) else { return .unavailable(MonitorGap(reason: "\(user.name) is gone.")) }
@@ -101,7 +101,7 @@ extension RedisDriver: DatabaseMonitoring, DatabaseUserManagement {
     }
 
     /// Each statement a command line, as redis-cli takes it; sent once, nothing kept.
-    func run(_ statements: [UserStatement]) async throws {
+    package func run(_ statements: [UserStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("changing users") }
         for statement in statements {
             let words: [String]
@@ -125,8 +125,8 @@ extension RedisDriver: DatabaseMonitoring, DatabaseUserManagement {
 }
 
 /// Redis's answers read for the shared page. Pure.
-enum RedisOps {
-    static func overview(_ info: RedisInfo, maxClients: Int?) -> ServerOverview {
+package enum RedisOps {
+    package static func overview(_ info: RedisInfo, maxClients: Int?) -> ServerOverview {
         var facts: [ServerFact] = []
         facts.append(ServerFact(title: info["valkey_version"] != nil ? "Valkey" : "Redis", value: info.version ?? "—", detail: info["redis_mode"]))
         if let uptime = info.uptime { facts.append(ServerFact(title: "Up", value: uptime)) }
@@ -150,7 +150,7 @@ enum RedisOps {
 
     /// CLIENT LIST's clients as sessions: `cmd` the last command, `idle` how
     /// long since, a blocked one (flag `b`) waiting on its keys.
-    static func activity(_ clients: [[String: String]], own: String?) -> [DatabaseActivity] {
+    package static func activity(_ clients: [[String: String]], own: String?) -> [DatabaseActivity] {
         clients.compactMap { client in
             guard let id = client["id"] else { return nil }
             let flags = client["flags"] ?? ""
@@ -177,7 +177,7 @@ enum RedisOps {
 
     /// The slow log's entries, the same command line together: how often,
     /// in all, and on average. A password the line carries is masked.
-    static func slowQueries(_ entries: [RedisSlowEntry]) -> [SlowQuery] {
+    package static func slowQueries(_ entries: [RedisSlowEntry]) -> [SlowQuery] {
         var groups: [String: (calls: Int, micros: Int)] = [:]
         var order: [String] = []
         for entry in entries {
@@ -194,7 +194,7 @@ enum RedisOps {
     }
 
     /// AUTH's, HELLO's and ACL SETUSER's secrets: `>pass`, `#hash`, the word after AUTH.
-    static func masked(_ line: String) -> String {
+    package static func masked(_ line: String) -> String {
         guard let words = try? RedisProtocol.words(line), let first = words.first?.uppercased() else { return line }
         switch first {
         case "AUTH": return "AUTH ••••"
@@ -210,19 +210,19 @@ enum RedisOps {
 
 /// An ACL LIST line: `user alice on #<sha256> ~cache:* &* -@all +get`. Its
 /// password hashes are counted, never kept. Pure.
-struct RedisACLUser: Equatable {
-    var name: String
-    var enabled = false
-    var passwords = 0
-    var nopass = false
-    var keys: [String] = []
-    var channels: [String] = []
-    var commands: [String] = []
+package struct RedisACLUser: Equatable {
+    package var name: String
+    package var enabled = false
+    package var passwords = 0
+    package var nopass = false
+    package var keys: [String] = []
+    package var channels: [String] = []
+    package var commands: [String] = []
     /// Redis 7's selectors: `(~logs:* +get)`.
-    var selectors: [String] = []
-    var flags: [String] = []
+    package var selectors: [String] = []
+    package var flags: [String] = []
 
-    init?(_ line: String) {
+    package init?(_ line: String) {
         // Selectors are parenthesized and may hold spaces: taken out first.
         var rest = line
         var selectors: [String] = []
@@ -259,11 +259,11 @@ struct RedisACLUser: Equatable {
     }
 
     /// Everything: every command, every key.
-    var isSuperuser: Bool {
+    package var isSuperuser: Bool {
         (commands.contains("+@all") || commands.contains("allcommands")) && !commands.contains { $0.hasPrefix("-") } && keys.contains("*")
     }
 
-    var user: DatabaseUser {
+    package var user: DatabaseUser {
         var attributes: [String] = []
         if nopass { attributes.append("no password") } else if passwords > 0 { attributes.append(passwords == 1 ? "a password set" : "\(passwords) passwords set") }
         if !selectors.isEmpty { attributes.append("\(selectors.count) selector\(selectors.count == 1 ? "" : "s")") }
@@ -271,7 +271,7 @@ struct RedisACLUser: Equatable {
         return DatabaseUser(name: name, canLogin: enabled && (nopass || passwords > 0), superuser: isSuperuser, attributes: attributes)
     }
 
-    var grants: [DatabaseGrant] {
+    package var grants: [DatabaseGrant] {
         var grants = [
             DatabaseGrant(kind: "commands", object: "commands", privileges: commands.isEmpty ? ["-@all"] : commands, target: .server)
         ]
@@ -290,14 +290,14 @@ struct RedisACLUser: Equatable {
 /// argument (`RedisProtocol.quoted`) — a name or a pattern never adds a
 /// rule. A password goes as its SHA-256 (`#<hex>`), so it is never in the
 /// clear on the wire, in MONITOR or the slow log. Pure.
-struct RedisUserStatements: UserStatementMaking {
-    static let commandCategories = [
+package struct RedisUserStatements: UserStatementMaking {
+    package static let commandCategories = [
         "+@all", "+@read", "+@write", "+@keyspace", "+@string", "+@hash", "+@list", "+@set", "+@sortedset", "+@stream", "+@bitmap",
         "+@geo", "+@hyperloglog", "+@pubsub", "+@transaction", "+@scripting", "+@connection", "+@fast", "+@slow", "+@admin", "+@dangerous",
     ]
-    static let keyAccess = ["read and write (~)", "read only (%R~)", "write only (%W~)"]
+    package static let keyAccess = ["read and write (~)", "read only (%R~)", "write only (%W~)"]
 
-    var form: UserForm {
+    package var form: UserForm {
         UserForm(
             login: true, superuser: "Every command, key and channel (~* &* +@all)",
             passwordNote:
@@ -311,11 +311,11 @@ struct RedisUserStatements: UserStatementMaking {
 
     private func line(_ words: [String]) -> String { words.map(RedisProtocol.quoted).joined(separator: " ") }
 
-    static func hash(_ password: String) -> String {
+    package static func hash(_ password: String) -> String {
         "#" + SHA256.hash(data: Data(password.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    func create(_ user: NewUser) throws -> [UserStatement] {
+    package func create(_ user: NewUser) throws -> [UserStatement] {
         let name = try checked(user.name)
         guard !user.password.isEmpty else { throw Self.refusal("A password, please.") }
         // `reset` first: an ACL SETUSER of a name that exists would add to it.
@@ -326,16 +326,16 @@ struct RedisUserStatements: UserStatementMaking {
         return [UserStatement(sql, shown: line(head) + " #••••••••")]
     }
 
-    func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
+    package func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
         let name = try checked(user.name)
         guard !password.isEmpty else { throw Self.refusal("A password, please.") }
         let head = line(["ACL", "SETUSER", name, "resetpass"])
         return UserStatement(head + " " + RedisProtocol.quoted(Self.hash(password)), shown: head + " #••••••••")
     }
 
-    func offers(_ action: UserAction, on user: DatabaseUser) -> Bool { action != .grantRole }
+    package func offers(_ action: UserAction, on user: DatabaseUser) -> Bool { action != .grantRole }
 
-    func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
+    package func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
         switch kind.title {
         case "Keys": .named(kind: "Keys", name: fields.first ?? "")
         case "Channels": .named(kind: "Channels", name: fields.first ?? "")
@@ -343,7 +343,7 @@ struct RedisUserStatements: UserStatementMaking {
         }
     }
 
-    func privileges(on target: GrantTarget) -> [String] {
+    package func privileges(on target: GrantTarget) -> [String] {
         switch target {
         case .named("Keys", _): Self.keyAccess
         case .named("Channels", _): ["subscribe and publish (&)"]
@@ -351,7 +351,7 @@ struct RedisUserStatements: UserStatementMaking {
         }
     }
 
-    func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
+    package func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
         let name = try checked(user.name)
         let allowed = self.privileges(on: target)
         guard !privileges.isEmpty else { throw Self.refusal("Pick what it may do.") }
@@ -372,7 +372,7 @@ struct RedisUserStatements: UserStatementMaking {
 
     /// A row of rules taken back whole: its commands (nocommands), keys
     /// (resetkeys), channels (resetchannels), selectors (clearselectors).
-    func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
+    package func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
         let rule: String? =
             switch grant.kind {
             case "commands": "nocommands"
@@ -385,9 +385,9 @@ struct RedisUserStatements: UserStatementMaking {
         return UserStatement(line(["ACL", "SETUSER", name, rule]))
     }
 
-    func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] { [] }
+    package func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] { [] }
 
-    func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement { throw Self.refusal("Redis has no roles.") }
+    package func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement { throw Self.refusal("Redis has no roles.") }
 
-    func drop(_ user: DatabaseUser) throws -> UserStatement { UserStatement(line(["ACL", "DELUSER", try checked(user.name)])) }
+    package func drop(_ user: DatabaseUser) throws -> UserStatement { UserStatement(line(["ACL", "DELUSER", try checked(user.name)])) }
 }

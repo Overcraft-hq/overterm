@@ -4,29 +4,29 @@ import AppKit
 /// numbers and plain text, which need no SwiftUI view of their own (7.7 of
 /// docs/design/activity/analysis.md — a hosting view each cost a SwiftUI
 /// update and layout at every publish, most of a tick's main thread).
-struct ResourceTextCellValue: Equatable {
-    var text: String
-    var color: NSColor
+package struct ResourceTextCellValue: Equatable {
+    package var text: String
+    package var color: NSColor
     /// The font's size, `ChromeMetrics.text`'s.
-    var size: CGFloat
+    package var size: CGFloat
     /// A number: monospaced, against the trailing edge, cut at its end; else
     /// text against the leading edge, cut in its middle.
-    var number = false
+    package var number = false
     /// Its tooltip; nil for none.
-    var help: String? = nil
+    package var help: String? = nil
     /// The words' opacity (an ended row's 0.45); the ground stays whole.
-    var alpha: CGFloat = 1
+    package var alpha: CGFloat = 1
     /// A fill behind the words (a new row's tint); nil for none.
-    var ground: NSColor? = nil
+    package var ground: NSColor? = nil
 }
 
 /// A cell of the page's own AppKit view (`ResourceTable.drawnCell`): its
 /// kind, the reuse identifier's last part; how to make one; and how to
 /// show the row in it, saying whether anything changed.
-struct ResourceDrawnCell {
-    let kind: String
-    let make: () -> ResourcePressCell
-    let show: (ResourcePressCell) -> Bool
+package struct ResourceDrawnCell {
+    package let kind: String
+    package let make: () -> ResourcePressCell
+    package let show: (ResourcePressCell) -> Bool
 }
 
 /// A cell that takes a row's press as `ResourceRowHostingView` does: on
@@ -36,29 +36,29 @@ struct ResourceDrawnCell {
 /// may (`ResourceTableView.validateProposedFirstResponder`) —, the first
 /// click in a window behind others too, and a right-click as the table's
 /// menu for the row clicked.
-class ResourcePressCell: NSTableCellView {
+package class ResourcePressCell: NSTableCellView {
     private var down: NSEvent?
 
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    package override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    var table: ResourceTableView? {
+    package var table: ResourceTableView? {
         var view = superview
         while let current = view, !(current is ResourceTableView) { view = current.superview }
         return view as? ResourceTableView
     }
 
     /// Every press inside is the cell's: none reaches the words.
-    override func hitTest(_ point: NSPoint) -> NSView? {
+    package override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden, frame.contains(point) else { return nil }
         return self
     }
 
-    override func mouseDown(with event: NSEvent) {
+    package override func mouseDown(with event: NSEvent) {
         down = event
         table?.interaction?(.pressBegan)
     }
 
-    override func mouseUp(with event: NSEvent) {
+    package override func mouseUp(with event: NSEvent) {
         if let down {
             self.down = nil
             table?.pressRow(down)
@@ -66,7 +66,7 @@ class ResourcePressCell: NSTableCellView {
         }
     }
 
-    override func rightMouseDown(with event: NSEvent) {
+    package override func rightMouseDown(with event: NSEvent) {
         if let table { table.rightMouseDown(with: event) } else { super.rightMouseDown(with: event) }
     }
 }
@@ -75,30 +75,30 @@ class ResourcePressCell: NSTableCellView {
 /// again only when its value changed (`show`), and then only drawn — no
 /// text field, no constraint, no layout pass (a label's every change was
 /// a layout of its cell).
-final class ResourceTextCell: ResourcePressCell {
+package final class ResourceTextCell: ResourcePressCell {
     /// A column's text cells for one kind of row; never a hosted cell's.
-    static func identifier(column: String, kind: String) -> NSUserInterfaceItemIdentifier {
+    package static func identifier(column: String, kind: String) -> NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("resource.text.\(column).\(kind)")
     }
 
-    private(set) var shown: ResourceTextCellValue?
+    package private(set) var shown: ResourceTextCellValue?
     private var words = NSAttributedString()
     private var lineHeight: CGFloat = 0
 
-    override var isFlipped: Bool { true }
+    package override var isFlipped: Bool { true }
 
-    init() {
+    package init() {
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.staticText)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    package required init?(coder: NSCoder) { fatalError() }
 
     /// `value` drawn: whether anything changed.
     @discardableResult
-    func show(_ value: ResourceTextCellValue) -> Bool {
+    package func show(_ value: ResourceTextCellValue) -> Bool {
         guard value != shown else { return false }
         let old = shown
         shown = value
@@ -113,7 +113,7 @@ final class ResourceTextCell: ResourcePressCell {
         return true
     }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         guard let shown else { return }
         if let ground = shown.ground {
             ground.setFill()

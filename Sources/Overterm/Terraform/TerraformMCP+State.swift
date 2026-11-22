@@ -20,19 +20,19 @@ import Foundation
 /// the stripped environment (`Purpose.agentRead`), the workspace checked
 /// to exist first. Nothing is written, nothing locked.
 extension TerraformMCP {
-    static let stateNames = ["tf_state_list", "tf_state_show", "tf_outputs"]
+    package static let stateNames = ["tf_state_list", "tf_state_show", "tf_outputs"]
 
     /// A state read an agent is answered from.
-    struct AgentState {
-        var addresses: [String]
-        var capped: Bool
+    package struct AgentState {
+        package var addresses: [String]
+        package var capped: Bool
         /// Masked for agents; nil for a list alone.
-        var state: TerraformState?
+        package var state: TerraformState?
         /// Where it came from, said first.
-        var note: String
+        package var note: String
     }
 
-    static func stateCall(_ name: String, _ arguments: [String: Any], in checkout: URL) async throws -> String {
+    package static func stateCall(_ name: String, _ arguments: [String: Any], in checkout: URL) async throws -> String {
         let card = try await card(arguments, in: checkout, tool: name)
         let address = argument(arguments, "address")
         if name == "tf_state_show" {
@@ -63,7 +63,7 @@ extension TerraformMCP {
     }
 
     /// The person's read of `card` when fresh enough, else the agent's own.
-    static func agentState(_ card: TerraformRootCard, checkout: URL, values: Bool) async -> Result<AgentState, StateRefusal> {
+    package static func agentState(_ card: TerraformRootCard, checkout: URL, values: Bool) async -> Result<AgentState, StateRefusal> {
         let reads = TerraformStateReads.shared
         if let person = reads.latest(checkout: checkout, root: card.path, reader: .person), person.phase == .read, person.workspace == card.workspace,
             let finished = person.finished, Date().timeIntervalSince(finished) <= TerraformStateReads.agentMaxAge, !values || person.state != nil
@@ -103,15 +103,15 @@ extension TerraformMCP {
     /// Why an agent's own read of `card`'s state is refused: any backend
     /// but a local one (its init record can hold credentials, and reading
     /// it reaches a remote state). Nil: a local backend.
-    static func agentReadRefusal(_ card: TerraformRootCard) -> String? {
+    package static func agentReadRefusal(_ card: TerraformRootCard) -> String? {
         let backend = card.facts.backend
         guard backend.type != "local" else { return nil }
         return
             "its state is in \(card.backendSummary), which an agent's read never reaches — initialising a remote backend uses what its settings and init record hold, credentials too. Ask the person to open State in Overterm's Terraform panel: tf_ tools then answer from what they read, for 15 minutes."
     }
 
-    struct StateRefusal: Error, CustomStringConvertible {
-        var description: String
-        init(_ description: String) { self.description = description }
+    package struct StateRefusal: Error, CustomStringConvertible {
+        package var description: String
+        package init(_ description: String) { self.description = description }
     }
 }

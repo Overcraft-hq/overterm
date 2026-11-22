@@ -4,99 +4,99 @@ import Foundation
 /// asking, its tools, resources and prompts listed, a tool called with JSON
 /// arguments, every message logged — MCP Inspector's work, in Overterm.
 @MainActor
-final class MCPInspector: ObservableObject {
-    enum State: Equatable {
+package final class MCPInspector: ObservableObject {
+    package enum State: Equatable {
         case idle, connecting, connected
         case failed(String)
     }
 
-    enum Tab: String, CaseIterable, Identifiable {
+    package enum Tab: String, CaseIterable, Identifiable {
         case tools = "Tools", resources = "Resources", prompts = "Prompts", log = "Log"
-        var id: String { rawValue }
+        package var id: String { rawValue }
     }
 
-    struct Tool: Equatable, Identifiable {
-        var name: String
-        var title: String?
-        var description: String
-        var inputSchema: JSONValue
-        var readOnly: Bool?
-        var destructive: Bool?
-        var id: String { name }
+    package struct Tool: Equatable, Identifiable {
+        package var name: String
+        package var title: String?
+        package var description: String
+        package var inputSchema: JSONValue
+        package var readOnly: Bool?
+        package var destructive: Bool?
+        package var id: String { name }
     }
 
-    struct Resource: Equatable, Identifiable {
-        var uri: String
-        var name: String
-        var description: String
-        var mimeType: String?
+    package struct Resource: Equatable, Identifiable {
+        package var uri: String
+        package var name: String
+        package var description: String
+        package var mimeType: String?
         /// A template's `uriTemplate`: its `{placeholders}` filled before reading.
-        var isTemplate = false
-        var id: String { uri }
+        package var isTemplate = false
+        package var id: String { uri }
     }
 
-    struct Prompt: Equatable, Identifiable {
-        struct Argument: Equatable {
-            var name: String
-            var description: String
-            var required: Bool
+    package struct Prompt: Equatable, Identifiable {
+        package struct Argument: Equatable {
+            package var name: String
+            package var description: String
+            package var required: Bool
         }
 
-        var name: String
-        var description: String
-        var arguments: [Argument]
-        var id: String { name }
+        package var name: String
+        package var description: String
+        package var arguments: [Argument]
+        package var id: String { name }
     }
 
-    struct LogLine: Identifiable, Equatable {
-        let id = UUID()
-        var date = Date()
-        var direction: MCPClient.Direction
-        var text: String
+    package struct LogLine: Identifiable, Equatable {
+        package let id = UUID()
+        package var date = Date()
+        package var direction: MCPClient.Direction
+        package var text: String
     }
 
     /// What came back from a call, a read or a prompt.
-    struct Outcome: Equatable {
-        var value: JSONValue
-        var duration: TimeInterval
-        var isError: Bool
+    package struct Outcome: Equatable {
+        package var value: JSONValue
+        package var duration: TimeInterval
+        package var isError: Bool
     }
 
-    @Published private(set) var servers: [MCPServerConfig] = []
-    @Published private(set) var selected: MCPServerConfig?
-    @Published private(set) var states: [String: State] = [:]
-    @Published var tab = Tab.tools
-    @Published private(set) var serverInfo: JSONValue = .null
-    @Published private(set) var instructions: String?
-    @Published private(set) var tools: [Tool] = []
-    @Published private(set) var resources: [Resource] = []
-    @Published private(set) var prompts: [Prompt] = []
-    @Published private(set) var log: [LogLine] = []
-    @Published var pickedTool: String?
-    @Published var pickedResource: String?
-    @Published var pickedPrompt: String?
+    @Published package private(set) var servers: [MCPServerConfig] = []
+    @Published package private(set) var selected: MCPServerConfig?
+    @Published package private(set) var states: [String: State] = [:]
+    @Published package var tab = Tab.tools
+    @Published package private(set) var serverInfo: JSONValue = .null
+    @Published package private(set) var instructions: String?
+    @Published package private(set) var tools: [Tool] = []
+    @Published package private(set) var resources: [Resource] = []
+    @Published package private(set) var prompts: [Prompt] = []
+    @Published package private(set) var log: [LogLine] = []
+    @Published package var pickedTool: String?
+    @Published package var pickedResource: String?
+    @Published package var pickedPrompt: String?
     /// The arguments as typed: JSON for a tool, a value a name for a prompt,
     /// a resource template's URI.
-    @Published var toolArguments = "{}"
-    @Published var promptArguments: [String: String] = [:]
-    @Published var resourceURI = ""
-    @Published private(set) var outcome: Outcome?
-    @Published private(set) var running = false
-    @Published private(set) var error: String?
+    @Published package var toolArguments = "{}"
+    @Published package var promptArguments: [String: String] = [:]
+    @Published package var resourceURI = ""
+    @Published package private(set) var outcome: Outcome?
+    @Published package private(set) var running = false
+    @Published package private(set) var error: String?
 
     private var clients: [String: MCPClient] = [:]
     private let added: MCPAddedServers
     private let home: URL
     private var checkout: URL?
     /// The log's lines kept at most.
-    static let logLimit = 1000
+    package static let logLimit = 1000
 
-    init(added: MCPAddedServers, home: URL) {
+    package init(added: MCPAddedServers, home: URL) {
         self.added = added
         self.home = home
     }
 
-    static func make() -> MCPInspector {
+    package static func make() -> MCPInspector {
         let secrets: MCPSecrets = AppEnvironment.isIsolated ? MemoryMCPSecrets() : KeychainMCPSecrets()
         let file = AppEnvironment.supportDirectory.appendingPathComponent("API/MCPServers.json")
         // An isolated run reads no agent of the user's: its home is its own.
@@ -104,33 +104,33 @@ final class MCPInspector: ObservableObject {
         return MCPInspector(added: MCPAddedServers(file: file, secrets: secrets), home: home)
     }
 
-    var state: State { selected.map { states[$0.id] ?? .idle } ?? .idle }
+    package var state: State { selected.map { states[$0.id] ?? .idle } ?? .idle }
 
     // MARK: The servers
 
     /// Reads them again: the checkout's, the agents', the ones added here.
-    func reload(checkout: URL?) {
+    package func reload(checkout: URL?) {
         self.checkout = checkout
         let environment = ShellEnvironment.known() ?? ProcessInfo.processInfo.environment
         servers = MCPServerConfig.discover(checkout: checkout, home: home, environment: environment) + added.load()
         if let selected, !servers.contains(where: { $0.id == selected.id }) { self.selected = nil }
     }
 
-    func add(_ server: MCPServerConfig) throws {
+    package func add(_ server: MCPServerConfig) throws {
         var mine = added.load().filter { $0.name != server.name }
         mine.append(server)
         try added.save(mine)
         reload(checkout: checkout)
     }
 
-    func remove(_ server: MCPServerConfig) throws {
+    package func remove(_ server: MCPServerConfig) throws {
         disconnect(server)
         try added.remove(server)
         reload(checkout: checkout)
     }
 
     /// Shown, and connected unless it is.
-    func open(_ server: MCPServerConfig) {
+    package func open(_ server: MCPServerConfig) {
         if selected?.id != server.id {
             selected = server
             clearShown()
@@ -155,7 +155,7 @@ final class MCPInspector: ObservableObject {
         pickedPrompt = nil
     }
 
-    func connect(_ server: MCPServerConfig) {
+    package func connect(_ server: MCPServerConfig) {
         disconnect(server)
         states[server.id] = .connecting
         let id = server.id
@@ -178,13 +178,13 @@ final class MCPInspector: ObservableObject {
         }
     }
 
-    func disconnect(_ server: MCPServerConfig) {
+    package func disconnect(_ server: MCPServerConfig) {
         guard let client = clients.removeValue(forKey: server.id) else { return }
         states[server.id] = .idle
         Task { await client.close() }
     }
 
-    func disconnectAll() {
+    package func disconnectAll() {
         for server in servers { disconnect(server) }
     }
 
@@ -194,11 +194,11 @@ final class MCPInspector: ObservableObject {
         if log.count > Self.logLimit { log.removeFirst(log.count - Self.logLimit) }
     }
 
-    func clearLog() { log = [] }
+    package func clearLog() { log = [] }
 
     /// What the server has: its tools, resources and prompts, as far as it
     /// says it has them (`capabilities`).
-    func refresh() async {
+    package func refresh() async {
         guard let server = selected, let client = clients[server.id] else { return }
         serverInfo = await client.serverInfo
         instructions = await client.instructions
@@ -219,20 +219,20 @@ final class MCPInspector: ObservableObject {
         }
     }
 
-    static func tool(_ value: JSONValue) -> Tool {
+    package static func tool(_ value: JSONValue) -> Tool {
         Tool(
             name: value["name"].string ?? "", title: value["title"].string ?? value["annotations"]["title"].string,
             description: value["description"].string ?? "", inputSchema: value["inputSchema"],
             readOnly: value["annotations"]["readOnlyHint"].bool, destructive: value["annotations"]["destructiveHint"].bool)
     }
 
-    static func resource(_ value: JSONValue, template: Bool) -> Resource {
+    package static func resource(_ value: JSONValue, template: Bool) -> Resource {
         Resource(
             uri: (template ? value["uriTemplate"] : value["uri"]).string ?? "", name: value["name"].string ?? "",
             description: value["description"].string ?? "", mimeType: value["mimeType"].string, isTemplate: template)
     }
 
-    static func prompt(_ value: JSONValue) -> Prompt {
+    package static func prompt(_ value: JSONValue) -> Prompt {
         Prompt(
             name: value["name"].string ?? "", description: value["description"].string ?? "",
             arguments: (value["arguments"].array ?? []).map {
@@ -242,20 +242,20 @@ final class MCPInspector: ObservableObject {
 
     // MARK: Using it
 
-    func pick(tool: Tool) {
+    package func pick(tool: Tool) {
         pickedTool = tool.name
         toolArguments = Self.skeleton(tool.inputSchema).pretty
         outcome = nil
     }
 
-    func pick(resource: Resource) {
+    package func pick(resource: Resource) {
         pickedResource = resource.uri
         resourceURI = resource.uri
         outcome = nil
         if !resource.isTemplate { read() }
     }
 
-    func pick(prompt: Prompt) {
+    package func pick(prompt: Prompt) {
         pickedPrompt = prompt.name
         promptArguments = Dictionary(prompt.arguments.map { ($0.name, "") }, uniquingKeysWith: { $1 })
         outcome = nil
@@ -263,7 +263,7 @@ final class MCPInspector: ObservableObject {
 
     /// The arguments a schema asks for, each with an empty value of its type —
     /// the required ones and the rest, as a start to fill in.
-    static func skeleton(_ schema: JSONValue) -> JSONValue {
+    package static func skeleton(_ schema: JSONValue) -> JSONValue {
         if schema["default"] != .null { return schema["default"] }
         switch schema["type"].string ?? (schema["properties"] != .null ? "object" : "") {
         case "object":
@@ -278,7 +278,7 @@ final class MCPInspector: ObservableObject {
         }
     }
 
-    func call() {
+    package func call() {
         guard let server = selected, let client = clients[server.id], let name = pickedTool else { return }
         let arguments: JSONValue
         do {
@@ -290,13 +290,13 @@ final class MCPInspector: ObservableObject {
         perform { try await client.callTool(name, arguments: arguments) }
     }
 
-    func read() {
+    package func read() {
         guard let server = selected, let client = clients[server.id], !resourceURI.isEmpty else { return }
         let uri = resourceURI
         perform { try await client.readResource(uri) }
     }
 
-    func getPrompt() {
+    package func getPrompt() {
         guard let server = selected, let client = clients[server.id], let name = pickedPrompt else { return }
         let arguments = promptArguments.filter { !$0.value.isEmpty }
         perform { try await client.getPrompt(name, arguments: arguments) }

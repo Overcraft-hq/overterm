@@ -4,11 +4,11 @@ import SwiftUI
 /// as the pod says them now — the context and namespace said. Resize goes
 /// on to the write's own confirmation (`KubernetesPageModel.write`);
 /// nothing changes here.
-struct KubeResizeSheetView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
+package struct KubeResizeSheetView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if let draft = page.resizeDraft {
             ZStack(alignment: .top) {
                 Color.black.opacity(0.001).onTapGesture { page.closeResizeSheet() }

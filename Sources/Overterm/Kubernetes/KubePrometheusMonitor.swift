@@ -3,29 +3,29 @@ import Foundation
 /// What a Prometheus query goes through: the context's metrics proxy, or
 /// (a test's, the scenario's without kubectl) a connection spoken to
 /// directly — either way only the Service's two query paths.
-protocol KubePrometheusTransport: Sendable {
+package protocol KubePrometheusTransport: Sendable {
     func query(_ path: String) async throws -> HTTPResponse
 }
 
 /// The context's metrics proxy (`KubeProxies.sendPrometheus`).
-struct KubePrometheusProxyConnection: KubePrometheusTransport {
-    let proxies: KubeProxies
-    let context: KubeContext
-    let service: KubePrometheusService
-    var role: KubeProxies.Role = .page
+package struct KubePrometheusProxyConnection: KubePrometheusTransport {
+    package let proxies: KubeProxies
+    package let context: KubeContext
+    package let service: KubePrometheusService
+    package var role: KubeProxies.Role = .page
 
-    func query(_ path: String) async throws -> HTTPResponse {
+    package func query(_ path: String) async throws -> HTTPResponse {
         try await proxies.sendPrometheus(context, service, role: role, path)
     }
 }
 
 /// A connection spoken to directly, as the metrics proxy would let it
 /// through: any other path is refused here.
-struct KubePrometheusDirect: KubePrometheusTransport {
-    let connection: any KubeConnection
-    let service: KubePrometheusService
+package struct KubePrometheusDirect: KubePrometheusTransport {
+    package let connection: any KubeConnection
+    package let service: KubePrometheusService
 
-    func query(_ path: String) async throws -> HTTPResponse {
+    package func query(_ path: String) async throws -> HTTPResponse {
         guard service.allows(path) else { throw KubePrometheusRefused(path: path) }
         return try await connection.get(path, headers: [("Accept", "application/json")])
     }
@@ -35,46 +35,46 @@ struct KubePrometheusDirect: KubePrometheusTransport {
 /// query's series by its id, over the span it was asked for, what wasn't
 /// asked and why, and what failed — a failed query keeps its last answer,
 /// said with the failure.
-struct KubeTabReading: Equatable, Sendable {
-    var request: KubeTabRequest
-    var service: KubePrometheusService?
-    var results: [String: [KubeSeries]] = [:]
-    var span: KubePromSpan?
-    var read: Date?
-    var problem: String?
+package struct KubeTabReading: Equatable, Sendable {
+    package var request: KubeTabRequest
+    package var service: KubePrometheusService?
+    package var results: [String: [KubeSeries]] = [:]
+    package var span: KubePromSpan?
+    package var read: Date?
+    package var problem: String?
     /// Prometheus' warnings, the profile's footnotes: three at most.
-    var notes: [String] = []
-    var refused: [KubeTabFamily: String] = [:]
-    var tier: KubePromTier?
-    var profile: KubePromProfile = .unknown
+    package var notes: [String] = []
+    package var refused: [KubeTabFamily: String] = [:]
+    package var tier: KubePromTier?
+    package var profile: KubePromProfile = .unknown
     /// Why nothing is asked at all (agent mode).
-    var unavailable: String?
+    package var unavailable: String?
     /// A workload's or a namespace's top N, as last ranked (M7).
-    var ranking: KubeTabRanking?
+    package var ranking: KubeTabRanking?
     /// How its workload's (namespace's) pods were told.
-    var selection: KubeTabSelection?
+    package var selection: KubeTabSelection?
     /// A saved query that drew nothing, by its id: refused before it was
     /// sent, or what Prometheus answered — its chart's sentence, never the
     /// tab's problem (the user's query failing says nothing of Prometheus).
-    var saved: [String: String] = [:]
+    package var saved: [String: String] = [:]
     /// A saved query Prometheus refused (`bad_data`, a 422), as sent: not
     /// sent again while this reading lasts — an edit is another request.
-    var savedRejected: [String: String] = [:]
+    package var savedRejected: [String: String] = [:]
     /// The queries the last read sent (the plan's), by which a chart says
     /// what it was drawn from: "Copy PromQL" (M9).
-    var queries: [KubeTabQuery] = []
+    package var queries: [KubeTabQuery] = []
     /// The queries Prometheus refused as sent (`bad_data`, a saved one's
     /// 422) or the metrics proxy's filter did (metrics.md 4.7): a bug
     /// report, so Copy PromQL is offered beside what they say.
-    var reported: [KubeChartQuery] = []
+    package var reported: [KubeChartQuery] = []
 
     /// A union's arms by their `overterm_s` tag.
-    func tagged(_ id: String) -> [String: [KubeSeries]] {
+    package func tagged(_ id: String) -> [String: [KubeSeries]] {
         Dictionary(grouping: results[id] ?? [], by: { $0.labels["overterm_s"] ?? "" })
     }
 
     /// What changes when it is read again: the charts' cache key.
-    var version: Int {
+    package var version: Int {
         var hasher = Hasher()
         hasher.combine(read)
         hasher.combine(problem)
@@ -92,11 +92,11 @@ struct KubeTabReading: Equatable, Sendable {
 }
 
 /// A PVC list's usage, by claim: one instant read of kubelet's volume stats.
-struct KubeVolumeReading: Equatable, Sendable {
-    var scope: KubeScope
-    var usage: [KubeRowID: KubeVolumeUsage] = [:]
-    var read: Date?
-    var problem: String?
+package struct KubeVolumeReading: Equatable, Sendable {
+    package var scope: KubeScope
+    package var usage: [KubeRowID: KubeVolumeUsage] = [:]
+    package var read: Date?
+    package var problem: String?
 }
 
 /// Prometheus for the context the page shows (stage 4; analysis 2.1,
@@ -118,14 +118,14 @@ struct KubeVolumeReading: Equatable, Sendable {
 /// where the chart is; a credential failure ends the reading (no retry
 /// runs the plugin again) until `retry`.
 @MainActor
-final class KubePrometheusMonitor: ObservableObject {
-    struct Situation: Equatable {
-        var context: String
-        var use: KubePrometheusUse
-        var scope: KubeScope
+package final class KubePrometheusMonitor: ObservableObject {
+    package struct Situation: Equatable {
+        package var context: String
+        package var use: KubePrometheusUse
+        package var scope: KubeScope
         /// Which cluster, as which user, the kubeconfig says the context
         /// is: another, and where Prometheus is is looked for again.
-        var cluster = ""
+        package var cluster = ""
     }
 
     /// Where Prometheus was found for a context — the use and the cluster
@@ -137,7 +137,7 @@ final class KubePrometheusMonitor: ObservableObject {
         var state: KubePrometheusState
     }
 
-    enum Want: Hashable {
+    package enum Want: Hashable {
         case chart(KubeChart)
         /// The PVC list's column, in the scope shown.
         case volumes
@@ -154,38 +154,38 @@ final class KubePrometheusMonitor: ObservableObject {
     }
 
     /// The range every chart shows (the picker's): the app's.
-    @Published var range: KubeChartRange = .hour {
+    @Published package var range: KubeChartRange = .hour {
         didSet { if range != oldValue { restartCharts() } }
     }
-    @Published private(set) var state: KubePrometheusState = .off
-    @Published private(set) var charts: [KubeChart: KubeChartReading] = [:]
-    @Published private(set) var volumes: KubeVolumeReading?
-    @Published private(set) var shares: KubeShareReading?
+    @Published package private(set) var state: KubePrometheusState = .off
+    @Published package private(set) var charts: [KubeChart: KubeChartReading] = [:]
+    @Published package private(set) var volumes: KubeVolumeReading?
+    @Published package private(set) var shares: KubeShareReading?
     /// The Metrics tabs' answers, by what each asked.
-    @Published private(set) var tabs: [KubeTabRequest: KubeTabReading] = [:]
+    @Published package private(set) var tabs: [KubeTabRequest: KubeTabReading] = [:]
     /// Sizing's answers, by press (M10): one being read, dropped with its
     /// want; one read, kept — it is never asked again — until another
     /// press of the same object's, or another context. In memory only.
-    @Published private(set) var sizings: [KubeSizingRequest: KubeSizingReading] = [:]
+    @Published package private(set) var sizings: [KubeSizingRequest: KubeSizingReading] = [:]
     /// The most presses' answers kept.
-    static let sizingsKept = 16
+    package static let sizingsKept = 16
     /// Each context's answers kept between refreshes (`KubeChartCache`).
-    private(set) var caches: [String: KubeChartCache] = [:]
+    package private(set) var caches: [String: KubeChartCache] = [:]
     private var cacheDrop: Task<Void, Never>?
     /// How long the caches outlive the last reading (10 minutes; a test's shorter).
-    var cacheLifetime: Duration = .seconds(600)
+    package var cacheLifetime: Duration = .seconds(600)
     /// Instead of the range's own refresh (the scenario's, a test's).
-    var interval: Duration?
-    var volumeInterval: Duration = .seconds(60)
+    package var interval: Duration?
+    package var volumeInterval: Duration = .seconds(60)
     /// The shares' requests and limits change only with a rollout: every 5 min.
-    var shareInterval: Duration = .seconds(300)
+    package var shareInterval: Duration = .seconds(300)
     /// What a Metrics tab's range ends at: now (a test's, moved on).
-    var clock: @MainActor () -> Date = { Date() }
+    package var clock: @MainActor () -> Date = { Date() }
     /// How many Prometheus queries were made, and lookups for it — the tests'.
-    private(set) var requests = 0
+    package private(set) var requests = 0
     /// How many of them were an agent's (`agentPrepare`'s calls).
-    private(set) var agentRequests = 0
-    private(set) var detections = 0
+    package private(set) var agentRequests = 0
+    package private(set) var detections = 0
 
     private var wanted: [ObjectIdentifier: Set<Want>] = [:]
     private var situation: Situation?
@@ -214,15 +214,15 @@ final class KubePrometheusMonitor: ObservableObject {
     /// kubeconfig changes them; a sign-in (`retry`) makes every one again.
     private var queues: [String: (key: ProfileKey, queue: KubePromQueue)] = [:]
     /// The profile of the context shown, once asked (the page's, the dump's).
-    @Published private(set) var profile: KubePromProfile?
+    @Published package private(set) var profile: KubePromProfile?
     /// How many times a profile was asked for (the tests').
-    private(set) var probes = 0
+    package private(set) var probes = 0
     /// Whether a query has gone out since the metrics proxy was last closed.
     private var proxyUsed = false
     private var stopped = false
 
     /// What `owner` shows now that needs Prometheus; empty, nothing.
-    func want(_ wants: Set<Want>, for owner: AnyObject) {
+    package func want(_ wants: Set<Want>, for owner: AnyObject) {
         let id = ObjectIdentifier(owner)
         guard (wanted[id] ?? []) != wants else { return }
         wanted[id] = wants.isEmpty ? nil : wants
@@ -230,7 +230,7 @@ final class KubePrometheusMonitor: ObservableObject {
     }
 
     /// Where Prometheus is read now; nil: nowhere.
-    func update(
+    package func update(
         _ situation: Situation?, client: @escaping () -> KubeClient?,
         transport: @escaping (KubePrometheusService) -> (any KubePrometheusTransport)?, close: @escaping (String) -> Void
     ) {
@@ -267,15 +267,15 @@ final class KubePrometheusMonitor: ObservableObject {
     }
 
     /// Whether the use is on and wanted: what reads at all.
-    var wants: Set<Want> { wanted.values.reduce(into: Set<Want>()) { $0.formUnion($1) } }
+    package var wants: Set<Want> { wanted.values.reduce(into: Set<Want>()) { $0.formUnion($1) } }
 
-    var isPolling: Bool { !polls.isEmpty }
+    package var isPolling: Bool { !polls.isEmpty }
     /// Whether this context's Prometheus is on (charts get a range picker).
-    var isOn: Bool { situation?.use.isOn == true }
-    var service: KubePrometheusService? { state.service }
+    package var isOn: Bool { situation?.use.isOn == true }
+    package var service: KubePrometheusService? { state.service }
 
     /// After a sign-in: what a credential failure stopped is read again.
-    func retry() {
+    package func retry() {
         guard stopped || state != .off else { return }
         stopped = false
         // A queue stopped by a credential or a 403 is made again — any context's.
@@ -376,13 +376,13 @@ final class KubePrometheusMonitor: ObservableObject {
     /// Readings shown as a poll leaves them, Prometheus found at `service`
     /// — a monitor of a scenario's own, which reads nothing (the
     /// Overview's first draw timed on its own view, metrics.md 5.3).
-    func present(_ charts: [KubeChart: KubeChartReading], service: KubePrometheusService) {
+    package func present(_ charts: [KubeChart: KubeChartReading], service: KubePrometheusService) {
         state = .found(service, nil)
         self.charts = charts
     }
 
     /// The answers kept forgotten, as their lifetime passing would (a test's): asked whole again.
-    func forgetCaches() { caches = [:] }
+    package func forgetCaches() { caches = [:] }
 
     /// Nothing read for `cacheLifetime`: the answers kept go.
     private func dropCachesLater() {
@@ -397,7 +397,7 @@ final class KubePrometheusMonitor: ObservableObject {
     }
 
     /// Closes waiting for their readings to stop (the tests').
-    private(set) var closing = 0
+    package private(set) var closing = 0
 
     private func restartCharts() {
         for (want, task) in polls {
@@ -445,11 +445,11 @@ final class KubePrometheusMonitor: ObservableObject {
     /// Freelens's providers in order, each one GET through the context's
     /// own proxy: the first Service found. A refusal is said with the
     /// rest; a credential failure ends the search.
-    nonisolated static func find(_ client: KubeClient) async -> KubePrometheusState { await look(client).state }
+    package nonisolated static func find(_ client: KubeClient) async -> KubePrometheusState { await look(client).state }
 
     /// `find`, and whether its answer lasts (found, not found, refused) or
     /// was a failure to ask — the proxy's, the network's.
-    nonisolated static func look(_ client: KubeClient) async -> (state: KubePrometheusState, lasting: Bool) {
+    package nonisolated static func look(_ client: KubeClient) async -> (state: KubePrometheusState, lasting: Bool) {
         var refused: [String] = []
         for provider in KubePrometheusProvider.allCases {
             do {
@@ -579,7 +579,7 @@ final class KubePrometheusMonitor: ObservableObject {
 
     /// The context's queue for `service`, as the situation now reads it:
     /// another Service, use, cluster or user, another queue.
-    func queue(_ context: String, _ service: KubePrometheusService) -> KubePromQueue {
+    package func queue(_ context: String, _ service: KubePrometheusService) -> KubePromQueue {
         let shown = situation?.context == context ? situation : nil
         return queue(context, ProfileKey(service: service, use: shown?.use ?? .off, cluster: shown?.cluster ?? ""))
     }
@@ -587,7 +587,7 @@ final class KubePrometheusMonitor: ObservableObject {
     /// Queries still on their way, every context's (the tests'): one sent
     /// just before its want went is cancelled, but its request is already
     /// out — it still reaches the server, after the want.
-    func queriesInFlight() async -> Int {
+    package func queriesInFlight() async -> Int {
         var total = 0
         for queue in queues.values.map(\.queue) { total += await queue.inFlight }
         return total
@@ -632,18 +632,18 @@ final class KubePrometheusMonitor: ObservableObject {
     }
 
     /// The profile forgotten, as an hour passing would (the scenario's, a test's): asked again by the next chart.
-    func forgetProfile() {
+    package func forgetProfile() {
         guard let context = situation?.context else { return }
         profiles[context] = nil
     }
 
     /// How long an answer is waited for: Prometheus' own `timeout` and a
     /// few seconds more (a test's shorter).
-    var deadline: Duration = KubePromQL.deadline
+    package var deadline: Duration = KubePromQL.deadline
 
     /// The query and its answer read, given up past `deadline` (the query
     /// cancelled, said as Prometheus' own timeout is).
-    nonisolated static func fetch(_ transport: any KubePrometheusTransport, _ path: String, deadline: Duration) async throws
+    package nonisolated static func fetch(_ transport: any KubePrometheusTransport, _ path: String, deadline: Duration) async throws
         -> KubePrometheusReader.Answer
     {
         try await withThrowingTaskGroup(of: KubePrometheusReader.Answer?.self) { group in
@@ -1237,16 +1237,16 @@ final class KubePrometheusMonitor: ObservableObject {
 
     /// The tests' moment between a merge and its keeping: what may change
     /// meanwhile (another range, the caches dropped) changed there.
-    var afterMerge: (@MainActor (KubeChartCache.Key) async -> Void)?
+    package var afterMerge: (@MainActor (KubeChartCache.Key) async -> Void)?
 
     /// How often an answer is merged again over one kept meanwhile.
     private static let mergeAttempts = 3
 
     /// How many answers were merged into the caches (where each merge ran
     /// is `KubeChartCache.mergeThreads`'), for the tests.
-    private(set) var merges = 0
+    package private(set) var merges = 0
     /// How many times the metrics proxy was closed, for the tests.
-    private(set) var proxyCloses = 0
+    package private(set) var proxyCloses = 0
 
     // MARK: Sizing
 
@@ -1355,7 +1355,7 @@ final class KubePrometheusMonitor: ObservableObject {
     // MARK: An agent's
 
     /// What `agentShares` found.
-    enum AgentShares: Equatable {
+    package enum AgentShares: Equatable {
         /// The context's Prometheus isn't opted in: nothing asked.
         case off
         case unavailable(String)
@@ -1365,15 +1365,15 @@ final class KubePrometheusMonitor: ObservableObject {
     /// Where an agent's call reads a context's Prometheus: its Service, the
     /// way there (the metrics proxy in a background slot), the context's
     /// queue's key and what that Prometheus holds.
-    struct AgentRead {
-        let service: KubePrometheusService
-        let transport: any KubePrometheusTransport
+    package struct AgentRead {
+        package let service: KubePrometheusService
+        package let transport: any KubePrometheusTransport
         fileprivate let key: ProfileKey
-        let profile: KubePromProfile
+        package let profile: KubePromProfile
     }
 
     /// What `agentPrepare` found.
-    enum AgentPrepared {
+    package enum AgentPrepared {
         /// The context's Prometheus isn't opted in: nothing asked.
         case off
         case unavailable(String)
@@ -1381,7 +1381,7 @@ final class KubePrometheusMonitor: ObservableObject {
     }
 
     /// Which cluster, as which user, a context is (`Situation.cluster`).
-    nonisolated static func cluster(of context: KubeContext) -> String {
+    package nonisolated static func cluster(of context: KubeContext) -> String {
         [context.server ?? "", context.cluster, context.user].joined(separator: "\n")
     }
 
@@ -1395,7 +1395,7 @@ final class KubePrometheusMonitor: ObservableObject {
     /// background slot, and the context's queue as an agent: below the
     /// page, at most two of its places. Kept: where Prometheus is and its
     /// profile, as the page's are. A failure here never stops the page's reading.
-    func agentPrepare(
+    package func agentPrepare(
         _ context: KubeContext, client: KubeClient, transport: (KubePrometheusService) -> (any KubePrometheusTransport)?
     ) async -> AgentPrepared {
         let use = KubePrometheusUse.of(context.settings)
@@ -1449,7 +1449,7 @@ final class KubePrometheusMonitor: ObservableObject {
     /// kube-state-metrics query (`KubePodShares.query`) for each of
     /// `namespaces` (at most `KubeScope.watchCap`), once, for the call,
     /// read as `agentPrepare` says. The answer is the caller's.
-    func agentShares(
+    package func agentShares(
         _ context: KubeContext, namespaces: [String], client: KubeClient, transport: (KubePrometheusService) -> (any KubePrometheusTransport)?
     ) async -> AgentShares {
         let read: AgentRead
@@ -1486,7 +1486,7 @@ final class KubePrometheusMonitor: ObservableObject {
     /// stops the context (a credential, a `services/proxy` 403), times out
     /// or is told to wait (`Retry-After`) ends the read, said — the rest
     /// would wait as long; another failure is said and the rest asked.
-    func agentTab(_ request: KubeTabRequest, _ read: AgentRead, context: String) async -> KubeTabReading {
+    package func agentTab(_ request: KubeTabRequest, _ read: AgentRead, context: String) async -> KubeTabReading {
         var reading = KubeTabReading(request: request)
         reading.service = read.service
         var profile = read.profile
@@ -1541,19 +1541,19 @@ final class KubePrometheusMonitor: ObservableObject {
 
     /// One of the Overview's charts (the cluster's, a claim's) asked for an
     /// agent, as the page asks it (`read`), its answer the caller's.
-    func agentChart(_ chart: KubeChart, range: KubeChartRange, _ read: AgentRead, context: String) async -> KubeChartReading {
+    package func agentChart(_ chart: KubeChart, range: KubeChartRange, _ read: AgentRead, context: String) async -> KubeChartReading {
         await self.read(chart, range: range, read.transport, service: read.service, context: context, agent: read)
     }
 
     /// R1 asked for an agent (`k8s_metrics`' `sizing`), as a press asks it,
     /// once, its answer the caller's: nothing kept as the page's.
-    func agentSizing(_ request: KubeSizingRequest, _ read: AgentRead) async -> KubeSizingReading {
+    package func agentSizing(_ request: KubeSizingRequest, _ read: AgentRead) async -> KubeSizingReading {
         await readSizing(request, read.transport, service: read.service, context: request.context, agent: read)
     }
 
     /// What `context`'s Prometheus was last found to hold, by the page or
     /// an agent's read: nil, never probed (nothing is asked for it).
-    func agentProfile(for context: String) -> KubePromProfile? { profiles[context]?.profile }
+    package func agentProfile(for context: String) -> KubePromProfile? { profiles[context]?.profile }
 
     /// One query of an agent's, through the context's queue as an agent's.
     private func agentAsk(
@@ -1568,19 +1568,19 @@ final class KubePrometheusMonitor: ObservableObject {
     // MARK: What the page says
 
     /// The Pods list's shares as last read, where `context` is the one shown (an agent's `k8s_top`).
-    func shares(for context: String) -> KubeShareReading? {
+    package func shares(for context: String) -> KubeShareReading? {
         situation?.context == context ? shares : nil
     }
 
     /// A pod's share cell, its usage given: the namespace's answer, or a dash and why.
-    func shareCell(_ column: KubePodShares.Column, _ id: KubeRowID, used: KubeUsage, sampled: Int? = nil) -> KubeUsageCell {
+    package func shareCell(_ column: KubePodShares.Column, _ id: KubeRowID, used: KubeUsage, sampled: Int? = nil) -> KubeUsageCell {
         if case .unavailable(let why) = state { return .dash(why) }
         guard let shares else { return .waiting }
         return shares.cell(column, id, used: used, sampled: sampled)
     }
 
     /// A claim's column cell: its usage, or a dash and why.
-    func volumeCell(_ id: KubeRowID) -> KubeUsageCell {
+    package func volumeCell(_ id: KubeRowID) -> KubeUsageCell {
         if case .unavailable(let why) = state { return .dash(why) }
         guard let reading = volumes else { return .waiting }
         if let usage = reading.usage[id] {

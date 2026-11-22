@@ -14,51 +14,51 @@ import Foundation
 /// the read there too, and the whole read stops at `deadline`. Another user's isn't read (the
 /// kernel refuses). Remote addresses are shown on the page only, as the
 /// rows show them (9.4). Pure but for the kernel it is given.
-enum ProcessOpenFiles {
+package enum ProcessOpenFiles {
     /// One descriptor.
-    struct Entry: Hashable, Sendable {
-        enum Kind: String, Hashable, Sendable {
+    package struct Entry: Hashable, Sendable {
+        package enum Kind: String, Hashable, Sendable {
             case file, socket, pipe, kqueue, other
         }
 
-        let descriptor: Int32
-        let kind: Kind
+        package let descriptor: Int32
+        package let kind: Kind
         /// A file's path, a socket's ends, a kind's name.
-        let text: String
+        package let text: String
     }
 
     /// What one read found.
-    struct Listing: Hashable, Sendable {
-        let identity: ActivityProcessID
-        var entries: [Entry] = []
+    package struct Listing: Hashable, Sendable {
+        package let identity: ActivityProcessID
+        package var entries: [Entry] = []
         /// Descriptors it holds, read or not.
-        var descriptors = 0
+        package var descriptors = 0
         /// Why the read stopped short: a file not answering, its time up,
         /// the cap; nil when whole.
-        var cut: String?
+        package var cut: String?
         /// It ended, or its pid is another's now: nothing shown.
-        var gone = false
+        package var gone = false
     }
 
-    static let limit = 1_000
-    static let slowRead: UInt64 = 200_000_000
-    static let deadline: UInt64 = 2_000_000_000
+    package static let limit = 1_000
+    package static let slowRead: UInt64 = 200_000_000
+    package static let deadline: UInt64 = 2_000_000_000
     /// How long a path's worker is waited for before it is left behind.
-    static let pathWait: DispatchTimeInterval = .milliseconds(200)
+    package static let pathWait: DispatchTimeInterval = .milliseconds(200)
 
     /// The path reads left behind, still not back: while any is, no path is
     /// read (a new one would hang on the same share).
-    final class Stuck: @unchecked Sendable {
+    package final class Stuck: @unchecked Sendable {
         private let lock = NSLock()
         private var waiting = 0
 
-        var isStuck: Bool { lock.withLock { waiting > 0 } }
+        package var isStuck: Bool { lock.withLock { waiting > 0 } }
         fileprivate func left() { lock.withLock { waiting += 1 } }
         fileprivate func returned() { lock.withLock { waiting -= 1 } }
     }
 
     /// The app's.
-    static let stuck = Stuck()
+    package static let stuck = Stuck()
 
     /// One path's answer, handed from its worker.
     private final class Answer: @unchecked Sendable {
@@ -117,7 +117,7 @@ enum ProcessOpenFiles {
     }
 
     /// `identity`'s open files, read through `kernel` now.
-    static func read(
+    package static func read(
         _ identity: ActivityProcessID, kernel: some ActivityKernel, wait: DispatchTimeInterval = pathWait, stuck: Stuck = stuck
     ) -> Listing {
         var listing = Listing(identity: identity)
@@ -180,7 +180,7 @@ enum ProcessOpenFiles {
     /// A socket as the Files tab says it: "TCP 127.0.0.1:3000, listening",
     /// "UDP *:5353", "TCP 127.0.0.1:52000 → 127.0.0.1:3000, established",
     /// "unix /tmp/acme.sock, listening".
-    static func describe(_ record: SocketRecord) -> String {
+    package static func describe(_ record: SocketRecord) -> String {
         func end(_ address: ActivityAddress?, _ port: UInt16) -> String {
             guard let address, !address.isWildcard else { return "*:\(port)" }
             if case .v6 = address { return "[\(address.description)]:\(port)" }
@@ -204,10 +204,10 @@ enum ProcessOpenFiles {
     }
 
     /// The Files tab's reads: one at a time, on a queue of their own.
-    static let queue = DispatchQueue(label: "Overterm.activity.files", qos: .userInitiated)
+    package static let queue = DispatchQueue(label: "Overterm.activity.files", qos: .userInitiated)
 
     /// `identity`'s files, read on `queue`, `done` called there.
-    static func read(_ identity: ActivityProcessID, kernel: any ActivityKernel, done: @escaping @Sendable (Listing) -> Void) {
+    package static func read(_ identity: ActivityProcessID, kernel: any ActivityKernel, done: @escaping @Sendable (Listing) -> Void) {
         let block: @Sendable () -> Void = { done(read(identity, kernel: kernel)) }
         queue.async(execute: block)
     }
@@ -215,7 +215,7 @@ enum ProcessOpenFiles {
 
 extension TCPState {
     /// As lsof says it, in words.
-    var words: String {
+    package var words: String {
         switch self {
         case .closed: "closed"
         case .listen: "listening"

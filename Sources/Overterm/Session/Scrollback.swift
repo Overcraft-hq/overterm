@@ -9,17 +9,17 @@ import Foundation
 /// text, deletes it, and execs the real shell as a login shell. The
 /// integration's environment (ZDOTDIR for zsh, XDG_DATA_DIRS for fish)
 /// passes through, so cwd reporting and prompt marks keep working.
-enum Scrollback {
+package enum Scrollback {
     /// How much of a pane comes back.
-    static let maxLines = 2000
+    package static let maxLines = 2000
     /// The environment variable naming the file a launcher prints.
-    static let fileVariable = "OVERTERM_RESTORE"
+    package static let fileVariable = "OVERTERM_RESTORE"
 
-    static var directory: URL { AppEnvironment.supportDirectory.appendingPathComponent("scrollback", isDirectory: true) }
+    package static var directory: URL { AppEnvironment.supportDirectory.appendingPathComponent("scrollback", isDirectory: true) }
 
     /// Trailing blank rows dropped, the last `lines` kept (Settings ▸
     /// General decides how many; `maxLines` is its default).
-    static func trimmed(_ text: String, keeping count: Int = maxLines) -> String {
+    package static func trimmed(_ text: String, keeping count: Int = maxLines) -> String {
         var lines = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " \r")) == "" ? "" : $0 }
         while lines.last == "" { lines.removeLast() }
         return lines.suffix(count).joined(separator: "\n")
@@ -27,7 +27,7 @@ enum Scrollback {
 
     /// Writes a pane's text; the file's name (for the session), or nil
     /// when there was nothing worth keeping.
-    static func save(_ text: String, keeping count: Int = maxLines) -> String? {
+    package static func save(_ text: String, keeping count: Int = maxLines) -> String? {
         let text = trimmed(text, keeping: count)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         let name = UUID().uuidString + ".txt"
@@ -41,7 +41,7 @@ enum Scrollback {
     }
 
     /// A saved file, if it is still there.
-    static func file(named name: String?) -> URL? {
+    package static func file(named name: String?) -> URL? {
         guard let name, !name.contains("/") else { return nil }
         let url = directory.appendingPathComponent(name)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
@@ -49,7 +49,7 @@ enum Scrollback {
 
     /// Deletes saved files no session refers to (a launcher deletes what it
     /// printed; this catches the rest).
-    static func removeAll(except keep: Set<String>) {
+    package static func removeAll(except keep: Set<String>) {
         let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         for name in files where !keep.contains(name) {
             try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
@@ -59,10 +59,10 @@ enum Scrollback {
     /// Shells whose Ghostty integration comes through the environment, so a
     /// launcher in front of them keeps it. (bash's is set up through its
     /// arguments, and Apple's bash 3.2 has none.)
-    static let supportedShells: Set<String> = ["zsh", "fish"]
+    package static let supportedShells: Set<String> = ["zsh", "fish"]
 
     /// The user's login shell, as login(1) would start it.
-    static var loginShell: String {
+    package static var loginShell: String {
         if let entry = getpwuid(getuid()), let shell = entry.pointee.pw_shell { return String(cString: shell) }
         return ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
     }
@@ -71,7 +71,7 @@ enum Scrollback {
     /// can't stand in front of. Lives in the temporary directory: Ghostty
     /// runs the command through `bash -c`, and "Application Support" has a
     /// space in it.
-    static func launcher(for shell: String = loginShell) -> String? {
+    package static func launcher(for shell: String = loginShell) -> String? {
         let name = (shell as NSString).lastPathComponent
         guard supportedShells.contains(name) else { return nil }
         let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("overterm-restore", isDirectory: true)
@@ -85,7 +85,7 @@ enum Scrollback {
         return url.path.contains(" ") ? nil : url.path
     }
 
-    static func launcherScript(shell: String) -> String {
+    package static func launcherScript(shell: String) -> String {
         let name = (shell as NSString).lastPathComponent
         return """
             #!/bin/bash

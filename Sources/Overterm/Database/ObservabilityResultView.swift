@@ -5,18 +5,18 @@ import SwiftUI
 /// What a Prometheus, Loki or Tempo query gave back, under its console:
 /// series as a graph (and a table), log lines as a log, traces as a list,
 /// a trace as its waterfall.
-struct ObservabilityResultView: View {
-    let run: SQLConsole.Run
-    let payload: ObservabilityPayload
-    let result: QueryResult
-    @ObservedObject var console: SQLConsole
-    @ObservedObject var theme: ChromeTheme
+package struct ObservabilityResultView: View {
+    package let run: SQLConsole.Run
+    package let payload: ObservabilityPayload
+    package let result: QueryResult
+    @ObservedObject package var console: SQLConsole
+    @ObservedObject package var theme: ChromeTheme
     /// A trace's id: opened in the console that can (Tempo's), as a new tab.
-    let openTrace: (String) -> Void
+    package let openTrace: (String) -> Void
     /// The grid, for the table and the export.
-    let grid: () -> AnyView
+    package let grid: () -> AnyView
 
-    var body: some View {
+    package var body: some View {
         switch payload {
         case .series(let series): SeriesView(series: series, theme: theme, grid: grid)
         case .logs(let lines): LogsView(lines: lines, run: run, console: console, theme: theme, openTrace: openTrace)
@@ -26,14 +26,14 @@ struct ObservabilityResultView: View {
     }
 
     /// Colours for series and services, in order.
-    static let palette: [Color] = [
+    package static let palette: [Color] = [
         Color(red: 0.36, green: 0.62, blue: 0.98), Color(red: 0.98, green: 0.62, blue: 0.24), Color(red: 0.36, green: 0.78, blue: 0.50),
         Color(red: 0.92, green: 0.40, blue: 0.48), Color(red: 0.66, green: 0.50, blue: 0.96), Color(red: 0.25, green: 0.76, blue: 0.80),
         Color(red: 0.90, green: 0.78, blue: 0.30), Color(red: 0.94, green: 0.50, blue: 0.80), Color(red: 0.55, green: 0.70, blue: 0.35),
         Color(red: 0.60, green: 0.60, blue: 0.66),
     ]
 
-    static func color(_ index: Int) -> Color { palette[index % palette.count] }
+    package static func color(_ index: Int) -> Color { palette[index % palette.count] }
 }
 
 // MARK: Series

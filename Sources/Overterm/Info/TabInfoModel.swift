@@ -7,74 +7,74 @@ import Foundation
 /// their terminals, their listening ports, read with every other reader's
 /// in one tick, no scan of its own and no lsof.
 @MainActor
-final class TabInfoModel: ObservableObject {
-    struct Location: Equatable {
-        var directory: String
+package final class TabInfoModel: ObservableObject {
+    package struct Location: Equatable {
+        package var directory: String
         /// The enclosing checkout, when in one.
-        var checkout: URL?
-        var branch: String?
+        package var checkout: URL?
+        package var branch: String?
         /// The main worktree's folder name, when this is a linked worktree.
-        var worktreeOf: String?
-        var changedFiles: Int?
+        package var worktreeOf: String?
+        package var changedFiles: Int?
     }
 
     /// One pane's processes: a split tab shows one group per pane (6.12).
-    struct PaneGroup: Identifiable, Equatable {
+    package struct PaneGroup: Identifiable, Equatable {
         /// The pane's tag.
-        let id: String
+        package let id: String
         /// What the group is called in a split tab: the command the pane
         /// runs (`CommandLedger.running`), else its title — masked as a
         /// command, since a title is one (9.3).
-        let label: String
+        package let label: String
         /// Its tree under the `login`: the shell, what runs under it.
-        let processes: [ProcessNode]
+        package let processes: [ProcessNode]
         /// What carries the pane's tag outside its tree, with what it
         /// started: what left its terminal (nohup, disown, reparented to
         /// launchd). A place for display — a tag reaches past the pane.
-        let leftTerminal: [ProcessNode]
+        package let leftTerminal: [ProcessNode]
     }
 
     /// One row of Running, flattened for the list.
-    struct Row: Identifiable, Equatable {
-        enum Kind: Equatable {
+    package struct Row: Identifiable, Equatable {
+        package enum Kind: Equatable {
             /// A split tab's pane, by its label.
             case pane(String)
             /// A process: the shell is its group's dimmed root.
             case process(ProcessNode, depth: Int, isShell: Bool, leftTerminal: Bool)
         }
-        let id: String
-        let kind: Kind
+        package let id: String
+        package let kind: Kind
     }
 
-    @Published private(set) var panes: [PaneGroup] = []
+    @Published package private(set) var panes: [PaneGroup] = []
     /// A snapshot that read the tab has come: before it, nothing is known.
-    @Published private(set) var hasRead = false
+    @Published package private(set) var hasRead = false
     /// The terraform processes in the tab (analysis 8): what each does, where, for how long.
-    @Published private(set) var terraform: [TerraformInfoRow] = []
-    @Published private(set) var ports: [ListeningPort] = []
+    @Published package private(set) var terraform: [TerraformInfoRow] = []
+    @Published package private(set) var ports: [ListeningPort] = []
     /// The Claude Code session in this tab, if there is one.
-    @Published private(set) var claude: ClaudeUsage?
+    @Published package private(set) var claude: ClaudeUsage?
     /// True while a transcript is being read for the first time (a big one
     /// takes a moment).
-    @Published private(set) var readingClaude = false
+    @Published package private(set) var readingClaude = false
     /// Disk use of the tab's checkout (never measured outside one: a home
     /// directory is hundreds of GB of walking).
-    @Published private(set) var disk: DiskReport?
-    @Published private(set) var measuringDisk = false
+    @Published package private(set) var disk: DiskReport?
+    @Published package private(set) var measuringDisk = false
     private var diskCancellation: Cancellation?
     /// Recent measurements, so reopening the popover doesn't walk again.
     private static var diskCache: [URL: (at: Date, report: DiskReport)] = [:]
-    static let diskCacheLifetime: TimeInterval = 60
-    @Published private(set) var location: Location?
+    package static let diskCacheLifetime: TimeInterval = 60
+    @Published package private(set) var location: Location?
 
     /// How often its slice is read while it is open (6.12).
-    static let interval: Duration = .seconds(1)
+    package static let interval: Duration = .seconds(1)
     /// The most rows read in focus — their folders and start times for the
     /// tooltips (7.3: Tab Info's rows on screen).
-    static let focusLimit = 64
+    package static let focusLimit = 64
 
-    let tab: Tab
-    let monitor: ActivityMonitor
+    package let tab: Tab
+    package let monitor: ActivityMonitor
     private let claudeReader: ClaudeUsageReader
     /// What a pane runs now, by its ledger — a split tab's group labels.
     private let running: (TerminalView) -> String?
@@ -83,7 +83,7 @@ final class TabInfoModel: ObservableObject {
     private var focus: Set<ActivityProcessID> = []
     private var readingTerraform = false
 
-    init(
+    package init(
         tab: Tab, monitor: ActivityMonitor = .shared, claudeReader: ClaudeUsageReader, running: @escaping (TerminalView) -> String? = { _ in nil }
     ) {
         self.tab = tab
@@ -94,25 +94,25 @@ final class TabInfoModel: ObservableObject {
 
     /// Every pane's processes, then what left each pane's terminal: the
     /// whole tab's.
-    var processes: [ProcessNode] { panes.flatMap { $0.processes + $0.leftTerminal } }
+    package var processes: [ProcessNode] { panes.flatMap { $0.processes + $0.leftTerminal } }
 
     /// The tab's CPU: the processes that have a rate; nil while none has.
-    var totalCPU: Double? {
+    package var totalCPU: Double? {
         let rates = processes.compactMap(\.totalCPU)
         return rates.isEmpty ? nil : rates.reduce(0, +)
     }
     /// What Activity Monitor would call the tab's Memory: the footprints.
-    var totalFootprint: UInt64 { processes.reduce(0) { $0 + $1.totalFootprint } }
+    package var totalFootprint: UInt64 { processes.reduce(0) { $0 + $1.totalFootprint } }
     /// Its real memory, resident (RSS).
-    var totalMemory: UInt64 { processes.reduce(0) { $0 + $1.totalMemory } }
+    package var totalMemory: UInt64 { processes.reduce(0) { $0 + $1.totalMemory } }
 
     /// The rows of Running: in a split tab each pane under its label.
-    var rows: [Row] { Self.rows(panes, split: panes.count > 1) }
+    package var rows: [Row] { Self.rows(panes, split: panes.count > 1) }
 
     /// Reads now and then every second until `stop()`: the census's slice
     /// for its tab, the location and the disk once, the Claude session
     /// every 3 s.
-    func start() {
+    package func start() {
         loop?.cancel()
         // @Published emits before it changes, and a new subscriber gets the
         // current value at once: the emitted value.
@@ -136,7 +136,7 @@ final class TabInfoModel: ObservableObject {
         }
     }
 
-    func stop() {
+    package func stop() {
         loop?.cancel()
         loop = nil
         snapshots = nil
@@ -151,7 +151,7 @@ final class TabInfoModel: ObservableObject {
 
     /// A snapshot that read its tab: each pane's group, the ports, the
     /// terraform rows; its rows in focus from the next tick.
-    func take(_ snapshot: ActivitySnapshot) {
+    package func take(_ snapshot: ActivitySnapshot) {
         guard snapshot.covers(ActivityDemand(.light(tabs: [tab.id]))) else { return }
         let groups = tab.terminals.enumerated().map { index, pane -> PaneGroup in
             let label = ActivityText.title(running(pane) ?? pane.title ?? "Pane \(index + 1)")
@@ -178,7 +178,7 @@ final class TabInfoModel: ObservableObject {
     /// The rows of Running from the panes' groups (6.12): in a split tab
     /// each pane under its label; the shell its group's dimmed root, what
     /// it runs below it, what left its terminal under the pane, marked.
-    nonisolated static func rows(_ panes: [PaneGroup], split: Bool) -> [Row] {
+    package nonisolated static func rows(_ panes: [PaneGroup], split: Bool) -> [Row] {
         var rows: [Row] = []
         func walk(_ nodes: [ProcessNode], depth: Int, pane: String, root: Bool, left: Bool) {
             for node in nodes {
@@ -224,7 +224,7 @@ final class TabInfoModel: ObservableObject {
     }
 
     /// Walks the checkout in the background (cached for a minute).
-    func measureDisk() {
+    package func measureDisk() {
         guard let root = location?.checkout else { return }
         if let cached = Self.diskCache[root], Date().timeIntervalSince(cached.at) < Self.diskCacheLifetime {
             disk = cached.report
@@ -251,7 +251,7 @@ final class TabInfoModel: ObservableObject {
     /// Its processes' ports, as the latest snapshot that read the tab has
     /// them, then what its checkout's containers publish, then its
     /// Kubernetes forwards.
-    func refreshPorts() async {
+    package func refreshPorts() async {
         var found: [ListeningPort] = []
         if let snapshot = monitor.snapshot, snapshot.covers(ActivityDemand(.light(tabs: [tab.id]))) {
             found = ListeningPorts.of(tab.terminals.flatMap { snapshot.pane($0.processTag)?.placed ?? [] }, in: snapshot)
@@ -261,7 +261,7 @@ final class TabInfoModel: ObservableObject {
 
     /// Where Claude Code runs in this tab: a running `claude`'s directory,
     /// else — for a Claude tab — the tab's.
-    var claudeDirectory: String? {
+    package var claudeDirectory: String? {
         let running = processes.flatMap(\.flattened).first { node in
             node.name == "claude" || (node.maskedCommand.split(separator: " ").first.map { $0 == "claude" || $0.hasSuffix("/claude") } ?? false)
         }
@@ -269,7 +269,7 @@ final class TabInfoModel: ObservableObject {
         return tab.agent == .claude ? (tab.workingDirectory ?? tab.terminal.workingDirectory) : nil
     }
 
-    func refreshClaude() async {
+    package func refreshClaude() async {
         guard let directory = claudeDirectory else {
             claude = nil
             return
@@ -283,7 +283,7 @@ final class TabInfoModel: ObservableObject {
         readingClaude = false
     }
 
-    func refreshLocation() async {
+    package func refreshLocation() async {
         let directory = tab.workingDirectory ?? tab.terminal.workingDirectory ?? NSHomeDirectory()
         var location = Location(directory: directory)
         let root = FileTreeModel.treeRoot(for: directory)
@@ -307,5 +307,5 @@ final class TabInfoModel: ObservableObject {
 }
 
 extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
+    package var nilIfEmpty: String? { isEmpty ? nil : self }
 }

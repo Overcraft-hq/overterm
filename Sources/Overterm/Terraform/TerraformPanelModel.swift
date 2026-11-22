@@ -6,23 +6,23 @@ import Foundation
 /// (3.2) — a checkout read and found to have none is never walked. One for
 /// the app; in memory.
 @MainActor
-final class TerraformCheckouts {
-    static let shared = TerraformCheckouts()
+package final class TerraformCheckouts {
+    package static let shared = TerraformCheckouts()
     private var known: [String: Bool] = [:]
 
     private var settling: Set<String> = []
 
-    func record(_ checkout: URL, hasRoots: Bool) { known[checkout.standardizedFileURL.path] = hasRoots }
+    package func record(_ checkout: URL, hasRoots: Bool) { known[checkout.standardizedFileURL.path] = hasRoots }
 
     /// Unknown again: a Terraform file appeared or went (`TerraformPanelModel.filesChanged`).
-    func forget(_ checkout: URL) { known[checkout.standardizedFileURL.path] = nil }
+    package func forget(_ checkout: URL) { known[checkout.standardizedFileURL.path] = nil }
 
     /// Settles whether `checkout` has roots, once, by the panel's own
     /// listing (one bounded `git ls-files` of the patterns, 2.1's budget —
     /// no file read): the pane header walks only checkouts that do (3.2),
     /// whether or not the panel was ever shown. A folder that isn't a
     /// repository has none.
-    func settle(_ checkout: URL) {
+    package func settle(_ checkout: URL) {
         let key = checkout.standardizedFileURL.path
         guard known[key] == nil, settling.insert(key).inserted else { return }
         Task { [weak self] in
@@ -37,25 +37,25 @@ final class TerraformCheckouts {
 
     /// A listing with a configuration or Terragrunt's file somewhere: roots,
     /// as far as the header cares — the guess's finer kinds are the panel's.
-    nonisolated static func mayHaveRoots(_ listing: TerraformRootScan.Listing) -> Bool {
+    package nonisolated static func mayHaveRoots(_ listing: TerraformRootScan.Listing) -> Bool {
         listing.folders.values.contains { files in files.contains { TerraformRootGuess.isConfigFile($0) || $0.hasSuffix("terragrunt.hcl") } }
     }
 
     /// False only when it was read and has none; nil when never read.
-    func hasRoots(_ checkout: URL?) -> Bool? {
+    package func hasRoots(_ checkout: URL?) -> Bool? {
         guard let checkout else { return nil }
         return known[checkout.standardizedFileURL.path]
     }
 
     /// Every checkout read that has roots, for the switcher.
-    var checkoutsWithRoots: [String] { known.filter(\.value).map(\.key).sorted() }
+    package var checkoutsWithRoots: [String] { known.filter(\.value).map(\.key).sorted() }
 }
 
 /// Another worktree of the checkout's repository, as the window's
 /// `WorktreeModel` lists it — the panel never asks git a second time (CLAUDE.md).
-struct TerraformWorktree: Equatable, Sendable {
-    var url: URL
-    var name: String
+package struct TerraformWorktree: Equatable, Sendable {
+    package var url: URL
+    package var name: String
 
     /// The worktrees of `listed` other than `checkout`: none bare or
     /// prunable, at most 12; none at all when the list isn't this
@@ -65,7 +65,7 @@ struct TerraformWorktree: Equatable, Sendable {
     /// when the checkout is it. Every other worktree is someone's work in
     /// progress: "feat/x has no lock file" said nothing about this one, and
     /// a dozen of them listed on every card buried what mattered.
-    static func comparedWith(_ listed: [Worktree], of checkout: URL?) -> [TerraformWorktree] {
+    package static func comparedWith(_ listed: [Worktree], of checkout: URL?) -> [TerraformWorktree] {
         guard let checkout else { return [] }
         let me = checkout.resolvingSymlinksInPath().standardizedFileURL.path
         let paths = listed.map { $0.path.resolvingSymlinksInPath().standardizedFileURL.path }
@@ -73,7 +73,7 @@ struct TerraformWorktree: Equatable, Sendable {
         return zip(listed, paths).filter { $0.0.isMain && !$0.0.isBare && $0.1 != me }.map { TerraformWorktree(url: $0.0.path, name: $0.0.displayName) }
     }
 
-    static func others(_ listed: [Worktree], of checkout: URL?) -> [TerraformWorktree] {
+    package static func others(_ listed: [Worktree], of checkout: URL?) -> [TerraformWorktree] {
         guard let checkout else { return [] }
         let me = checkout.resolvingSymlinksInPath().standardizedFileURL.path
         let paths = listed.map { $0.path.resolvingSymlinksInPath().standardizedFileURL.path }
@@ -85,11 +85,11 @@ struct TerraformWorktree: Equatable, Sendable {
 
 /// A module of the checkout and the roots that call it (4.12, 2.1:
 /// "modules/network: 5 roots").
-struct TerraformModuleRow: Equatable, Sendable, Identifiable {
-    var path: String
-    var callers: [String]
-    var touched: Bool
-    var id: String { path }
+package struct TerraformModuleRow: Equatable, Sendable, Identifiable {
+    package var path: String
+    package var callers: [String]
+    package var touched: Bool
+    package var id: String { path }
 }
 
 /// The rail's Terraform panel (analysis 6.1, stage 1b): the selected tab's
@@ -99,13 +99,13 @@ struct TerraformModuleRow: Equatable, Sendable, Identifiable {
 /// change while hidden marks it stale, read when it shows. It starts no
 /// terraform but `version -json`, once per binary and root.
 @MainActor
-final class TerraformPanelModel: ObservableObject {
-    enum State: Equatable {
+package final class TerraformPanelModel: ObservableObject {
+    package enum State: Equatable {
         case idle, reading, read
         case notGit
     }
 
-    @Published var checkout: URL? {
+    @Published package var checkout: URL? {
         didSet {
             guard checkout?.standardizedFileURL != oldValue?.standardizedFileURL else { return }
             roots = []
@@ -118,31 +118,31 @@ final class TerraformPanelModel: ObservableObject {
         }
     }
 
-    @Published var panelVisible = false {
+    @Published package var panelVisible = false {
         didSet {
             guard panelVisible != oldValue else { return }
             readIfShown()
         }
     }
 
-    @Published private(set) var state = State.idle
-    @Published private(set) var roots: [TerraformRootCard] = []
-    @Published private(set) var modules: [TerraformModuleRow] = []
-    @Published private(set) var examples: [TerraformRootFolder] = []
-    @Published private(set) var terragrunt: [TerraformRootFolder] = []
-    @Published private(set) var capped = false
-    @Published private(set) var inherited = TerraformInheritedEnvironment([:])
+    @Published package private(set) var state = State.idle
+    @Published package private(set) var roots: [TerraformRootCard] = []
+    @Published package private(set) var modules: [TerraformModuleRow] = []
+    @Published package private(set) var examples: [TerraformRootFolder] = []
+    @Published package private(set) var terragrunt: [TerraformRootFolder] = []
+    @Published package private(set) var capped = false
+    @Published package private(set) var inherited = TerraformInheritedEnvironment([:])
     /// The root picked: its details and verbs show.
-    @Published var selectedPath: String?
+    @Published package var selectedPath: String?
     /// The checkout's branch and HEAD, as the diff has them: the chip's
     /// `feature-x @ 3f2a91c` (6.2) — shown, never a signal (5.1).
-    @Published var branchLabel: String?
+    @Published package var branchLabel: String?
     /// The repository's other worktrees, from the window's `WorktreeModel`.
-    private(set) var otherWorktrees: [TerraformWorktree] = []
+    package private(set) var otherWorktrees: [TerraformWorktree] = []
 
     /// The window's list changed: read again where shown — not when the
     /// checkout is about to change too (`read: false`), which reads anyway.
-    func setOtherWorktrees(_ worktrees: [TerraformWorktree], read: Bool = true) {
+    package func setOtherWorktrees(_ worktrees: [TerraformWorktree], read: Bool = true) {
         guard worktrees != otherWorktrees else { return }
         otherWorktrees = worktrees
         if read { refresh() }
@@ -153,19 +153,19 @@ final class TerraformPanelModel: ObservableObject {
 
     /// How many times the checkout was read: a scenario checks it doesn't
     /// move while the panel is hidden.
-    private(set) var reads = 0
+    package private(set) var reads = 0
     private var stale = true
     private var reading: Task<Void, Never>?
     private var pending: Task<Void, Never>?
     /// The diff's files, uncommitted and on the branch, relative to the checkout.
-    var changedFiles: [String] = [] {
+    package var changedFiles: [String] = [] {
         didSet {
             guard changedFiles != oldValue, panelVisible else { return }
             markTouched()
         }
     }
 
-    func readIfShown() {
+    package func readIfShown() {
         guard panelVisible, stale, checkout != nil else { return }
         read()
     }
@@ -174,7 +174,7 @@ final class TerraformPanelModel: ObservableObject {
     /// again shortly while shown, else when it next shows — only for a
     /// path that can change what the panel says (`isRelevant`): a `.swift`
     /// edit, `node_modules` or a build's output never redo the read.
-    func filesChanged(_ paths: [String]) {
+    package func filesChanged(_ paths: [String]) {
         guard let checkout else { return }
         // FSEvents says the real path (`/private/var/…`).
         let tops = [checkout.standardizedFileURL.path, FileTreeModel.realPath(checkout.standardizedFileURL)]
@@ -224,7 +224,7 @@ final class TerraformPanelModel: ObservableObject {
     /// only when `folderHasTerraform` finds a Terraform file in it now (a
     /// new root). Never `.git`, `node_modules`, `.terragrunt-cache`. Pure
     /// but for the closure.
-    nonisolated static func isRelevant(
+    package nonisolated static func isRelevant(
         _ path: String, listed: Set<String>, folderHasTerraform: (String) -> Bool = { _ in false }
     ) -> (relevant: Bool, terraform: Bool) {
         let relative = path.hasSuffix("/") ? String(path.dropLast()) : path
@@ -250,13 +250,13 @@ final class TerraformPanelModel: ObservableObject {
         return (false, false)
     }
 
-    func refresh() {
+    package func refresh() {
         stale = true
         readIfShown()
     }
 
     /// Read now, shown or not: a person asked (the switcher, ⌃⌘E).
-    func readNow() {
+    package func readNow() {
         guard checkout != nil else { return }
         read()
     }
@@ -329,8 +329,8 @@ final class TerraformPanelModel: ObservableObject {
     /// Versions asked, by binary and (where a version file decides) root.
     private nonisolated static let versionLock = NSLock()
     private nonisolated(unsafe) static var versionCache: [String: String] = [:]
-    nonisolated static func cachedVersion(_ key: String) -> String? { versionLock.withLock { versionCache[key] } }
-    nonisolated static func cacheVersion(_ key: String, _ value: String) { versionLock.withLock { versionCache[key] = value } }
+    package nonisolated static func cachedVersion(_ key: String) -> String? { versionLock.withLock { versionCache[key] } }
+    package nonisolated static func cacheVersion(_ key: String, _ value: String) { versionLock.withLock { versionCache[key] = value } }
 
     private func markTouched() {
         let callers = Dictionary(uniqueKeysWithValues: modules.map { ($0.path, $0.callers) })
@@ -345,23 +345,23 @@ final class TerraformPanelModel: ObservableObject {
         }
     }
 
-    nonisolated static func blocking<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+    package nonisolated static func blocking<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
         await withCheckedContinuation { (continuation: CheckedContinuation<T, Never>) in
             let job: @Sendable () -> Void = { continuation.resume(returning: work()) }
             DispatchQueue.global(qos: .userInitiated).async(execute: job)
         }
     }
 
-    struct Assembled: Sendable {
-        var roots: [TerraformRootCard] = []
-        var modules: [TerraformModuleRow] = []
-        var examples: [TerraformRootFolder] = []
-        var terragrunt: [TerraformRootFolder] = []
+    package struct Assembled: Sendable {
+        package var roots: [TerraformRootCard] = []
+        package var modules: [TerraformModuleRow] = []
+        package var examples: [TerraformRootFolder] = []
+        package var terragrunt: [TerraformRootFolder] = []
     }
 
     /// Everything the panel shows, from the listing: blocking file reads,
     /// bounded (4.12). Pure but for the reads.
-    nonisolated static func assemble(
+    package nonisolated static func assemble(
         checkout: URL, listing: TerraformRootScan.Listing, worktrees: [TerraformWorktree], settings: TerraformClassSettings,
         identities: Set<TerraformStateIdentity>, awsProfile: String?, changed: [String]
     ) -> Assembled {

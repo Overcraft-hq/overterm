@@ -3,21 +3,21 @@ import SwiftUI
 
 /// ⌘K: one search over what you have run, your snippets, your tabs and
 /// worktrees, and the app's own actions.
-struct PaletteView: View {
-    @ObservedObject var model: PaletteModel
-    @ObservedObject var theme: ChromeTheme
+package struct PaletteView: View {
+    @ObservedObject package var model: PaletteModel
+    @ObservedObject package var theme: ChromeTheme
     /// (item, run) — the window closes the palette and performs it.
-    let onChoose: (PaletteItem, Bool) -> Void
-    let onDismiss: () -> Void
+    package let onChoose: (PaletteItem, Bool) -> Void
+    package let onDismiss: () -> Void
 
     /// One size, whatever is selected: the card grew to 860 pt for an item
     /// with a detail and shrank to 580 for one without, and stepping
     /// through the list or the tabs made it jump.
-    static let width: CGFloat = 780
-    static let bodyHeight: CGFloat = 380
-    static let detailWidth: CGFloat = 300
+    package static let width: CGFloat = 780
+    package static let bodyHeight: CGFloat = 380
+    package static let detailWidth: CGFloat = 300
 
-    var body: some View {
+    package var body: some View {
         ZStack(alignment: .top) {
             // Click outside to dismiss.
             Color.black.opacity(0.001)
@@ -126,7 +126,7 @@ struct PaletteView: View {
     }
 
     /// What Return does with it, in a word or three.
-    static func verb(_ item: PaletteItem) -> String {
+    package static func verb(_ item: PaletteItem) -> String {
         switch item.group {
         case .history, .snippet: "run in the terminal"
         case .action: "do it"
@@ -235,27 +235,27 @@ struct PaletteView: View {
 /// Escape need the field editor's commands (SwiftUI's onKeyPress is
 /// macOS 14+; Overterm targets 13).
 /// Shared by the palette and the ⌘F overlay.
-struct PaletteField: NSViewRepresentable {
-    @Binding var text: String
-    let onMove: (Int) -> Void
-    let onSubmit: (_ run: Bool) -> Void
-    let onCancel: () -> Void
+package struct PaletteField: NSViewRepresentable {
+    @Binding package var text: String
+    package let onMove: (Int) -> Void
+    package let onSubmit: (_ run: Bool) -> Void
+    package let onCancel: () -> Void
     /// ⇥ (1) and ⇧⇥ (-1), where a list has tabs to step through — or
     /// completes (the Kubernetes `:` bar); nil, ⇥ moves the keyboard on.
-    var onTab: ((Int) -> Void)? = nil
+    package var onTab: ((Int) -> Void)? = nil
     /// Whether ⇧⇥ goes to `onTab` too (-1). A field whose ⇥ only completes
     /// (the `:` bar) leaves ⇧⇥ to move the keyboard back, as usual.
-    var backtabSteps = true
-    var placeholder = "Search tabs, worktrees, snippets, actions…"
+    package var backtabSteps = true
+    package var placeholder = "Search tabs, worktrees, snippets, actions…"
     /// The chrome is dark whatever the system appearance; the field's default
     /// label colour would follow the system and go dark-on-dark.
-    var textColor: NSColor = .white
+    package var textColor: NSColor = .white
     /// Takes the keyboard once it is in a window (a picker over a page);
     /// the palette's is given it by the window.
-    var focusesOnAppear = false
-    var fontSize: CGFloat = 16
+    package var focusesOnAppear = false
+    package var fontSize: CGFloat = 16
 
-    func makeNSView(context: Context) -> NSTextField {
+    package func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
         field.isBordered = false
         field.drawsBackground = false
@@ -272,7 +272,7 @@ struct PaletteField: NSViewRepresentable {
 
     /// The keyboard to the field once it is in a window — SwiftUI puts it
     /// there after making it; tried again shortly.
-    static func focus(_ field: NSTextField, attempts: Int = 10) {
+    package static func focus(_ field: NSTextField, attempts: Int = 10) {
         DispatchQueue.main.asyncAfter(deadline: .now() + (attempts == 10 ? 0 : 0.05)) { [weak field] in
             guard let field else { return }
             if let window = field.window {
@@ -283,16 +283,16 @@ struct PaletteField: NSViewRepresentable {
         }
     }
 
-    func updateNSView(_ field: NSTextField, context: Context) {
+    package func updateNSView(_ field: NSTextField, context: Context) {
         if field.stringValue != text { field.stringValue = text }
         context.coordinator.parent = self
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+    package func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     /// What ⇥ or ⇧⇥ gives `onTab`: 1, -1, or nil to let the key move the
     /// keyboard as usual.
-    static func tabStep(_ selector: Selector, backtabSteps: Bool) -> Int? {
+    package static func tabStep(_ selector: Selector, backtabSteps: Bool) -> Int? {
         switch selector {
         case #selector(NSResponder.insertTab(_:)): 1
         case #selector(NSResponder.insertBacktab(_:)): backtabSteps ? -1 : nil
@@ -300,17 +300,17 @@ struct PaletteField: NSViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, NSTextFieldDelegate {
-        var parent: PaletteField
+    package final class Coordinator: NSObject, NSTextFieldDelegate {
+        package var parent: PaletteField
 
-        init(parent: PaletteField) { self.parent = parent }
+        package init(parent: PaletteField) { self.parent = parent }
 
-        func controlTextDidChange(_ notification: Notification) {
+        package func controlTextDidChange(_ notification: Notification) {
             guard let field = notification.object as? NSTextField else { return }
             parent.text = field.stringValue
         }
 
-        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        package func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             switch selector {
             case #selector(NSResponder.moveUp(_:)):
                 parent.onMove(-1)

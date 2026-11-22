@@ -7,34 +7,34 @@ import Foundation
 /// file's extended attributes (`com.apple.provenance`) as PAX headers, and
 /// the engine, failing to set them on Linux, answers 500 having written the
 /// file (the spike). A plain ustar entry has nothing for it to fail on.
-enum DockerTar {
-    struct Entry: Equatable, Sendable {
-        enum Kind: Equatable, Sendable { case file, directory, symlink, hardlink, other }
+package enum DockerTar {
+    package struct Entry: Equatable, Sendable {
+        package enum Kind: Equatable, Sendable { case file, directory, symlink, hardlink, other }
 
-        var name: String
-        var kind: Kind
-        var size: Int
-        var mode: Int
-        var modified: Date
-        var linkTarget: String
-        var data: Data
+        package var name: String
+        package var kind: Kind
+        package var size: Int
+        package var mode: Int
+        package var modified: Date
+        package var linkTarget: String
+        package var data: Data
         /// Its owner, as the header says it — the engine gives what it
         /// extracts this owner (`createTarFile`'s Lchown), so a file saved
         /// back keeps it.
-        var uid = 0
-        var gid = 0
+        package var uid = 0
+        package var gid = 0
     }
 
-    static let block = 512
+    package static let block = 512
     /// The largest file a ustar header holds: 11 octal digits, 8 GiB less
     /// one byte. A larger one would need GNU's base-256 or a PAX size.
-    static let maximumSize = 0o77777777777
+    package static let maximumSize = 0o77777777777
 
     /// One file, as a ustar archive: a header, the contents padded to a
     /// block, two empty blocks. A name past ustar's 100 bytes goes to its
     /// 155-byte prefix (a path's folders); longer than that, nil. Its
     /// owner is root unless said.
-    static func archive(name: String, data: Data, mode: Int = 0o644, modified: Date = Date(), uid: Int = 0, gid: Int = 0) -> Data? {
+    package static func archive(name: String, data: Data, mode: Int = 0o644, modified: Date = Date(), uid: Int = 0, gid: Int = 0) -> Data? {
         guard let header = header(name: name, size: data.count, mode: mode, modified: modified, type: "0", uid: uid, gid: gid) else { return nil }
         var out = header
         out.append(data)
@@ -45,7 +45,7 @@ enum DockerTar {
     /// One header block. Nil for a name ustar can't hold (`split`), or a
     /// size past `maximumSize`: the field would be cut, and the engine
     /// would read another size than the one sent.
-    static func header(
+    package static func header(
         name: String, size: Int, mode: Int, modified: Date, type: Character, uid: Int = 0, gid: Int = 0, link: String = ""
     ) -> Data? {
         guard let (prefix, short) = split(name) else { return nil }
@@ -55,7 +55,7 @@ enum DockerTar {
     /// A name as ustar holds it: up to 100 bytes as it is, else its
     /// folders in the 155-byte prefix and the rest in the name. Nil when
     /// neither fits.
-    static func split(_ name: String) -> (prefix: String, name: String)? {
+    package static func split(_ name: String) -> (prefix: String, name: String)? {
         guard name.utf8.count > 100 else { return ("", name) }
         guard
             let slash = name.utf8.indices.last(where: { name.utf8[$0] == UInt8(ascii: "/") && name.utf8.distance(from: $0, to: name.utf8.endIndex) <= 101 }),
@@ -94,7 +94,7 @@ enum DockerTar {
     }
 
     /// The zeros that take `size` bytes to the end of their block.
-    static func padding(_ size: Int) -> Int { (block - size % block) % block }
+    package static func padding(_ size: Int) -> Int { (block - size % block) % block }
 
     // MARK: Files and folders, sent as they are read
 
@@ -102,9 +102,9 @@ enum DockerTar {
     /// folder before what is in it. Made from the Mac's files
     /// (`Plan.make`), sent by `DockerTarWriter` — read as it is sent, so
     /// nothing is held in memory, and its length is known before.
-    struct Plan: Equatable, Sendable {
-        struct Item: Equatable, Sendable {
-            enum Kind: Equatable, Sendable {
+    package struct Plan: Equatable, Sendable {
+        package struct Item: Equatable, Sendable {
+            package enum Kind: Equatable, Sendable {
                 case file(URL)
                 case directory
                 /// A link, kept a link: its target as the Mac has it.
@@ -113,35 +113,35 @@ enum DockerTar {
 
             /// Its name in the archive, a folder's ending in `/`:
             /// `site/`, `site/css/app.css`.
-            var name: String
-            var kind: Kind
-            var size = 0
-            var mode = 0o644
-            var modified = Date(timeIntervalSince1970: 0)
+            package var name: String
+            package var kind: Kind
+            package var size = 0
+            package var mode = 0o644
+            package var modified = Date(timeIntervalSince1970: 0)
         }
 
-        var items: [Item] = []
+        package var items: [Item] = []
         /// What stays on the Mac, by its name in the archive: sockets,
         /// pipes, devices, and links that point above the drop.
-        var skipped: [String] = []
+        package var skipped: [String] = []
         /// The names dropped, as they land in the folder.
-        var tops: [String] = []
+        package var tops: [String] = []
 
         /// The archive's bytes, its two end blocks too: said before it is
         /// sent.
-        var length: Int { items.reduce(2 * DockerTar.block) { $0 + DockerTar.length(of: $1) } }
+        package var length: Int { items.reduce(2 * DockerTar.block) { $0 + DockerTar.length(of: $1) } }
 
         /// The files' bytes.
-        var bytes: Int {
+        package var bytes: Int {
             items.reduce(0) { total, item in
                 if case .file = item.kind { total + item.size } else { total }
             }
         }
 
         /// `site`, `index.html and site`, `3 items`.
-        var summary: String { Self.summary(tops) }
+        package var summary: String { Self.summary(tops) }
 
-        static func summary(_ names: [String]) -> String {
+        package static func summary(_ names: [String]) -> String {
             switch names.count {
             case 0: "nothing"
             case 1: names[0]
@@ -157,7 +157,7 @@ enum DockerTar {
     /// as `docker cp` without `-a` sends it. GNU's rather than PAX's: Go's
     /// archive/tar, which the engine extracts with, reads both, and so does
     /// `Reader`. Nil for a file past `maximumSize`.
-    static func headers(for item: Plan.Item) -> Data? {
+    package static func headers(for item: Plan.Item) -> Data? {
         let (type, size, mode, link): (Character, Int, Int, String) =
             switch item.kind {
             case .file: ("0", item.size, item.mode, "")
@@ -196,7 +196,7 @@ enum DockerTar {
     }
 
     /// An item's bytes in the archive: its headers, its data, padded.
-    static func length(of item: Plan.Item) -> Int {
+    package static func length(of item: Plan.Item) -> Int {
         func rounded(_ size: Int) -> Int { size + padding(size) }
         var length = block
         if split(item.name) == nil { length += block + rounded(item.name.utf8.count + 1) }
@@ -212,7 +212,7 @@ enum DockerTar {
     /// touching the disk, climbs above the archive's top: the engine
     /// refuses the whole archive for one (`invalid symlink`). An absolute
     /// target doesn't climb: the engine joins it under the folder.
-    static func escapes(_ target: String, from name: String) -> Bool {
+    package static func escapes(_ target: String, from name: String) -> Bool {
         guard !target.hasPrefix("/") else { return false }
         var depth = name.split(separator: "/").dropLast().filter { $0 != "." }.count
         for part in target.split(separator: "/") where part != "." {
@@ -232,19 +232,19 @@ enum DockerTar {
     /// header, a file's data, then its end. GNU's long names and links,
     /// PAX's `path`, `linkpath` and `size`, and base-256 numbers are read;
     /// xattrs and global headers passed over. It ends at a zero block.
-    struct Reader: Sendable {
-        struct Header: Equatable, Sendable {
-            var name: String
-            var kind: Entry.Kind
-            var size: Int
-            var mode: Int
-            var modified: Date
-            var linkTarget: String
-            var uid = 0
-            var gid = 0
+    package struct Reader: Sendable {
+        package struct Header: Equatable, Sendable {
+            package var name: String
+            package var kind: Entry.Kind
+            package var size: Int
+            package var mode: Int
+            package var modified: Date
+            package var linkTarget: String
+            package var uid = 0
+            package var gid = 0
         }
 
-        enum Event: Equatable, Sendable {
+        package enum Event: Equatable, Sendable {
             case entry(Header)
             /// A file's bytes, in order.
             case data(Data)
@@ -269,16 +269,16 @@ enum DockerTar {
         private var longLink: String?
         private var pax: [String: String] = [:]
 
-        init() {}
+        package init() {}
 
         /// The archive's end was read.
-        var finished: Bool {
+        package var finished: Bool {
             if case .done = state { true } else { false }
         }
 
         /// Nothing half read: the end, or between two entries — what an
         /// archive cut there without its end blocks leaves.
-        var atBoundary: Bool {
+        package var atBoundary: Bool {
             switch state {
             case .done: true
             case .header: carry.isEmpty && longName == nil && longLink == nil && pax.isEmpty
@@ -286,7 +286,7 @@ enum DockerTar {
             }
         }
 
-        mutating func feed(_ bytes: Data) -> [Event] {
+        package mutating func feed(_ bytes: Data) -> [Event] {
             let input = carry.isEmpty ? bytes : carry + bytes
             carry = Data()
             var at = input.startIndex
@@ -410,7 +410,7 @@ enum DockerTar {
 
     /// Every entry of an archive (a file's, or a folder's), read by
     /// `Reader`: one parser. An entry cut short keeps what came of it.
-    static func entries(of archive: Data) -> [Entry] {
+    package static func entries(of archive: Data) -> [Entry] {
         var reader = Reader()
         var entries: [Entry] = []
         var current: Entry?
@@ -432,7 +432,7 @@ enum DockerTar {
     }
 
     /// A PAX extended header's `<length> key=value\n` records, by key.
-    static func paxRecords(_ data: Data) -> [String: String] {
+    package static func paxRecords(_ data: Data) -> [String: String] {
         var records: [String: String] = [:]
         var at = data.startIndex
         while at < data.endIndex {
@@ -449,22 +449,22 @@ enum DockerTar {
         return records
     }
 
-    static func paxField(_ key: String, in data: Data) -> String? { paxRecords(data)[key] }
+    package static func paxField(_ key: String, in data: Data) -> String? { paxRecords(data)[key] }
 
     /// What `X-Docker-Container-Path-Stat` says about a path: base64 JSON.
-    struct PathStat: Codable, Equatable, Sendable {
-        var name: String
-        var size: Int
+    package struct PathStat: Codable, Equatable, Sendable {
+        package var name: String
+        package var size: Int
         /// Go's FileMode: the permission bits, and a high bit for a folder.
-        var mode: UInt32
-        var mtime: String
-        var linkTarget: String
+        package var mode: UInt32
+        package var mtime: String
+        package var linkTarget: String
 
-        var isDirectory: Bool { mode & (1 << 31) != 0 }
-        var isSymlink: Bool { mode & (1 << 27) != 0 }
+        package var isDirectory: Bool { mode & (1 << 31) != 0 }
+        package var isSymlink: Bool { mode & (1 << 27) != 0 }
     }
 
-    static func pathStat(_ header: String) -> PathStat? {
+    package static func pathStat(_ header: String) -> PathStat? {
         guard let data = Data(base64Encoded: header) else { return nil }
         return try? JSONDecoder().decode(PathStat.self, from: data)
     }

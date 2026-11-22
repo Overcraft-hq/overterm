@@ -7,11 +7,11 @@ import SwiftUI
 /// the statement at the caret — or the selection — as DataGrip's does.
 extension EditorViewController {
     /// The window's: a new connection asked for from a console's menu.
-    static var onNewDatabaseConnection: (() -> Void)?
+    package static var onNewDatabaseConnection: (() -> Void)?
     /// A trace's id from a log line: opened in a Tempo connection's console.
-    static var onOpenTrace: ((String) -> Void)?
+    package static var onOpenTrace: ((String) -> Void)?
 
-    func attachConsole(_ buffer: EditorBuffer) {
+    package func attachConsole(_ buffer: EditorBuffer) {
         guard Settings.shared.databaseEnabled, let url = buffer.url, url.pathExtension.lowercased() == "sql",
             buffer.document.unavailable == nil
         else { return }
@@ -30,7 +30,7 @@ extension EditorViewController {
     }
 
     /// The console of the buffer showing, or none.
-    func showConsole(_ buffer: EditorBuffer?) {
+    package func showConsole(_ buffer: EditorBuffer?) {
         guard isViewLoaded, let consoleHost else { return }
         consoleObserver = nil
         guard let console = buffer?.sqlConsole else {
@@ -63,7 +63,7 @@ extension EditorViewController {
     }
 
     /// The selection, else the statement at the caret — as ⌘↩ would run it.
-    func consoleStatementText() -> String? {
+    package func consoleStatementText() -> String? {
         guard let console = active?.sqlConsole else { return nil }
         let text = textView.string as NSString
         let selection = textView.selectedRange()
@@ -80,7 +80,7 @@ extension EditorViewController {
 
     /// A query from the history, on a line of its own at the caret's
     /// statement's end, the caret on it — ⌘↩ runs it.
-    func insertIntoConsole(_ sql: String) {
+    package func insertIntoConsole(_ sql: String) {
         guard let buffer = active else { return }
         let text = textView.string as NSString
         let caret = textView.selectedRange().location
@@ -105,7 +105,7 @@ extension EditorViewController {
 
     /// The selection, else the statement at the caret.
     @discardableResult
-    func runConsoleStatement() -> Bool {
+    package func runConsoleStatement() -> Bool {
         guard let buffer = active, let console = buffer.sqlConsole else { return false }
         let text = textView.string as NSString
         let selection = textView.selectedRange()
@@ -121,14 +121,14 @@ extension EditorViewController {
         return true
     }
 
-    func runConsoleAll() {
+    package func runConsoleAll() {
         guard let console = active?.sqlConsole else { return }
         let text = textView.string as NSString
         console.run((console.connection?.kind ?? .postgres).statements(in: text as String).map(text.substring))
     }
 
     /// DROP, TRUNCATE, an UPDATE or DELETE with no WHERE: asked first.
-    func confirmDestructive(_ sql: String, why: String) async -> Bool {
+    package func confirmDestructive(_ sql: String, why: String) async -> Bool {
         guard let window = view.window else { return false }
         let alert = NSAlert()
         alert.messageText = "Run this statement?"
@@ -168,7 +168,7 @@ extension EditorViewController {
     /// the caret is writing; a schema not read yet is read, and the list
     /// comes back with it. False when there is nothing to offer.
     @discardableResult
-    func updateSQLCompletion() -> Bool {
+    package func updateSQLCompletion() -> Bool {
         guard let buffer = active, let console = buffer.sqlConsole, let session = console.session, session.isOpen,
             textView.selectedRanges.count == 1, textView.selectedRange().length == 0, let window = view.window
         else { return false }
@@ -301,7 +301,7 @@ extension EditorViewController {
 extension EditorViewController {
     /// Rows edited in a result and not saved: Cancel, or Discard. They are
     /// never on disk — the database has the rows as they were.
-    static func askDiscardRowEdits(_ edits: Int, on window: NSWindow) async -> Bool {
+    package static func askDiscardRowEdits(_ edits: Int, on window: NSWindow) async -> Bool {
         let alert = NSAlert()
         alert.messageText = edits == 1 ? "Discard 1 row edit not saved?" : "Discard \(edits) row edits not saved?"
         alert.informativeText = "Edited rows are held here until you Save them; the database still has them as they were."

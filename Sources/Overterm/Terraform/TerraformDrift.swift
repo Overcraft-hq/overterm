@@ -10,17 +10,17 @@ import Foundation
 /// production). A check's age is always said, and once the state was
 /// written or its files changed since, its count is said as then, never
 /// as now. Pure.
-enum TerraformDrift {
+package enum TerraformDrift {
     /// The outputs a refresh-only plan changes.
-    static func changedOutputs(_ plan: TerraformPlan) -> [TerraformPlan.OutputChange] {
+    package static func changedOutputs(_ plan: TerraformPlan) -> [TerraformPlan.OutputChange] {
         plan.outputs.filter { !$0.actions.isEmpty && $0.actions != ["no-op"] }
     }
 
     /// What a check found: objects changed outside Terraform, and outputs.
-    static func count(_ plan: TerraformPlan) -> Int { plan.drift.count + changedOutputs(plan).count }
+    package static func count(_ plan: TerraformPlan) -> Int { plan.drift.count + changedOutputs(plan).count }
 
     /// "2 objects changed outside Terraform, 1 output", or "no drift".
-    static func said(_ plan: TerraformPlan) -> String {
+    package static func said(_ plan: TerraformPlan) -> String {
         let objects = plan.drift.count
         let outputs = changedOutputs(plan).count
         guard objects + outputs > 0 else { return "no drift" }
@@ -31,22 +31,22 @@ enum TerraformDrift {
     }
 
     /// Why a refresh-only plan has nothing to accept, or nil.
-    static func nothingToAccept(_ plan: TerraformPlan, mode: TerraformPlanMode) -> String? {
+    package static func nothingToAccept(_ plan: TerraformPlan, mode: TerraformPlanMode) -> String? {
         guard mode.isRefreshOnly, !plan.errored, !plan.applyable else { return nil }
         return "No drift to accept: the state already matches what the providers read."
     }
 
     /// The root card's line about its last check.
-    struct Line: Equatable, Sendable {
-        var text: String
+    package struct Line: Equatable, Sendable {
+        package var text: String
         /// Drift found and current: said in the drift colour.
-        var drifted: Bool
+        package var drifted: Bool
         /// The state or the files moved since: what it found was then.
-        var stale: Bool
+        package var stale: Bool
     }
 
     /// The card's line: its age always; a stale check's count as then.
-    static func line(phase: TerraformPlanRun.Phase, plan: TerraformPlan?, age: String, stale: String?) -> Line {
+    package static func line(phase: TerraformPlanRun.Phase, plan: TerraformPlan?, age: String, stale: String?) -> Line {
         switch phase {
         case .preparing, .waiting, .running:
             return Line(text: "Checking drift…", drifted: false, stale: false)
@@ -72,7 +72,7 @@ enum TerraformDrift {
     /// plan proposes to change it back unless the code changes too — and,
     /// as on every apply sheet (5.4 item 9), what its code runs: the apply
     /// still configures and starts the providers with your credentials.
-    static func acceptSheet(
+    package static func acceptSheet(
         root: TerraformApplySheet.Root, plan: TerraformPlan, typed: Bool, versionMove: String?, risks: [String], profile: String?, region: String?
     ) -> TerraformApplySheet {
         let production = root.rootClass == .production
@@ -118,7 +118,7 @@ extension TerraformPlanRun {
     /// The card's and the slot's drift line at `now`: drawn on a clock
     /// (`TimelineView`), so its age moves and a check past 30 minutes is
     /// said stale even when nothing else redraws it.
-    func driftLine(_ registry: TerraformRunRegistry, now: Date = Date()) -> TerraformDrift.Line {
+    package func driftLine(_ registry: TerraformRunRegistry, now: Date = Date()) -> TerraformDrift.Line {
         TerraformDrift.line(phase: phase, plan: plan, age: age(now: now), stale: staleReason(registry, now: now, held: false))
     }
 }
@@ -126,5 +126,5 @@ extension TerraformPlanRun {
 extension TerraformPlanMode {
     /// The verb its apply is checked as (5.3): a refresh-only plan's
     /// writes the state alone.
-    var verb: TerraformVerb { isRefreshOnly ? .refreshOnlyApply : .apply }
+    package var verb: TerraformVerb { isRefreshOnly ? .refreshOnlyApply : .apply }
 }

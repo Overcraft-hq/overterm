@@ -7,24 +7,24 @@ import Foundation
 /// job's scrape, the retention — installed as fixtures matched by a
 /// fragment of each query (`setPrometheusMatrix`), never a real server.
 /// The charts' own queries still go to `FakePromQL` over the test's series.
-struct FakePromProfile: Sendable {
+package struct FakePromProfile: Sendable {
     /// Each metric and its series count.
-    var metrics: [String: Int]
+    package var metrics: [String: Int]
     /// cAdvisor's series by job and `metrics_path` (nil: the label isn't set).
-    var cadvisor: [(job: String, path: String?)]
+    package var cadvisor: [(job: String, path: String?)]
     /// kube-state-metrics' jobs.
-    var ksmJobs: [String]
+    package var ksmJobs: [String]
     /// cAdvisor's series carry `node`.
-    var nodeLabel: Bool
-    var scrape: TimeInterval
+    package var nodeLabel: Bool
+    package var scrape: TimeInterval
     /// Seconds since 1970 of the oldest sample, where Prometheus scrapes itself.
-    var retention: Double?
+    package var retention: Double?
     /// Every query answered as an agent answers it.
-    var agentMode = false
+    package var agentMode = false
     /// What the probe's DCGM query (5) finds: the labels its series carry
     /// (`exported_pod`, `pod`, `exporter` — a pod that is the exporter's own —,
     /// `pod_other` — a pod that isn't —, `Hostname`, `node`, `mig`); empty, no DCGM exporter.
-    var dcgm: [String] = []
+    package var dcgm: [String] = []
 
     private static let raw = [
         "container_cpu_usage_seconds_total": 9000, "container_memory_working_set_bytes": 9000, "container_cpu_cfs_throttled_periods_total": 6000,
@@ -49,7 +49,7 @@ struct FakePromProfile: Sendable {
     /// kube-prometheus-stack: the mixin's rules, a 30 s scrape, kubelet's
     /// cAdvisor scraped at two paths, two kube-state-metrics jobs, `node`
     /// on cAdvisor's series, Prometheus scraping itself.
-    static let kubePrometheusStack = FakePromProfile(
+    package static let kubePrometheusStack = FakePromProfile(
         metrics: raw.merging(ksm) { $1 }.merging(nodeExporter) { $1 }.merging(kubelet) { $1 }.merging(rules) { $1 }
             .merging(["prometheus_tsdb_lowest_timestamp_seconds": 1]) { $1 },
         cadvisor: [("kubelet", "/metrics/cadvisor"), ("kubelet", "/metrics/resource")], ksmJobs: ["kube-state-metrics", "kube-state-metrics-shard"],
@@ -57,13 +57,13 @@ struct FakePromProfile: Sendable {
 
     /// The prometheus chart: no rules, a minute's scrape, no `metrics_path`,
     /// `instance` as the node, node-exporter beside it.
-    static let prometheusChart = FakePromProfile(
+    package static let prometheusChart = FakePromProfile(
         metrics: raw.merging(ksm) { $1 }.merging(nodeExporter) { $1 }.merging(kubelet) { $1 }.merging(["prometheus_tsdb_lowest_timestamp_seconds": 1]) { $1 },
         cadvisor: [("kubernetes-nodes-cadvisor", nil)], ksmJobs: ["kubernetes-service-endpoints"], nodeLabel: false, scrape: 60,
         retention: Date().addingTimeInterval(-15 * 86400).timeIntervalSince1970)
 
     /// The prometheus chart without node-exporter, nor its own metrics.
-    static let noNodeExporter: FakePromProfile = {
+    package static let noNodeExporter: FakePromProfile = {
         var profile = prometheusChart
         for name in nodeExporter.keys { profile.metrics[name] = nil }
         profile.metrics["prometheus_tsdb_lowest_timestamp_seconds"] = nil
@@ -72,7 +72,7 @@ struct FakePromProfile: Sendable {
     }()
 
     /// kube-state-metrics 1.x's names.
-    static let ksm1x: FakePromProfile = {
+    package static let ksm1x: FakePromProfile = {
         var profile = noNodeExporter
         profile.metrics["kube_pod_container_resource_requests"] = nil
         profile.metrics[KubePromProfile.requestsCPUCores] = 4000
@@ -80,14 +80,14 @@ struct FakePromProfile: Sendable {
     }()
 
     /// containerd's kubelet: no per-container filesystem use.
-    static let containerdNoFS: FakePromProfile = {
+    package static let containerdNoFS: FakePromProfile = {
         var profile = noNodeExporter
         profile.metrics["container_fs_usage_bytes"] = nil
         return profile
     }()
 
     /// DCGM exporter's metrics (decision 12): the GPU operator's, without profiling.
-    static let dcgmMetrics = [
+    package static let dcgmMetrics = [
         KubePromProfile.dcgmUtilisation: 8, KubePromProfile.dcgmMemoryUsed: 8, KubePromProfile.dcgmMemoryFree: 8, KubePromProfile.dcgmPower: 8,
         KubePromProfile.dcgmTemperature: 8,
     ]
@@ -95,7 +95,7 @@ struct FakePromProfile: Sendable {
     /// kube-prometheus-stack beside NVIDIA's GPU operator: DCGM exporter
     /// scraped with `honor_labels` off (the pod's labels `exported_*`),
     /// `Hostname` its node.
-    static let gpuOperator: FakePromProfile = {
+    package static let gpuOperator: FakePromProfile = {
         var profile = kubePrometheusStack
         profile.metrics.merge(dcgmMetrics) { $1 }
         profile.dcgm = ["exported_pod", "pod", "exporter", "pod_other", "Hostname"]
@@ -105,19 +105,19 @@ struct FakePromProfile: Sendable {
     /// The same with no GPU allocated anywhere when probed: no
     /// `exported_pod` yet, every series' `pod` the exporter's own
     /// (`nvidia-dcgm-exporter-…`), never a GPU's holder.
-    static let gpuOperatorIdle: FakePromProfile = {
+    package static let gpuOperatorIdle: FakePromProfile = {
         var profile = gpuOperator
         profile.dcgm = ["pod", "exporter", "Hostname"]
         return profile
     }()
 
     /// Prometheus in agent mode: every query `unavailable with Prometheus Agent`.
-    static let agentMode = FakePromProfile(metrics: [:], cadvisor: [], ksmJobs: [], nodeLabel: false, scrape: 30, agentMode: true)
+    package static let agentMode = FakePromProfile(metrics: [:], cadvisor: [], ksmJobs: [], nodeLabel: false, scrape: 30, agentMode: true)
 }
 
 extension FakeKubeAPI {
     /// The fake Prometheus answers the probe as `profile` would.
-    func setPrometheusProfile(_ profile: FakePromProfile) {
+    package func setPrometheusProfile(_ profile: FakePromProfile) {
         // An agent answers nothing: one fixture for every query (an empty fragment matches all).
         guard !profile.agentMode else {
             setPrometheusMatrix("", failure: FakePromFixture.Failure(status: 503, errorType: "unavailable", error: "unavailable with Prometheus Agent"))

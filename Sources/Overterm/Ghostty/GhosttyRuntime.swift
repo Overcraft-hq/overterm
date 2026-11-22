@@ -9,12 +9,12 @@ import os
 /// us to call `ghostty_app_tick` on the main thread, where every other callback
 /// then runs.
 @MainActor
-final class GhosttyRuntime {
-    static let logger = Logger(subsystem: AppEnvironment.bundleIdentifier, category: "ghostty")
+package final class GhosttyRuntime {
+    package static let logger = Logger(subsystem: AppEnvironment.bundleIdentifier, category: "ghostty")
 
     /// Process-wide libghostty init. Must run before anything else touches the
     /// library, so main.swift calls it first.
-    nonisolated static func initialize() -> Bool {
+    package nonisolated static func initialize() -> Bool {
         useOurOwnResources()
         let ok = ghostty_init(UInt(CommandLine.argc), CommandLine.unsafeArgv) == GHOSTTY_SUCCESS
         initialized.withLock { $0 = ok }
@@ -45,9 +45,9 @@ final class GhosttyRuntime {
     /// want: real Tabs, no ptys.
     private nonisolated static let initialized = OSAllocatedUnfairLock(initialState: false)
 
-    static let shared = GhosttyRuntime()
+    package static let shared = GhosttyRuntime()
 
-    private(set) var app: ghostty_app_t?
+    package private(set) var app: ghostty_app_t?
     private var config: ghostty_config_t?
     /// The user's config without Settings' overrides: what a key is bound
     /// to before Keyboard Shortcuts changes it (KeyCombo defaults).
@@ -91,21 +91,21 @@ final class GhosttyRuntime {
     }
 
     /// Which way macOS is dressed, as libghostty counts it.
-    var colorScheme: ghostty_color_scheme_e {
+    package var colorScheme: ghostty_color_scheme_e {
         NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
     }
 
     /// Posted when it changes; each open surface takes the new one.
-    static let colorSchemeChanged = Notification.Name("ColorSchemeChanged")
+    package static let colorSchemeChanged = Notification.Name("ColorSchemeChanged")
 
     /// Posted after the config is re-read, for the surfaces already open.
-    static let configReloaded = Notification.Name("ConfigReloaded")
+    package static let configReloaded = Notification.Name("ConfigReloaded")
 
     /// Hands the config in force to one surface (`TerminalView`) — or, for
     /// a surface with a theme of its own (a group's, a folder's), the same
     /// config with that theme over it.
-    func updateConfig(of surface: ghostty_surface_t, theme: String? = nil) {
+    package func updateConfig(of surface: ghostty_surface_t, theme: String? = nil) {
         guard let config = theme.flatMap(themedConfig) ?? config else { return }
         ghostty_surface_update_config(surface, config)
     }
@@ -138,7 +138,7 @@ final class GhosttyRuntime {
     ///
     /// After the app is up, never during `ghostty_app_new`: the library is
     /// not ready for it there and the process dies without a word.
-    func setColorScheme() {
+    package func setColorScheme() {
         guard let app else { return }
         ghostty_app_set_color_scheme(app, colorScheme)
         NotificationCenter.default.post(name: Self.colorSchemeChanged, object: nil)
@@ -222,7 +222,7 @@ final class GhosttyRuntime {
 
     /// Re-reads the config (the user's and Settings' overrides) and hands it
     /// to every terminal: font, theme, padding and cursor change in place.
-    func reloadConfig() {
+    package func reloadConfig() {
         guard let app, let fresh = Self.makeConfig() else { return }
         ghostty_app_update_config(app, fresh)
         if let old = config { ghostty_config_free(old) }
@@ -242,14 +242,14 @@ final class GhosttyRuntime {
 
     /// What `action` is bound to without Settings' changes: Ghostty's
     /// default, or the user's Ghostty config's.
-    func defaultTrigger(for action: String) -> ghostty_input_trigger_s? {
+    package func defaultTrigger(for action: String) -> ghostty_input_trigger_s? {
         guard let baseConfig else { return nil }
         let trigger = ghostty_config_trigger(baseConfig, action, UInt(action.utf8.count))
         return trigger.tag == GHOSTTY_TRIGGER_UNICODE && trigger.key.unicode == 0 ? nil : trigger
     }
 
     /// Problems Ghostty found in the config it runs (Settings shows them).
-    var configDiagnostics: [String] {
+    package var configDiagnostics: [String] {
         guard let config else { return [] }
         return (0..<ghostty_config_diagnostics_count(config)).compactMap { i in
             ghostty_config_get_diagnostic(config, i).message.map { String(cString: $0) }
@@ -258,7 +258,7 @@ final class GhosttyRuntime {
 
     /// A number the config holds (e.g. "font-size"): what Settings shows as
     /// the current value when it overrides nothing.
-    func configNumber(_ key: String) -> Double? {
+    package func configNumber(_ key: String) -> Double? {
         guard let config else { return nil }
         var value: Float = 0
         guard ghostty_config_get(config, &value, key, UInt(key.utf8.count)) else { return nil }
@@ -267,15 +267,15 @@ final class GhosttyRuntime {
 
     /// The key the config binds to a Ghostty action ("new_split:right");
     /// Settings ▸ Keyboard Shortcuts lists them.
-    func trigger(for action: String) -> ghostty_input_trigger_s? {
+    package func trigger(for action: String) -> ghostty_input_trigger_s? {
         guard let config else { return nil }
         return ghostty_config_trigger(config, action, UInt(action.utf8.count))
     }
 
     /// The terminal theme's background and foreground, so the chrome around
     /// the terminal can match it.
-    var backgroundColor: NSColor { themeInForce?.background.nsColor ?? color("background") ?? .windowBackgroundColor }
-    var foregroundColor: NSColor { themeInForce?.foreground.nsColor ?? color("foreground") ?? .labelColor }
+    package var backgroundColor: NSColor { themeInForce?.background.nsColor ?? color("background") ?? .windowBackgroundColor }
+    package var foregroundColor: NSColor { themeInForce?.foreground.nsColor ?? color("foreground") ?? .labelColor }
 
     /// A single theme is resolved into the config and `color` reads it
     /// there. A pair (`theme = light:…,dark:…`) is not: libghostty resolves
@@ -290,7 +290,7 @@ final class GhosttyRuntime {
     }
 
     /// An ANSI colour of the theme in force (0–15: the 16 a theme names).
-    func paletteColor(_ index: Int) -> NSColor? {
+    package func paletteColor(_ index: Int) -> NSColor? {
         if let theme = themeInForce { return theme.ansi(index).nsColor }
         guard let config, (0..<256).contains(index) else { return nil }
         var palette = ghostty_config_palette_s()
@@ -308,7 +308,7 @@ final class GhosttyRuntime {
         return NSColor(srgbRed: CGFloat(c.r) / 255, green: CGFloat(c.g) / 255, blue: CGFloat(c.b) / 255, alpha: 1)
     }
 
-    func tick() {
+    package func tick() {
         guard let app else { return }
         ghostty_app_tick(app)
     }
@@ -534,7 +534,7 @@ final class GhosttyRuntime {
 
     // MARK: Clipboard
 
-    static func pasteboard(_ location: ghostty_clipboard_e) -> NSPasteboard? {
+    package static func pasteboard(_ location: ghostty_clipboard_e) -> NSPasteboard? {
         switch location {
         // An isolated run (AppEnvironment) has a clipboard of its own: the
         // E2E scenarios put text on it and must never touch the user's.
@@ -549,7 +549,7 @@ final class GhosttyRuntime {
     private static let isolatedClipboard = NSPasteboard(name: .init("\(AppEnvironment.bundleIdentifier).isolated.clipboard"))
 
     /// A confirmation's text: its text/plain contents.
-    nonisolated static func text(of confirm: ghostty_clipboard_confirm_s) -> String {
+    package nonisolated static func text(of confirm: ghostty_clipboard_confirm_s) -> String {
         guard let contents = confirm.contents else { return "" }
         for i in 0..<confirm.contents_len {
             let content = contents[i]
@@ -584,7 +584,7 @@ final class GhosttyRuntime {
 
     /// Completes a request with `text` as its one text/plain contents, and
     /// says text/plain is what there is when it asked for a listing.
-    static func complete(_ surface: ghostty_surface_t, text: String?, state: UnsafeMutableRawPointer?, confirmed: Bool, list: Bool = false) {
+    package static func complete(_ surface: ghostty_surface_t, text: String?, state: UnsafeMutableRawPointer?, confirmed: Bool, list: Bool = false) {
         "text/plain".withCString { mime in
             var available: [UnsafePointer<CChar>?] = list && text != nil ? [mime] : []
             let finish: (UnsafePointer<ghostty_clipboard_content_s>?, Int) -> Void = { contents, count in

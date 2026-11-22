@@ -3,7 +3,7 @@ import Foundation
 /// Google Cloud Storage through its own JSON API, signed in as BigQuery is:
 /// a service account's key, or whoever gcloud is on this Mac. (A GCS bucket
 /// with HMAC keys is S3 too: S3Client with the GCS provider.)
-actor GCSClient: StorageClient {
+package actor GCSClient: StorageClient {
     private let config: DatabaseConnection
     private let serviceAccount: String?
     private var token: (value: String, expires: Date)?
@@ -11,7 +11,7 @@ actor GCSClient: StorageClient {
     private let progress = UploadProgress()
     private lazy var uploads = URLSession(configuration: .ephemeral, delegate: progress, delegateQueue: nil)
 
-    init(_ connection: DatabaseConnection, serviceAccount: String?) {
+    package init(_ connection: DatabaseConnection, serviceAccount: String?) {
         config = connection
         self.serviceAccount = serviceAccount
     }
@@ -34,7 +34,7 @@ actor GCSClient: StorageClient {
     private static let api = "https://storage.googleapis.com/storage/v1"
 
     /// An object's name in a URL path: every `/` encoded too.
-    static func encode(_ key: String) -> String { S3Signer.encode(key) }
+    package static func encode(_ key: String) -> String { S3Signer.encode(key) }
 
     private func send(_ method: String, _ address: String, body: Data? = nil, headers: [String: String] = [:]) async throws -> (Data, HTTPURLResponse) {
         guard let url = URL(string: address) else { throw DatabaseError.failed("Not a valid bucket or name.") }
@@ -49,7 +49,7 @@ actor GCSClient: StorageClient {
         return (data, http)
     }
 
-    static func failure(_ data: Data, _ status: Int) -> DatabaseError {
+    package static func failure(_ data: Data, _ status: Int) -> DatabaseError {
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
         let message = (json?["error"] as? [String: Any])?["message"] as? String
         return DatabaseError.failed(message ?? "Google Cloud Storage answered \(status).")
@@ -64,7 +64,7 @@ actor GCSClient: StorageClient {
         return formatter.date(from: text) ?? ISO8601DateFormatter().date(from: text)
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         if !config.database.isEmpty {
             _ = try await list(bucket: config.database, prefix: "", after: nil)
         } else {
@@ -72,7 +72,7 @@ actor GCSClient: StorageClient {
         }
     }
 
-    func buckets() async throws -> [StorageBucket] {
+    package func buckets() async throws -> [StorageBucket] {
         let (data, _) = try await send("GET", "\(Self.api)/b?project=\(S3Signer.encode(config.project))&maxResults=1000")
         var buckets = (Self.json(data)["items"] as? [[String: Any]] ?? []).compactMap { item -> StorageBucket? in
             guard let name = item["name"] as? String else { return nil }
@@ -84,7 +84,7 @@ actor GCSClient: StorageClient {
         return buckets
     }
 
-    func createBucket(_ name: String) async throws {
+    package func createBucket(_ name: String) async throws {
         var body: [String: Any] = ["name": name]
         if !config.location.isEmpty { body["location"] = config.location }
         _ = try await send(
@@ -92,7 +92,7 @@ actor GCSClient: StorageClient {
             headers: ["Content-Type": "application/json"])
     }
 
-    func list(bucket: String, prefix: String, after token: String?) async throws -> StorageListing {
+    package func list(bucket: String, prefix: String, after token: String?) async throws -> StorageListing {
         var address = "\(Self.api)/b/\(Self.encode(bucket))/o?delimiter=%2F&maxResults=1000&prefix=\(S3Signer.encode(prefix))"
         if let token { address += "&pageToken=\(S3Signer.encode(token))" }
         let (data, _) = try await send("GET", address)
@@ -108,7 +108,7 @@ actor GCSClient: StorageClient {
         return listing
     }
 
-    func keys(bucket: String, prefix: String) async throws -> [String] {
+    package func keys(bucket: String, prefix: String) async throws -> [String] {
         var keys: [String] = []
         var token: String?
         repeat {
@@ -121,20 +121,20 @@ actor GCSClient: StorageClient {
         return keys
     }
 
-    func read(bucket: String, key: String, range: ClosedRange<Int64>?) async throws -> Data {
+    package func read(bucket: String, key: String, range: ClosedRange<Int64>?) async throws -> Data {
         var headers: [String: String] = [:]
         if let range { headers["Range"] = "bytes=\(range.lowerBound)-\(range.upperBound)" }
         return try await send("GET", "\(Self.api)/b/\(Self.encode(bucket))/o/\(Self.encode(key))?alt=media", headers: headers).0
     }
 
-    func head(bucket: String, key: String) async throws -> StorageMetadata {
+    package func head(bucket: String, key: String) async throws -> StorageMetadata {
         let json = Self.json(try await send("GET", "\(Self.api)/b/\(Self.encode(bucket))/o/\(Self.encode(key))").0)
         return StorageMetadata(
             size: Int64(json["size"] as? String ?? "") ?? 0, contentType: json["contentType"] as? String, modified: Self.date(json["updated"]),
             etag: json["etag"] as? String)
     }
 
-    func download(bucket: String, key: String, to destination: URL) async throws {
+    package func download(bucket: String, key: String, to destination: URL) async throws {
         guard let url = URL(string: "\(Self.api)/b/\(Self.encode(bucket))/o/\(Self.encode(key))?alt=media") else {
             throw DatabaseError.failed("Not a valid bucket or name.")
         }
@@ -148,7 +148,7 @@ actor GCSClient: StorageClient {
         try FileManager.default.moveItem(at: file, to: destination)
     }
 
-    func upload(bucket: String, key: String, file: URL, contentType: String?, progress report: @escaping @Sendable (Double) -> Void) async throws {
+    package func upload(bucket: String, key: String, file: URL, contentType: String?, progress report: @escaping @Sendable (Double) -> Void) async throws {
         guard
             let url = URL(
                 string: "https://storage.googleapis.com/upload/storage/v1/b/\(Self.encode(bucket))/o?uploadType=media&name=\(S3Signer.encode(key))")
@@ -163,13 +163,13 @@ actor GCSClient: StorageClient {
         }
     }
 
-    func put(bucket: String, key: String, data: Data, contentType: String?) async throws {
+    package func put(bucket: String, key: String, data: Data, contentType: String?) async throws {
         _ = try await send(
             "POST", "https://storage.googleapis.com/upload/storage/v1/b/\(Self.encode(bucket))/o?uploadType=media&name=\(S3Signer.encode(key))",
             body: data, headers: ["Content-Type": contentType ?? "application/octet-stream"])
     }
 
-    func delete(bucket: String, keys: [String]) async throws {
+    package func delete(bucket: String, keys: [String]) async throws {
         for key in keys {
             do {
                 _ = try await send("DELETE", "\(Self.api)/b/\(Self.encode(bucket))/o/\(Self.encode(key))")
@@ -180,12 +180,12 @@ actor GCSClient: StorageClient {
     }
 
     /// The Cloud console's page for it (signed URLs need the key's own signature).
-    func link(bucket: String, key: String, expires: TimeInterval) async throws -> URL? {
+    package func link(bucket: String, key: String, expires: TimeInterval) async throws -> URL? {
         URL(
             string:
                 "https://console.cloud.google.com/storage/browser/_details/\(Self.encode(bucket))/\(key.split(separator: "/").map { S3Signer.encode(String($0)) }.joined(separator: "/"))?project=\(S3Signer.encode(config.project))"
         )
     }
 
-    nonisolated func path(bucket: String, key: String) -> String { "gs://\(bucket)/\(key)" }
+    package nonisolated func path(bucket: String, key: String) -> String { "gs://\(bucket)/\(key)" }
 }

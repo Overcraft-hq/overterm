@@ -16,17 +16,17 @@ import Foundation
 /// `query_range` paths and nothing else (`KubePrometheusFlags`).
 
 /// A Prometheus server's Service, as the apiserver's service proxy reaches it.
-struct KubePrometheusService: Hashable, Sendable, CustomStringConvertible {
-    let namespace: String
-    let name: String
+package struct KubePrometheusService: Hashable, Sendable, CustomStringConvertible {
+    package let namespace: String
+    package let name: String
     /// The Service's port: a number, or its name.
-    let port: String
+    package let port: String
 
     /// Nil unless each part is what Kubernetes allows: a namespace and a
     /// Service are DNS labels (lowercase letters, digits, `-`; 63 at most),
     /// a port a number (1–65535) or an IANA name (15 at most, a letter in
     /// it) — so nothing in them can change the path they go in.
-    init?(namespace: String, name: String, port: String) {
+    package init?(namespace: String, name: String, port: String) {
         guard Self.isLabel(namespace), Self.isLabel(name), Self.isPort(port) else { return nil }
         self.namespace = namespace
         self.name = name
@@ -34,7 +34,7 @@ struct KubePrometheusService: Hashable, Sendable, CustomStringConvertible {
     }
 
     /// The entry's `prometheus`: `namespace/service:port` (`:port` left out, 80).
-    init?(setting: String) {
+    package init?(setting: String) {
         let text = setting.trimmingCharacters(in: .whitespaces)
         let parts = text.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count == 2 else { return nil }
@@ -43,37 +43,37 @@ struct KubePrometheusService: Hashable, Sendable, CustomStringConvertible {
         self.init(namespace: String(parts[0]), name: String(service[0]), port: service.count == 2 ? String(service[1]) : "80")
     }
 
-    var description: String { "\(namespace)/\(name):\(port)" }
+    package var description: String { "\(namespace)/\(name):\(port)" }
 
-    static func isLabel(_ text: String) -> Bool {
+    package static func isLabel(_ text: String) -> Bool {
         guard (1...63).contains(text.utf8.count), let first = text.unicodeScalars.first, let last = text.unicodeScalars.last else { return false }
         func alnum(_ c: Unicode.Scalar) -> Bool { ("a"..."z").contains(c) || ("0"..."9").contains(c) }
         return alnum(first) && alnum(last) && text.unicodeScalars.allSatisfy { alnum($0) || $0 == "-" }
     }
 
-    static func isPort(_ text: String) -> Bool {
+    package static func isPort(_ text: String) -> Bool {
         if !text.isEmpty, text.allSatisfy({ $0.isASCII && $0.isNumber }) { return Int(text).map { (1...65535).contains($0) } ?? false }
         return text.utf8.count <= 15 && isLabel(text) && text.contains { $0.isLetter }
     }
 
     /// The service proxy's root for this Service.
-    var proxyBase: String { "/api/v1/namespaces/\(namespace)/services/\(name):\(port)/proxy" }
-    var queryPath: String { proxyBase + "/api/v1/query" }
-    var rangePath: String { proxyBase + "/api/v1/query_range" }
+    package var proxyBase: String { "/api/v1/namespaces/\(namespace)/services/\(name):\(port)/proxy" }
+    package var queryPath: String { proxyBase + "/api/v1/query" }
+    package var rangePath: String { proxyBase + "/api/v1/query_range" }
 
     /// Whether `path` (its query string aside) is one of the two paths the
     /// metrics proxy lets through — what Overterm sends it is checked here
     /// before any socket too.
-    func allows(_ path: String) -> Bool {
+    package func allows(_ path: String) -> Bool {
         let bare = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? path
         return bare == queryPath || bare == rangePath
     }
 }
 
 /// A path the metrics proxy isn't for, refused before it reaches any socket.
-struct KubePrometheusRefused: Error, LocalizedError, Equatable {
-    var path: String
-    var errorDescription: String? { "Only the Prometheus Service's query and query_range paths go through its proxy." }
+package struct KubePrometheusRefused: Error, LocalizedError, Equatable {
+    package var path: String
+    package var errorDescription: String? { "Only the Prometheus Service's query and query_range paths go through its proxy." }
 }
 
 /// The second proxy's flags: only the Prometheus Service's two query
@@ -85,15 +85,15 @@ struct KubePrometheusRefused: Error, LocalizedError, Equatable {
 /// proxies refused as on every socket — not the Services' proxy, which
 /// this one is for: its `--accept-paths` narrows that to one Service's
 /// queries. Pure.
-enum KubePrometheusFlags {
-    static let rejectedPaths = [
+package enum KubePrometheusFlags {
+    package static let rejectedPaths = [
         #"^/api/.*/pods/.*/(exec|attach|portforward|proxy)"#,
         #"^/api/.*/nodes/.*/proxy"#,
         #"^/apis/subresources\.kubevirt\.io/"#,
     ]
 
     /// RE2's metacharacters, escaped (a name can't hold them; still).
-    static func escaped(_ text: String) -> String {
+    package static func escaped(_ text: String) -> String {
         var out = ""
         for character in text {
             if #"\.+*?()|[]{}^$"#.contains(character) { out.append("\\") }
@@ -102,11 +102,11 @@ enum KubePrometheusFlags {
         return out
     }
 
-    static func acceptedPaths(_ service: KubePrometheusService) -> String {
+    package static func acceptedPaths(_ service: KubePrometheusService) -> String {
         "^" + escaped(service.proxyBase) + "/api/v1/(query|query_range)$"
     }
 
-    static func arguments(context: String, socket: String, service: KubePrometheusService, cacheDirectory: String? = nil) -> [String] {
+    package static func arguments(context: String, socket: String, service: KubePrometheusService, cacheDirectory: String? = nil) -> [String] {
         var arguments = ["--context=\(context)"]
         if let cacheDirectory { arguments.append("--cache-dir=\(cacheDirectory)") }
         return arguments + [
@@ -121,7 +121,7 @@ enum KubePrometheusFlags {
     }
 
     /// The metrics proxy's socket beside the context's own: `<hash>-metrics.sock`.
-    static func socket(beside socket: String) throws -> String {
+    package static func socket(beside socket: String) throws -> String {
         let path = (socket.hasSuffix(".sock") ? String(socket.dropLast(5)) : socket) + "-metrics.sock"
         guard path.utf8.count <= KubeSocketFolder.maxPathBytes else {
             throw KubeProxyProblem.socket("The metrics socket's path would be \(path.utf8.count) bytes; a unix socket's is \(KubeSocketFolder.maxPathBytes) at most.")
@@ -131,7 +131,7 @@ enum KubePrometheusFlags {
 }
 
 /// Whether a context uses Prometheus, as its entry says. Pure.
-enum KubePrometheusUse: Equatable, Sendable {
+package enum KubePrometheusUse: Equatable, Sendable {
     /// Not opted in: no Prometheus is looked for.
     case off
     /// Looked for, Freelens's way.
@@ -141,7 +141,7 @@ enum KubePrometheusUse: Equatable, Sendable {
     /// The entry names one that isn't a namespace, Service and port.
     case invalid(String)
 
-    static func of(_ settings: KubeContextSettings) -> KubePrometheusUse {
+    package static func of(_ settings: KubeContextSettings) -> KubePrometheusUse {
         if settings.metrics == KubeMetricsSource.none || settings.metrics == .metricsServer { return .off }
         if let text = settings.prometheus {
             guard let service = KubePrometheusService(setting: text) else {
@@ -152,7 +152,7 @@ enum KubePrometheusUse: Equatable, Sendable {
         return settings.metrics == .prometheus || settings.metrics == .auto ? .detect : .off
     }
 
-    var isOn: Bool { self != .off }
+    package var isOn: Bool { self != .off }
 }
 
 /// Where Freelens finds a Prometheus, in its order. Pure.
@@ -160,10 +160,10 @@ enum KubePrometheusUse: Equatable, Sendable {
 /// The prometheus Helm chart labels its Service `app.kubernetes.io/*`
 /// since v15 (2022); before, `app=prometheus,component=server,heritage=Helm`
 /// — both are looked for, the current one first (metrics.md, 1.1).
-enum KubePrometheusProvider: String, CaseIterable, Sendable {
+package enum KubePrometheusProvider: String, CaseIterable, Sendable {
     case lens, operatorManaged, helm, helm14
 
-    var title: String {
+    package var title: String {
         switch self {
         case .lens: "Lens metrics (lens-metrics/prometheus)"
         case .helm, .helm14: "the prometheus Helm chart"
@@ -171,13 +171,13 @@ enum KubePrometheusProvider: String, CaseIterable, Sendable {
         }
     }
 
-    static let helmSelector = "app.kubernetes.io/name=prometheus,app.kubernetes.io/component=server,app.kubernetes.io/managed-by=Helm"
+    package static let helmSelector = "app.kubernetes.io/name=prometheus,app.kubernetes.io/component=server,app.kubernetes.io/managed-by=Helm"
     /// The chart before v15.
-    static let helm14Selector = "app=prometheus,component=server,heritage=Helm"
-    static let operatorSelector = "operated-prometheus=true"
+    package static let helm14Selector = "app=prometheus,component=server,heritage=Helm"
+    package static let operatorSelector = "operated-prometheus=true"
 
     /// The one GET that looks for it, through the context's own proxy.
-    var path: String {
+    package var path: String {
         switch self {
         case .lens: "/api/v1/namespaces/lens-metrics/services/prometheus"
         case .helm: KubePath.query("/api/v1/services", [("labelSelector", Self.helmSelector), ("limit", "20")])
@@ -189,7 +189,7 @@ enum KubePrometheusProvider: String, CaseIterable, Sendable {
     /// The Service an answer names: a Service (Lens's), or the first of a
     /// ServiceList by namespace and name; its first port's number — the
     /// operator's `web` first, Prometheus's own. Nil when there is none.
-    func service(in data: Data) -> KubePrometheusService? {
+    package func service(in data: Data) -> KubePrometheusService? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         let items = object["items"] as? [[String: Any]] ?? (object["kind"] as? String == "Service" ? [object] : [])
         let services: [KubePrometheusService] = items.compactMap { item in
@@ -206,7 +206,7 @@ enum KubePrometheusProvider: String, CaseIterable, Sendable {
 }
 
 /// How a context's Prometheus stands.
-enum KubePrometheusState: Equatable, Sendable {
+package enum KubePrometheusState: Equatable, Sendable {
     /// Not opted in (or nobody looks).
     case off
     case detecting
@@ -215,13 +215,13 @@ enum KubePrometheusState: Equatable, Sendable {
     /// Looked for and not found, or the entry's isn't usable: why.
     case unavailable(String)
 
-    var service: KubePrometheusService? {
+    package var service: KubePrometheusService? {
         if case .found(let service, _) = self { return service }
         return nil
     }
 
     /// What the page says of it.
-    var said: String? {
+    package var said: String? {
         switch self {
         case .off: nil
         case .detecting: "Looking for Prometheus…"
@@ -230,21 +230,21 @@ enum KubePrometheusState: Equatable, Sendable {
         }
     }
 
-    static let notFound =
+    package static let notFound =
         "No Prometheus found: none at lens-metrics/prometheus, and no Service labelled \(KubePrometheusProvider.operatorSelector), \(KubePrometheusProvider.helmSelector) or \(KubePrometheusProvider.helm14Selector). Name one in the context's prometheus setting (namespace/service:port). Overterm installs nothing."
 }
 
 /// A chart's time range (2.11): `query_range`'s start, end and step. Pure.
-enum KubeChartRange: String, CaseIterable, Sendable, Identifiable {
+package enum KubeChartRange: String, CaseIterable, Sendable, Identifiable {
     case hour = "1h"
     case sixHours = "6h"
     case day = "24h"
     case week = "7d"
 
-    var id: String { rawValue }
-    var title: String { rawValue }
+    package var id: String { rawValue }
+    package var title: String { rawValue }
 
-    var seconds: TimeInterval {
+    package var seconds: TimeInterval {
         switch self {
         case .hour: 3600
         case .sixHours: 6 * 3600
@@ -254,7 +254,7 @@ enum KubeChartRange: String, CaseIterable, Sendable, Identifiable {
     }
 
     /// 120 points (168 for a week, an hour each).
-    var step: TimeInterval {
+    package var step: TimeInterval {
         switch self {
         case .hour: 30
         case .sixHours: 180
@@ -264,22 +264,22 @@ enum KubeChartRange: String, CaseIterable, Sendable, Identifiable {
     }
 
     /// How often the chart is asked again: as often as a point is added, a minute at least.
-    var refresh: Duration { .seconds(Int(max(60, step))) }
+    package var refresh: Duration { .seconds(Int(max(60, step))) }
 
     /// A `rate()`'s window (`KubeRateWindow`), the scrape taken as a
     /// minute until a probe says otherwise.
-    var rateWindow: String { KubePromQL.duration(KubeRateWindow.of(step: step, scrape: KubeRateWindow.assumedScrape)) }
+    package var rateWindow: String { KubePromQL.duration(KubeRateWindow.of(step: step, scrape: KubeRateWindow.assumedScrape)) }
 
     /// Raw cAdvisor across the whole cluster is read up to this range: past
     /// it, about 10k series on a 2–5k-pod cluster are tens of millions of
     /// samples, against Prometheus' `query.max-samples` and its timeout.
-    static let rawClusterLimit: KubeChartRange = .sixHours
+    package static let rawClusterLimit: KubeChartRange = .sixHours
 
-    var allowsRawAcrossCluster: Bool { seconds <= Self.rawClusterLimit.seconds }
+    package var allowsRawAcrossCluster: Bool { seconds <= Self.rawClusterLimit.seconds }
 
     /// `[start, end]` ending at `now` rounded down to a step, so a chart
     /// asked again within a step asks the same.
-    func window(now: Date) -> (start: Date, end: Date) {
+    package func window(now: Date) -> (start: Date, end: Date) {
         let end = Date(timeIntervalSince1970: (now.timeIntervalSince1970 / step).rounded(.down) * step)
         return (end.addingTimeInterval(-seconds), end)
     }
@@ -289,12 +289,12 @@ enum KubeChartRange: String, CaseIterable, Sendable, Identifiable {
 /// four scrapes at least, rounded up to a whole minute — a window of one
 /// scrape holds 0 or 1 samples and `rate` answers nothing (Prometheus 3's
 /// left-open range selectors make it worse). Pure (metrics.md, 1.1).
-enum KubeRateWindow {
+package enum KubeRateWindow {
     /// The prometheus chart's default scrape interval: what is assumed until
     /// a probe reads the cAdvisor job's own.
-    static let assumedScrape: TimeInterval = 60
+    package static let assumedScrape: TimeInterval = 60
 
-    static func of(step: TimeInterval, scrape: TimeInterval) -> TimeInterval {
+    package static func of(step: TimeInterval, scrape: TimeInterval) -> TimeInterval {
         let window = max(step + scrape, 4 * scrape)
         return (window / 60).rounded(.up) * 60
     }
@@ -309,18 +309,18 @@ enum KubeRateWindow {
 /// what identifies them (two replicas, or two jobs, scrape the same), and
 /// requests and limits only of active pods (KSM keeps Succeeded and Failed
 /// ones until they are deleted). Pure (metrics.md, 1.1, 4.2).
-enum KubePromQL {
+package enum KubePromQL {
     /// A PromQL string literal's inside: `\` and `"` escaped (a name can't hold them; still).
-    static func literal(_ text: String) -> String {
+    package static func literal(_ text: String) -> String {
         text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"").replacingOccurrences(of: "\n", with: "\\n")
     }
 
-    static func matchers(_ pairs: [(String, String)]) -> String {
+    package static func matchers(_ pairs: [(String, String)]) -> String {
         pairs.map { "\($0.0)=\"\(literal($0.1))\"" }.joined(separator: ",")
     }
 
     /// `30s`, `3m`, `1h`.
-    static func duration(_ seconds: TimeInterval) -> String {
+    package static func duration(_ seconds: TimeInterval) -> String {
         let whole = Int(seconds)
         if whole % 3600 == 0 { return "\(whole / 3600)h" }
         if whole % 60 == 0 { return "\(whole / 60)m" }
@@ -330,7 +330,7 @@ enum KubePromQL {
     /// A regex matcher's value inside its string: RE2's metacharacters
     /// escaped — first, then `literal` — so a `.` in a name is `\\.` in
     /// the query, its backslash kept. Prometheus anchors it.
-    static func regexLiteral(_ text: String) -> String {
+    package static func regexLiteral(_ text: String) -> String {
         var out = ""
         for character in text {
             if #"\.+*?()|[]{}^$"#.contains(character) { out.append("\\") }
@@ -340,59 +340,59 @@ enum KubePromQL {
     }
 
     /// `namespace="shop"`, or `namespace=~"a|b"` for several.
-    static func namespaces(_ names: [String]) -> String {
+    package static func namespaces(_ names: [String]) -> String {
         if names.count == 1 { return matchers([("namespace", names[0])]) }
         return "namespace=~\"" + literal(names.map(regexLiteral).joined(separator: "|")) + "\""
     }
 
     /// cAdvisor's containers: not the pod's sandbox (`POD`, or none), not a
     /// cgroup without an image.
-    static let containers = #"container!="",image!="",container!="POD""#
+    package static let containers = #"container!="",image!="",container!="POD""#
 
     /// A container's gauge, one series a container — cAdvisor's path and
     /// job pinned where the profile found two.
-    static func containerGauge(_ metric: String, _ filter: String = "", profile: KubePromProfile = .unknown) -> String {
+    package static func containerGauge(_ metric: String, _ filter: String = "", profile: KubePromProfile = .unknown) -> String {
         "max by (namespace,pod,container)(\(metric){\(profile.cadvisorMatchers)\(filter.isEmpty ? "" : "," + filter)})"
     }
 
     /// A container's counter's rate, one series a container.
-    static func containerRate(_ metric: String, _ filter: String = "", window: String, profile: KubePromProfile = .unknown) -> String {
+    package static func containerRate(_ metric: String, _ filter: String = "", window: String, profile: KubePromProfile = .unknown) -> String {
         "sum by (namespace,pod,container)(rate(\(metric){\(profile.cadvisorMatchers)\(filter.isEmpty ? "" : "," + filter)}[\(window)]))"
     }
 
     /// The pods kube-state-metrics says are Pending or Running: 1 each.
-    static let activePods = active(profile: .unknown)
+    package static let activePods = active(profile: .unknown)
 
-    static func active(profile: KubePromProfile) -> String {
+    package static func active(profile: KubePromProfile) -> String {
         let job = profile.ksmMatcher
         return "max by (namespace,pod)(kube_pod_status_phase{\(job.isEmpty ? "" : job + ",")phase=~\"Pending|Running\"} == 1)"
     }
 
-    static func clusterCPU(window: String, profile: KubePromProfile = .unknown) -> String {
+    package static func clusterCPU(window: String, profile: KubePromProfile = .unknown) -> String {
         "sum(" + containerRate("container_cpu_usage_seconds_total", window: window, profile: profile) + ")"
     }
 
-    static let clusterMemory = clusterMemory(profile: .unknown)
+    package static let clusterMemory = clusterMemory(profile: .unknown)
 
-    static func clusterMemory(profile: KubePromProfile) -> String { "sum(" + containerGauge("container_memory_working_set_bytes", profile: profile) + ")" }
+    package static func clusterMemory(profile: KubePromProfile) -> String { "sum(" + containerGauge("container_memory_working_set_bytes", profile: profile) + ")" }
 
     /// The cluster's CPU and memory from the mixin's node rules: each
     /// node's utilisation times its CPUs (its memory).
-    static let ruleClusterCPU = "sum(\(KubePromProfile.nodeCPURule) * on(instance) \(KubePromProfile.nodeCPUCountRule))"
-    static let ruleClusterMemory = "sum(\(KubePromProfile.nodeMemoryRule) * on(instance) node_memory_MemTotal_bytes)"
+    package static let ruleClusterCPU = "sum(\(KubePromProfile.nodeCPURule) * on(instance) \(KubePromProfile.nodeCPUCountRule))"
+    package static let ruleClusterMemory = "sum(\(KubePromProfile.nodeMemoryRule) * on(instance) node_memory_MemTotal_bytes)"
 
     /// The cluster's CPU and memory from node-exporter: busy CPU time,
     /// memory not available.
-    static func nodeClusterCPU(window: String) -> String { "sum(rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\"}[\(window)]))" }
-    static let nodeClusterMemory = "sum(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)"
+    package static func nodeClusterCPU(window: String) -> String { "sum(rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\"}[\(window)]))" }
+    package static let nodeClusterMemory = "sum(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes)"
 
     /// kube-state-metrics' requests and limits of active pods, and the
     /// nodes' allocatable, summed — its 1.x names where that is what it
     /// is, the mixin's active-pod rules where it has them.
-    static func requests(_ resource: String, profile: KubePromProfile = .unknown) -> String { resourceSum("requests", resource, profile) }
-    static func limits(_ resource: String, profile: KubePromProfile = .unknown) -> String { resourceSum("limits", resource, profile) }
+    package static func requests(_ resource: String, profile: KubePromProfile = .unknown) -> String { resourceSum("requests", resource, profile) }
+    package static func limits(_ resource: String, profile: KubePromProfile = .unknown) -> String { resourceSum("limits", resource, profile) }
 
-    static func allocatable(_ resource: String, profile: KubePromProfile = .unknown) -> String {
+    package static func allocatable(_ resource: String, profile: KubePromProfile = .unknown) -> String {
         if profile.ksmMajor == 1 { return "sum(max by (node)(kube_node_status_allocatable_\(oldSuffix(resource)){\(profile.ksmMatcher)}))" }
         let job = profile.ksmMatcher
         return "sum(max by (node)(kube_node_status_allocatable{\(job.isEmpty ? "" : job + ",")resource=\"\(literal(resource))\"}))"
@@ -417,26 +417,26 @@ enum KubePromQL {
     }
 
     /// kubelet's volume stats, by claim — a namespace's, several, or every one's.
-    static func volumes(_ metric: String, namespaces names: [String]?) -> String {
+    package static func volumes(_ metric: String, namespaces names: [String]?) -> String {
         let filter = names.map { "{\(namespaces($0))}" } ?? ""
         return "sum by (namespace, persistentvolumeclaim) (\(metric)\(filter))"
     }
 
-    static func volume(_ metric: String, namespace: String, claim: String) -> String {
+    package static func volume(_ metric: String, namespace: String, claim: String) -> String {
         "sum(\(metric){\(matchers([("namespace", namespace), ("persistentvolumeclaim", claim)]))})"
     }
 
-    static let volumeUsed = "kubelet_volume_stats_used_bytes"
-    static let volumeCapacity = "kubelet_volume_stats_capacity_bytes"
-    static let volumeAvailable = "kubelet_volume_stats_available_bytes"
+    package static let volumeUsed = "kubelet_volume_stats_used_bytes"
+    package static let volumeCapacity = "kubelet_volume_stats_capacity_bytes"
+    package static let volumeAvailable = "kubelet_volume_stats_available_bytes"
 
     /// How long Prometheus may take over a query (`timeout`), and how long
     /// Overterm waits for its answer: a slow query otherwise holds its place
     /// until the HTTP timeout.
-    static let timeout: TimeInterval = 20
-    static let deadline: Duration = .seconds(25)
+    package static let timeout: TimeInterval = 20
+    package static let deadline: Duration = .seconds(25)
 
-    static func rangePath(_ service: KubePrometheusService, _ query: String, _ range: KubeChartRange, now: Date) -> String {
+    package static func rangePath(_ service: KubePrometheusService, _ query: String, _ range: KubeChartRange, now: Date) -> String {
         let (start, end) = range.window(now: now)
         return KubePath.query(
             service.rangePath,
@@ -444,28 +444,28 @@ enum KubePromQL {
     }
 
     /// A `query_range` over `start…end` at `step` (a tab's span, or what a refresh asks of it).
-    static func rangePath(_ service: KubePrometheusService, _ query: String, start: Date, end: Date, step: TimeInterval) -> String {
+    package static func rangePath(_ service: KubePrometheusService, _ query: String, start: Date, end: Date, step: TimeInterval) -> String {
         KubePath.query(
             service.rangePath,
             [("query", query), ("start", stamp(start)), ("end", stamp(end)), ("step", duration(step)), ("timeout", duration(timeout))])
     }
 
-    static func instantPath(_ service: KubePrometheusService, _ query: String) -> String {
+    package static func instantPath(_ service: KubePrometheusService, _ query: String) -> String {
         KubePath.query(service.queryPath, [("query", query), ("timeout", duration(timeout))])
     }
 
     /// An instant query evaluated at `time` (a tab's span's end: a window's, not now).
-    static func instantPath(_ service: KubePrometheusService, _ query: String, at time: Date) -> String {
+    package static func instantPath(_ service: KubePrometheusService, _ query: String, at time: Date) -> String {
         KubePath.query(service.queryPath, [("query", query), ("time", stamp(time)), ("timeout", duration(timeout))])
     }
 
-    static func stamp(_ date: Date) -> String { String(Int(date.timeIntervalSince1970)) }
+    package static func stamp(_ date: Date) -> String { String(Int(date.timeIntervalSince1970)) }
 }
 
 /// One series of an answer: its labels and points.
-struct KubeSeries: Equatable, Sendable {
-    var labels: [String: String]
-    var points: [KubeSeriesPoint]
+package struct KubeSeries: Equatable, Sendable {
+    package var labels: [String: String]
+    package var points: [KubeSeriesPoint]
 }
 
 /// Prometheus's HTTP API answers read: a matrix (`query_range`), a vector
@@ -473,19 +473,19 @@ struct KubeSeries: Equatable, Sendable {
 /// `+Inf`) left out; native-histogram series skipped and counted; its
 /// warnings and infos (Thanos' partial responses) kept as notes, said
 /// under the chart. Pure (metrics.md, 1.1).
-enum KubePrometheusReader {
-    static let maxSeries = 2000
-    static let maxPoints = 2000
+package enum KubePrometheusReader {
+    package static let maxSeries = 2000
+    package static let maxPoints = 2000
     /// An answer larger than this isn't parsed: a runaway query, or a
     /// Prometheus misbehaving — said, never handed whole to the parser.
-    static let maxBytes = 8 << 20
+    package static let maxBytes = 8 << 20
     /// The notes kept of an answer, each cut to this.
-    static let maxNotes = 3
-    static let maxNoteLength = 253
+    package static let maxNotes = 3
+    package static let maxNoteLength = 253
 
-    struct Failure: Error, LocalizedError, Equatable {
+    package struct Failure: Error, LocalizedError, Equatable {
         /// What failed, as the queue and the probe act on it.
-        enum Kind: Equatable, Sendable {
+        package enum Kind: Equatable, Sendable {
             /// Prometheus' `timeout`, or the deadline after it.
             case timeout
             /// `bad_data`: Prometheus refused the query.
@@ -507,31 +507,31 @@ enum KubePrometheusReader {
             case other
         }
 
-        var message: String
-        var kind: Kind = .other
+        package var message: String
+        package var kind: Kind = .other
         /// A busy answer's `Retry-After`, in seconds.
-        var retryAfter: TimeInterval?
-        var errorDescription: String? { message }
+        package var retryAfter: TimeInterval?
+        package var errorDescription: String? { message }
 
         /// It stops the context's queries: asking again changes nothing
         /// until its credentials do (a 403), or until the pause ends.
-        var stopsQueries: Bool { kind == .serviceProxyForbidden || kind == .busy }
+        package var stopsQueries: Bool { kind == .serviceProxyForbidden || kind == .busy }
     }
 
     /// One answer: its series, what Prometheus said beside them, its type.
-    struct Answer: Equatable, Sendable {
-        var series: [KubeSeries] = []
-        var notes: [String] = []
-        var resultType = ""
+    package struct Answer: Equatable, Sendable {
+        package var series: [KubeSeries] = []
+        package var notes: [String] = []
+        package var resultType = ""
     }
 
     /// Prometheus' own timeout (`timeout=20s`), or Overterm's deadline after it.
-    static let tookTooLong = KubeChartEmpty.timeout.sentence
+    package static let tookTooLong = KubeChartEmpty.timeout.sentence
 
-    static func read(_ data: Data, status: Int = 200) throws -> [KubeSeries] { try answer(data, status: status).series }
+    package static func read(_ data: Data, status: Int = 200) throws -> [KubeSeries] { try answer(data, status: status).series }
 
     /// An HTTP answer read: its body, its status, a busy one's `Retry-After`.
-    static func answer(_ response: HTTPResponse) throws -> Answer {
+    package static func answer(_ response: HTTPResponse) throws -> Answer {
         let after = retryAfter(response.header("Retry-After"))
         do {
             return try answer(response.body, status: response.status, retryAfter: after)
@@ -547,7 +547,7 @@ enum KubePrometheusReader {
     /// takes and the one the sentence says are the same. An HTTP-date, a
     /// fraction, `nan` or `1e300` are read as none (the server's text never
     /// reaches a conversion that can trap).
-    static func retryAfter(_ header: String?) -> TimeInterval? {
+    package static func retryAfter(_ header: String?) -> TimeInterval? {
         guard let text = header?.trimmingCharacters(in: .whitespaces), text.count <= 12, let seconds = Int(text), seconds >= 0 else { return nil }
         return TimeInterval(min(seconds, Int(KubePromQueue.maxPause)))
     }
@@ -555,7 +555,7 @@ enum KubePrometheusReader {
     /// `retryAfter`: the answer's, read by `retryAfter(_:)`. A 429 is busy;
     /// a 503 only with a `Retry-After` — without one it is a server down or
     /// not ready (the apiserver's "no endpoints available"), said as it is.
-    static func answer(_ data: Data, status: Int = 200, retryAfter: TimeInterval? = nil) throws -> Answer {
+    package static func answer(_ data: Data, status: Int = 200, retryAfter: TimeInterval? = nil) throws -> Answer {
         guard data.count <= maxBytes else {
             throw Failure(message: "Prometheus's answer is too large (\(data.count / 1_048_576) MB, at most \(maxBytes / 1_048_576) MB is read).")
         }
@@ -651,14 +651,14 @@ enum KubePrometheusReader {
     }
 
     /// The one series a `sum(…)` answers: its points; none, empty.
-    static func points(_ series: [KubeSeries]) -> [KubeSeriesPoint] { series.first?.points ?? [] }
+    package static func points(_ series: [KubeSeries]) -> [KubeSeriesPoint] { series.first?.points ?? [] }
 
     /// The one value an instant `sum(…)` answers.
-    static func value(_ series: [KubeSeries]) -> Double? { series.first?.points.last?.value }
+    package static func value(_ series: [KubeSeries]) -> Double? { series.first?.points.last?.value }
 
     /// A line's runs: broken where two points are more than two steps
     /// apart — a gap drawn as a gap, never bridged nor drawn as zero.
-    static func segments(_ points: [KubeSeriesPoint], step: TimeInterval) -> [[KubeSeriesPoint]] {
+    package static func segments(_ points: [KubeSeriesPoint], step: TimeInterval) -> [[KubeSeriesPoint]] {
         var runs: [[KubeSeriesPoint]] = []
         for point in points {
             if let last = runs.last?.last, point.time.timeIntervalSince(last.time) <= 2 * step {
@@ -672,7 +672,7 @@ enum KubePrometheusReader {
 }
 
 /// What a chart is of, and what it asks for.
-enum KubeChart: Hashable, Sendable {
+package enum KubeChart: Hashable, Sendable {
     /// The cluster's CPU and memory, its requests and limits against allocatable (the Overview: X1, X2).
     case cluster
     /// The Overview's CPU by namespace (X3): the top eight and the rest,
@@ -687,14 +687,14 @@ enum KubeChart: Hashable, Sendable {
 }
 
 /// One measure a chart reads.
-enum KubeChartMeasure: String, CaseIterable, Sendable {
+package enum KubeChartMeasure: String, CaseIterable, Sendable {
     case cpu, memory, volumeUsed, volumeCapacity, inodes
     case cpuRequests, cpuLimits, cpuAllocatable, cpuCapacity, memoryRequests, memoryLimits, memoryAllocatable, memoryCapacity
     /// A claim's available bytes now, and how fast it fills (bytes a second).
     case volumeAvailable, volumeFill
 
     /// The line a total belongs beside: a CPU total's CPU, a memory total's memory.
-    var resource: KubeChartMeasure {
+    package var resource: KubeChartMeasure {
         switch self {
         case .cpuRequests, .cpuLimits, .cpuAllocatable, .cpuCapacity: .cpu
         case .memoryRequests, .memoryLimits, .memoryAllocatable, .memoryCapacity: .memory
@@ -702,9 +702,9 @@ enum KubeChartMeasure: String, CaseIterable, Sendable {
         }
     }
 
-    var isBytes: Bool { ![.cpu, .cpuRequests, .cpuLimits, .cpuAllocatable, .cpuCapacity, .inodes].contains(self) }
+    package var isBytes: Bool { ![.cpu, .cpuRequests, .cpuLimits, .cpuAllocatable, .cpuCapacity, .inodes].contains(self) }
 
-    func format(_ value: Double) -> String {
+    package func format(_ value: Double) -> String {
         if self == .inodes { return KubeChartUnit.ratio.format(value) }
         if self == .volumeFill { return KubeChartUnit.bytesPerSecond.format(value) }
         return isBytes ? KubeVolumeFormat.bytes(value) : KubeMetricsFormat.cpu(value)
@@ -714,55 +714,55 @@ enum KubeChartMeasure: String, CaseIterable, Sendable {
 /// What a chart asks over a range: range queries (its lines), instant
 /// ones (its totals), and why a line isn't asked, when it isn't; the tier
 /// its lines read and what the profile has it say beside them.
-struct KubeChartQueries {
-    var series: [(KubeChartMeasure, String)]
-    var totals: [(KubeChartMeasure, String)]
+package struct KubeChartQueries {
+    package var series: [(KubeChartMeasure, String)]
+    package var totals: [(KubeChartMeasure, String)]
     /// Said in place of the lines it doesn't ask.
-    var refused: String?
-    var tier: KubePromTier?
+    package var refused: String?
+    package var tier: KubePromTier?
     /// Footnotes and sentences from the profile (kube-state-metrics old or missing).
-    var notes: [String] = []
+    package var notes: [String] = []
     /// Lines by a label's value (X3's namespaces, X4's nodes): range queries,
     /// and instant ones (X4's allocatable by node), kept by `partLabel`.
-    var parts: [(KubeChartMeasure, String)] = []
-    var partTotals: [(KubeChartMeasure, String)] = []
-    var partLabel = ""
+    package var parts: [(KubeChartMeasure, String)] = []
+    package var partTotals: [(KubeChartMeasure, String)] = []
+    package var partLabel = ""
     /// Its own step (X4: a sixtieth of the range), else the range's.
-    var step: TimeInterval?
+    package var step: TimeInterval?
     /// Each line asked with its own totals as one range union (metrics.md
     /// 4.2, 6.5: X1, X2 and X4 a query a measure), each arm tagged
     /// `overterm_s` by its measure, a total read off its last point.
-    var unioned = false
+    package var unioned = false
 
     /// The totals asked with `measure`'s line (`parts`: with its part's), none unless unioned.
-    func carried(by measure: KubeChartMeasure, parts: Bool = false) -> [(KubeChartMeasure, String)] {
+    package func carried(by measure: KubeChartMeasure, parts: Bool = false) -> [(KubeChartMeasure, String)] {
         guard unioned else { return [] }
         return (parts ? partTotals : totals).filter { $0.0.resource == measure && $0.0 != measure }
     }
 
     /// A line and the totals it carries, as one query; alone, the line as it is.
-    static func union(_ line: (KubeChartMeasure, String), carrying totals: [(KubeChartMeasure, String)]) -> String {
+    package static func union(_ line: (KubeChartMeasure, String), carrying totals: [(KubeChartMeasure, String)]) -> String {
         totals.isEmpty ? line.1 : union([line] + totals)
     }
 
     /// Arms tagged by their measures, as one query.
-    static func union(_ arms: [(KubeChartMeasure, String)]) -> String { KubeTabQueries.union(arms.map { ($0.1, $0.0.rawValue) }) }
+    package static func union(_ arms: [(KubeChartMeasure, String)]) -> String { KubeTabQueries.union(arms.map { ($0.1, $0.0.rawValue) }) }
 
     /// One arm's series of a union's answer: tagged `measure`; asked alone (nothing carried), all of them.
-    static func arm(_ series: [KubeSeries], _ measure: KubeChartMeasure, of totals: [(KubeChartMeasure, String)]) -> [KubeSeries] {
+    package static func arm(_ series: [KubeSeries], _ measure: KubeChartMeasure, of totals: [(KubeChartMeasure, String)]) -> [KubeSeries] {
         totals.isEmpty ? series : series.filter { $0.labels[KubePodShares.label] == measure.rawValue }
     }
 }
 
 extension KubeChart {
     /// Raw cAdvisor across the cluster past `KubeChartRange.rawClusterLimit`.
-    static func rawRefusal(_ range: KubeChartRange) -> String {
+    package static func rawRefusal(_ range: KubeChartRange) -> String {
         "Raw container metrics across the cluster are read over \(KubeChartRange.rawClusterLimit.title) at most: over \(range.title) they would be tens "
             + "of millions of samples, more than Prometheus answers in time. Pick \(KubeChartRange.rawClusterLimit.title) or less."
     }
 
     /// Its place among the charts on screen, top first: the queue's order.
-    var order: Int {
+    package var order: Int {
         switch self {
         case .cluster: 0
         case .namespaces, .nodes: 1
@@ -772,7 +772,7 @@ extension KubeChart {
     }
 
     /// Whether its raw form reads cAdvisor across the cluster (≤ 6h).
-    var readsAcrossCluster: Bool {
+    package var readsAcrossCluster: Bool {
         switch self {
         case .cluster, .namespaces, .nodes: true
         case .volume, .volumeInodes: false
@@ -781,7 +781,7 @@ extension KubeChart {
 
     /// Whether its queries depend on what the context's Prometheus holds
     /// (the probe runs for it): a volume's don't.
-    var needsProfile: Bool {
+    package var needsProfile: Bool {
         switch self {
         case .volume, .volumeInodes: false
         case .cluster, .namespaces, .nodes: true
@@ -791,7 +791,7 @@ extension KubeChart {
     /// The cluster's lines' tier over `range`: the mixin's node rules,
     /// node-exporter, else raw cAdvisor where `KubeQueryCost` allows it;
     /// nil, none can be read.
-    static func clusterTier(_ range: KubeChartRange, profile: KubePromProfile) -> KubePromTier? {
+    package static func clusterTier(_ range: KubeChartRange, profile: KubePromProfile) -> KubePromTier? {
         if profile.hasNodeRules { return .rules }
         if profile.hasNodeExporter { return .nodeExporter }
         return KubeQueryCost.raw(.cluster, span: range.seconds, profile: profile).isAllowed ? .raw : nil
@@ -799,7 +799,7 @@ extension KubeChart {
 
     /// The range queries (charts) and the instant ones (totals) this chart
     /// asks, read in the tier the profile allows, pinned as it says.
-    func queries(range: KubeChartRange, profile: KubePromProfile = .unknown) -> KubeChartQueries {
+    package func queries(range: KubeChartRange, profile: KubePromProfile = .unknown) -> KubeChartQueries {
         let window = KubePromQL.duration(KubeRateWindow.of(step: range.step, scrape: profile.scrapeInterval))
         switch self {
         case .cluster:
@@ -861,44 +861,44 @@ extension KubeChart {
 
 /// How a chart's reading stands: its series over the range, its totals,
 /// when it was read, why not.
-struct KubeChartReading: Equatable, Sendable {
-    var range: KubeChartRange
-    var series: [KubeChartMeasure: [KubeSeriesPoint]] = [:]
-    var totals: [KubeChartMeasure: Double] = [:]
-    var read: Date?
-    var problem: String?
+package struct KubeChartReading: Equatable, Sendable {
+    package var range: KubeChartRange
+    package var series: [KubeChartMeasure: [KubeSeriesPoint]] = [:]
+    package var totals: [KubeChartMeasure: Double] = [:]
+    package var read: Date?
+    package var problem: String?
     /// What Prometheus said beside its answers (warnings, infos), and the
     /// profile's footnotes, said under the chart.
-    var notes: [String] = []
+    package var notes: [String] = []
     /// Why its lines weren't asked over this range (`KubeChartQueries.refused`).
-    var refused: String?
+    package var refused: String?
     /// The form its lines were read in, and what the caption says of it.
-    var tier: KubePromTier?
-    var caption: String?
+    package var tier: KubePromTier?
+    package var caption: String?
     /// Prometheus keeps data from then: hatched before it.
-    var retention: Date?
+    package var retention: Date?
     /// Why nothing is asked at all (agent mode): said in the chart's place.
-    var unavailable: String?
+    package var unavailable: String?
     /// Lines by a label's value (X3's namespaces, X4's nodes), and instant
     /// answers by it (X4's allocatable).
-    var parts: [KubeChartMeasure: [String: [KubeSeriesPoint]]] = [:]
-    var partTotals: [KubeChartMeasure: [String: Double]] = [:]
+    package var parts: [KubeChartMeasure: [String: [KubeSeriesPoint]]] = [:]
+    package var partTotals: [KubeChartMeasure: [String: Double]] = [:]
     /// X3's top eight, as last ranked (`nil`, not yet), the readings since,
     /// and what the ranking says of itself ("ranked by the last 24h").
-    var ranked: [String]?
-    var rankedReads = 0
-    var rankingNote: String?
+    package var ranked: [String]?
+    package var rankedReads = 0
+    package var rankingNote: String?
     /// The window its lines were asked over (X4's own step).
-    var step: TimeInterval?
+    package var step: TimeInterval?
     /// What the last read sent, by the measure each answers (a union by
     /// its line's): what its charts' Copy PromQL gives (M9).
-    var queries: [KubeChartQuery] = []
+    package var queries: [KubeChartQuery] = []
     /// The query Prometheus (or the metrics proxy's filter) refused, as
     /// sent: Copy PromQL is offered beside the problem (metrics.md 4.7).
-    var reported: [KubeChartQuery] = []
+    package var reported: [KubeChartQuery] = []
 
     /// `used` against `of`, as the Overview says it: `1.2 of 4 cores · 30%`.
-    func share(_ used: KubeChartMeasure, of total: KubeChartMeasure) -> (used: Double, total: Double, percent: Int?)? {
+    package func share(_ used: KubeChartMeasure, of total: KubeChartMeasure) -> (used: Double, total: Double, percent: Int?)? {
         guard let value = totals[used] else { return nil }
         let whole = totals[total] ?? 0
         return (value, whole, KubeMetricsFormat.percent(value, of: whole > 0 ? whole : nil))
@@ -906,7 +906,7 @@ struct KubeChartReading: Equatable, Sendable {
 
     /// The caption's tail: the tier, the scrape the profile read —
     /// `recording rules (5 min averages) · scrape 30s`, `raw cAdvisor (≤ 6h)`.
-    static func caption(_ tier: KubePromTier?, chart: KubeChart, profile: KubePromProfile) -> String? {
+    package static func caption(_ tier: KubePromTier?, chart: KubeChart, profile: KubePromProfile) -> String? {
         guard let tier else { return nil }
         var text = tier.title
         if tier == .rules { text += " (5 min averages)" }
@@ -917,28 +917,28 @@ struct KubeChartReading: Equatable, Sendable {
 }
 
 /// A claim's volume usage, as the PVC list's column says it. Pure.
-struct KubeVolumeUsage: Equatable, Sendable {
-    var used: Double
-    var capacity: Double?
+package struct KubeVolumeUsage: Equatable, Sendable {
+    package var used: Double
+    package var capacity: Double?
 
     /// A capacity past 2^60 bytes is no size at all: EFS (and other
     /// elastic filesystems) report 8 EiB. Such a volume has no share and
     /// no forecast; only what it holds is said (metrics.md 2.9).
-    static let unboundedCapacity: Double = 1_152_921_504_606_846_976
+    package static let unboundedCapacity: Double = 1_152_921_504_606_846_976
 
-    static func isUnbounded(_ capacity: Double?) -> Bool { (capacity ?? 0) > unboundedCapacity }
+    package static func isUnbounded(_ capacity: Double?) -> Bool { (capacity ?? 0) > unboundedCapacity }
 
-    var unbounded: Bool { Self.isUnbounded(capacity) }
+    package var unbounded: Bool { Self.isUnbounded(capacity) }
 
-    var percent: Int? { unbounded ? nil : KubeMetricsFormat.percent(used, of: capacity) }
+    package var percent: Int? { unbounded ? nil : KubeMetricsFormat.percent(used, of: capacity) }
 
-    var text: String {
+    package var text: String {
         if unbounded { return KubeVolumeFormat.bytes(used) + " (no fixed size)" }
         return KubeVolumeFormat.bytes(used) + (capacity.map { " of \(KubeVolumeFormat.bytes($0))" } ?? "") + (percent.map { " (\($0)%)" } ?? "")
     }
 
     /// The two instant answers by claim, put together.
-    static func by(used: [KubeSeries], capacity: [KubeSeries]) -> [KubeRowID: KubeVolumeUsage] {
+    package static func by(used: [KubeSeries], capacity: [KubeSeries]) -> [KubeRowID: KubeVolumeUsage] {
         func id(_ labels: [String: String]) -> KubeRowID? {
             guard let claim = labels["persistentvolumeclaim"] else { return nil }
             return KubeRowID(namespace: labels["namespace"], name: claim)
@@ -955,8 +955,8 @@ struct KubeVolumeUsage: Equatable, Sendable {
 }
 
 /// Bytes as `kubectl` says capacities: Ki, Mi, Gi, Ti, one decimal under ten. Pure.
-enum KubeVolumeFormat {
-    static func bytes(_ value: Double) -> String {
+package enum KubeVolumeFormat {
+    package static func bytes(_ value: Double) -> String {
         let units: [(String, Double)] = [
             ("Ei", 1_152_921_504_606_846_976), ("Pi", 1_125_899_906_842_624), ("Ti", 1_099_511_627_776), ("Gi", 1_073_741_824), ("Mi", 1_048_576), ("Ki", 1024),
         ]

@@ -4,29 +4,29 @@ import Foundation
 /// (`*.bru`) in folders of their own (`folder.bru` naming and ordering
 /// one), `collection.bru` for what every request shares, and
 /// `environments/*.bru`.
-struct BrunoCollection: Equatable, Sendable {
-    let root: URL
-    let name: String
+package struct BrunoCollection: Equatable, Sendable {
+    package let root: URL
+    package let name: String
     /// Folder names `bruno.json` says to skip, beside the usual ones.
-    let ignore: Set<String>
+    package let ignore: Set<String>
     /// The collection itself as a folder: its requests and folders.
-    var tree: APIItem
-    var environments: [APIEnvironmentRef]
+    package var tree: APIItem
+    package var environments: [APIEnvironmentRef]
     /// `scripts.flow` in bruno.json: "sandwich" (the default) runs the
     /// collection's script around the folder's around the request's.
-    var scriptFlow: String
+    package var scriptFlow: String
 
-    static let configName = "bruno.json"
+    package static let configName = "bruno.json"
 
     /// My Requests: Overterm's own, not the checkout's (APIWorkspace).
-    var isPersonal = false
+    package var isPersonal = false
     /// bruno.json's `protobuf`: the .proto files gRPC requests read, and the
     /// folders their imports are found in — relative to the root.
-    var protoFiles: [String] = []
-    var protoImportPaths: [String] = []
+    package var protoFiles: [String] = []
+    package var protoImportPaths: [String] = []
 
     /// Reads the collection at `root`; nil when it has no bruno.json.
-    static func load(_ root: URL) -> BrunoCollection? {
+    package static func load(_ root: URL) -> BrunoCollection? {
         let config = root.appendingPathComponent(configName)
         guard let data = try? Data(contentsOf: config) else { return nil }
         let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
@@ -46,7 +46,7 @@ struct BrunoCollection: Equatable, Sendable {
     /// The collections under `checkout`: bruno.json at most `depth` folders
     /// down, never inside another collection, node_modules or a dot folder.
     /// Six down: a monorepo's docs app keeps one at frontend/apps/docs/api/bruno.
-    static func find(in checkout: URL, depth: Int = 6) -> [URL] {
+    package static func find(in checkout: URL, depth: Int = 6) -> [URL] {
         var found: [URL] = []
         func walk(_ folder: URL, _ level: Int) {
             if FileManager.default.fileExists(atPath: folder.appendingPathComponent(configName).path) {
@@ -70,7 +70,7 @@ struct BrunoCollection: Equatable, Sendable {
     }
 
     /// Dependencies, builds and caches: never a collection, often huge.
-    static let skipped: Set<String> = [
+    package static let skipped: Set<String> = [
         "node_modules", "build", "dist", "target", "vendor", "Pods", "DerivedData", "coverage", "out", "tmp", "venv", "__pycache__",
     ]
 
@@ -130,13 +130,13 @@ struct BrunoCollection: Equatable, Sendable {
     // MARK: Lookups
 
     /// Every request, in the order the runner takes them: depth first, as listed.
-    var requests: [APIItem] { tree.allRequests }
+    package var requests: [APIItem] { tree.allRequests }
 
-    func item(at url: URL) -> APIItem? { tree.find(url.standardizedFileURL) }
+    package func item(at url: URL) -> APIItem? { tree.find(url.standardizedFileURL) }
 
     /// The folders from the collection down to the one holding `url`,
     /// outermost first, the collection's own folder not among them.
-    func folders(containing url: URL) -> [URL] {
+    package func folders(containing url: URL) -> [URL] {
         let rootPath = root.standardizedFileURL.path
         var folders: [URL] = []
         var folder = url.standardizedFileURL.deletingLastPathComponent()
@@ -150,41 +150,41 @@ struct BrunoCollection: Equatable, Sendable {
     }
 
     /// `collection.bru`, if it has one.
-    var collectionFile: BruFile? {
+    package var collectionFile: BruFile? {
         (try? String(contentsOf: root.appendingPathComponent("collection.bru"), encoding: .utf8)).map(BruFile.init(parsing:))
     }
 
-    static func folderFile(_ folder: URL) -> BruFile? {
+    package static func folderFile(_ folder: URL) -> BruFile? {
         (try? String(contentsOf: folder.appendingPathComponent("folder.bru"), encoding: .utf8)).map(BruFile.init(parsing:))
     }
 
     /// The `.env` beside bruno.json, which `{{process.env.NAME}}` reads first.
-    var dotEnv: [String: String] {
+    package var dotEnv: [String: String] {
         (try? String(contentsOf: root.appendingPathComponent(".env"), encoding: .utf8)).map(DotEnv.parse) ?? [:]
     }
 }
 
 /// A folder or a request in a collection's tree.
-struct APIItem: Identifiable, Equatable, Hashable, Sendable {
-    let url: URL
-    var name: String
+package struct APIItem: Identifiable, Equatable, Hashable, Sendable {
+    package let url: URL
+    package var name: String
     /// A request's method, upper case; nil for a folder.
-    var method: String?
-    var seq: Int?
+    package var method: String?
+    package var seq: Int?
     /// A folder's contents; nil for a request.
-    var children: [APIItem]?
+    package var children: [APIItem]?
     /// Its `docs` block (a folder's, in folder.bru) says something.
-    var hasDocs = false
+    package var hasDocs = false
 
-    var id: String { url.path }
-    var isFolder: Bool { children != nil }
+    package var id: String { url.path }
+    package var isFolder: Bool { children != nil }
 
-    var allRequests: [APIItem] {
+    package var allRequests: [APIItem] {
         guard let children else { return [self] }
         return children.flatMap(\.allRequests)
     }
 
-    func find(_ target: URL) -> APIItem? {
+    package func find(_ target: URL) -> APIItem? {
         if url.standardizedFileURL == target { return self }
         for child in children ?? [] {
             if let found = child.find(target) { return found }
@@ -193,7 +193,7 @@ struct APIItem: Identifiable, Equatable, Hashable, Sendable {
     }
 
     /// Requests whose name or path holds `query`, folders kept around them.
-    func filtered(_ query: String) -> APIItem? {
+    package func filtered(_ query: String) -> APIItem? {
         guard !query.isEmpty else { return self }
         guard let children else {
             return name.localizedCaseInsensitiveContains(query) || url.lastPathComponent.localizedCaseInsensitiveContains(query) ? self : nil
@@ -206,15 +206,15 @@ struct APIItem: Identifiable, Equatable, Hashable, Sendable {
     }
 }
 
-struct APIEnvironmentRef: Identifiable, Equatable, Hashable, Sendable {
-    let name: String
-    let url: URL
-    var id: String { url.path }
+package struct APIEnvironmentRef: Identifiable, Equatable, Hashable, Sendable {
+    package let name: String
+    package let url: URL
+    package var id: String { url.path }
 }
 
 /// `.env`: `NAME=value` lines, `export` allowed, `#` comments, quotes taken off.
-enum DotEnv {
-    static func parse(_ text: String) -> [String: String] {
+package enum DotEnv {
+    package static func parse(_ text: String) -> [String: String] {
         var values: [String: String] = [:]
         for raw in text.components(separatedBy: .newlines) {
             var line = raw.trimmingCharacters(in: .whitespaces)

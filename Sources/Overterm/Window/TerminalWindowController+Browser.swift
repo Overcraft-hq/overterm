@@ -2,7 +2,7 @@ import AppKit
 import Combine
 
 /// A column zoomed to fill the window beside the sidebar.
-enum ZoomedColumn: Equatable {
+package enum ZoomedColumn: Equatable {
     case editor, browser
 }
 
@@ -12,7 +12,7 @@ enum ZoomedColumn: Equatable {
 /// browser into the middle of the window and left all four columns too
 /// narrow to work in — so one opening closes the other, and closing it
 /// gives the slot back.
-enum RightSlot: Equatable {
+package enum RightSlot: Equatable {
     case browser, pane
 }
 
@@ -20,7 +20,7 @@ enum RightSlot: Equatable {
 /// while that tab is selected; links and ports routed into it; agents
 /// given it (BrowserBridge).
 extension TerminalWindowController {
-    func wireBrowser() {
+    package func wireBrowser() {
         guard let browser else { return }
         browserButton.isEnabled = Settings.shared.browserEnabled
         browserButton.isSimulatorEnabled = Settings.shared.simulatorEnabled
@@ -58,7 +58,7 @@ extension TerminalWindowController {
     }
 
     /// The tab's browser, made on first use — with its restored pages.
-    func browserWorkspace(for tab: Tab, create: Bool = true) -> BrowserWorkspace? {
+    package func browserWorkspace(for tab: Tab, create: Bool = true) -> BrowserWorkspace? {
         if let workspace = browserWorkspaces[tab.id] { return workspace }
         guard create, Settings.shared.browserEnabled else { return nil }
         let workspace = BrowserWorkspace()
@@ -73,13 +73,13 @@ extension TerminalWindowController {
 
     /// What the column shows: the selected tab's browser — made now if it
     /// has pages waiting from the last session and the column is open.
-    func showSelectedBrowser() {
+    package func showSelectedBrowser() {
         guard let browser, let tab = store.selected else { return }
         let create = browserItem?.isCollapsed == false && pendingBrowserPages[tab.id] != nil
         browser.show(browserWorkspace(for: tab, create: create), ports: tab.ports + tab.containerPorts + tab.forwardPorts)
     }
 
-    @objc func toggleBrowser(_ sender: Any?) {
+    @objc package func toggleBrowser(_ sender: Any?) {
         guard let browserItem, Settings.shared.browserEnabled else { return }
         // Open on the simulator, the globe takes the column back rather
         // than shutting it.
@@ -94,7 +94,7 @@ extension TerminalWindowController {
 
     /// The title bar's phone, beside the globe: the same column, showing
     /// the simulator — read only while it is up.
-    @objc func toggleSimulator(_ sender: Any?) {
+    @objc package func toggleSimulator(_ sender: Any?) {
         guard let browserItem, Settings.shared.simulatorEnabled else { return }
         if browserItem.isCollapsed || browserColumn?.mode != .simulator {
             showSimulator()
@@ -103,7 +103,7 @@ extension TerminalWindowController {
         }
     }
 
-    func showSimulator() {
+    package func showSimulator() {
         guard Settings.shared.simulatorEnabled else { return }
         browserColumn?.show(.simulator)
         showBrowserColumn()
@@ -120,7 +120,7 @@ extension TerminalWindowController {
         showSelectedBrowser()
     }
 
-    func closeBrowser() {
+    package func closeBrowser() {
         hideBrowserColumn()
         focusSelectedTerminal()
         restoreRightSlot(after: .browser)
@@ -136,7 +136,7 @@ extension TerminalWindowController {
     }
 
     /// Clears the right-hand slot for `slot`, remembering who had it.
-    func takeRightSlot(_ slot: RightSlot) {
+    package func takeRightSlot(_ slot: RightSlot) {
         switch slot {
         case .browser:
             guard diffItem?.isCollapsed == false else { return }
@@ -150,7 +150,7 @@ extension TerminalWindowController {
     }
 
     /// `slot` has closed: what it took the slot from comes back.
-    func restoreRightSlot(after slot: RightSlot) {
+    package func restoreRightSlot(after slot: RightSlot) {
         let displaced = displacedSlot
         displacedSlot = nil
         switch (slot, displaced) {
@@ -162,7 +162,7 @@ extension TerminalWindowController {
 
     /// Opens `url` in `tab`'s browser — in the page showing, or a new one —
     /// and the column comes up when that tab is the one on screen.
-    func openInBrowser(_ url: URL, for tab: Tab?, newPage: Bool = false) {
+    package func openInBrowser(_ url: URL, for tab: Tab?, newPage: Bool = false) {
         guard Settings.shared.browserEnabled, let tab = tab ?? store.selected, let workspace = browserWorkspace(for: tab) else {
             NSWorkspace.shared.open(url)
             return
@@ -181,7 +181,7 @@ extension TerminalWindowController {
 
     /// A link from Tab Info or a pane header's port: here or the system's,
     /// as Settings ▸ Browser says.
-    func openLink(_ url: URL, for tab: Tab?) {
+    package func openLink(_ url: URL, for tab: Tab?) {
         let inside = BrowserLinks.opensInside(url, policy: Settings.shared.browserLinks)
         if let linkRecorder { return linkRecorder(url, inside) }
         if inside {
@@ -192,13 +192,13 @@ extension TerminalWindowController {
     }
 
     /// What the session file keeps of a tab's browser.
-    func browserPages(of tab: Tab) -> (urls: [URL], active: Int)? {
+    package func browserPages(of tab: Tab) -> (urls: [URL], active: Int)? {
         guard Settings.shared.browserEnabled else { return nil }
         return browserWorkspaces[tab.id]?.savedPages ?? pendingBrowserPages[tab.id]
     }
 
     /// The tab is closing: its browser and its agents' doors go with it.
-    func forgetBrowser(of tab: Tab) {
+    package func forgetBrowser(of tab: Tab) {
         pendingBrowserPages[tab.id] = nil
         tab.terminals.forEach { BrowserBridge.shared.removeConfig(forPane: $0.processTag) }
         guard let workspace = browserWorkspaces.removeValue(forKey: tab.id) else { return }
@@ -206,7 +206,7 @@ extension TerminalWindowController {
         workspace.closeAll()
     }
 
-    func browserSettingsChanged() {
+    package func browserSettingsChanged() {
         BrowserBridge.shared.update()
         browserButton.isEnabled = Settings.shared.browserEnabled
         browserButton.isSimulatorEnabled = Settings.shared.simulatorEnabled
@@ -227,7 +227,7 @@ extension TerminalWindowController {
     /// Settings ▸ Browser ▸ Reload on save: a save in the editor, or the
     /// checkout changing under an agent, reloads the page showing in the
     /// selected tab's browser — a local one only.
-    func reloadAfterSave() {
+    package func reloadAfterSave() {
         guard Settings.shared.browserReloadOnSave, let tab = store.selected, let page = browserWorkspaces[tab.id]?.active,
             let url = page.url, BrowserLinks.isLocal(url) || url.isFileURL, !page.isLoading
         else { return }
@@ -237,7 +237,7 @@ extension TerminalWindowController {
     /// The browser of the tab a pane is in, for an agent in that pane: made
     /// if the tab has none, and the column shown when that tab is the one
     /// on screen — you watch what the agent does.
-    func agentBrowser(forPane tag: String) -> AgentBrowser? {
+    package func agentBrowser(forPane tag: String) -> AgentBrowser? {
         guard let tab = store.tabs.first(where: { $0.terminals.contains { $0.processTag == tag } }),
             let workspace = browserWorkspace(for: tab)
         else { return nil }
@@ -253,7 +253,7 @@ extension TerminalWindowController {
 
     /// The toolbar's ✦: the page — address, title, its errors, a screenshot
     /// — to an agent, the selected tab's first.
-    func askAboutPage(_ page: BrowserSession) {
+    package func askAboutPage(_ page: BrowserSession) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             var lines = ["Page: \(page.title)", "URL: \(page.url?.absoluteString ?? "(none)")"]

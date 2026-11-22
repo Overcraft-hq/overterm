@@ -3,21 +3,21 @@ import SwiftUI
 /// A row of the page's one list: a process's or a listener's. One table for
 /// both sections, so the list keeps its place in the view tree — the
 /// keyboard and the scroll with it — as the section changes (6.4).
-enum ActivityListRow: ResourceTableRow, Sendable {
+package enum ActivityListRow: ResourceTableRow, Sendable {
     case process(ActivityProcessRow)
     case port(ActivityPortRow)
     /// A group's header, a container, "+N more" (6.5).
     case group(ActivityGroupRow)
 
     /// Processes' and Left Behind's item as a row.
-    init(_ item: ActivityListItem) {
+    package init(_ item: ActivityListItem) {
         switch item {
         case .group(let row): self = .group(row)
         case .process(let row): self = .process(row)
         }
     }
 
-    var id: String {
+    package var id: String {
         switch self {
         case .process(let row): row.id
         case .port(let row): row.id
@@ -25,9 +25,9 @@ enum ActivityListRow: ResourceTableRow, Sendable {
         }
     }
 
-    var height: CGFloat { 24 }
+    package var height: CGFloat { 24 }
 
-    var spansColumns: Bool {
+    package var spansColumns: Bool {
         switch self {
         case .group(let row): row.spansColumns
         case .port(let row): row.spansColumns
@@ -35,7 +35,7 @@ enum ActivityListRow: ResourceTableRow, Sendable {
         }
     }
 
-    var reuseKind: String {
+    package var reuseKind: String {
         switch self {
         case .process: "process"
         case .port(let row): row.kind == .folded ? "fold" : "port"
@@ -43,7 +43,7 @@ enum ActivityListRow: ResourceTableRow, Sendable {
         }
     }
 
-    var accessibilityLabel: String {
+    package var accessibilityLabel: String {
         switch self {
         case .process(let row): row.accessibilityLabel
         case .port(let row): row.accessibilityLabel
@@ -54,19 +54,19 @@ enum ActivityListRow: ResourceTableRow, Sendable {
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): the
 /// sections, the busiest and the meters down the left, the list beside.
-struct ActivityPageView: View {
-    @ObservedObject var page: ActivityPageModel
-    @ObservedObject var theme: ChromeTheme
+package struct ActivityPageView: View {
+    @ObservedObject package var page: ActivityPageModel
+    @ObservedObject package var theme: ChromeTheme
     /// What Activity stopped: the header's "2 stopped here — Resume All".
-    @ObservedObject var held = ActivityHeld.shared
+    @ObservedObject package var held = ActivityHeld.shared
     /// ⌘C: the selection, as the window copies it.
-    let copy: ([String]) -> Void
+    package let copy: ([String]) -> Void
     /// The list given the keyboard back (the filter's ↩ and Esc).
-    var focusList: () -> Void = {}
+    package var focusList: () -> Void = {}
 
     @FocusState private var filterFocused: Bool
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 0) {
             sidebar.frame(width: 210).background(theme.panelGround)
             Rectangle().fill(theme.border).frame(width: 1)
@@ -274,14 +274,14 @@ struct ActivityPageView: View {
 
     /// The header says "Reading…" until rows are made, while the churn
     /// budget leaves processes for a later tick, and while no rate is in.
-    static func reading(hasRead: Bool, _ summary: ActivitySummary) -> Bool {
+    package static func reading(hasRead: Bool, _ summary: ActivitySummary) -> Bool {
         !hasRead || summary.unread > 0 || summary.firstSample
     }
 
     /// "1,297 processes · 864 yours · 23 listening · 2 zombies", or a test run's own.
     private var counts: String { Self.counts(summary) }
 
-    static func counts(_ summary: ActivitySummary) -> String {
+    package static func counts(_ summary: ActivitySummary) -> String {
         let number = { (value: Int) in value.formatted(.number.locale(Locale(identifier: "en_US"))) }
         let zombies = summary.zombies > 0 ? " · \(number(summary.zombies)) zombie\(summary.zombies == 1 ? "" : "s")" : ""
         if summary.scopedToRun {
@@ -293,12 +293,12 @@ struct ActivityPageView: View {
 
     /// The tabs' and leftovers' stopped processes Activity didn't stop;
     /// nil when there are none. Pure.
-    static func stoppedElsewhere(_ stopped: [ActivityProcessID], here: Set<ActivityProcessID>) -> Int? {
+    package static func stoppedElsewhere(_ stopped: [ActivityProcessID], here: Set<ActivityProcessID>) -> Int? {
         let others = stopped.count { !here.contains($0) }
         return others > 0 ? others : nil
     }
 
-    static func seconds(_ duration: Duration) -> String {
+    package static func seconds(_ duration: Duration) -> String {
         let seconds = duration.components.seconds
         return seconds == 1 ? "1 s" : "\(seconds) s"
     }
@@ -324,14 +324,14 @@ struct ActivityPageView: View {
     }
 
     /// What isn't read, and the connections past the cap (6.8): said.
-    nonisolated static func listeningNote(connections: Bool, dropped: Int, others: ActivityOtherListeners = .off) -> String {
+    package nonisolated static func listeningNote(connections: Bool, dropped: Int, others: ActivityOtherListeners = .off) -> String {
         guard connections else { return "Your processes' listeners. \(others.sentence) Connections: c" }
         let more = dropped > 0 ? " +\(dropped) more connection\(dropped == 1 ? "" : "s") not listed." : ""
         return "Your processes' listeners and connections. \(others.sentence)\(more)"
     }
 
     /// What an empty section says: true of what was read (6.4).
-    nonisolated static func emptySentence(_ section: ActivityPageModel.Section, scopedToRun: Bool, filter: String = "") -> String {
+    package nonisolated static func emptySentence(_ section: ActivityPageModel.Section, scopedToRun: Bool, filter: String = "") -> String {
         let filter = filter.trimmingCharacters(in: .whitespaces)
         if !filter.isEmpty { return "Nothing matches “\(filter)”." }
         switch section {
@@ -348,13 +348,13 @@ struct ActivityPageView: View {
     // MARK: Cells' words
 
     /// At most three ports, then "+N".
-    nonisolated static func ports(_ ports: [Int]) -> String {
+    package nonisolated static func ports(_ ports: [Int]) -> String {
         let shown = ports.prefix(3).map { ":\($0)" }.joined(separator: " ")
         return ports.count > 3 ? "\(shown) +\(ports.count - 3)" : shown
     }
 
     /// The chips beside a process's name (6.5): its role, what it did.
-    static func chips(_ row: ActivityProcessRow) -> [String] {
+    package static func chips(_ row: ActivityProcessRow) -> [String] {
         var chips: [String] = []
         if row.stoppedHere { chips.append("suspended here") }
         if row.backgroundHere { chips.append("background") }
@@ -377,9 +377,9 @@ struct ActivityPageView: View {
     }
 
     /// What a strip says: its highest, since when.
-    static func stripHelp(_ row: ActivityProcessRow) -> String { stripHelp(row.strip, since: row.stripSince) }
+    package static func stripHelp(_ row: ActivityProcessRow) -> String { stripHelp(row.strip, since: row.stripSince) }
 
-    static func stripHelp(_ strip: [Double?]?, since began: Date?) -> String {
+    package static func stripHelp(_ strip: [Double?]?, since began: Date?) -> String {
         guard let cells = strip else { return "No history: it wasn't read while the page or its tab showed" }
         let read = cells.compactMap { $0 }
         guard let high = read.max() else { return "Not read in the last 15 minutes" }
@@ -388,7 +388,7 @@ struct ActivityPageView: View {
     }
 
     /// A rate as the page writes it: "—" unread.
-    nonisolated static func rate(_ value: Double?, unit: String) -> String {
+    package nonisolated static func rate(_ value: Double?, unit: String) -> String {
         guard let value else { return "—" }
         if unit == "B/s" { return ActivityRows.bytes(UInt64(max(value, 0).rounded())) + "/s" }
         return ActivityRows.fixed(value, digits: value >= 100 ? 0 : 1) + " " + unit
@@ -400,33 +400,33 @@ struct ActivityPageView: View {
 /// The page's left (6.4): the sections with their counts, the busiest
 /// five, the meters. Equal while what it draws is, so the page's other
 /// publishes skip it.
-struct ActivitySidebar: View, Equatable {
-    let section: ActivityPageModel.Section
-    let hasRead: Bool
-    let shown: Int
-    let listening: Int
-    let leftBehind: Int
-    let busiest: [ActivitySummary.Busy]
-    let meters: SystemMeters?
-    let processes: Int
-    let threads: Int
-    let history: [TimeChartData]
-    let energy: Double?
+package struct ActivitySidebar: View, Equatable {
+    package let section: ActivityPageModel.Section
+    package let hasRead: Bool
+    package let shown: Int
+    package let listening: Int
+    package let leftBehind: Int
+    package let busiest: [ActivitySummary.Busy]
+    package let meters: SystemMeters?
+    package let processes: Int
+    package let threads: Int
+    package let history: [TimeChartData]
+    package let energy: Double?
     /// Read for its actions, never observed.
-    let page: ActivityPageModel
-    @ObservedObject var theme: ChromeTheme
-    let copy: ([String]) -> Void
+    package let page: ActivityPageModel
+    @ObservedObject package var theme: ChromeTheme
+    package let copy: ([String]) -> Void
     /// The theme's identity, as `==` compares it: an observed object's
     /// property is the main actor's, and `==` is nonisolated (Swift 6.1).
-    let themeID: ObjectIdentifier
+    package let themeID: ObjectIdentifier
 
-    nonisolated static func == (a: ActivitySidebar, b: ActivitySidebar) -> Bool {
+    package nonisolated static func == (a: ActivitySidebar, b: ActivitySidebar) -> Bool {
         a.section == b.section && a.hasRead == b.hasRead && a.shown == b.shown && a.listening == b.listening && a.leftBehind == b.leftBehind
             && a.busiest == b.busiest && a.meters == b.meters && a.processes == b.processes && a.threads == b.threads && a.history == b.history
             && a.energy == b.energy && a.page === b.page && a.themeID == b.themeID
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(ActivityPageModel.Section.allCases) { section in
                 Button {
@@ -489,21 +489,21 @@ struct ActivitySidebar: View, Equatable {
 /// The meters (6.4): CPU a bar a core, memory as Activity Monitor counts it,
 /// pressure, swap, load, uptime, thermal state and Low Power Mode, tasks and
 /// threads. "—" for what the census hasn't read yet.
-struct ActivityMetersView: View {
-    let meters: SystemMeters?
-    let processes: Int
-    let threads: Int
+package struct ActivityMetersView: View {
+    package let meters: SystemMeters?
+    package let processes: Int
+    package let threads: Int
     /// The Mac's 15 minutes: CPU and memory used (6.11).
-    var history: [TimeChartData] = []
+    package var history: [TimeChartData] = []
     /// The user's processes' energy, W: given only while the Energy column
     /// is on (6.4).
-    var energy: Double?
+    package var energy: Double?
     /// Copy Values as CSV, the charts' menu.
-    var copy: ((String) -> Void)? = nil
-    @ObservedObject var theme: ChromeTheme
+    package var copy: ((String) -> Void)? = nil
+    @ObservedObject package var theme: ChromeTheme
     @StateObject private var cursor = TimeChartCursor()
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             readings
             ForEach(history, id: \.id) { data in
@@ -575,7 +575,7 @@ struct ActivityMetersView: View {
         .font(.system(size: ChromeMetrics.text(11)))
     }
 
-    static func uptime(_ seconds: TimeInterval) -> String {
+    package static func uptime(_ seconds: TimeInterval) -> String {
         let minutes = Int(seconds) / 60
         let days = minutes / 1_440
         let hours = (minutes % 1_440) / 60

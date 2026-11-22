@@ -1,51 +1,51 @@
 import SwiftUI
 
 /// What the panel's verbs do, the window's way.
-struct TerraformPanelActions {
+package struct TerraformPanelActions {
     /// A shell tab with its folder at the root (4.9): no `TF_WORKSPACE`.
-    var openTerminal: (TerraformRootCard) -> Void
+    package var openTerminal: (TerraformRootCard) -> Void
     /// The root's first `.tf` file in the editor.
-    var openFile: (URL) -> Void
+    package var openFile: (URL) -> Void
     /// `terraform validate` of the root (stage 1a's, credentials stripped).
-    var validate: (TerraformRootCard) -> Void
+    package var validate: (TerraformRootCard) -> Void
     /// Overterm's plan, in the right slot (stage 1d).
-    var plan: (TerraformRootCard) -> Void
+    package var plan: (TerraformRootCard) -> Void
     /// Init, the fetch list shown first (4.13).
-    var initialize: (TerraformRootCard) -> Void
+    package var initialize: (TerraformRootCard) -> Void
     /// The workspace chip's menu (4.9).
-    var chooseWorkspace: (TerraformRootCard) -> Void
+    package var chooseWorkspace: (TerraformRootCard) -> Void
     /// The root's last plan, shown in the slot.
-    var showPlan: (TerraformPlanRun) -> Void
+    package var showPlan: (TerraformPlanRun) -> Void
     /// A destroy plan, asked first (2a).
-    var planDestroy: (TerraformRootCard) -> Void = { _ in }
+    package var planDestroy: (TerraformRootCard) -> Void = { _ in }
     /// An apply going in this root, shown in the slot with its Stop (4.7).
-    var showApply: (TerraformApplyRun) -> Void = { _ in }
+    package var showApply: (TerraformApplyRun) -> Void = { _ in }
     /// The root's state and outputs, masked, in the slot (2.4, stage 2c).
-    var showState: (TerraformRootCard) -> Void = { _ in }
+    package var showState: (TerraformRootCard) -> Void = { _ in }
     /// Check Drift: a refresh-only plan (2.6, stage 2d).
-    var checkDrift: (TerraformRootCard) -> Void = { _ in }
+    package var checkDrift: (TerraformRootCard) -> Void = { _ in }
     /// `terraform test` of the root, in the slot (2.9, stage 2d).
-    var test: (TerraformRootCard) -> Void = { _ in }
-    var showTest: (TerraformTestRun) -> Void = { _ in }
+    package var test: (TerraformRootCard) -> Void = { _ in }
+    package var showTest: (TerraformTestRun) -> Void = { _ in }
 }
 
 /// The rail's Terraform panel (analysis 6.1, 6.2): the selected tab's
 /// checkout's roots, grouped by top folder, each a chip — its class band,
 /// workspace, backend, version — and what the other worktrees say of it;
 /// its modules and who calls them; examples and Terragrunt folded.
-struct TerraformPanelView: View {
-    @ObservedObject var panel: TerraformPanelModel
-    @ObservedObject var settings: Settings
-    @ObservedObject var theme: ChromeTheme
-    let group: TabGroup?
-    let actions: TerraformPanelActions
+package struct TerraformPanelView: View {
+    @ObservedObject package var panel: TerraformPanelModel
+    @ObservedObject package var settings: Settings
+    @ObservedObject package var theme: ChromeTheme
+    package let group: TabGroup?
+    package let actions: TerraformPanelActions
     @State private var showModules = true
     @State private var showExamples = false
 
-    static let production = KubernetesPageView.production
-    static let remote = Color(red: 0.85, green: 0.55, blue: 0.1)
+    package static let production = KubernetesPageView.production
+    package static let remote = Color(red: 0.85, green: 0.55, blue: 0.1)
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             PanelHeader(title: "Terraform", group: group, theme: theme, help: panel.checkout?.path) {
                 PanelHeaderButton(symbol: "arrow.clockwise", help: "Read the roots again", action: { panel.refresh() }, theme: theme)
@@ -72,7 +72,7 @@ struct TerraformPanelView: View {
     }
 
     /// The version every root (that says one) runs, when they agree.
-    static func commonVersion(_ roots: [TerraformRootCard]) -> String? {
+    package static func commonVersion(_ roots: [TerraformRootCard]) -> String? {
         let versions = Set(roots.compactMap(\.version))
         return versions.count == 1 ? versions.first : nil
     }
@@ -203,7 +203,7 @@ struct TerraformPanelView: View {
             .padding(.horizontal, 12).padding(.vertical, 4)
     }
 
-    static func color(_ rootClass: TerraformClass, theme: ChromeTheme) -> Color {
+    package static func color(_ rootClass: TerraformClass, theme: ChromeTheme) -> Color {
         switch rootClass {
         case .production: production
         case .remote: remote
@@ -456,14 +456,14 @@ private struct RootRow: View {
 /// An apply that is going, as a button that shows it in the slot (4.7):
 /// the panel's card, and the slot's list when it shows something else.
 /// It observes its apply, so it goes once the apply ends.
-struct TerraformGoingApplyButton: View {
-    @ObservedObject var apply: TerraformApplyRun
-    @ObservedObject var theme: ChromeTheme
+package struct TerraformGoingApplyButton: View {
+    @ObservedObject package var apply: TerraformApplyRun
+    @ObservedObject package var theme: ChromeTheme
     /// "applying", or the root's name and worktree for the slot's list.
-    let words: String
-    let show: (TerraformApplyRun) -> Void
+    package let words: String
+    package let show: (TerraformApplyRun) -> Void
 
-    var body: some View {
+    package var body: some View {
         if apply.isGoing {
             Button {
                 show(apply)

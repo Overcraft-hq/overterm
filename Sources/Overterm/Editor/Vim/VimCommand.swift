@@ -1,6 +1,6 @@
 import Foundation
 
-enum VimMotion: Equatable, Sendable {
+package enum VimMotion: Equatable, Sendable {
     case left, right, down, up
     /// `+` / `<cr>`, `-`, `_`.
     case nextLineStart, prevLineStart, currentLine
@@ -17,7 +17,7 @@ enum VimMotion: Equatable, Sendable {
     case searchWord(forward: Bool)
     case mark(Character, linewise: Bool)
 
-    var isVertical: Bool {
+    package var isVertical: Bool {
         switch self {
         case .down, .up, .halfPageDown, .halfPageUp, .pageDown, .pageUp: return true
         default: return false
@@ -25,18 +25,18 @@ enum VimMotion: Equatable, Sendable {
     }
 }
 
-enum VimTextObject: Equatable, Sendable {
+package enum VimTextObject: Equatable, Sendable {
     case word(big: Bool, around: Bool)
     case quote(Character, around: Bool)
     case pair(open: Character, close: Character, around: Bool)
     case paragraph(around: Bool)
 }
 
-enum VimOperator: Equatable, Sendable {
+package enum VimOperator: Equatable, Sendable {
     case delete, change, yank, indent, outdent, reindent, uppercase, lowercase, toggleCase
 }
 
-enum VimTarget: Equatable, Sendable {
+package enum VimTarget: Equatable, Sendable {
     case motion(VimMotion)
     case object(VimTextObject)
     /// `dd`, `cc`, `>>`: the operator doubled.
@@ -45,11 +45,11 @@ enum VimTarget: Equatable, Sendable {
     case selection, selectionLines
 }
 
-enum VimInsert: Equatable, Sendable {
+package enum VimInsert: Equatable, Sendable {
     case before, after, lineStart, lineFirstNonBlank, lineEnd, lineBelow, lineAbove
 }
 
-enum VimAction: Equatable, Sendable {
+package enum VimAction: Equatable, Sendable {
     case insert(VimInsert)
     case put(before: Bool)
     case join(spaces: Bool)
@@ -67,8 +67,8 @@ enum VimAction: Equatable, Sendable {
     case cancel
 }
 
-struct VimCommand: Equatable, Sendable {
-    enum Kind: Equatable, Sendable {
+package struct VimCommand: Equatable, Sendable {
+    package enum Kind: Equatable, Sendable {
         case move(VimMotion)
         case operate(VimOperator, VimTarget)
         case action(VimAction)
@@ -76,12 +76,12 @@ struct VimCommand: Equatable, Sendable {
         case select(VimTextObject)
     }
 
-    var register: Character?
-    var count: Int?
-    var kind: Kind
+    package var register: Character?
+    package var count: Int?
+    package var kind: Kind
 
     /// Whether `.` repeats it.
-    var isChange: Bool {
+    package var isChange: Bool {
         switch kind {
         case .operate(let op, _): return op != .yank
         case .action(let a):
@@ -94,7 +94,7 @@ struct VimCommand: Equatable, Sendable {
     }
 }
 
-enum VimParse: Equatable {
+package enum VimParse: Equatable {
     case incomplete, invalid
     case complete(VimCommand)
 }
@@ -102,8 +102,8 @@ enum VimParse: Equatable {
 /// Pending keys to a command: `"a2d3w` → register a, count 6, delete by
 /// word. Parsed again from the start on each key, which is what lets the
 /// status line show `2d` while it waits.
-enum VimParser {
-    static func parse(_ t: [String], visual: Bool) -> VimParse {
+package enum VimParser {
+    package static func parse(_ t: [String], visual: Bool) -> VimParse {
         var i = 0
         var register: Character?
         if i < t.count, t[i] == "\"" {
@@ -226,27 +226,27 @@ enum VimParser {
         }
     }
 
-    static let operators: [String: VimOperator] = [
+    package static let operators: [String: VimOperator] = [
         "d": .delete, "c": .change, "y": .yank, ">": .indent, "<": .outdent, "=": .reindent,
         "gU": .uppercase, "gu": .lowercase, "g~": .toggleCase,
     ]
 
-    static let visualOperators: [String: VimOperator] = [
+    package static let visualOperators: [String: VimOperator] = [
         "d": .delete, "x": .delete, "<del>": .delete, "c": .change, "s": .change, "y": .yank,
         ">": .indent, "<": .outdent, "=": .reindent,
         "U": .uppercase, "u": .lowercase, "~": .toggleCase, "gU": .uppercase, "gu": .lowercase, "g~": .toggleCase,
     ]
 
-    static let visualLineOperators: [String: VimOperator] = [
+    package static let visualLineOperators: [String: VimOperator] = [
         "D": .delete, "X": .delete, "C": .change, "S": .change, "R": .change, "Y": .yank,
     ]
 
-    static func isRegister(_ c: Character) -> Bool {
+    package static func isRegister(_ c: Character) -> Bool {
         c.isASCII && (c.isLetter || c == "+" || c == "*" || c == "_" || c == "\"")
     }
 
     /// A key as the character it types, for `r` and `f`.
-    static func typed(_ token: String) -> String? {
+    package static func typed(_ token: String) -> String? {
         switch token {
         case "<tab>": return "\t"
         case "<cr>": return "\n"
@@ -254,7 +254,7 @@ enum VimParser {
         }
     }
 
-    static func count(_ t: [String], _ i: inout Int) -> Int? {
+    package static func count(_ t: [String], _ i: inout Int) -> Int? {
         var n: Int?
         while i < t.count, t[i].count == 1, let d = t[i].first?.wholeNumberValue, d < 10, t[i].first!.isASCII {
             if n == nil && d == 0 { break }
@@ -264,7 +264,7 @@ enum VimParser {
         return n
     }
 
-    static func textObject(_ token: String, around: Bool) -> VimTextObject? {
+    package static func textObject(_ token: String, around: Bool) -> VimTextObject? {
         switch token {
         case "w": return .word(big: false, around: around)
         case "W": return .word(big: true, around: around)
@@ -279,7 +279,7 @@ enum VimParser {
     }
 
     /// `.some(nil)`: needs more keys; `nil`: not a motion.
-    static func motion(_ t: [String], _ i: inout Int) -> VimMotion?? {
+    package static func motion(_ t: [String], _ i: inout Int) -> VimMotion?? {
         guard i < t.count else { return .some(nil) }
         let key = t[i]
         i += 1

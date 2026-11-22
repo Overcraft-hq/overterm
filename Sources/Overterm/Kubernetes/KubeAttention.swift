@@ -6,19 +6,19 @@ import Foundation
 /// going into `CrashLoopBackOff`, `OOMKilled` or `ImagePullBackOff`, or a
 /// Deployment's rollout past its `progressDeadlineSeconds`. Its object is
 /// what Ask Why on the mark asks about.
-struct KubeAttentionAlert: Equatable, Hashable, Sendable, Identifiable {
-    var ref: KubeObjectRef
+package struct KubeAttentionAlert: Equatable, Hashable, Sendable, Identifiable {
+    package var ref: KubeObjectRef
     /// `CrashLoopBackOff`, `OOMKilled`, `ImagePullBackOff`, `ProgressDeadlineExceeded`.
-    var reason: String
+    package var reason: String
 
-    var id: String { "\(ref.context)\u{1F}\(ref.namespace ?? "")\u{1F}\(ref.kind.fullName)\u{1F}\(ref.name)" }
+    package var id: String { "\(ref.context)\u{1F}\(ref.namespace ?? "")\u{1F}\(ref.kind.fullName)\u{1F}\(ref.name)" }
 
     /// `pod/web-7d9`, `deploy/web`.
-    var object: String { (ref.isPod ? "pod/" : "deploy/") + ref.name }
+    package var object: String { (ref.isPod ? "pod/" : "deploy/") + ref.name }
 
     /// What the mark, the notification and the Inbox say:
     /// `pod/web-7d9 CrashLoopBackOff — fake-dev · shop`.
-    var note: String {
+    package var note: String {
         let what = ref.isPod ? reason : "rollout stuck (\(reason))"
         return "\(object) \(what) — \(ref.context) · \(ref.namespace ?? "")"
     }
@@ -39,16 +39,16 @@ struct KubeAttentionAlert: Equatable, Hashable, Sendable, Identifiable {
 ///   gets stuck again marks again.
 /// - Deployments are those the binding includes; the label selector was
 ///   the server's already.
-struct KubeAttention: Sendable {
-    static let podReasons: Set<String> = ["CrashLoopBackOff", "OOMKilled", "ImagePullBackOff"]
+package struct KubeAttention: Sendable {
+    package static let podReasons: Set<String> = ["CrashLoopBackOff", "OOMKilled", "ImagePullBackOff"]
 
-    let context: String
-    let namespace: String
+    package let context: String
+    package let namespace: String
 
-    struct Change: Equatable, Sendable {
-        var raised: [KubeAttentionAlert] = []
-        var cleared: [KubeAttentionAlert] = []
-        var isEmpty: Bool { raised.isEmpty && cleared.isEmpty }
+    package struct Change: Equatable, Sendable {
+        package var raised: [KubeAttentionAlert] = []
+        package var cleared: [KubeAttentionAlert] = []
+        package var isEmpty: Bool { raised.isEmpty && cleared.isEmpty }
     }
 
     private var podsSeen = false
@@ -60,26 +60,26 @@ struct KubeAttention: Sendable {
     private var stuckMarked: Set<String> = []
     private var stuckKnown: Set<String> = []
 
-    init(context: String, namespace: String) {
+    package init(context: String, namespace: String) {
         self.context = context
         self.namespace = namespace
     }
 
     /// What marks a pod's row: its Status (an init container's too), when it is one of `podReasons`.
-    static func reason(of summary: KubePodSummary) -> String? {
+    package static func reason(of summary: KubePodSummary) -> String? {
         let bare = summary.status.hasPrefix("Init:") ? String(summary.status.dropFirst(5)) : summary.status
         return podReasons.contains(bare) ? bare : nil
     }
 
     /// A Deployment's row with its conditions (`includeObject=Object`):
     /// `Progressing` False with `ProgressDeadlineExceeded`.
-    static func isStuck(_ row: KubeRow) -> Bool {
+    package static func isStuck(_ row: KubeRow) -> Bool {
         row.conditions.contains { $0.type == "Progressing" && $0.status == "False" && $0.reason == "ProgressDeadlineExceeded" }
     }
 
     /// The marks still standing: pods that marked and are still there,
     /// Deployments stuck since they marked.
-    var standing: [KubeAttentionAlert] {
+    package var standing: [KubeAttentionAlert] {
         podsMarked.sorted { $0.key < $1.key }.map { pod($0.key, $0.value) } + stuckMarked.sorted().map(deployment)
     }
 
@@ -92,7 +92,7 @@ struct KubeAttention: Sendable {
     }
 
     /// The pods as they stand now.
-    mutating func observePods(_ rows: KubeRows) -> Change {
+    package mutating func observePods(_ rows: KubeRows) -> Change {
         var failing: [String: String] = [:]
         var present = Set<String>()
         for row in rows.sorted {
@@ -119,7 +119,7 @@ struct KubeAttention: Sendable {
     }
 
     /// The Deployments as they stand now; `includes`: the binding's own.
-    mutating func observeDeployments(_ rows: KubeRows, includes: (String) -> Bool = { _ in true }) -> Change {
+    package mutating func observeDeployments(_ rows: KubeRows, includes: (String) -> Bool = { _ in true }) -> Change {
         let stuck = Set(rows.sorted.filter { includes($0.id.name) && Self.isStuck($0) }.map(\.id.name))
         var change = Change()
         guard deploymentsSeen else {
@@ -145,27 +145,27 @@ struct KubeAttention: Sendable {
 /// one scope a context, namespace and selector, for the checkouts bound
 /// there that have a tab open — the most recently used first, at most
 /// `budget` of them. Pure.
-enum KubeAttentionBudget {
+package enum KubeAttentionBudget {
     /// What two watches follow: the binding's context, namespace and selector.
-    struct Scope: Hashable, Sendable, Comparable, CustomStringConvertible {
-        var context: String
-        var namespace: String
-        var selector: String?
+    package struct Scope: Hashable, Sendable, Comparable, CustomStringConvertible {
+        package var context: String
+        package var namespace: String
+        package var selector: String?
 
-        var description: String { "\(context) · \(namespace)" + (selector.map { " (\($0))" } ?? "") }
+        package var description: String { "\(context) · \(namespace)" + (selector.map { " (\($0))" } ?? "") }
 
-        static func < (a: Scope, b: Scope) -> Bool { (a.context, a.namespace, a.selector ?? "") < (b.context, b.namespace, b.selector ?? "") }
+        package static func < (a: Scope, b: Scope) -> Bool { (a.context, a.namespace, a.selector ?? "") < (b.context, b.namespace, b.selector ?? "") }
     }
 
     /// The watches per scope: Pods and Deployments.
-    static let watchesPerScope = 2
+    package static let watchesPerScope = 2
 
-    static func scope(of binding: KubeBinding) -> Scope { Scope(context: binding.context, namespace: binding.namespace, selector: binding.selector) }
+    package static func scope(of binding: KubeBinding) -> Scope { Scope(context: binding.context, namespace: binding.namespace, selector: binding.selector) }
 
     /// The scopes to follow, the most recently used first, and those left
     /// over the budget: `open`, the checkouts with a tab (by key), each
     /// with when it was last used; `bindings`, by checkout.
-    static func plan(open: [String: Date], bindings: [String: KubeBinding], budget: Int) -> (watched: [Scope], over: [Scope]) {
+    package static func plan(open: [String: Date], bindings: [String: KubeBinding], budget: Int) -> (watched: [Scope], over: [Scope]) {
         var latest: [Scope: Date] = [:]
         for (checkout, used) in open {
             guard let binding = bindings[checkout] else { continue }

@@ -4,17 +4,17 @@ import Foundation
 /// tested without a server: the types, their fields and arguments, and what
 /// can be written at a place in a query (the fields of the type there, an
 /// argument's name, a type after `on`).
-struct GraphQLSchema: Equatable, Sendable {
-    struct TypeRef: Equatable, Sendable {
-        var kind: String
-        var name: String?
-        var ofType: [TypeRef]
+package struct GraphQLSchema: Equatable, Sendable {
+    package struct TypeRef: Equatable, Sendable {
+        package var kind: String
+        package var name: String?
+        package var ofType: [TypeRef]
 
         /// The named type under any lists and non-nulls: `[User!]!` → User.
-        var named: String? { name ?? ofType.first?.named }
+        package var named: String? { name ?? ofType.first?.named }
 
         /// As a query writes it: `[User!]!`.
-        var display: String {
+        package var display: String {
             switch kind {
             case "NON_NULL": (ofType.first?.display ?? "?") + "!"
             case "LIST": "[" + (ofType.first?.display ?? "?") + "]"
@@ -23,42 +23,42 @@ struct GraphQLSchema: Equatable, Sendable {
         }
     }
 
-    struct Argument: Equatable, Sendable {
-        var name: String
-        var type: TypeRef
-        var description: String?
-        var defaultValue: String?
+    package struct Argument: Equatable, Sendable {
+        package var name: String
+        package var type: TypeRef
+        package var description: String?
+        package var defaultValue: String?
     }
 
-    struct Field: Equatable, Sendable {
-        var name: String
-        var type: TypeRef
-        var arguments: [Argument]
-        var description: String?
-        var deprecation: String?
+    package struct Field: Equatable, Sendable {
+        package var name: String
+        package var type: TypeRef
+        package var arguments: [Argument]
+        package var description: String?
+        package var deprecation: String?
     }
 
-    struct NamedType: Equatable, Sendable {
-        var kind: String
-        var name: String
-        var description: String?
-        var fields: [Field]
-        var inputFields: [Argument]
-        var enumValues: [String]
-        var interfaces: [String]
-        var possibleTypes: [String]
+    package struct NamedType: Equatable, Sendable {
+        package var kind: String
+        package var name: String
+        package var description: String?
+        package var fields: [Field]
+        package var inputFields: [Argument]
+        package var enumValues: [String]
+        package var interfaces: [String]
+        package var possibleTypes: [String]
 
         /// A type a query names a field of: an object, an interface, a union.
-        var isComposite: Bool { ["OBJECT", "INTERFACE", "UNION"].contains(kind) }
+        package var isComposite: Bool { ["OBJECT", "INTERFACE", "UNION"].contains(kind) }
     }
 
-    var queryType: String?
-    var mutationType: String?
-    var subscriptionType: String?
-    var types: [String: NamedType]
+    package var queryType: String?
+    package var mutationType: String?
+    package var subscriptionType: String?
+    package var types: [String: NamedType]
 
     /// The types a person reads, not the schema's own (`__Type`…), roots first.
-    var browsable: [NamedType] {
+    package var browsable: [NamedType] {
         let roots = [queryType, mutationType, subscriptionType].compactMap { $0 }
         let rest = types.values.filter { !$0.name.hasPrefix("__") && !roots.contains($0.name) }.sorted { $0.name < $1.name }
         return roots.compactMap { types[$0] } + rest
@@ -66,14 +66,14 @@ struct GraphQLSchema: Equatable, Sendable {
 
     // MARK: Reading introspection
 
-    struct Failure: LocalizedError, Equatable {
-        let message: String
-        var errorDescription: String? { message }
+    package struct Failure: LocalizedError, Equatable {
+        package let message: String
+        package var errorDescription: String? { message }
     }
 
     /// From the answer to `introspectionQuery`: `{"data": {"__schema": …}}`,
     /// or what the server said instead.
-    static func parse(_ data: Data) throws -> GraphQLSchema {
+    package static func parse(_ data: Data) throws -> GraphQLSchema {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             let text = String(decoding: data.prefix(300), as: UTF8.self)
             throw Failure(message: "The server didn't answer with JSON: \(text)")
@@ -120,7 +120,7 @@ struct GraphQLSchema: Equatable, Sendable {
 
     /// The query every GraphQL IDE sends for a schema — seven levels of
     /// `ofType`, as GraphiQL's.
-    static let introspectionQuery = """
+    package static let introspectionQuery = """
         query IntrospectionQuery {
           __schema {
             queryType { name }
@@ -147,7 +147,7 @@ struct GraphQLSchema: Equatable, Sendable {
     // MARK: Completion
 
     /// What can be written where the caret is, given the query up to it.
-    enum Place: Equatable {
+    package enum Place: Equatable {
         /// A field of this type (inside its selection set).
         case field(String)
         /// An argument of this field of this type (inside its parentheses).
@@ -161,7 +161,7 @@ struct GraphQLSchema: Equatable, Sendable {
     /// The type at each `{` the caret is inside, the field the parentheses
     /// it is inside belong to — read from the text alone, strings and
     /// comments skipped, so a query that doesn't parse yet still completes.
-    func place(before text: String) -> Place {
+    package func place(before text: String) -> Place {
         var stack: [String?] = []
         var lastField: String?
         var pendingType: String?
@@ -275,13 +275,13 @@ struct GraphQLSchema: Equatable, Sendable {
         return .document
     }
 
-    struct Candidate: Equatable {
-        var label: String
-        var detail: String
+    package struct Candidate: Equatable {
+        package var label: String
+        package var detail: String
     }
 
     /// The word being typed, and what may finish it.
-    func complete(before text: String) -> (typed: String, candidates: [Candidate]) {
+    package func complete(before text: String) -> (typed: String, candidates: [Candidate]) {
         let typed = String(text.reversed().prefix { $0.isLetter || $0.isNumber || $0 == "_" }.reversed())
         let place = place(before: String(text.dropLast(typed.count)))
         var out: [Candidate]

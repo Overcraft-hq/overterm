@@ -3,15 +3,15 @@ import Foundation
 /// One state for Argo CD and Flux alike (docs/design/kubernetes/gitops.md,
 /// 2.3). Shown problems first, in this order; evaluated in
 /// `evaluationOrder` (`KubeGitOpsLadder`). Pure.
-enum KubeGitOpsState: Int, CaseIterable, Comparable, Sendable {
+package enum KubeGitOpsState: Int, CaseIterable, Comparable, Sendable {
     case failed, blocked, stuck, drift, progressing, paused, ready, unknown
 
     /// The ladder's order: the first that holds wins.
-    static let evaluationOrder: [KubeGitOpsState] = [.paused, .blocked, .failed, .stuck, .drift, .progressing, .ready, .unknown]
+    package static let evaluationOrder: [KubeGitOpsState] = [.paused, .blocked, .failed, .stuck, .drift, .progressing, .ready, .unknown]
 
-    static func < (lhs: KubeGitOpsState, rhs: KubeGitOpsState) -> Bool { lhs.rawValue < rhs.rawValue }
+    package static func < (lhs: KubeGitOpsState, rhs: KubeGitOpsState) -> Bool { lhs.rawValue < rhs.rawValue }
 
-    var word: String {
+    package var word: String {
         switch self {
         case .failed: "Failed"
         case .blocked: "Blocked"
@@ -25,7 +25,7 @@ enum KubeGitOpsState: Int, CaseIterable, Comparable, Sendable {
     }
 
     /// Said beside a word, never alone.
-    var glyph: String {
+    package var glyph: String {
         switch self {
         case .failed, .blocked: "●"
         case .stuck, .progressing: "◐"
@@ -38,7 +38,7 @@ enum KubeGitOpsState: Int, CaseIterable, Comparable, Sendable {
 
     /// Its colour, as the trees say it: Failed and Blocked bad; Stuck,
     /// Drift and Progressing waiting; Paused dim; Ready good; Unknown grey.
-    var mark: KubeTreeHealth {
+    package var mark: KubeTreeHealth {
         switch self {
         case .failed, .blocked: .bad
         case .stuck, .drift, .progressing: .waiting
@@ -49,16 +49,16 @@ enum KubeGitOpsState: Int, CaseIterable, Comparable, Sendable {
     }
 
     /// What Ask Why is offered on.
-    var isProblem: Bool { self == .failed || self == .blocked || self == .stuck }
+    package var isProblem: Bool { self == .failed || self == .blocked || self == .stuck }
 }
 
 /// What the ladder says of one object: its state, why in one line, since
 /// when (from the object's own times), the tags beside it.
-struct KubeGitOpsVerdict: Equatable, Sendable {
-    var state: KubeGitOpsState
-    var why: String
-    var since: Date?
-    var tags: [KubeGitOpsTag] = []
+package struct KubeGitOpsVerdict: Equatable, Sendable {
+    package var state: KubeGitOpsState
+    package var why: String
+    package var since: Date?
+    package var tags: [KubeGitOpsTag] = []
 }
 
 /// The state ladder (gitops.md, 2.3): rules evaluated in order, the first
@@ -69,26 +69,26 @@ struct KubeGitOpsVerdict: Equatable, Sendable {
 /// object the same whenever the section was opened. A Flux object's
 /// Blocked looks at its peers (the other summaries) and nothing else: no
 /// read. K602 and K603 (`KubeHealth`) are this. Pure.
-enum KubeGitOpsLadder {
+package enum KubeGitOpsLadder {
     /// An Argo CD operation Running longer than this is Stuck.
-    static let argoOperationLimit: TimeInterval = 600
+    package static let argoOperationLimit: TimeInterval = 600
     /// Argo CD's default reconcile period: auto-sync starts within it.
-    static let argoReconcilePeriod: TimeInterval = 180
+    package static let argoReconcilePeriod: TimeInterval = 180
     /// Three periods without a reconcile: "not reconciled for…".
-    static let notReconciledAfter: TimeInterval = 3 * 180
+    package static let notReconciledAfter: TimeInterval = 3 * 180
     /// A Flux object reconciling longer than `max(2 × interval, this)` is Stuck.
-    static let fluxStuckFloor: TimeInterval = 300
+    package static let fluxStuckFloor: TimeInterval = 300
     /// Flux not yet at the latest generation for less than this is Progressing.
-    static let generationGrace: TimeInterval = 60
+    package static let generationGrace: TimeInterval = 60
     /// How far a dependency chain is followed among the summaries.
-    static let chainHops = 5
+    package static let chainHops = 5
 
-    typealias Peers = [KubeGitOpsObject.Key: KubeGitOpsObject]
+    package typealias Peers = [KubeGitOpsObject.Key: KubeGitOpsObject]
 
     /// The verdict, its `why` one line of at most `KubeGitOpsMessage.rowLimit`
     /// (gitops.md, 2.2 column 5 and 5.3): the messages it quotes are kept
     /// at the hover's 4 KB, several lines when a manifest was cut from them.
-    static func evaluate(_ object: KubeGitOpsObject, now: Date, peers: Peers = [:]) -> KubeGitOpsVerdict {
+    package static func evaluate(_ object: KubeGitOpsObject, now: Date, peers: Peers = [:]) -> KubeGitOpsVerdict {
         var verdict: KubeGitOpsVerdict
         switch object.role {
         case .application: verdict = argo(object, now: now)
@@ -216,7 +216,7 @@ enum KubeGitOpsLadder {
     /// `chartRef`, else the HelmChart its template makes (`<ns>-<name>`, in
     /// its source's namespace) and that source; a Kustomization's or a
     /// HelmChart's `sourceRef`.
-    static func upstream(_ o: KubeGitOpsObject) -> [KubeGitOpsObject.Key] {
+    package static func upstream(_ o: KubeGitOpsObject) -> [KubeGitOpsObject.Key] {
         func key(_ source: KubeGitOps.FluxSource) -> KubeGitOpsObject.Key {
             KubeGitOpsObject.Key(kind: source.kind, namespace: source.namespace, name: source.name)
         }
@@ -348,7 +348,7 @@ enum KubeGitOpsLadder {
     /// `lastAttemptedRevision` is; a `chartRef` OCIRepository's is
     /// `<tag>@sha256:…`, compared by its digest with
     /// `lastAttemptedRevisionDigest` — a tag needn't be the chart's version.
-    static func unattempted(_ o: KubeGitOpsObject, peers: Peers) -> (revision: String, peer: KubeGitOpsObject)? {
+    package static func unattempted(_ o: KubeGitOpsObject, peers: Peers) -> (revision: String, peer: KubeGitOpsObject)? {
         guard o.role == .kustomization || o.role == .helmRelease, let source = upstream(o).first, let peer = peers[source],
             let fetched = peer.artifact?.revision, let attempted = o.revisions.attempted
         else { return nil }
@@ -362,7 +362,7 @@ enum KubeGitOpsLadder {
     /// `acme-infra ← cert-manager: HealthCheckFailed`: the first dependency
     /// that isn't ready, followed while each link is among the summaries,
     /// at most `chainHops`; nil when none is.
-    static func chain(_ o: KubeGitOpsObject, peers: Peers) -> String? {
+    package static func chain(_ o: KubeGitOpsObject, peers: Peers) -> String? {
         var names: [String] = []
         var current = o
         var seen: Set<KubeGitOpsObject.Key> = [o.key]

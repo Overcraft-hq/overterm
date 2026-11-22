@@ -6,23 +6,23 @@ import Foundation
 /// updates the table and every cell on screen with it. The page sets it
 /// (`ActivityPageModel.syncList`), only what changed.
 @MainActor
-final class ActivityListState: ObservableObject {
-    @Published fileprivate(set) var section: ActivityPageModel.Section = .processes
+package final class ActivityListState: ObservableObject {
+    @Published package fileprivate(set) var section: ActivityPageModel.Section = .processes
     /// The section's rows, their order's token and places.
-    @Published fileprivate(set) var rows = ActivityListRows()
-    @Published fileprivate(set) var columns: [ResourceColumn] = []
-    @Published fileprivate(set) var sort: ResourceSort?
-    @Published fileprivate(set) var selection: Set<String> = []
-    @Published fileprivate(set) var following = false
-    @Published fileprivate(set) var hasRead = false
+    @Published package fileprivate(set) var rows = ActivityListRows()
+    @Published package fileprivate(set) var columns: [ResourceColumn] = []
+    @Published package fileprivate(set) var sort: ResourceSort?
+    @Published package fileprivate(set) var selection: Set<String> = []
+    @Published package fileprivate(set) var following = false
+    @Published package fileprivate(set) var hasRead = false
     /// What an empty section says (6.4).
-    @Published fileprivate(set) var emptySentence = ""
+    @Published package fileprivate(set) var emptySentence = ""
 }
 
 extension ActivityPageModel {
     /// The list's state brought up to the page's: each part assigned only
     /// when it changed, the rows when the content or the section did.
-    func syncList(rows rowsChanged: Bool = false) {
+    package func syncList(rows rowsChanged: Bool = false) {
         let list = self.list
         let section = self.section
         if rowsChanged || list.section != section { list.rows = content.listRows(section) }

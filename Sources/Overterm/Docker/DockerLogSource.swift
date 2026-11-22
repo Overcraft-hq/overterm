@@ -5,23 +5,23 @@ import Foundation
 /// a time, from that second (`since` is whole seconds) — the follower
 /// drops what it already has.
 @MainActor
-final class DockerLogSource: LogSource {
-    let id: String
+package final class DockerLogSource: LogSource {
+    package let id: String
     /// Its compose service, in a project's merged logs.
-    let service: String?
+    package let service: String?
     /// A TTY's output comes plain, the rest framed; the detail says, or
     /// the engine is asked once.
-    var tty: Bool?
+    package var tty: Bool?
     private let docker: DockerModel
 
-    init(id: String, service: String? = nil, tty: Bool? = nil, docker: DockerModel) {
+    package init(id: String, service: String? = nil, tty: Bool? = nil, docker: DockerModel) {
         self.id = id
         self.service = service
         self.tty = tty
         self.docker = docker
     }
 
-    func follow(tail: Int, after: String?) async -> AsyncThrowingStream<[LogLine], any Error>? {
+    package func follow(tail: Int, after: String?) async -> AsyncThrowingStream<[LogLine], any Error>? {
         guard let engine = docker.engine else { return nil }
         if tty == nil { tty = try? await engine.container(id).Config.Tty }
         // Stopped while that was read: no stream is opened after all.
@@ -32,7 +32,7 @@ final class DockerLogSource: LogSource {
     }
 
     /// Ended by a restart whose start came first: followed again.
-    func followsAgain() async -> Bool {
+    package func followsAgain() async -> Bool {
         try? await Task.sleep(for: .milliseconds(300))
         guard !Task.isCancelled, let engine = docker.engine else { return false }
         return (try? await engine.container(id).State.Running) == true

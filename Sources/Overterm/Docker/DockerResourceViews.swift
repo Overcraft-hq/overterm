@@ -7,12 +7,12 @@ private func ago(_ seconds: Int) -> String {
 }
 
 /// A key, its value: the details' rows.
-struct DockerDetailRow: View {
-    let key: String
-    let value: String
-    @ObservedObject var theme: ChromeTheme
+package struct DockerDetailRow: View {
+    package let key: String
+    package let value: String
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(verbatim: key).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).frame(width: 110, alignment: .leading).lineLimit(1)
             Text(verbatim: value).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text).textSelection(.enabled)
@@ -21,12 +21,12 @@ struct DockerDetailRow: View {
     }
 }
 
-struct DockerDetailBlock<Content: View>: View {
-    let title: String
-    @ObservedObject var theme: ChromeTheme
-    @ViewBuilder var content: Content
+package struct DockerDetailBlock<Content: View>: View {
+    package let title: String
+    @ObservedObject package var theme: ChromeTheme
+    @ViewBuilder package var content: Content
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
             content
@@ -35,21 +35,21 @@ struct DockerDetailBlock<Content: View>: View {
 }
 
 /// A row of a resource list: a glyph, a name, what is under it, figures on the right.
-struct DockerResourceRow: View {
-    let symbol: String
-    let title: String
-    let subtitle: String
-    let figures: [String]
-    let dim: Bool
-    @ObservedObject var theme: ChromeTheme
+package struct DockerResourceRow: View {
+    package let symbol: String
+    package let title: String
+    package let subtitle: String
+    package let figures: [String]
+    package let dim: Bool
+    @ObservedObject package var theme: ChromeTheme
     /// An image's row: its badge when this engine runs it emulated.
-    var imageID: String? = nil
-    var docker: DockerModel? = nil
+    package var imageID: String? = nil
+    package var docker: DockerModel? = nil
     /// A chip before the figures (an image's `update`), and its help.
-    var badge: String? = nil
-    var badgeHelp: String? = nil
+    package var badge: String? = nil
+    package var badgeHelp: String? = nil
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 8) {
             Image(systemName: symbol).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
@@ -78,22 +78,22 @@ struct DockerResourceRow: View {
 // MARK: Images
 
 /// An image's detail's tabs: what it is, and what Docker Scout found in it.
-enum DockerImageTab: String, CaseIterable, Identifiable {
+package enum DockerImageTab: String, CaseIterable, Identifiable {
     case overview, vulnerabilities
 
-    var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    package var id: String { rawValue }
+    package var title: String { rawValue.capitalized }
 }
 
-struct DockerImagesView: View {
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var docker: DockerModel
+package struct DockerImagesView: View {
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var docker: DockerModel
     /// What the registries said: a row's `update`, a detail's Registry.
-    @ObservedObject var updates: DockerImageUpdates
+    @ObservedObject package var updates: DockerImageUpdates
     /// What Scout found: a row's `1C 2H`, the detail's Vulnerabilities.
-    @ObservedObject var scans: DockerScoutScans
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+    @ObservedObject package var scans: DockerScoutScans
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
     @State private var pullName = ""
     @State private var found: [DockerEngine.SearchResult] = []
 
@@ -105,7 +105,7 @@ struct DockerImagesView: View {
         }
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle").foregroundStyle(theme.text3)
@@ -232,7 +232,7 @@ struct DockerImagesView: View {
 extension DockerImagesView {
     /// A row's chip: a newer image in its registry, or another one where
     /// this one may have been built here.
-    func badge(_ image: ImageSummary) -> (words: String, help: String)? {
+    package func badge(_ image: ImageSummary) -> (words: String, help: String)? {
         let states = image.tags.map(updates.state(of:))
         if states.contains(.available) { return ("update", "Its registry has a newer image under this tag — Pull Update pulls it") }
         if states.contains(.differs) {
@@ -405,10 +405,10 @@ private struct DockerImageDetail: View {
 }
 
 /// A layer's command as a Dockerfile says it. Pure.
-enum DockerImageDetailSteps {
+package enum DockerImageDetailSteps {
     /// `/bin/sh -c #(nop)  CMD ["nginx"]` → `CMD ["nginx"]`; a classic
     /// builder's `/bin/sh -c …` → `RUN …`; BuildKit's own lines as they are.
-    static func step(_ createdBy: String) -> String {
+    package static func step(_ createdBy: String) -> String {
         var text = createdBy.replacingOccurrences(of: "/bin/sh -c #(nop) ", with: "").trimmingCharacters(in: .whitespaces)
         if text.hasPrefix("/bin/sh -c ") { text = "RUN " + text.dropFirst("/bin/sh -c ".count) }
         return text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
@@ -417,11 +417,11 @@ enum DockerImageDetailSteps {
 
 // MARK: Volumes
 
-struct DockerVolumesView: View {
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var docker: DockerModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+package struct DockerVolumesView: View {
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var docker: DockerModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
 
     private var shown: [VolumeSummary] {
         let words = page.filter.lowercased().split(separator: " ").map(String.init)
@@ -431,7 +431,7 @@ struct DockerVolumesView: View {
         }
     }
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 0) {
             List(selection: $page.volumeSelection) {
                 ForEach(shown) { volume in
@@ -550,18 +550,18 @@ private struct DockerVolumeDetail: View {
 
 // MARK: Networks
 
-struct DockerNetworksView: View {
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var docker: DockerModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+package struct DockerNetworksView: View {
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var docker: DockerModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
 
     private var shown: [NetworkSummary] {
         let words = page.filter.lowercased().split(separator: " ").map(String.init)
         return docker.networks.filter { network in words.allSatisfy { (network.Name + " " + (network.Driver ?? "")).lowercased().contains($0) } }
     }
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 0) {
             List(selection: $page.networkSelection) {
                 ForEach(shown) { network in
@@ -625,11 +625,11 @@ struct DockerNetworksView: View {
 /// A Testcontainers run, beside the list: what made it and when, its
 /// reaper, its containers a click each, and its verbs. It reads nothing:
 /// all of it is the list's.
-struct TestcontainersSessionView: View {
-    let session: TestcontainersSession
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+package struct TestcontainersSessionView: View {
+    package let session: TestcontainersSession
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
 
     private var library: String? {
         session.lang.map { lang in [lang, session.version].compactMap { $0 }.joined(separator: " ") }
@@ -649,7 +649,7 @@ struct TestcontainersSessionView: View {
         return session.id.isEmpty ? "none — kept for reuse, they outlive their runs" : "none — nothing removes these but you"
     }
 
-    var body: some View {
+    package var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -699,12 +699,12 @@ struct TestcontainersSessionView: View {
 // MARK: Clean Up
 
 /// What Clean Up would remove, chosen and listed before anything goes.
-struct DockerCleanUpSheet: View {
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var docker: DockerModel
-    @ObservedObject var theme: ChromeTheme
+package struct DockerCleanUpSheet: View {
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var docker: DockerModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         let plan = page.cleanPlan
         VStack(alignment: .leading, spacing: 14) {
             Text("Clean Up").font(.system(size: ChromeMetrics.text(17), weight: .semibold))
@@ -760,11 +760,11 @@ struct DockerCleanUpSheet: View {
 }
 
 /// What Docker takes on the disk, under the sections.
-struct DockerDiskSummary: View {
-    @ObservedObject var docker: DockerModel
-    @ObservedObject var theme: ChromeTheme
+package struct DockerDiskSummary: View {
+    @ObservedObject package var docker: DockerModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if let usage = docker.diskUsage {
             VStack(alignment: .leading, spacing: 3) {
                 Text("On disk").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
@@ -790,11 +790,11 @@ struct DockerDiskSummary: View {
 
 /// The Run window: an image in a new container, the command written out
 /// as it is filled in, run in a terminal tab.
-struct DockerRunSheet: View {
-    @State var spec: DockerRunSpec
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var docker: DockerModel
-    let actions: DockerActions
+package struct DockerRunSheet: View {
+    @State package var spec: DockerRunSpec
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var docker: DockerModel
+    package let actions: DockerActions
     @State private var ports = ""
     @State private var env = ""
     @State private var volumes = ""
@@ -809,7 +809,7 @@ struct DockerRunSheet: View {
         return spec
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Run").font(.system(size: ChromeMetrics.text(17), weight: .semibold))
             ForEach(Array(spec.notes.enumerated()), id: \.offset) { _, note in
@@ -897,12 +897,12 @@ struct DockerRunSheet: View {
 /// Docker Model Runner's models: what is pulled, what is loaded, what they
 /// take; a chat with one in a terminal tab (`n`), a pull, a removal asked
 /// first (⌫), the OpenAI endpoint to give a program.
-struct DockerModelsView: View {
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+package struct DockerModelsView: View {
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header.padding(.horizontal, 16).padding(.vertical, 10)
             Rectangle().fill(theme.border).frame(height: 1)

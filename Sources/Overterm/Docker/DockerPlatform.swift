@@ -2,16 +2,16 @@ import Foundation
 
 /// What an image is built for, or what an engine runs on, as Docker says a
 /// platform: `linux/amd64`, `linux/arm/v7`. Pure.
-struct DockerPlatform: Hashable, Sendable, CustomStringConvertible {
-    var os: String
+package struct DockerPlatform: Hashable, Sendable, CustomStringConvertible {
+    package var os: String
     /// Go's names, as images say them: amd64, arm64, arm, 386, ppc64le,
     /// s390x, riscv64.
-    var architecture: String
+    package var architecture: String
     /// arm's v7 and v6; nil for the others, whose variants (arm64's v8,
     /// amd64's v2 and v3) don't change what runs them.
-    var variant: String?
+    package var variant: String?
 
-    init(architecture: String, variant: String? = nil, os: String = "linux") {
+    package init(architecture: String, variant: String? = nil, os: String = "linux") {
         self.os = os
         self.architecture = architecture
         self.variant = variant
@@ -20,7 +20,7 @@ struct DockerPlatform: Hashable, Sendable, CustomStringConvertible {
     /// An image's inspect data (`Os`, `Architecture`, `Variant`). Nil when
     /// it says no architecture. arm64's `v8` is dropped, as containerd
     /// drops it: an index says `arm64/v8` and an image `arm64`.
-    init?(os: String?, architecture: String?, variant: String?) {
+    package init?(os: String?, architecture: String?, variant: String?) {
         guard let architecture = architecture?.lowercased(), !architecture.isEmpty else { return nil }
         let os = os.flatMap { $0.isEmpty ? nil : $0.lowercased() } ?? "linux"
         let variant = variant.flatMap { $0.isEmpty ? nil : $0.lowercased() }
@@ -29,7 +29,7 @@ struct DockerPlatform: Hashable, Sendable, CustomStringConvertible {
 
     /// The engine's, from `/info`: its `Architecture` is the host's
     /// `uname -m` (aarch64, x86_64), its `OSType` Go's (linux).
-    init?(engine machine: String?, os: String? = "linux") {
+    package init?(engine machine: String?, os: String? = "linux") {
         guard let machine = machine?.lowercased(), !machine.isEmpty else { return nil }
         let (architecture, variant): (String, String?) =
             switch machine {
@@ -44,14 +44,14 @@ struct DockerPlatform: Hashable, Sendable, CustomStringConvertible {
     }
 
     /// `linux/arm/v7`, as `--platform` takes it.
-    var description: String { ([os, architecture] + [variant].compactMap { $0 }).joined(separator: "/") }
+    package var description: String { ([os, architecture] + [variant].compactMap { $0 }).joined(separator: "/") }
 
     /// `arm/v7`: what a badge says.
-    var short: String { ([architecture] + [variant].compactMap { $0 }).joined(separator: "/") }
+    package var short: String { ([architecture] + [variant].compactMap { $0 }).joined(separator: "/") }
 
     /// Whether `engine` runs it without translating: the same architecture,
     /// or 32-bit x86 on amd64.
-    func runsNatively(on engine: DockerPlatform) -> Bool {
+    package func runsNatively(on engine: DockerPlatform) -> Bool {
         architecture == engine.architecture || (architecture == "386" && engine.architecture == "amd64")
     }
 
@@ -59,7 +59,7 @@ struct DockerPlatform: Hashable, Sendable, CustomStringConvertible {
     /// says the image's id — its tag has moved on (a pull, a build) —
     /// when only inspect's `reference` (`Config.Image`) names it. Nil
     /// when nothing does.
-    static func nameToPull(_ container: ContainerSummary, reference: String? = nil) -> String? {
+    package static func nameToPull(_ container: ContainerSummary, reference: String? = nil) -> String? {
         let image = container.Image
         let id = (container.ImageID ?? "").replacingOccurrences(of: "sha256:", with: "")
         let byID = DockerClient.listsImageByID(container) || (image.count >= 12 && image.allSatisfy(\.isHexDigit) && id.hasPrefix(image))
@@ -72,23 +72,23 @@ struct DockerPlatform: Hashable, Sendable, CustomStringConvertible {
 /// An image that runs translated here: built for another architecture than
 /// the engine's — amd64 on Apple silicon. Its words, as the row's badge,
 /// a detail's box, the verbs and the agents say them. Pure.
-struct DockerEmulation: Equatable, Sendable {
-    var image: DockerPlatform
-    var engine: DockerPlatform
+package struct DockerEmulation: Equatable, Sendable {
+    package var image: DockerPlatform
+    package var engine: DockerPlatform
 
     /// Nil when either isn't known, when the image runs natively, or when
     /// the os differs: a Windows image on a Linux engine isn't emulated,
     /// it doesn't run at all.
-    init?(image: DockerPlatform?, engine: DockerPlatform?) {
+    package init?(image: DockerPlatform?, engine: DockerPlatform?) {
         guard let image, let engine, image.os == engine.os, !image.runsNatively(on: engine) else { return nil }
         self.image = image
         self.engine = engine
     }
 
     /// `Emulated: linux/amd64 on a linux/arm64 engine`.
-    var title: String { "Emulated: \(image.description) on a \(engine.description) engine" }
+    package var title: String { "Emulated: \(image.description) on a \(engine.description) engine" }
 
-    var summary: String {
+    package var summary: String {
         "The engine translates every instruction (Rosetta or QEMU): slower, often several times over, and some programs crash under it."
     }
 
@@ -96,7 +96,7 @@ struct DockerEmulation: Equatable, Sendable {
     /// builds, another service, a container on its own. `built`: whether
     /// its project's files build the service (`ComposeFacts.built`), nil
     /// while they aren't read.
-    func advice(for container: ContainerSummary, built: Bool?) -> String {
+    package func advice(for container: ContainerSummary, built: Bool?) -> String {
         let native = engine.short
         let pick = "A “platform: \(image.description)” in the compose file, or DOCKER_DEFAULT_PLATFORM in your shell, picks \(image.short) again."
         var text: String
@@ -118,24 +118,24 @@ struct DockerEmulation: Equatable, Sendable {
     }
 
     /// The image's own box.
-    var imageAdvice: String {
+    package var imageAdvice: String {
         "Built for \(image.description): this engine runs it emulated, slower. If it has a variant for \(engine.description), pulling that one runs natively."
     }
 
     /// The container's verb, which the box's button is too.
-    func verbTitle(for container: ContainerSummary, built: Bool?) -> String {
+    package func verbTitle(for container: ContainerSummary, built: Bool?) -> String {
         guard Self.isService(container) else { return "Pull the \(engine.short) Variant in a Tab" }
         return built == true ? "Rebuild as \(engine.short) in a Tab" : "Recreate as \(engine.short) in a Tab"
     }
 
     /// A compose project's service: a one-off (`compose run`) isn't one.
-    static func isService(_ container: ContainerSummary) -> Bool {
+    package static func isService(_ container: ContainerSummary) -> Bool {
         container.composeProject != nil && container.composeService != nil && !container.isOneOff
     }
 
     /// The image's verb: a pull through the engine.
-    var imageVerbTitle: String { "Pull the \(engine.short) Variant" }
+    package var imageVerbTitle: String { "Pull the \(engine.short) Variant" }
 
     /// What a badge's help says.
-    var help: String { "\(title) — slower. Its detail says what to do." }
+    package var help: String { "\(title) — slower. Its detail says what to do." }
 }

@@ -6,19 +6,19 @@ import WebKit
 /// Safari's — and which one shows. An agent in the tab acts on the page
 /// that shows, and can open, pick and close pages (BrowserMCP).
 @MainActor
-final class BrowserWorkspace: ObservableObject {
-    @Published private(set) var pages: [BrowserSession] = []
-    @Published private(set) var activeIndex = 0
-    var onOpenExternally: ((URL) -> Void)?
+package final class BrowserWorkspace: ObservableObject {
+    @Published package private(set) var pages: [BrowserSession] = []
+    @Published package private(set) var activeIndex = 0
+    package var onOpenExternally: ((URL) -> Void)?
     /// A page, its title or its address changed: the strip redraws.
-    let changed = PassthroughSubject<Void, Never>()
+    package let changed = PassthroughSubject<Void, Never>()
     private var pageObservers: [ObjectIdentifier: AnyCancellable] = [:]
 
-    var active: BrowserSession? { pages.indices.contains(activeIndex) ? pages[activeIndex] : nil }
+    package var active: BrowserSession? { pages.indices.contains(activeIndex) ? pages[activeIndex] : nil }
 
     /// A new page — after the one showing — loading `url` if given.
     @discardableResult
-    func newPage(_ url: URL? = nil, configuration: WKWebViewConfiguration? = nil, select: Bool = true) -> BrowserSession {
+    package func newPage(_ url: URL? = nil, configuration: WKWebViewConfiguration? = nil, select: Bool = true) -> BrowserSession {
         let page = BrowserSession(configuration: configuration)
         page.onOpenExternally = { [weak self] in self?.onOpenExternally?($0) }
         page.onOpenPage = { [weak self] configuration, url in
@@ -36,7 +36,7 @@ final class BrowserWorkspace: ObservableObject {
         return page
     }
 
-    func select(_ index: Int) {
+    package func select(_ index: Int) {
         guard pages.indices.contains(index), index != activeIndex else { return }
         activeIndex = index
         changed.send()
@@ -44,7 +44,7 @@ final class BrowserWorkspace: ObservableObject {
 
     /// Closes a page; its neighbour shows. The last one closing leaves the
     /// browser empty (its ports to open, an address to type).
-    func close(_ index: Int) {
+    package func close(_ index: Int) {
         guard pages.indices.contains(index) else { return }
         let page = pages.remove(at: index)
         pageObservers[ObjectIdentifier(page)] = nil
@@ -53,12 +53,12 @@ final class BrowserWorkspace: ObservableObject {
         changed.send()
     }
 
-    func closeAll() {
+    package func closeAll() {
         while !pages.isEmpty { close(pages.count - 1) }
     }
 
     /// What the session file keeps: each page's address and which shows.
-    var savedPages: (urls: [URL], active: Int)? {
+    package var savedPages: (urls: [URL], active: Int)? {
         let urls = pages.compactMap { $0.url.flatMap { $0.isFileURL || $0.scheme == "about" || $0.scheme == "data" ? nil : $0 } }
         return urls.isEmpty ? nil : (urls, min(activeIndex, urls.count - 1))
     }
@@ -68,35 +68,35 @@ final class BrowserWorkspace: ObservableObject {
 }
 
 extension BrowserWorkspace: AgentBrowser {
-    func navigate(_ url: URL, timeout: TimeInterval) async throws { try await current.navigate(url, timeout: timeout) }
-    func snapshot() async throws -> String { try await current.snapshot() }
-    func click(ref: String) async throws { try await current.click(ref: ref) }
-    func type(ref: String, text: String, submit: Bool) async throws { try await current.type(ref: ref, text: text, submit: submit) }
-    func evaluate(_ script: String) async throws -> String { try await current.evaluate(script) }
-    func screenshot() async throws -> Data { try await current.screenshot() }
-    func consoleText(onlyErrors: Bool, limit: Int) -> String { active?.consoleText(onlyErrors: onlyErrors, limit: limit) ?? "" }
-    func goBack() { active?.goBack() }
-    func reload() { active?.reload() }
-    func waitForLoad(timeout: TimeInterval) async throws { try await active?.waitForLoad(timeout: timeout) }
+    package func navigate(_ url: URL, timeout: TimeInterval) async throws { try await current.navigate(url, timeout: timeout) }
+    package func snapshot() async throws -> String { try await current.snapshot() }
+    package func click(ref: String) async throws { try await current.click(ref: ref) }
+    package func type(ref: String, text: String, submit: Bool) async throws { try await current.type(ref: ref, text: text, submit: submit) }
+    package func evaluate(_ script: String) async throws -> String { try await current.evaluate(script) }
+    package func screenshot() async throws -> Data { try await current.screenshot() }
+    package func consoleText(onlyErrors: Bool, limit: Int) -> String { active?.consoleText(onlyErrors: onlyErrors, limit: limit) ?? "" }
+    package func goBack() { active?.goBack() }
+    package func reload() { active?.reload() }
+    package func waitForLoad(timeout: TimeInterval) async throws { try await active?.waitForLoad(timeout: timeout) }
 
-    func tabsDescription() -> String {
+    package func tabsDescription() -> String {
         guard !pages.isEmpty else { return "No pages open." }
         return pages.enumerated().map { index, page in
             "\(index == activeIndex ? "*" : " ") [\(index)] \(page.title.isEmpty ? "(untitled)" : page.title) — \(page.url?.absoluteString ?? "about:blank")"
         }.joined(separator: "\n")
     }
 
-    func openTab(_ url: URL?, timeout: TimeInterval) async throws {
+    package func openTab(_ url: URL?, timeout: TimeInterval) async throws {
         let page = newPage()
         if let url { try await page.navigate(url, timeout: timeout) }
     }
 
-    func selectTab(_ index: Int) throws {
+    package func selectTab(_ index: Int) throws {
         guard pages.indices.contains(index) else { throw BrowserError.noTab(index) }
         select(index)
     }
 
-    func closeTab(_ index: Int) throws {
+    package func closeTab(_ index: Int) throws {
         guard pages.indices.contains(index) else { throw BrowserError.noTab(index) }
         close(index)
     }

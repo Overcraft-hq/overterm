@@ -5,20 +5,20 @@ import GhosttyKit
 
 /// A key with its modifiers, written as keybindings.json has it:
 /// "cmd+shift+d", "ctrl+alt+left", "cmd+=" — VS Code's form.
-struct KeyCombo: Hashable, Sendable {
-    var control = false
-    var option = false
-    var shift = false
-    var command = false
+package struct KeyCombo: Hashable, Sendable {
+    package var control = false
+    package var option = false
+    package var shift = false
+    package var command = false
     /// A character ("d", "[", "=") or a named key ("enter", "up", "f5").
-    var key: String
+    package var key: String
 
-    static let namedKeys: [String] =
+    package static let namedKeys: [String] =
         [
             "enter", "tab", "space", "escape", "backspace", "delete", "up", "down", "left", "right", "home", "end", "pageup", "pagedown",
         ] + (1...12).map { "f\($0)" }
 
-    init(control: Bool = false, option: Bool = false, shift: Bool = false, command: Bool = false, key: String) {
+    package init(control: Bool = false, option: Bool = false, shift: Bool = false, command: Bool = false, key: String) {
         self.control = control
         self.option = option
         self.shift = shift
@@ -27,7 +27,7 @@ struct KeyCombo: Hashable, Sendable {
     }
 
     /// "cmd+shift+d"; nil when it isn't one key with modifiers.
-    init?(_ text: String) {
+    package init?(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespaces).lowercased()
         // The key may itself be "+" ("cmd++").
         var parts = trimmed.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
@@ -50,12 +50,12 @@ struct KeyCombo: Hashable, Sendable {
     }
 
     /// As keybindings.json writes it, modifiers in a fixed order.
-    var text: String {
+    package var text: String {
         (control ? "ctrl+" : "") + (option ? "alt+" : "") + (shift ? "shift+" : "") + (command ? "cmd+" : "") + key
     }
 
     /// As menus show it: ⌃⌥⇧⌘ and the key.
-    var display: String {
+    package var display: String {
         (control ? "⌃" : "") + (option ? "⌥" : "") + (shift ? "⇧" : "") + (command ? "⌘" : "") + Self.displayName(key)
     }
 
@@ -80,7 +80,7 @@ struct KeyCombo: Hashable, Sendable {
     }
 
     /// As a Ghostty keybind trigger: "super+shift+d", "super+arrow_up".
-    var ghostty: String {
+    package var ghostty: String {
         let name: String =
             switch key {
             case "up", "down", "left", "right": "arrow_" + key
@@ -92,7 +92,7 @@ struct KeyCombo: Hashable, Sendable {
     }
 
     /// The menu item's key equivalent and modifiers.
-    var menuKey: (key: String, modifiers: NSEvent.ModifierFlags) {
+    package var menuKey: (key: String, modifiers: NSEvent.ModifierFlags) {
         var modifiers: NSEvent.ModifierFlags = []
         if control { modifiers.insert(.control) }
         if option { modifiers.insert(.option) }
@@ -125,14 +125,14 @@ struct KeyCombo: Hashable, Sendable {
     /// it, as menus and Ghostty's defaults have it): ⌘, stays "cmd+," on a
     /// Turkish Q, where AppKit shows it as ⌘Ö. Nil for a key we can't name
     /// or one with no ⌘/⌃/⌥ (a plain letter isn't a shortcut).
-    init?(event: NSEvent) {
+    package init?(event: NSEvent) {
         self.init(pressed: event)
         let isFunctionKey = key.hasPrefix("f") && key.count > 1
         guard command || control || option || isFunctionKey else { return nil }
     }
 
     /// Any key pressed, shortcut or not: the editor's ⇧⎋ has only a shift.
-    init?(pressed event: NSEvent) {
+    package init?(pressed event: NSEvent) {
         guard let key = Self.keyCodes[Int(event.keyCode)] else { return nil }
         let flags = event.modifierFlags
         self.init(
@@ -141,7 +141,7 @@ struct KeyCombo: Hashable, Sendable {
     }
 
     /// From a Ghostty trigger (the defaults, as its config has them).
-    init?(trigger: ghostty_input_trigger_s) {
+    package init?(trigger: ghostty_input_trigger_s) {
         let key: String
         switch trigger.tag {
         case GHOSTTY_TRIGGER_UNICODE:
@@ -199,24 +199,24 @@ struct KeyCombo: Hashable, Sendable {
 
 /// Something a key can do: a menu item (by identifier), a Ghostty action
 /// in the terminal, or both.
-struct KeyCommand: Identifiable, Sendable {
-    let id: String
-    let title: String
-    let group: String
+package struct KeyCommand: Identifiable, Sendable {
+    package let id: String
+    package let title: String
+    package let group: String
     /// The default key; nil for Ghostty's own actions, whose default is
     /// what the user's Ghostty config (or Ghostty) binds.
-    let defaultKey: String?
+    package let defaultKey: String?
     /// The Ghostty action that also binds the default key (or, for a
     /// terminal-only command, is the command).
-    let ghostty: String?
+    package let ghostty: String?
     /// A menu item carries it (NSMenuItem.identifier == id).
-    let menu: Bool
+    package let menu: Bool
     /// Only while the editor has the keyboard, as Zed's `Editor` context:
     /// the editor takes the key before the menu and the terminal never sees
     /// it, so ⌘D can select the next match there and split a pane here.
-    let editor: Bool
+    package let editor: Bool
 
-    init(
+    package init(
         _ id: String, _ title: String, group: String, key: String? = nil, ghostty: String? = nil, menu: Bool = true,
         editor: Bool = false
     ) {
@@ -229,14 +229,14 @@ struct KeyCommand: Identifiable, Sendable {
         self.editor = editor
     }
 
-    func matches(_ query: String) -> Bool {
+    package func matches(_ query: String) -> Bool {
         let query = query.trimmingCharacters(in: .whitespaces).lowercased()
         return query.isEmpty || [title, group, id].contains { $0.lowercased().contains(query) }
     }
 }
 
-enum KeyCommands {
-    static let all: [KeyCommand] = [
+package enum KeyCommands {
+    package static let all: [KeyCommand] = [
         // Overterm
         .init("app.settings", "Settings", group: "Overterm", key: "cmd+,", ghostty: "open_config"),
         .init("app.changelog", "View Latest Changelog", group: "Overterm", key: "alt+cmd+o"),
@@ -406,28 +406,28 @@ enum KeyCommands {
         .init("editor.previousFile", "Previous File", group: "Editor", key: "alt+cmd+left", editor: true),
     ]
 
-    static let byID: [String: KeyCommand] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
-    static let groups = ["Overterm", "Tabs", "Groups", "Panes", "Panels", "Editing", "Terminal", "Window", "Editor"]
+    package static let byID: [String: KeyCommand] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+    package static let groups = ["Overterm", "Tabs", "Groups", "Panes", "Panels", "Editing", "Terminal", "Window", "Editor"]
 }
 
 /// keybindings.json, VS Code's way: a list of { "key", "command" }, each
 /// adding a binding; "-command" removes the default one with that key. One
 /// key per command — a menu item holds one — so the last entry wins.
 @MainActor
-final class Keybindings: ObservableObject {
-    static let shared = Keybindings(
+package final class Keybindings: ObservableObject {
+    package static let shared = Keybindings(
         url: AppEnvironment.supportDirectory.appendingPathComponent("keybindings.json"),
         ghosttyDefault: { GhosttyRuntime.shared.defaultTrigger(for: $0).flatMap(KeyCombo.init(trigger:)) })
 
-    struct Entry: Equatable {
-        let key: String
-        let command: String
+    package struct Entry: Equatable {
+        package let key: String
+        package let command: String
     }
 
-    let url: URL
-    @Published private(set) var entries: [Entry] = []
-    @Published private(set) var problems: [String] = []
-    let changes = PassthroughSubject<Void, Never>()
+    package let url: URL
+    @Published package private(set) var entries: [Entry] = []
+    @Published package private(set) var problems: [String] = []
+    package let changes = PassthroughSubject<Void, Never>()
 
     /// Ghostty's own binding for an action, without Settings' overrides.
     private let ghosttyDefault: (String) -> KeyCombo?
@@ -435,7 +435,7 @@ final class Keybindings: ObservableObject {
     private var watcher: DirectoryWatcher?
     private var parses = true
 
-    init(url: URL, ghosttyDefault: @escaping (String) -> KeyCombo?, watch: Bool = true) {
+    package init(url: URL, ghosttyDefault: @escaping (String) -> KeyCombo?, watch: Bool = true) {
         self.url = url
         self.ghosttyDefault = ghosttyDefault
         load()
@@ -446,7 +446,7 @@ final class Keybindings: ObservableObject {
 
     // MARK: Reading
 
-    func defaultKey(_ command: KeyCommand) -> KeyCombo? {
+    package func defaultKey(_ command: KeyCommand) -> KeyCombo? {
         if let text = command.defaultKey { return KeyCombo(text) }
         guard let action = command.ghostty else { return nil }
         return ghosttyDefault(action) ?? Self.performableDefaults[action].flatMap(KeyCombo.init)
@@ -456,12 +456,12 @@ final class Keybindings: ObservableObject {
     /// `ghostty_config_trigger` doesn't report (v1.3.1, src/config/Config.zig).
     /// Not knowing ⌘F was the terminal's search, the menu's Find… had Ghostty
     /// let go of it — and ⌘F did nothing in the terminal.
-    static let performableDefaults: [String: String] = [
+    package static let performableDefaults: [String: String] = [
         "start_search": "cmd+f", "search_selection": "cmd+e", "end_search": "shift+cmd+f",
     ]
 
     /// The key that does it now: the file's last word on it, else the default.
-    func key(for command: KeyCommand) -> KeyCombo? {
+    package func key(for command: KeyCommand) -> KeyCombo? {
         var key = defaultKey(command)
         for entry in entries {
             if entry.command == command.id {
@@ -473,12 +473,12 @@ final class Keybindings: ObservableObject {
         return key
     }
 
-    func isChanged(_ command: KeyCommand) -> Bool { key(for: command) != defaultKey(command) }
+    package func isChanged(_ command: KeyCommand) -> Bool { key(for: command) != defaultKey(command) }
 
     /// Other commands on the same key. Two defaults sharing one is by
     /// design (⌘F: the editor's find, the terminal's search) — only a key
     /// someone chose is a clash.
-    func conflicts(for command: KeyCommand) -> [KeyCommand] {
+    package func conflicts(for command: KeyCommand) -> [KeyCommand] {
         guard let key = key(for: command) else { return [] }
         return KeyCommands.all.filter { other in
             other.id != command.id && other.editor == command.editor && self.key(for: other) == key
@@ -486,12 +486,12 @@ final class Keybindings: ObservableObject {
         }
     }
 
-    var fileText: String { (try? String(contentsOf: url, encoding: .utf8)) ?? Self.text(of: []) }
+    package var fileText: String { (try? String(contentsOf: url, encoding: .utf8)) ?? Self.text(of: []) }
 
     // MARK: Writing
 
     /// Binds `key` to `command`; nil leaves it without one.
-    func set(_ command: KeyCommand, to key: KeyCombo?) {
+    package func set(_ command: KeyCommand, to key: KeyCombo?) {
         guard parses else { return }
         var kept = entries.filter { $0.command != command.id && $0.command != "-" + command.id }
         let fallback = defaultKey(command)
@@ -505,22 +505,22 @@ final class Keybindings: ObservableObject {
         save(text: Self.text(of: kept))
     }
 
-    func reset(_ command: KeyCommand) {
+    package func reset(_ command: KeyCommand) {
         guard parses else { return }
         save(text: Self.text(of: entries.filter { $0.command != command.id && $0.command != "-" + command.id }))
     }
 
-    func resetAll() { save(text: Self.text(of: [])) }
+    package func resetAll() { save(text: Self.text(of: [])) }
 
     /// The JSON view's Save.
-    func save(text: String) {
+    package func save(text: String) {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? text.write(to: url, atomically: true, encoding: .utf8)
         knownText = text
         apply(text)
     }
 
-    static func text(of entries: [Entry]) -> String {
+    package static func text(of entries: [Entry]) -> String {
         let header = """
             // Overterm keybindings (Settings ▸ Keyboard Shortcuts writes this file; editing it by hand works too).
             // { "key": "cmd+shift+d", "command": "splits.down" } binds a key; "-splits.down" removes that key from it.
@@ -583,7 +583,7 @@ final class Keybindings: ObservableObject {
     /// key is the menu's: Ghostty lets go of its old key and of the new one
     /// (else it would take the key first, in the terminal). A terminal
     /// command is Ghostty's: the old key is let go, the new one bound.
-    var ghosttyLines: [String] {
+    package var ghosttyLines: [String] {
         // Keys a terminal command of ours deliberately holds. ⌘F is the
         // editor's find *and* the terminal's search, by design — unbinding
         // it for the menu would take the terminal's search away.
@@ -618,7 +618,7 @@ final class Keybindings: ObservableObject {
     }
 
     /// Puts each command's key on its menu item (found by identifier).
-    func apply(to menu: NSMenu?) {
+    package func apply(to menu: NSMenu?) {
         guard let menu else { return }
         for item in menu.items {
             apply(to: item.submenu)

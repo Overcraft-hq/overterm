@@ -4,17 +4,17 @@ import Foundation
 /// filters — `author:`, `path:` (or `file:`), `code:` (the change added or
 /// removed it), `since:`, `branch:` (or `ref:`) — read from one query.
 /// Pure: the query in, `git log`'s arguments (and a local match) out.
-struct CommitSearch: Equatable {
-    var words: [String] = []
-    var author: String?
-    var path: String?
-    var code: String?
-    var since: String?
-    var ref: String?
+package struct CommitSearch: Equatable {
+    package var words: [String] = []
+    package var author: String?
+    package var path: String?
+    package var code: String?
+    package var since: String?
+    package var ref: String?
 
     /// `fix login author:ali path:src/auth since:2.weeks` — a value with
     /// spaces in quotes: `author:"Ali Veli"`.
-    init(_ query: String) {
+    package init(_ query: String) {
         for token in Self.tokens(query) {
             if let colon = token.firstIndex(of: ":"), colon != token.startIndex {
                 let key = token[..<colon].lowercased()
@@ -34,10 +34,10 @@ struct CommitSearch: Equatable {
         }
     }
 
-    var isEmpty: Bool { words.isEmpty && author == nil && path == nil && code == nil && since == nil && ref == nil }
+    package var isEmpty: Bool { words.isEmpty && author == nil && path == nil && code == nil && since == nil && ref == nil }
 
     /// Only words that could be a commit's hash: a hash search, too.
-    var possibleSHA: String? {
+    package var possibleSHA: String? {
         guard words.count == 1, let word = words.first, word.count >= 4, word.count <= 40,
             word.allSatisfy(\.isHexDigit)
         else { return nil }
@@ -46,7 +46,7 @@ struct CommitSearch: Equatable {
 
     /// `git log` for it: every word in the message (case aside), the filters
     /// as git's own options, the newest `limit`.
-    func arguments(limit: Int, allRefs: Bool) -> [String] {
+    package func arguments(limit: Int, allRefs: Bool) -> [String] {
         var arguments = [
             "log", "-z", "--no-show-signature", "--date-order", "--decorate=full", "--max-count=\(max(1, limit))",
             "--format=%x00%H%x00%h%x00%P%x00%an%x00%ae%x00%at%x00%ar%x00%D%x00%s%x00%b", "-i",
@@ -70,7 +70,7 @@ struct CommitSearch: Equatable {
 
     /// Whether a commit already read answers it — the list filters as you
     /// type, before git does.
-    func matches(_ commit: Commit) -> Bool {
+    package func matches(_ commit: Commit) -> Bool {
         if let sha = possibleSHA, commit.sha.hasPrefix(sha) { return true }
         if let author, !(commit.author.localizedCaseInsensitiveContains(author) || commit.authorEmail.localizedCaseInsensitiveContains(author)) {
             return false
@@ -83,7 +83,7 @@ struct CommitSearch: Equatable {
     }
 
     /// Words, with "quoted values" kept whole.
-    static func tokens(_ query: String) -> [String] {
+    package static func tokens(_ query: String) -> [String] {
         var tokens: [String] = []
         var current = ""
         var quoted = false

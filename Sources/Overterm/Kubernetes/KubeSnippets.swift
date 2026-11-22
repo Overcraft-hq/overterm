@@ -9,19 +9,19 @@ import Foundation
 /// plugin API: whatever they do is the user's kubectl with the user's
 /// rights, so on production each is asked first, the filled line shown.
 /// `{{name}}` placeholders are still asked for as any snippet's are. Pure.
-enum KubeSnippet {
-    static let placeholders = ["context", "namespace", "pod", "container", "name", "kind"]
+package enum KubeSnippet {
+    package static let placeholders = ["context", "namespace", "pod", "container", "name", "kind"]
 
     /// The Kubernetes placeholders `command` names.
-    static func uses(_ command: String) -> Set<String> {
+    package static func uses(_ command: String) -> Set<String> {
         Set(placeholders.filter { command.contains("${\($0)}") })
     }
 
-    static func isKubernetes(_ snippet: Snippet) -> Bool { !uses(snippet.command).isEmpty }
+    package static func isKubernetes(_ snippet: Snippet) -> Bool { !uses(snippet.command).isEmpty }
 
     /// Offered on `ref`: a pod's placeholders only on a pod, a namespace's
     /// only where there is one (a namespaced object, or the namespace shown).
-    static func offered(_ snippet: Snippet, on ref: KubeObjectRef, shownNamespace: String?) -> Bool {
+    package static func offered(_ snippet: Snippet, on ref: KubeObjectRef, shownNamespace: String?) -> Bool {
         let used = uses(snippet.command)
         guard !used.isEmpty else { return false }
         if !used.isDisjoint(with: ["pod", "container"]), !ref.isPod { return false }
@@ -31,13 +31,13 @@ enum KubeSnippet {
 
     /// The namespace a snippet runs in: the object's, a Namespace's own
     /// name, else the one shown.
-    static func namespace(of ref: KubeObjectRef, shown: String?) -> String? {
+    package static func namespace(of ref: KubeObjectRef, shown: String?) -> String? {
         if ref.kind.group.isEmpty, ref.kind.resource == "namespaces" { return ref.name }
         return ref.namespace ?? shown
     }
 
     /// The values for `ref` (`container` given when the snippet uses it).
-    static func values(for ref: KubeObjectRef, namespace: String?, container: String?, discovery: KubeDiscovery? = nil) -> [String: String] {
+    package static func values(for ref: KubeObjectRef, namespace: String?, container: String?, discovery: KubeDiscovery? = nil) -> [String: String] {
         var values = ["context": ref.context, "name": ref.name, "kind": KubectlLine.resource(ref.kind, in: discovery)]
         if let namespace { values["namespace"] = namespace }
         if ref.isPod { values["pod"] = ref.name }
@@ -51,7 +51,7 @@ enum KubeSnippet {
     /// it is (zsh then expands it to nothing, which kubectl refuses). One
     /// pass over the command as written: a value is never read again, so
     /// one holding `${namespace}` stays that text, inside its own quotes.
-    static func fill(_ command: String, values: [String: String]) -> String {
+    package static func fill(_ command: String, values: [String: String]) -> String {
         var result = ""
         var rest = Substring(command)
         while let open = rest.range(of: "${") {
@@ -69,7 +69,7 @@ enum KubeSnippet {
     }
 
     /// A placeholder the snippet names that has no value here.
-    static func missing(_ command: String, values: [String: String]) -> [String] {
+    package static func missing(_ command: String, values: [String: String]) -> [String] {
         placeholders.filter { command.contains("${\($0)}") && values[$0] == nil }
     }
 }

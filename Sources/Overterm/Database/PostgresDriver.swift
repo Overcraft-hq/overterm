@@ -9,28 +9,28 @@ import PostgresNIO
 /// PostgresNIO. Statements go as simple queries: every value comes back as
 /// text, whatever its type, which is what a client that can't know the
 /// types in advance wants.
-actor PostgresDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor PostgresDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let password: String?
-    private(set) var connection: PostgresConnection?
+    package private(set) var connection: PostgresConnection?
     /// This connection's own backend: never cancelled from the Server page.
-    var ownPID: Int?
+    package var ownPID: Int?
     /// `server_version_num`: pg_stat_statements renamed its columns in 13.
-    var versionNumber: Int?
+    package var versionNumber: Int?
     // One operation at a time: a Save's transaction is BEGIN, its
     // statements, COMMIT — a read of the Server page between them would
     // run inside it (an actor gives way at every await).
     private var busy = false
     private var queue: [CheckedContinuation<Void, Never>] = []
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
     }
 
     /// libpq's modes: prefer and require encrypt without checking whose
     /// certificate it is; verify-full checks it and the host's name.
-    static func tls(_ mode: DatabaseSSLMode) throws -> PostgresConnection.Configuration.TLS {
+    package static func tls(_ mode: DatabaseSSLMode) throws -> PostgresConnection.Configuration.TLS {
         switch mode {
         case .disable: return .disable
         case .prefer, .require:
@@ -43,7 +43,7 @@ actor PostgresDriver: DatabaseDriver {
         }
     }
 
-    func exclusive<T: Sendable>(_ work: () async throws -> T) async throws -> T {
+    package func exclusive<T: Sendable>(_ work: () async throws -> T) async throws -> T {
         if busy {
             await withCheckedContinuation { queue.append($0) }
         }
@@ -54,7 +54,7 @@ actor PostgresDriver: DatabaseDriver {
         return try await work()
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         guard connection == nil else { return }
         var configuration = PostgresConnection.Configuration(
             host: config.host, port: config.port ?? config.kind.defaultPort ?? 5432, username: config.user, password: password,
@@ -75,12 +75,12 @@ actor PostgresDriver: DatabaseDriver {
         }
     }
 
-    func close() async {
+    package func close() async {
         try? await connection?.close()
         connection = nil
     }
 
-    func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ sql: String, limit: Int) async throws -> QueryResult {
         try await exclusive { try await run(sql, limit: limit) }
     }
 
@@ -121,7 +121,7 @@ actor PostgresDriver: DatabaseDriver {
         return (rows.map { $0[0] ?? "" }, rows.map { $0[1] ?? "" })
     }
 
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         try await execute(
             """
             SELECT schema_name FROM information_schema.schemata
@@ -131,7 +131,7 @@ actor PostgresDriver: DatabaseDriver {
         ).rows.compactMap { $0.first ?? nil }
     }
 
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         try await execute(
             """
             SELECT table_name, table_type FROM information_schema.tables
@@ -140,7 +140,7 @@ actor PostgresDriver: DatabaseDriver {
         ).rows.map { CatalogTable(schema: schema, name: $0[0] ?? "", isView: $0[1] == "VIEW") }
     }
 
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         try await execute(
             """
             SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
@@ -150,7 +150,7 @@ actor PostgresDriver: DatabaseDriver {
     }
 
     /// What PostgresNIO threw, as the server said it.
-    static func describe(_ error: Error) -> String {
+    package static func describe(_ error: Error) -> String {
         if let psql = error as? PSQLError {
             if let message = psql.serverInfo?[.message] {
                 let detail = psql.serverInfo?[.detail].map { " — \($0)" } ?? ""
@@ -166,16 +166,16 @@ actor PostgresDriver: DatabaseDriver {
 }
 
 /// Rows as the event loop hands them over, kept to the limit.
-final class Collected: @unchecked Sendable {
+package final class Collected: @unchecked Sendable {
     private let lock = NSLock()
     private let limit: Int
     private var value = QueryResult()
 
-    init(limit: Int) { self.limit = limit }
+    package init(limit: Int) { self.limit = limit }
 
-    var result: QueryResult { lock.withLock { value } }
+    package var result: QueryResult { lock.withLock { value } }
 
-    func add(_ row: PostgresRow) {
+    package func add(_ row: PostgresRow) {
         lock.withLock {
             if value.columns.isEmpty {
                 for cell in row {
@@ -194,8 +194,8 @@ final class Collected: @unchecked Sendable {
 
 /// A cell as text. PostgresNIO asks for binary results even for a simple
 /// query, so each type is read as what it is and said as psql would.
-enum PostgresText {
-    static func text(_ cell: PostgresCell) -> String? {
+package enum PostgresText {
+    package static func text(_ cell: PostgresCell) -> String? {
         guard var bytes = cell.bytes else { return nil }
         if cell.format == .text { return String(buffer: bytes) }
         switch cell.dataType {

@@ -1,11 +1,11 @@
 import Foundation
 
-struct GitError: LocalizedError {
-    let arguments: [String]
-    let status: Int32
-    let stderr: String
+package struct GitError: LocalizedError {
+    package let arguments: [String]
+    package let status: Int32
+    package let stderr: String
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         let message = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         return message.isEmpty ? "git \(arguments.joined(separator: " ")) exited with \(status)" : message
     }
@@ -14,19 +14,19 @@ struct GitError: LocalizedError {
 /// Runs git (and other command-line tools). Each call blocks a libdispatch thread, never a Swift
 /// concurrency one: blocking the cooperative pool with many waits starves
 /// the whole app (signalbox froze exactly that way).
-enum Git {
+package enum Git {
     /// /usr/bin/git is the Xcode shim; a GUI app's PATH has no Homebrew.
-    static let executable = URL(fileURLWithPath: "/usr/bin/git")
+    package static let executable = URL(fileURLWithPath: "/usr/bin/git")
 
     /// How long a call may take before it is killed. A read that hangs — a
     /// fetch on a dead network, gh waiting on an API — would otherwise hold
     /// its thread, and what waits on it, forever.
-    static let defaultTimeout: TimeInterval = 120
+    package static let defaultTimeout: TimeInterval = 120
 
     /// Processes running at once. Each blocks a thread for its whole life;
     /// without a cap, a burst of refreshes (many tabs, many worktrees) used
     /// up libdispatch's threads.
-    static let maxConcurrent = 16
+    package static let maxConcurrent = 16
 
     private static let queue: OperationQueue = {
         let queue = OperationQueue()
@@ -46,7 +46,7 @@ enum Git {
     ///
     /// Cancelling the calling task stops the process (a search superseded
     /// by the next keystroke) and throws CancellationError.
-    static func run(
+    package static func run(
         _ arguments: [String], in directory: URL, success: Set<Int32> = [0], timeout: TimeInterval? = defaultTimeout,
         outputLimit: Int? = nil
     ) async throws -> String {
@@ -57,7 +57,7 @@ enum Git {
     /// - Parameter stderr: what stderr says, as it comes (a long tool's
     ///   progress), on FileHandle's queue; all of it is still kept for
     ///   the error.
-    static func run(
+    package static func run(
         _ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32> = [0],
         timeout: TimeInterval? = defaultTimeout, outputLimit: Int? = nil, stderr: (@Sendable (Data) -> Void)? = nil
     ) async throws -> String {
@@ -97,7 +97,7 @@ enum Git {
     /// Foundation raises an Objective-C exception — the app dies — launching
     /// a process with more arguments than this; a caller batching paths
     /// stays under it (FileTreeModel.checkIgnored).
-    static let maxArguments = 4000
+    package static let maxArguments = 4000
 
     /// What says which repository git works in, rather than the folder it
     /// runs in (`git rev-parse --local-env-vars`). Every call names its
@@ -106,7 +106,7 @@ enum Git {
     /// scenario's `git init`/`commit` for its own scratch repository then
     /// ran against that one — it set `core.bare = true` in Overterm's own
     /// `.git/config`.
-    static let repositoryVariables: Set<String> = [
+    package static let repositoryVariables: Set<String> = [
         "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_OBJECT_DIRECTORY",
         "GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE", "GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS",
         "GIT_REPLACE_REF_BASE", "GIT_PREFIX", "GIT_SHALLOW_FILE", "GIT_COMMON_DIR",
@@ -116,7 +116,7 @@ enum Git {
 
     /// A git child's environment: the app's, without `repositoryVariables`,
     /// and never blocking on a credential or editor prompt nobody can see.
-    static func environment(from inherited: [String: String]) -> [String: String] {
+    package static func environment(from inherited: [String: String]) -> [String: String] {
         var environment = inherited.filter { !repositoryVariables.contains($0.key) }
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GIT_OPTIONAL_LOCKS"] = "0"
@@ -124,7 +124,7 @@ enum Git {
         return OvertermRun.current.marking(environment, helper: .git)
     }
 
-    static func runBlocking(
+    package static func runBlocking(
         _ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32>, timeout: TimeInterval?,
         outputLimit: Int? = nil, stderr: (@Sendable (Data) -> Void)? = nil, running: RunningProcess = RunningProcess()
     ) throws -> String {
@@ -181,14 +181,14 @@ enum Git {
 
 /// The process a `Git.run` call is running, so cancelling the task can
 /// stop it — whether that comes before it starts, or after.
-final class RunningProcess: @unchecked Sendable {
+package final class RunningProcess: @unchecked Sendable {
     private let lock = NSLock()
     private var process: Process?
     private var cancelled = false
-    var isCancelled: Bool { lock.withLock { cancelled } }
+    package var isCancelled: Bool { lock.withLock { cancelled } }
 
     /// Launches `process` unless the call was cancelled first.
-    func start(_ process: Process) throws -> Bool {
+    package func start(_ process: Process) throws -> Bool {
         try lock.withLock {
             guard !cancelled else { return false }
             try process.run()
@@ -197,7 +197,7 @@ final class RunningProcess: @unchecked Sendable {
         }
     }
 
-    func cancel() {
+    package func cancel() {
         lock.withLock {
             cancelled = true
             if process?.isRunning == true { process?.terminate() }
@@ -208,7 +208,7 @@ final class RunningProcess: @unchecked Sendable {
 /// Collects what a pipe delivers, on FileHandle's own queue — up to `limit`
 /// bytes, if given; then `onLimit` runs once and the rest is ignored.
 /// `onData` is handed each piece as it comes, outside the lock.
-final class PipeReader: @unchecked Sendable {
+package final class PipeReader: @unchecked Sendable {
     private let handle: FileHandle
     private let lock = NSLock()
     private var buffer = Data()
@@ -216,9 +216,9 @@ final class PipeReader: @unchecked Sendable {
     private let limit: Int?
     private var onLimit: (() -> Void)?
     private var hitLimit = false
-    var reachedLimit: Bool { lock.withLock { hitLimit } }
+    package var reachedLimit: Bool { lock.withLock { hitLimit } }
 
-    init(_ pipe: Pipe, limit: Int? = nil, onLimit: (() -> Void)? = nil, onData: (@Sendable (Data) -> Void)? = nil) {
+    package init(_ pipe: Pipe, limit: Int? = nil, onLimit: (() -> Void)? = nil, onData: (@Sendable (Data) -> Void)? = nil) {
         handle = pipe.fileHandleForReading
         self.limit = limit
         self.onLimit = onLimit
@@ -244,9 +244,9 @@ final class PipeReader: @unchecked Sendable {
     }
 
     /// Waits for end of file until `deadline`, then stops reading.
-    func finish(waitingUntil deadline: DispatchTime) {
+    package func finish(waitingUntil deadline: DispatchTime) {
         if closed.wait(timeout: deadline) == .timedOut { handle.readabilityHandler = nil }
     }
 
-    var data: Data { lock.withLock { buffer } }
+    package var data: Data { lock.withLock { buffer } }
 }

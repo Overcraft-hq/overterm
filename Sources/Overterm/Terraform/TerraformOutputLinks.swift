@@ -6,8 +6,8 @@ import Foundation
 /// output), a URL as an API environment's variable, an EKS, GKE or AKS
 /// cluster on the Kubernetes page. Only from the masked model: a sensitive
 /// output, or a value masked inside one, offers nothing. Pure.
-enum TerraformOutputLinks {
-    enum Offer: Equatable, Hashable, Sendable {
+package enum TerraformOutputLinks {
+    package enum Offer: Equatable, Hashable, Sendable {
         /// Open in Browser.
         case browser(URL)
         /// New Database Connection…: the kind guessed (the form lets it be
@@ -18,7 +18,7 @@ enum TerraformOutputLinks {
         /// Open in Kubernetes: the context whose server or name is this cluster's.
         case kubernetes(Cluster)
 
-        var title: String {
+        package var title: String {
             switch self {
             case .browser: "Open in Browser"
             case .database: "New Database Connection…"
@@ -27,7 +27,7 @@ enum TerraformOutputLinks {
             }
         }
 
-        var symbol: String {
+        package var symbol: String {
             switch self {
             case .browser: "globe"
             case .database: "cylinder"
@@ -37,7 +37,7 @@ enum TerraformOutputLinks {
         }
 
         /// Its accessibility id's last part.
-        var key: String {
+        package var key: String {
             switch self {
             case .browser: "browser"
             case .database: "database"
@@ -48,18 +48,18 @@ enum TerraformOutputLinks {
     }
 
     /// A managed cluster an output names.
-    struct Cluster: Equatable, Hashable, Sendable {
-        enum Service: String, Sendable { case eks = "EKS", gke = "GKE", aks = "AKS" }
-        var service: Service
+    package struct Cluster: Equatable, Hashable, Sendable {
+        package enum Service: String, Sendable { case eks = "EKS", gke = "GKE", aks = "AKS" }
+        package var service: Service
         /// Its name (an EKS ARN's last part, GKE's `clusters/<name>`).
-        var name: String?
+        package var name: String?
         /// Its API server's host.
-        var server: String?
+        package var server: String?
     }
 
     /// What `output` offers, the first of each kind found in it (its own
     /// value, or its fields and items two deep).
-    static func offers(for output: TerraformState.Output) -> [Offer] {
+    package static func offers(for output: TerraformState.Output) -> [Offer] {
         guard !output.sensitive, let value = output.value else { return [] }
         var leaves: [(path: String, value: String)] = []
         var numbers: [String: Int] = [:]
@@ -105,7 +105,7 @@ enum TerraformOutputLinks {
     }
 
     /// An `http(s)` URL with a host and no user or password in it.
-    static func webURL(_ text: String) -> URL? {
+    package static func webURL(_ text: String) -> URL? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard trimmed.count <= 2048, !trimmed.contains(" "), let components = URLComponents(string: trimmed),
             let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https", let host = components.host, !host.isEmpty,
@@ -116,7 +116,7 @@ enum TerraformOutputLinks {
 
     /// The API environment's variable for an output's path: `api_url`,
     /// `service.endpoint` → `service_endpoint`.
-    static func variableName(_ path: String) -> String {
+    package static func variableName(_ path: String) -> String {
         let mapped = path.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) && $0.isASCII ? Character($0) : "_" }
         var name = String(mapped)
         while name.contains("__") { name = name.replacingOccurrences(of: "__", with: "_") }
@@ -131,7 +131,7 @@ enum TerraformOutputLinks {
     /// The words that say a value is a host to connect to.
     private static let hostWords = ["endpoint", "host", "hostname", "address", "fqdn", "url", "dsn", "connection", "writer", "reader"]
 
-    static func database(path: String, value: String, siblingPort: Int? = nil) -> Offer? {
+    package static func database(path: String, value: String, siblingPort: Int? = nil) -> Offer? {
         let text = value.trimmingCharacters(in: .whitespaces)
         guard text.count <= 512, !text.contains("••••") else { return nil }
         // A URL with a database's scheme: its host, port and database, never its user's password.
@@ -152,7 +152,7 @@ enum TerraformOutputLinks {
     }
 
     /// `host` or `host:port`, a DNS name with a dot or an IPv4 address.
-    static func hostAndPort(_ text: String) -> (String, Int?)? {
+    package static func hostAndPort(_ text: String) -> (String, Int?)? {
         let parts = text.split(separator: ":", omittingEmptySubsequences: false)
         guard (1...2).contains(parts.count) else { return nil }
         let host = String(parts[0]).lowercased()
@@ -200,7 +200,7 @@ enum TerraformOutputLinks {
 
     // MARK: Clusters
 
-    static func isClusterServer(_ host: String) -> Bool {
+    package static func isClusterServer(_ host: String) -> Bool {
         let host = host.lowercased()
         return host.hasSuffix(".eks.amazonaws.com") || host.hasSuffix(".azmk8s.io")
     }
@@ -208,7 +208,7 @@ enum TerraformOutputLinks {
     /// What a value says of a managed cluster: an EKS ARN, an EKS or AKS
     /// API server, a GKE cluster's ID — or a GKE endpoint (an address) under
     /// a path that says so.
-    static func clusterHint(path: String, value: String) -> Cluster? {
+    package static func clusterHint(path: String, value: String) -> Cluster? {
         let text = value.trimmingCharacters(in: .whitespaces)
         if text.hasPrefix("arn:aws:eks:"), let range = text.range(of: ":cluster/") {
             let name = String(text[range.upperBound...])
@@ -244,7 +244,7 @@ enum TerraformOutputLinks {
     /// host first, then by name — EKS's `arn:…:cluster/<name>` or a
     /// context named after it, GKE's `gke_<project>_<location>_<name>`, AKS's
     /// own name. Nil when none is.
-    static func context(for cluster: Cluster, in contexts: [(name: String, cluster: String, server: String?)]) -> String? {
+    package static func context(for cluster: Cluster, in contexts: [(name: String, cluster: String, server: String?)]) -> String? {
         if let server = cluster.server?.lowercased() {
             if let found = contexts.first(where: { ($0.server.flatMap { URLComponents(string: $0)?.host?.lowercased() }) == server }) { return found.name }
         }
@@ -259,7 +259,7 @@ enum TerraformOutputLinks {
     }
 
     /// What to run when no context points at it — said, never run.
-    static func kubeconfigHint(for cluster: Cluster) -> String {
+    package static func kubeconfigHint(for cluster: Cluster) -> String {
         let name = cluster.name ?? "<cluster>"
         switch cluster.service {
         case .eks: return "aws eks update-kubeconfig --name \(name)"
@@ -273,7 +273,7 @@ enum TerraformOutputLinks {
     /// An environment file's text with `name` set to `value` in its
     /// `vars { }` — added, or changed in place — every other block kept
     /// byte for byte (`BruFile`). Nil when `name` is one of its secrets.
-    static func environment(_ text: String, setting name: String, to value: String) -> String? {
+    package static func environment(_ text: String, setting name: String, to value: String) -> String? {
         var file = BruFile(parsing: text)
         guard !file.secretNames.contains(name) else { return nil }
         var variables = file.variables

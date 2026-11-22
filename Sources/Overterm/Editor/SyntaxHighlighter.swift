@@ -3,27 +3,27 @@ import Foundation
 /// Just enough highlighting to read code: comments, strings, numbers and
 /// keywords, by file extension. Regex, not a parser — a mis-coloured edge
 /// case is acceptable, a slow editor is not.
-enum SyntaxHighlighter {
-    enum Kind: Equatable { case comment, string, number, keyword }
+package enum SyntaxHighlighter {
+    package enum Kind: Equatable { case comment, string, number, keyword }
 
     /// Past this (UTF-16), highlighting on every keystroke would lag the
     /// editor, and tokenizing a hunk would hold up the changes pane: plain
     /// text it is.
-    static let maxLength = 300_000
+    package static let maxLength = 300_000
 
-    struct Language {
-        let lineComment: [String]
-        let blockComment: (open: String, close: String)?
+    package struct Language {
+        package let lineComment: [String]
+        package let blockComment: (open: String, close: String)?
         /// Quote characters that delimit single-line strings.
-        let quotes: [Character]
+        package let quotes: [Character]
         /// Backtick/template or triple-quoted strings that may span lines.
-        let multilineStrings: [String]
-        let keywords: Set<String>
+        package let multilineStrings: [String]
+        package let keywords: Set<String>
     }
 
     private static let cLike = (line: ["//"], block: ("/*", "*/"))
 
-    static func language(for url: URL) -> Language? {
+    package static func language(for url: URL) -> Language? {
         let name = url.lastPathComponent
         if name == "Dockerfile" || name.hasPrefix("Dockerfile.") {
             return Language(lineComment: ["#"], blockComment: nil, quotes: ["\"", "'"], multilineStrings: [], keywords: dockerfile)
@@ -62,7 +62,7 @@ enum SyntaxHighlighter {
     }
 
     /// Token ranges (UTF-16, for NSAttributedString) in document order.
-    static func tokens(in text: String, language: Language) -> [(NSRange, Kind)] {
+    package static func tokens(in text: String, language: Language) -> [(NSRange, Kind)] {
         let ns = text as NSString
         var tokens: [(NSRange, Kind)] = []
 
@@ -113,57 +113,57 @@ enum SyntaxHighlighter {
 
     // MARK: Keywords
 
-    static let swift: Set<String> = [
+    package static let swift: Set<String> = [
         "actor", "any", "as", "associatedtype", "async", "await", "break", "case", "catch", "class", "continue", "default", "defer",
         "deinit", "do", "else", "enum", "extension", "fallthrough", "false", "fileprivate", "final", "for", "func", "guard", "if",
         "import", "in", "init", "inout", "internal", "is", "let", "lazy", "nil", "nonisolated", "open", "operator", "override",
         "private", "protocol", "public", "repeat", "rethrows", "return", "self", "Self", "some", "static", "struct", "subscript",
         "super", "switch", "throw", "throws", "true", "try", "typealias", "var", "weak", "where", "while",
     ]
-    static let go: Set<String> = [
+    package static let go: Set<String> = [
         "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough", "false", "for", "func", "go",
         "goto", "if", "import", "interface", "iota", "map", "nil", "package", "range", "return", "select", "struct", "switch",
         "true", "type", "var",
     ]
-    static let typescript: Set<String> = [
+    package static let typescript: Set<String> = [
         "abstract", "as", "async", "await", "break", "case", "catch", "class", "const", "continue", "default", "delete", "do",
         "else", "enum", "export", "extends", "false", "finally", "for", "from", "function", "if", "implements", "import", "in",
         "instanceof", "interface", "keyof", "let", "new", "null", "of", "private", "protected", "public", "readonly", "return",
         "satisfies", "static", "super", "switch", "this", "throw", "true", "try", "type", "typeof", "undefined", "var", "void",
         "while", "yield",
     ]
-    static let python: Set<String> = [
+    package static let python: Set<String> = [
         "and", "as", "assert", "async", "await", "break", "class", "continue", "def", "del", "elif", "else", "except", "False",
         "finally", "for", "from", "global", "if", "import", "in", "is", "lambda", "None", "nonlocal", "not", "or", "pass", "raise",
         "return", "True", "try", "while", "with", "yield",
     ]
-    static let shell: Set<String> = [
+    package static let shell: Set<String> = [
         "case", "do", "done", "elif", "else", "esac", "export", "fi", "for", "function", "if", "in", "local", "readonly",
         "return", "set", "then", "until", "while",
     ]
-    static let rust: Set<String> = [
+    package static let rust: Set<String> = [
         "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern", "false", "fn", "for", "if",
         "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct",
         "super", "trait", "true", "type", "unsafe", "use", "where", "while",
     ]
-    static let zig: Set<String> = [
+    package static let zig: Set<String> = [
         "align", "and", "break", "catch", "comptime", "const", "continue", "defer", "else", "enum", "errdefer", "error", "export",
         "extern", "false", "fn", "for", "if", "inline", "null", "or", "orelse", "packed", "pub", "return", "struct", "switch",
         "test", "true", "try", "undefined", "union", "unreachable", "var", "while",
     ]
-    static let c: Set<String> = [
+    package static let c: Set<String> = [
         "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum", "extern", "float", "for", "goto",
         "if", "int", "long", "return", "short", "signed", "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
         "void", "volatile", "while", "bool", "true", "false", "NULL",
     ]
-    static let sql: Set<String> = [
+    package static let sql: Set<String> = [
         "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE", "CREATE", "TABLE", "ALTER", "DROP",
         "INDEX", "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "ON", "AND", "OR", "NOT", "NULL", "AS", "ORDER", "BY", "GROUP",
         "HAVING", "LIMIT", "OFFSET", "PRIMARY", "KEY", "REFERENCES", "DEFAULT", "select", "from", "where", "insert", "into",
         "values", "update", "set", "delete", "create", "table", "alter", "drop", "index", "join", "on", "and", "or", "not", "null",
         "as", "order", "by", "group", "limit",
     ]
-    static let dockerfile: Set<String> = [
+    package static let dockerfile: Set<String> = [
         "FROM", "RUN", "CMD", "COPY", "ADD", "ENV", "ARG", "WORKDIR", "EXPOSE", "ENTRYPOINT", "USER", "LABEL", "VOLUME", "AS",
         "HEALTHCHECK", "SHELL",
     ]

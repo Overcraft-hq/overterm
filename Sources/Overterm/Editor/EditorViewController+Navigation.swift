@@ -1,30 +1,30 @@
 import AppKit
 
 /// Where you were before a jump, for ⌃- and ⌃⇧- (Zed's Go Back/Forward).
-struct NavigationHistory {
-    struct Entry: Equatable {
-        let url: URL
-        let location: Int
+package struct NavigationHistory {
+    package struct Entry: Equatable {
+        package let url: URL
+        package let location: Int
     }
 
-    private(set) var back: [Entry] = []
-    private(set) var forward: [Entry] = []
+    package private(set) var back: [Entry] = []
+    package private(set) var forward: [Entry] = []
 
     /// A jump is about to leave `entry`.
-    mutating func record(_ entry: Entry) {
+    package mutating func record(_ entry: Entry) {
         if back.last == entry { return }
         back.append(entry)
         if back.count > 100 { back.removeFirst() }
         forward = []
     }
 
-    mutating func goBack(from current: Entry?) -> Entry? {
+    package mutating func goBack(from current: Entry?) -> Entry? {
         guard let entry = back.popLast() else { return nil }
         if let current { forward.append(current) }
         return entry
     }
 
-    mutating func goForward(from current: Entry?) -> Entry? {
+    package mutating func goForward(from current: Entry?) -> Entry? {
         guard let entry = forward.popLast() else { return nil }
         if let current { back.append(current) }
         return entry
@@ -33,13 +33,13 @@ struct NavigationHistory {
 
 /// A definition in the open file: the language server's outline, or the
 /// grammar's tags where there is no server.
-struct EditorSymbol {
-    let name: String
-    let kind: String
+package struct EditorSymbol {
+    package let name: String
+    package let kind: String
     /// The whole declaration (the name alone, from tags).
-    let range: NSRange
-    let selection: NSRange
-    let depth: Int
+    package let range: NSRange
+    package let selection: NSRange
+    package let depth: Int
 }
 
 extension EditorViewController {
@@ -49,15 +49,15 @@ extension EditorViewController {
         active?.url.map { NavigationHistory.Entry(url: $0, location: textView.selectedRange().location) }
     }
 
-    func recordPosition() {
+    package func recordPosition() {
         if let entry = currentEntry { history.record(entry) }
     }
 
-    func goBack() {
+    package func goBack() {
         if let entry = history.goBack(from: currentEntry) { jump(to: entry) }
     }
 
-    func goForward() {
+    package func goForward() {
         if let entry = history.goForward(from: currentEntry) { jump(to: entry) }
     }
 
@@ -71,7 +71,7 @@ extension EditorViewController {
 
     /// Opens `url` (if it isn't the file showing) and selects `range` in it,
     /// remembering where you were.
-    func show(_ url: URL, selecting range: @escaping () -> NSRange?) {
+    package func show(_ url: URL, selecting range: @escaping () -> NSRange?) {
         recordPosition()
         open(url) { [weak self] opened in
             guard opened, let self, let target = range() else { return }
@@ -103,7 +103,7 @@ extension EditorViewController {
         picker.focus()
     }
 
-    func goToLine() {
+    package func goToLine() {
         let lines = gutter.lineStarts.count
         let picker = EditorPicker(
             placeholder: "Line number, or line:column", hint: "Current line \(selectedLine) of \(lines)", theme: theme, showsList: false,
@@ -118,7 +118,7 @@ extension EditorViewController {
         showPicker(picker)
     }
 
-    func goToSymbol() {
+    package func goToSymbol() {
         guard let buffer = active else { return }
         var symbols: [EditorSymbol] = []
         let picker = EditorPicker(
@@ -147,14 +147,14 @@ extension EditorViewController {
         }
     }
 
-    static func rankSymbols(_ symbols: [EditorSymbol], query: String) -> [(EditorSymbol, [Int])] {
+    package static func rankSymbols(_ symbols: [EditorSymbol], query: String) -> [(EditorSymbol, [Int])] {
         guard !query.isEmpty else { return symbols.map { ($0, []) } }
         return symbols.compactMap { symbol in CompletionMatch.score(candidate: symbol.name, query: query).map { (symbol, $0.score, $0.matched) } }
             .sorted { $0.1 > $1.1 }
             .map { ($0.0, $0.2) }
     }
 
-    static func symbolBadge(_ kind: String) -> String {
+    package static func symbolBadge(_ kind: String) -> String {
         switch kind {
         case "function", "method", "constructor": "fn"
         case "class", "struct", "interface", "enum", "type", "protocol": "T"
@@ -167,7 +167,7 @@ extension EditorViewController {
 
     /// The file's symbols: the language server's outline, else the
     /// grammar's tags.
-    func loadSymbols(_ buffer: EditorBuffer, _ done: @escaping ([EditorSymbol]) -> Void) {
+    package func loadSymbols(_ buffer: EditorBuffer, _ done: @escaping ([EditorSymbol]) -> Void) {
         if let server = server(for: buffer), let url = buffer.url, server.capabilities?.documentSymbol != false {
             flushServerChange(buffer)
             Task { [weak self] in
@@ -207,7 +207,7 @@ extension EditorViewController {
         }
     }
 
-    static func symbolKindName(_ kind: Int) -> String {
+    package static func symbolKindName(_ kind: Int) -> String {
         switch kind {
         case 1: "file"
         case 2: "module"
@@ -231,12 +231,12 @@ extension EditorViewController {
     }
 
     /// The innermost declaration around the caret, for the breadcrumb.
-    func symbolAtCaret() -> EditorSymbol? {
+    package func symbolAtCaret() -> EditorSymbol? {
         let caret = textView.selectedRange().location
         return currentSymbols.filter { NSLocationInRange(caret, $0.range) || NSMaxRange($0.range) == caret }.max { $0.depth < $1.depth }
     }
 
-    static func gitRoot(of url: URL) -> URL? {
+    package static func gitRoot(of url: URL) -> URL? {
         var dir = url.standardizedFileURL.deletingLastPathComponent()
         // Bounded and stopping at "/" (whose parent is "/../", not "/").
         for _ in 0..<256 where dir.pathComponents.count > 1 {
@@ -248,7 +248,7 @@ extension EditorViewController {
 
     // MARK: Definitions and references
 
-    func goToDefinition(at index: Int) {
+    package func goToDefinition(at index: Int) {
         // Terraform without terraform-ls: the module's own index.
         if let buffer = active, buffer.terraform != nil, server(for: buffer) == nil { return terraformDefinition(at: index) }
         guard let buffer = active, let server = server(for: buffer), let url = buffer.url else { return NSSound.beep() }
@@ -267,7 +267,7 @@ extension EditorViewController {
         }
     }
 
-    func findReferences() {
+    package func findReferences() {
         guard let buffer = active, let server = server(for: buffer), let url = buffer.url else { return NSSound.beep() }
         flushServerChange(buffer)
         let position = lspPosition(of: textView.selectedRange().location)
@@ -319,7 +319,7 @@ extension EditorViewController {
 
     // MARK: Problems
 
-    func goToProblem(forward: Bool) {
+    package func goToProblem(forward: Bool) {
         guard let buffer = active, !buffer.diagnostics.isEmpty else { return NSSound.beep() }
         let caret = textView.selectedRange().location
         let sorted = buffer.diagnostics.sorted { $0.range.location < $1.range.location }
@@ -338,7 +338,7 @@ extension EditorViewController {
     /// `inKeyWindowOnly` false: an end-to-end run's, whose window is never
     /// made key while another app is in front (macOS 14's cooperative
     /// activation) — the hover itself is what it checks.
-    func showHover(at index: Int, fromKeyboard: Bool, inKeyWindowOnly: Bool = true) {
+    package func showHover(at index: Int, fromKeyboard: Bool, inKeyWindowOnly: Bool = true) {
         guard let buffer = active, view.window?.isKeyWindow == true || !inKeyWindowOnly else { return }
         let problems = buffer.diagnostics.filter {
             NSLocationInRange(index, $0.range) || ($0.range.length == 0 && $0.range.location == index)
@@ -405,7 +405,7 @@ extension EditorViewController {
     /// Formats `buffer` (the file showing, by default) with its server's
     /// formatter — the one being saved, under format on save, even when it
     /// isn't the one on screen.
-    func formatDocument(_ target: EditorBuffer? = nil, _ done: @escaping () -> Void) {
+    package func formatDocument(_ target: EditorBuffer? = nil, _ done: @escaping () -> Void) {
         guard let buffer = target ?? active, let server = server(for: buffer), let url = buffer.url, server.capabilities?.formatting != false
         else {
             return done()
@@ -440,7 +440,7 @@ extension EditorViewController {
     // MARK: Git
 
     /// What the last commit has for the file, then the gutter's marks.
-    func refreshGitBase(_ buffer: EditorBuffer) {
+    package func refreshGitBase(_ buffer: EditorBuffer) {
         guard Settings.shared.editorGitGutter, let url = buffer.url, !buffer.document.isVirtual else {
             buffer.gitBase = nil
             buffer.gitMarks = []
@@ -456,7 +456,7 @@ extension EditorViewController {
         }
     }
 
-    func scheduleGitMarks(_ buffer: EditorBuffer) {
+    package func scheduleGitMarks(_ buffer: EditorBuffer) {
         guard buffer.gitBase != nil else { return }
         pendingGitWork?.cancel()
         let work = DispatchWorkItem { [weak self, weak buffer] in

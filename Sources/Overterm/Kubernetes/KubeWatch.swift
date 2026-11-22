@@ -3,29 +3,29 @@ import Foundation
 /// The API server's own error: its `Status` (401, 403, 404, 409, 410,
 /// 429…), as the proxy hands it through. A failure of the proxy's own (a
 /// 500 in plain text) is a `KubeProxyProblem` instead.
-struct KubeAPIError: Error, Equatable, Sendable, LocalizedError {
-    var status: Int
+package struct KubeAPIError: Error, Equatable, Sendable, LocalizedError {
+    package var status: Int
     /// The Status's `reason`: `Expired`, `Forbidden`, `NotFound`, `Gone`…
-    var reason: String?
-    var message: String
+    package var reason: String?
+    package var message: String
     /// A 429's `Retry-After`, in seconds.
-    var retryAfter: Int?
+    package var retryAfter: Int?
     /// The Status's `details.causes`: an apply's 409 names each field and
     /// the manager that owns it there (`FieldManagerConflict`).
-    var causes: [KubeStatusCause] = []
+    package var causes: [KubeStatusCause] = []
 
-    var errorDescription: String? { message }
+    package var errorDescription: String? { message }
 
     /// The resource version (or a list's `continue`) is too old: list again.
-    var isGone: Bool { status == 410 }
-    var isForbidden: Bool { status == 403 }
-    var isNotFound: Bool { status == 404 }
+    package var isGone: Bool { status == 410 }
+    package var isForbidden: Bool { status == 403 }
+    package var isNotFound: Bool { status == 404 }
     /// Throttled (429) or the server failing for now (5xx, its JSON
     /// Status — not the proxy's plain text): worth trying again.
-    var isTransient: Bool { status == 429 || (500...599).contains(status) }
+    package var isTransient: Bool { status == 429 || (500...599).contains(status) }
 
     /// From a response that isn't a success.
-    static func from(_ response: HTTPResponse) -> KubeAPIError {
+    package static func from(_ response: HTTPResponse) -> KubeAPIError {
         var error =
             (try? JSONSerialization.jsonObject(with: response.body) as? [String: Any]).map { status($0, code: response.status) }
             ?? KubeAPIError(status: response.status, reason: nil, message: response.errorMessage)
@@ -35,7 +35,7 @@ struct KubeAPIError: Error, Equatable, Sendable, LocalizedError {
     }
 
     /// A `Status` object: a response's body, or an in-stream ERROR event's.
-    static func status(_ object: [String: Any], code: Int? = nil) -> KubeAPIError {
+    package static func status(_ object: [String: Any], code: Int? = nil) -> KubeAPIError {
         let status = (object["code"] as? NSNumber)?.intValue ?? code ?? 500
         var message = object["message"] as? String ?? (object["reason"] as? String) ?? "HTTP \(status)"
         // What the message leaves out (an eviction's PodDisruptionBudget says which, and why, only here).
@@ -51,15 +51,15 @@ struct KubeAPIError: Error, Equatable, Sendable, LocalizedError {
 }
 
 /// One of a Status's `details.causes`.
-struct KubeStatusCause: Equatable, Sendable {
-    var reason: String
-    var message: String
-    var field: String
+package struct KubeStatusCause: Equatable, Sendable {
+    package var reason: String
+    package var message: String
+    package var field: String
 }
 
 /// One event of a watch, its object a Table of one row (or, from a server
 /// without Table support, the object itself).
-enum KubeWatchEvent: Equatable, Sendable {
+package enum KubeWatchEvent: Equatable, Sendable {
     case added(KubeRow, resourceVersion: String?)
     case modified(KubeRow, resourceVersion: String?)
     case deleted(KubeRow, resourceVersion: String?)
@@ -70,7 +70,7 @@ enum KubeWatchEvent: Equatable, Sendable {
     /// too old, list again.
     case error(KubeAPIError)
 
-    var resourceVersion: String? {
+    package var resourceVersion: String? {
         switch self {
         case .added(_, let version), .modified(_, let version), .deleted(_, let version): version
         case .bookmark(let version, _): version
@@ -83,18 +83,18 @@ enum KubeWatchEvent: Equatable, Sendable {
 /// `columnDefinitions` in its first event only; later events are Tables
 /// without headers, so the ones kept (from the list, then the first event)
 /// are reused. Pure.
-struct KubeWatchDecoder: Sendable {
-    private(set) var columns: [KubeColumn]
-    let namespace: String?
+package struct KubeWatchDecoder: Sendable {
+    package private(set) var columns: [KubeColumn]
+    package let namespace: String?
     /// What is watched, for the kinds whose cells are read with care.
-    let kind: KubeResourceKind?
+    package let kind: KubeResourceKind?
     /// Whether the rows say who deploys them (`KubeListOptions.owners`).
-    let owners: Bool
+    package let owners: Bool
     /// Whether the rows keep Argo CD's marks (`KubeListOptions.marks`).
-    let marks: Bool
+    package let marks: Bool
     private var lines = DockerLineSplitter()
 
-    init(columns: [KubeColumn], namespace: String?, kind: KubeResourceKind? = nil, owners: Bool = false, marks: Bool = false) {
+    package init(columns: [KubeColumn], namespace: String?, kind: KubeResourceKind? = nil, owners: Bool = false, marks: Bool = false) {
         self.columns = columns
         self.namespace = namespace
         self.kind = kind
@@ -103,17 +103,17 @@ struct KubeWatchDecoder: Sendable {
     }
 
     /// The events whole in `data` and what came before it.
-    mutating func feed(_ data: Data) throws -> [KubeWatchEvent] {
+    package mutating func feed(_ data: Data) throws -> [KubeWatchEvent] {
         try lines.feed(data).flatMap { try decode($0) }
     }
 
     /// What a stream that ended without a last newline still said.
-    mutating func finish() throws -> [KubeWatchEvent] {
+    package mutating func finish() throws -> [KubeWatchEvent] {
         guard let last = lines.finish() else { return [] }
         return try decode(last)
     }
 
-    mutating func decode(_ line: Data) throws -> [KubeWatchEvent] {
+    package mutating func decode(_ line: Data) throws -> [KubeWatchEvent] {
         guard let event = try? JSONSerialization.jsonObject(with: line) as? [String: Any], let type = event["type"] as? String,
             let object = event["object"] as? [String: Any]
         else { throw KubeTableReader.Malformed(detail: String(decoding: line.prefix(120), as: UTF8.self)) }

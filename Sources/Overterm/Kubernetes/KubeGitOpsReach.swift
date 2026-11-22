@@ -45,11 +45,11 @@ import Foundation
 /// to Progressing and back at every reconcile, a message, Stuck worked out
 /// from the clock) runs no git; its words are said again from the
 /// question as it is now (`labeled`).
-enum KubeGitOpsReach {
-    typealias Runner = KubeGitOpsCheckouts.Runner
+package enum KubeGitOpsReach {
+    package typealias Runner = KubeGitOpsCheckouts.Runner
 
     /// What the object applied, as a commit or not.
-    enum Applied: Hashable, Sendable {
+    package enum Applied: Hashable, Sendable {
         /// A whole SHA, or a 12-character prefix (`prefix`) that must name one commit.
         case commit(String, prefix: Bool)
         /// A revision that names no commit: as shown ("chart 1.4.2", "sha256:1f2e3d4").
@@ -59,52 +59,52 @@ enum KubeGitOpsReach {
     }
 
     /// Flux tried a revision and it failed.
-    struct Attempt: Hashable, Sendable {
+    package struct Attempt: Hashable, Sendable {
         /// As shown: `c03f9aa`, `1.5.0`.
-        var shown: String
-        var commit: String?
-        var reason: String?
-        var message: String?
+        package var shown: String
+        package var commit: String?
+        package var reason: String?
+        package var message: String?
         /// "a77b0d1 is still applied", "rolled back to 1.4.2".
-        var after: String
+        package var after: String
     }
 
     /// A revision there that isn't applied: Flux's fetched artifact, Argo CD's `sync.revision`.
-    struct Fetched: Hashable, Sendable {
-        var shown: String
-        var commit: String?
+    package struct Fetched: Hashable, Sendable {
+        package var shown: String
+        package var commit: String?
         /// The applied one it is compared with.
-        var applied: String?
-        var appliedShown: String?
+        package var applied: String?
+        package var appliedShown: String?
     }
 
     /// Everything one answer reads, cluster- and checkout-supplied alike;
     /// `key` the part git is asked about.
-    struct Question: Hashable, Sendable {
-        var tool: KubeGitOpsObject.Tool
+    package struct Question: Hashable, Sendable {
+        package var tool: KubeGitOpsObject.Tool
         /// `Kustomization acme-apps, Ready`.
-        var said: String
-        var applied: Applied
-        var attempted: Attempt?
-        var fetched: Fetched?
+        package var said: String
+        package var applied: Applied
+        package var attempted: Attempt?
+        package var fetched: Fetched?
         /// The object's path in the checkout (`""`: its root); nil when not here.
-        var path: String?
+        package var path: String?
         /// `manifest-generate-paths`' entries, as written.
-        var generatePaths: [String] = []
+        package var generatePaths: [String] = []
         /// The remote its repository is, and the branch it tracks.
-        var remote: String?
-        var tracked: String?
+        package var remote: String?
+        package var tracked: String?
         /// "No change under the path" is Argo CD's.
-        var countsUnder: Bool
+        package var countsUnder: Bool
         /// HEAD's commit.
-        var head: String?
+        package var head: String?
         /// The checkout's refs (`KubeGitOpsMatch.Checkout.refs`): a fetch that moves the tracked branch asks again.
-        var refs: Int?
+        package var refs: Int?
 
         /// What git is asked about: not the state's word, not the failure's
         /// reason and message — those change at every reconcile and are said
         /// from the question as it is now (`labeled`).
-        var key: Key {
+        package var key: Key {
             Key(
                 applied: applied, attempted: attempted?.commit, fetched: fetched, path: path, generatePaths: generatePaths, remote: remote,
                 tracked: tracked, countsUnder: countsUnder, head: head, refs: refs)
@@ -112,55 +112,55 @@ enum KubeGitOpsReach {
     }
 
     /// A question's git: an answer's key.
-    struct Key: Hashable, Sendable {
-        var applied: Applied
-        var attempted: String?
-        var fetched: Fetched?
-        var path: String?
-        var generatePaths: [String]
-        var remote: String?
-        var tracked: String?
-        var countsUnder: Bool
-        var head: String?
-        var refs: Int?
+    package struct Key: Hashable, Sendable {
+        package var applied: Applied
+        package var attempted: String?
+        package var fetched: Fetched?
+        package var path: String?
+        package var generatePaths: [String]
+        package var remote: String?
+        package var tracked: String?
+        package var countsUnder: Bool
+        package var head: String?
+        package var refs: Int?
     }
 
     /// The rail's lines for one match.
-    struct Answer: Equatable, Sendable {
-        var deployed: KubeDeployedAnswer
+    package struct Answer: Equatable, Sendable {
+        package var deployed: KubeDeployedAnswer
         /// "from Flux's applied revision (Kustomization acme-apps, Ready)".
-        var source: String
-        var attempted: String?
-        var fetched: String?
+        package var source: String
+        package var attempted: String?
+        package var fetched: String?
         /// "no change under deploy/fake-dev since a77b0d1 on origin/main".
-        var unchanged: String?
-        var changed: KubeGitOpsChanges?
+        package var unchanged: String?
+        package var changed: KubeGitOpsChanges?
         /// What was checked, and what wasn't followed.
-        var checked: [String] = []
+        package var checked: [String] = []
         /// The pathspecs used.
-        var pathspecs: [String] = []
+        package var pathspecs: [String] = []
         /// From applied to attempted (or to git's newer one), for Ask Why: both commits whole.
-        var range: CommitRange?
+        package var range: CommitRange?
 
         /// The manifests line's Diff Deployed…Current.
-        var found: KubeDeployedAnswer.Found? { deployed.found }
+        package var found: KubeDeployedAnswer.Found? { deployed.found }
     }
 
-    struct CommitRange: Equatable, Sendable {
-        var from: String
-        var to: String
+    package struct CommitRange: Equatable, Sendable {
+        package var from: String
+        package var to: String
     }
 
     /// At most this many changed files kept, and commits briefed.
-    static let maxFiles = 200
-    static let maxCommits = 20
+    package static let maxFiles = 200
+    package static let maxCommits = 20
     /// A `kustomization.yaml` read at most this big.
-    static let maxKustomization = 256 << 10
+    package static let maxKustomization = 256 << 10
 
     // MARK: The question (pure)
 
     /// The question for a match, when it is case (a); nil otherwise.
-    static func question(
+    package static func question(
         _ object: KubeGitOpsObject, why: KubeGitOpsMatch.Why, checkout: KubeGitOpsMatch.Checkout, peers: [KubeGitOpsObject.Key: KubeGitOpsObject]
     ) -> Question? {
         guard why.isRepository else { return nil }
@@ -188,7 +188,7 @@ enum KubeGitOpsReach {
     }
 
     /// A Kustomization's or HelmRelease's git or OCI source (a chartRef's HelmChart's own).
-    static func upstreamSource(_ object: KubeGitOpsObject, peers: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> KubeGitOpsObject? {
+    package static func upstreamSource(_ object: KubeGitOpsObject, peers: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> KubeGitOpsObject? {
         if let reference = object.sourceRef, let source = peers[KubeGitOpsMatch.key(reference)] {
             if source.role == .source("HelmChart"), let further = source.sourceRef { return peers[KubeGitOpsMatch.key(further)] }
             return source
@@ -207,7 +207,7 @@ enum KubeGitOpsReach {
     }
 
     /// What is applied, by tool (2.6).
-    static func applied(_ object: KubeGitOpsObject, source index: Int, peers: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> Applied {
+    package static func applied(_ object: KubeGitOpsObject, source index: Int, peers: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> Applied {
         switch object.role {
         case .application:
             guard let revision = pick(object.revisions.applied, index).flatMap(nonEmpty) else { return .none }
@@ -246,13 +246,13 @@ enum KubeGitOpsReach {
 
     /// A revision as the attempted line says it (4.3): a commit's short SHA
     /// ("c03f9aa", not "main@c03f9aa"), else as shown ("1.5.0", "sha256:1f2e3d4").
-    static func said(_ parsed: KubeGitOpsRevision.Parsed) -> String {
+    package static func said(_ parsed: KubeGitOpsRevision.Parsed) -> String {
         if let commit = parsed.commit, !parsed.prefix { return String(commit.prefix(KubeGitOpsRevision.short)) }
         return parsed.shown
     }
 
     /// Flux tried something else than what is applied, and it failed.
-    static func attempted(_ object: KubeGitOpsObject) -> Attempt? {
+    package static func attempted(_ object: KubeGitOpsObject) -> Attempt? {
         let ready = object.condition("Ready")
         guard ready?.isFalse == true, let attempted = object.revisions.attempted.flatMap(nonEmpty) else { return nil }
         let parsed = KubeGitOpsRevision.parse(attempted)
@@ -279,7 +279,7 @@ enum KubeGitOpsReach {
     }
 
     /// Fetched or seen in git, not applied.
-    static func fetched(_ object: KubeGitOpsObject, source index: Int, peers: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> Fetched? {
+    package static func fetched(_ object: KubeGitOpsObject, source index: Int, peers: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> Fetched? {
         switch object.role {
         case .application:
             guard let wanted = pick(object.revisions.wanted, index).flatMap(nonEmpty), let live = pick(object.revisions.applied, index).flatMap(nonEmpty),
@@ -304,20 +304,20 @@ enum KubeGitOpsReach {
     // MARK: The words (pure)
 
     /// "Argo CD's synced revision isn't a commit (chart 1.4.2)", "Flux hasn't applied anything yet".
-    static func notACommit(_ question: Question, shown: String?) -> String {
+    package static func notACommit(_ question: Question, shown: String?) -> String {
         let source = KubeCommitSource.gitopsRevision.said(tool: question.tool)
         guard let shown else { return question.tool == .argo ? "Argo CD hasn't synced a revision yet" : "Flux hasn't applied a revision yet" }
         return "\(source) isn't a commit (\(shown))"
     }
 
     /// "from Flux's applied revision (Kustomization acme-apps, Ready)".
-    static func sourceText(_ question: Question) -> String {
+    package static func sourceText(_ question: Question) -> String {
         "from \(KubeCommitSource.gitopsRevision.said(tool: question.tool)) (\(question.said))"
     }
 
     /// An answer's words from the question as it is now: kept by `Question.key`,
     /// its source's state and the failure's message said again, no git.
-    static func labeled(_ answer: Answer, _ question: Question) -> Answer {
+    package static func labeled(_ answer: Answer, _ question: Question) -> Answer {
         var answer = answer
         answer.source = sourceText(question)
         answer.attempted = question.attempted.map { KubeMCPText.scrubbed(attemptedText($0, head: question.head)) }
@@ -325,7 +325,7 @@ enum KubeGitOpsReach {
     }
 
     /// "Flux tried c03f9aa (this branch's HEAD) and failed: BuildFailed — …; a77b0d1 is still applied".
-    static func attemptedText(_ attempt: Attempt, head: String?) -> String {
+    package static func attemptedText(_ attempt: Attempt, head: String?) -> String {
         let isHead = attempt.commit != nil && attempt.commit == head
         var text = "Flux tried \(attempt.shown)" + (isHead ? " (this branch's HEAD)" : "") + " and failed"
         // The summary's last error already leads with its reason, mostly ("BuildFailed: …").
@@ -336,7 +336,7 @@ enum KubeGitOpsReach {
     }
 
     /// "Flux fetched c03f9aa, not applied yet (newer than a77b0d1)".
-    static func fetchedText(_ fetched: Fetched, tool: KubeGitOpsObject.Tool, order: Order?) -> String {
+    package static func fetchedText(_ fetched: Fetched, tool: KubeGitOpsObject.Tool, order: Order?) -> String {
         var text =
             tool == .argo
             ? "git has \(fetched.shown); Argo CD synced \(fetched.appliedShown ?? "something else")" : "Flux fetched \(fetched.shown), not applied yet"
@@ -350,17 +350,17 @@ enum KubeGitOpsReach {
         return text
     }
 
-    enum Order: Equatable, Sendable { case newer, older, apart }
+    package enum Order: Equatable, Sendable { case newer, older, apart }
 
     /// "deploy/fake-dev", "deploy/fake-dev, k8s/api.yaml", "deploy/fake-dev and 3 more paths".
-    static func under(_ pathspecs: [String]) -> String {
+    package static func under(_ pathspecs: [String]) -> String {
         let names = pathspecs.map { $0 == "." ? "the repository's root" : $0 }
         if names.count <= 3 { return names.joined(separator: ", ") }
         return "\(names[0]) and \(names.count - 1) more paths"
     }
 
     /// "no change under deploy/fake-dev since a77b0d1 on origin/main", "2 commits under … on origin/main since a77b0d1, not synced".
-    static func unchangedText(count: Int, pathspecs: [String], since: String, on ref: String) -> String {
+    package static func unchangedText(count: Int, pathspecs: [String], since: String, on ref: String) -> String {
         let since = String(since.prefix(KubeGitOpsRevision.short))
         if count == 0 { return "no change under \(under(pathspecs)) since \(since) on \(ref)" }
         return "\(KubeDeployedAnswer.commits(count)) under \(under(pathspecs)) on \(ref) since \(since), not synced"
@@ -371,7 +371,7 @@ enum KubeGitOpsReach {
     /// The path, `manifest-generate-paths`' entries, the path's
     /// `kustomization.yaml` entries one level deep — each in the checkout
     /// (`KubeGitOpsPath`); what wasn't followed, said.
-    static func pathspecs(path: String, generatePaths: [String], in root: URL) -> (pathspecs: [String], notes: [String]) {
+    package static func pathspecs(path: String, generatePaths: [String], in root: URL) -> (pathspecs: [String], notes: [String]) {
         var resolved: [KubeGitOpsPath.Resolved] = [KubeGitOpsPath.resolve(path, in: root)]
         guard resolved[0].relative != nil else { return ([], []) }
         var notes: [String] = []
@@ -396,7 +396,7 @@ enum KubeGitOpsReach {
 
     /// The path's `kustomization.yaml` (`.yml`, `Kustomization`): its
     /// `resources:` and `components:` that are paths in the checkout.
-    static func kustomizationEntries(path: String, in root: URL) -> (entries: [KubeGitOpsPath.Resolved], urls: Int, refused: Int, tooBig: Bool) {
+    package static func kustomizationEntries(path: String, in root: URL) -> (entries: [KubeGitOpsPath.Resolved], urls: Int, refused: Int, tooBig: Bool) {
         guard case .inCheckout(let relative) = KubeGitOpsPath.resolve(path, in: root) else { return ([], 0, 0, false) }
         let directory = relative.isEmpty ? root : root.appendingPathComponent(relative)
         for name in ["kustomization.yaml", "kustomization.yml", "Kustomization"] {
@@ -413,7 +413,7 @@ enum KubeGitOpsReach {
     }
 
     /// A kustomization's `resources:` and `components:` relative to `base`, one level deep.
-    static func entries(_ document: [String: Any], base: String, in root: URL) -> (entries: [KubeGitOpsPath.Resolved], urls: Int, refused: Int, tooBig: Bool) {
+    package static func entries(_ document: [String: Any], base: String, in root: URL) -> (entries: [KubeGitOpsPath.Resolved], urls: Int, refused: Int, tooBig: Bool) {
         var found: [KubeGitOpsPath.Resolved] = []
         var urls = 0
         var refused = 0
@@ -433,14 +433,14 @@ enum KubeGitOpsReach {
     }
 
     /// A kustomize remote: a URL, `github.com/…`, `git@…`, anything with `?ref=`.
-    static func isRemote(_ entry: String) -> Bool {
+    package static func isRemote(_ entry: String) -> Bool {
         entry.contains("://") || entry.hasPrefix("git@") || entry.contains("?ref=") || entry.hasPrefix("github.com/") || entry.hasPrefix("gitlab.com/")
     }
 
     // MARK: The checkout (git, through `KubeGitOpsGitArgs`)
 
     /// The answer, against the checkout: every git call through `git`, nothing fetched.
-    static func answer(_ question: Question, in root: URL, git: @escaping Runner) async -> Answer {
+    package static func answer(_ question: Question, in root: URL, git: @escaping Runner) async -> Answer {
         func run(_ arguments: [String]?, success: Set<Int32> = [0]) async -> String? {
             guard let arguments else { return nil }
             return (try? await git(arguments, root, success))?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -537,7 +537,7 @@ enum KubeGitOpsReach {
     }
 
     /// Ask Why's commits: `git log --oneline` from applied to attempted, at most 20.
-    static func commits(_ range: CommitRange, in root: URL, git: @escaping Runner) async -> [String] {
+    package static func commits(_ range: CommitRange, in root: URL, git: @escaping Runner) async -> [String] {
         guard let arguments = KubeGitOpsGitArgs.logArguments(from: range.from, to: range.to, limit: maxCommits),
             let output = try? await git(arguments, root, [0])
         else { return [] }
@@ -547,7 +547,7 @@ enum KubeGitOpsReach {
     /// What the rail adds to Ask Why's brief, with a matched checkout
     /// (gitops.md 6.2): the lines above, the commits between applied and
     /// attempted, the changed files — every word through `Secrets`.
-    static func briefParts(_ answer: Answer, commits: [String], checkout: URL) -> [AskAgentModel.Part] {
+    package static func briefParts(_ answer: Answer, commits: [String], checkout: URL) -> [AskAgentModel.Part] {
         var lines = ["Checkout \(checkout.lastPathComponent): " + answer.deployed.text + " (\(answer.source))."]
         for line in [answer.attempted, answer.fetched, answer.unchanged].compactMap({ $0 }) { lines.append(line + ".") }
         if let changed = answer.changed { lines.append(changed.text + " (against \(changed.against)).") }
@@ -570,22 +570,22 @@ enum KubeGitOpsReach {
 /// The files this branch changes under a match's pathspecs, against the
 /// branch it tracks: "3 files under apps/web on this branch", opening a
 /// review of them (`ReviewSource.paths`, from their merge base to HEAD).
-struct KubeGitOpsChanges: Equatable, Sendable {
-    var files: [String]
-    var more = 0
+package struct KubeGitOpsChanges: Equatable, Sendable {
+    package var files: [String]
+    package var more = 0
     /// "deploy/fake-dev, k8s/api.yaml".
-    var under: String
+    package var under: String
     /// "origin/main".
-    var against: String
+    package var against: String
     /// The merge base and HEAD, whole.
-    var base: String
-    var head: String
+    package var base: String
+    package var head: String
 
-    var count: Int { files.count + more }
+    package var count: Int { files.count + more }
 
-    var text: String {
+    package var text: String {
         count == 0 ? "no change under \(under) on this branch" : "\(count == 1 ? "1 file" : "\(count) files") under \(under) on this branch"
     }
 
-    var review: ReviewSource? { files.isEmpty ? nil : .paths(base: base, head: head, paths: files) }
+    package var review: ReviewSource? { files.isEmpty ? nil : .paths(base: base, head: head, paths: files) }
 }

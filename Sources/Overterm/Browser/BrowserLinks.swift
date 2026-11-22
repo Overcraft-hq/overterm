@@ -3,13 +3,13 @@ import Foundation
 /// Which links Overterm's browser takes (Settings ▸ Browser ▸ Open links):
 /// what you are building — localhost and the like — by default; the rest
 /// of the web stays in your own browser, with your logins and extensions.
-enum BrowserLinks {
-    enum Policy: String, CaseIterable, Sendable {
+package enum BrowserLinks {
+    package enum Policy: String, CaseIterable, Sendable {
         case local, all, none
     }
 
     /// Whether `url` opens in Overterm's browser under `policy`.
-    static func opensInside(_ url: URL, policy: Policy) -> Bool {
+    package static func opensInside(_ url: URL, policy: Policy) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
         switch policy {
         case .all: return true
@@ -19,7 +19,7 @@ enum BrowserLinks {
     }
 
     /// A server on this machine or its network: what a dev server prints.
-    static func isLocal(_ url: URL) -> Bool {
+    package static func isLocal(_ url: URL) -> Bool {
         guard var host = url.host?.lowercased() else { return false }
         if host.hasPrefix("[") { host = String(host.dropFirst().dropLast()) }
         if ["localhost", "127.0.0.1", "0.0.0.0", "::1", "::"].contains(host) { return true }
@@ -37,7 +37,7 @@ enum BrowserLinks {
     /// What was typed in the address bar, as a URL: a URL as it is, a
     /// host[:port][/path] with http:// (https:// for a dotted public name),
     /// anything else a search.
-    static func url(fromTyped typed: String) -> URL? {
+    package static func url(fromTyped typed: String) -> URL? {
         let text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         if let url = URL(string: text), let scheme = url.scheme?.lowercased(), ["http", "https", "file", "about"].contains(scheme) {

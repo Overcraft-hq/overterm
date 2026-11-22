@@ -8,9 +8,9 @@ import Foundation
 /// (Interrupt only), an agent (Stop Agent, critical), an app (Quit), a
 /// release write (critical) and whatever the rule refuses are left out with
 /// why. Pure.
-enum LeftBehindStop {
+package enum LeftBehindStop {
     /// How the targets were picked.
-    enum Pick: Hashable, Sendable {
+    package enum Pick: Hashable, Sendable {
         /// Several at once — Stop All Certain, the launch's Stop All, a
         /// worktree's removal: the bulk rule too (`bulkRefusal`).
         case bulk
@@ -21,26 +21,26 @@ enum LeftBehindStop {
         case picked
     }
 
-    struct Refused: Hashable, Sendable {
-        let target: ActivitySignalTarget
-        let name: String
-        let reason: String
+    package struct Refused: Hashable, Sendable {
+        package let target: ActivitySignalTarget
+        package let name: String
+        package let reason: String
 
         /// "acme-server (pid 4242): a terraform write: Interrupt it alone".
-        var line: String { "\(name) (pid \(target.identity.pid)): \(reason)" }
+        package var line: String { "\(name) (pid \(target.identity.pid)): \(reason)" }
     }
 
-    struct Checked: Hashable, Sendable {
-        var send: [ActivitySignalTarget] = []
-        var refused: [Refused] = []
+    package struct Checked: Hashable, Sendable {
+        package var send: [ActivitySignalTarget] = []
+        package var refused: [Refused] = []
     }
 
-    static let endedWords = "it has ended"
-    static let keptWords = "you kept it"
-    static let notCertainWords = "no longer certainly left behind"
+    package static let endedWords = "it has ended"
+    package static let keptWords = "you kept it"
+    package static let notCertainWords = "no longer certainly left behind"
 
     /// Each of `targets` as `snapshot` reads it now.
-    static func check(
+    package static func check(
         _ targets: [ActivitySignalTarget], pick: Pick, in snapshot: ActivitySnapshot, owners: ActivityAttribution,
         known: ActivityVerbSubject.Known, kept: Set<ActivityProcessID>
     ) -> Checked {
@@ -64,7 +64,7 @@ enum LeftBehindStop {
     }
 
     /// Why `subject` isn't sent SIGTERM here; nil when it is.
-    static func refusal(
+    package static func refusal(
         _ subject: ActivityVerbSubject, process: ActivityProcess, owner: ActivityOwner?, pick: Pick, kept: Set<ActivityProcessID>,
         table: ProcessTable, user: uid_t = getuid()
     ) -> String? {

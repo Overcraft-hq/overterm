@@ -8,20 +8,20 @@ import NIOSSL
 /// MySQL (and MariaDB) through MySQLNIO. A read goes as a simple query —
 /// its values come back as text, whatever their types; a write as a query,
 /// which is what says how many rows it changed.
-actor MySQLDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor MySQLDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let password: String?
-    private(set) var connection: MySQLConnection?
+    package private(set) var connection: MySQLConnection?
     /// `CONNECTION_ID()`: never killed from the Server page.
-    var ownID: Int?
+    package var ownID: Int?
     /// Whether the session's strings take `\` as an escape (no NO_BACKSLASH_ESCAPES).
-    var backslashEscapes: Bool?
+    package var backslashEscapes: Bool?
     // One operation at a time: a Save's transaction must not have another
     // read run inside it (an actor gives way at every await).
     private var busy = false
     private var queue: [CheckedContinuation<Void, Never>] = []
 
-    func exclusive<T: Sendable>(_ work: () async throws -> T) async throws -> T {
+    package func exclusive<T: Sendable>(_ work: () async throws -> T) async throws -> T {
         if busy {
             await withCheckedContinuation { queue.append($0) }
         }
@@ -32,12 +32,12 @@ actor MySQLDriver: DatabaseDriver {
         return try await work()
     }
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
     }
 
-    static func tls(_ mode: DatabaseSSLMode) -> TLSConfiguration? {
+    package static func tls(_ mode: DatabaseSSLMode) -> TLSConfiguration? {
         switch mode {
         case .disable: return nil
         case .prefer, .require:
@@ -48,7 +48,7 @@ actor MySQLDriver: DatabaseDriver {
         }
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         guard connection == nil else { return }
         do {
             let address = try SocketAddress.makeAddressResolvingHost(config.host, port: config.port ?? 3306)
@@ -64,12 +64,12 @@ actor MySQLDriver: DatabaseDriver {
         }
     }
 
-    func close() async {
+    package func close() async {
         try? await connection?.close().get()
         connection = nil
     }
 
-    func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ sql: String, limit: Int) async throws -> QueryResult {
         try await exclusive { try await run(sql, limit: limit) }
     }
 
@@ -97,7 +97,7 @@ actor MySQLDriver: DatabaseDriver {
         return result
     }
 
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         let system: Set<String> = ["information_schema", "mysql", "performance_schema", "sys"]
         let names = try await execute("SHOW DATABASES", limit: 10_000).rows.compactMap { $0.first ?? nil }
         let user = names.filter { !system.contains($0) }
@@ -105,14 +105,14 @@ actor MySQLDriver: DatabaseDriver {
         return user.sorted { ($0 == config.database ? 0 : 1, $0) < ($1 == config.database ? 0 : 1, $1) }
     }
 
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         try await execute(
             "SELECT table_name, table_type FROM information_schema.tables WHERE table_schema = \(DatabaseDrivers.literal(schema)) ORDER BY table_name",
             limit: 100_000
         ).rows.map { CatalogTable(schema: schema, name: $0[0] ?? "", isView: $0[1] == "VIEW") }
     }
 
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         try await execute(
             """
             SELECT table_name, column_name, column_type, is_nullable FROM information_schema.columns
@@ -121,7 +121,7 @@ actor MySQLDriver: DatabaseDriver {
         ).rows.map { CatalogColumn(table: $0[0] ?? "", name: $0[1] ?? "", type: $0[2] ?? "", nullable: $0[3] == "YES") }
     }
 
-    static func describe(_ error: Error) -> String {
+    package static func describe(_ error: Error) -> String {
         if case MySQLError.server(let packet) = error { return packet.errorMessage }
         // MariaDB's own plugins (ed25519, PARSEC) aren't MySQL's: said with
         // what to do, not as a type's name.
@@ -135,21 +135,21 @@ actor MySQLDriver: DatabaseDriver {
     }
 }
 
-final class MySQLCollected: @unchecked Sendable {
+package final class MySQLCollected: @unchecked Sendable {
     private let lock = NSLock()
     private let limit: Int
     private var value = QueryResult()
 
-    init(limit: Int) { self.limit = limit }
+    package init(limit: Int) { self.limit = limit }
 
-    var result: QueryResult { lock.withLock { value } }
+    package var result: QueryResult { lock.withLock { value } }
 
-    var affected: Int? {
+    package var affected: Int? {
         get { lock.withLock { value.affected } }
         set { lock.withLock { value.affected = newValue } }
     }
 
-    func add(_ row: MySQLRow) {
+    package func add(_ row: MySQLRow) {
         lock.withLock {
             if value.columns.isEmpty {
                 value.columns = row.columnDefinitions.map(\.name)

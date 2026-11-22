@@ -8,16 +8,16 @@ import Foundation
 /// which is always the root. Per root (stage 1b, `binary(forRoot:)`):
 /// `terraform.path`, else `mise which terraform` where a version file asks
 /// for one, else the same search; its version asked once (`version`).
-enum TerraformCLI {
+package enum TerraformCLI {
     /// The folders looked in after the shell's PATH.
-    static let fallbackFolders = ["/opt/homebrew/bin", "/usr/local/bin"]
+    package static let fallbackFolders = ["/opt/homebrew/bin", "/usr/local/bin"]
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _scenarioWrapper: URL?
 
     /// A scenario's recording wrapper (`TerraformRecorder`), put in front of
     /// `OVERTERM_TERRAFORM`'s binary. Honoured only in a guarded run.
-    static var scenarioWrapper: URL? {
+    package static var scenarioWrapper: URL? {
         get { lock.withLock { _scenarioWrapper } }
         set { lock.withLock { _scenarioWrapper = newValue } }
     }
@@ -28,13 +28,13 @@ enum TerraformCLI {
     /// the like, laid over a guarded run's scratch environment so the
     /// recording wrapper can show they never reach a run. Honoured only in
     /// a guarded run, never a credential's name.
-    static var scenarioEnvironment: [String: String] {
+    package static var scenarioEnvironment: [String: String] {
         get { lock.withLock { _scenarioEnvironment } }
         set { lock.withLock { _scenarioEnvironment = newValue.filter { !TerraformGuards.isCredential($0.key) } } }
     }
 
     /// The binary for `choice` — pure but for `isExecutable`.
-    static func resolve(
+    package static func resolve(
         _ choice: TerraformGuards.Binary, wrapper: URL?, shellEnvironment: () -> [String: String],
         isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
     ) -> URL? {
@@ -51,7 +51,7 @@ enum TerraformCLI {
 
     /// The terraform to run now. Blocking the first time (the login shell
     /// is asked): off the main thread.
-    static func binary() -> URL? {
+    package static func binary() -> URL? {
         resolve(
             AppEnvironment.terraformBinary, wrapper: AppEnvironment.guardsTerraform ? scenarioWrapper : nil,
             shellEnvironment: { ShellEnvironment.environment() })
@@ -61,12 +61,12 @@ enum TerraformCLI {
     /// login shell's PATH if it has answered already (`warm` asks it when a
     /// Terraform file opens), else the app's own, then Homebrew's places.
     /// The wrapper is a scenario's: terraform-ls gets the binary itself.
-    static func knownBinary() -> URL? {
+    package static func knownBinary() -> URL? {
         resolve(AppEnvironment.terraformBinary, wrapper: nil, shellEnvironment: { ShellEnvironment.known() ?? ProcessInfo.processInfo.environment })
     }
 
     /// Asks the login shell off the main thread, so `knownBinary` has its PATH.
-    static func warm() {
+    package static func warm() {
         let work: @Sendable () -> Void = { _ = binary() }
         DispatchQueue.global(qos: .utility).async(execute: work)
     }
@@ -78,7 +78,7 @@ enum TerraformCLI {
     /// a version file from the root up asks for a version and mise is on
     /// the login shell's PATH, `mise which terraform` with the root as its
     /// folder; else the search. Blocking (the shell, mise): off the main thread.
-    static func binary(forRoot root: URL, settingPath: String, hasVersionFile: Bool) -> URL? {
+    package static func binary(forRoot root: URL, settingPath: String, hasVersionFile: Bool) -> URL? {
         guard !AppEnvironment.guardsTerraform else { return binary() }
         let setting = (settingPath.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath
         if setting.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: setting) { return URL(fileURLWithPath: setting) }
@@ -92,7 +92,7 @@ enum TerraformCLI {
     }
 
     /// `version -json`'s `terraform_version`. Pure.
-    static func parseVersion(_ data: Data) -> String? {
+    package static func parseVersion(_ data: Data) -> String? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let version = object["terraform_version"] as? String,
             TerraformVersion(version) != nil
         else { return nil }
@@ -101,7 +101,7 @@ enum TerraformCLI {
 
     /// The version of `binary` as it runs in `root` (a shim picks by its
     /// folder). Blocking: a GCD thread's.
-    static func version(of binary: URL, in root: URL) -> String? {
+    package static func version(of binary: URL, in root: URL) -> String? {
         guard let base = try? AppEnvironment.terraformBaseEnvironment(),
             let scratch = try? TerraformGuards.prepareScratch(at: AppEnvironment.terraformScratchDirectory)
         else { return nil }

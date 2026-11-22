@@ -3,23 +3,23 @@ import CoreGraphics
 /// A tab's panes: a binary tree of splits with panes at the leaves. Pure
 /// value logic (insert, remove, neighbours, resize) — the view lays it out,
 /// the tab holds it. Generic so the tests need no terminals.
-indirect enum SplitTree<Leaf: AnyObject> {
+package indirect enum SplitTree<Leaf: AnyObject> {
     /// Side by side (a vertical divider) or stacked (a horizontal one).
-    enum Axis: String, Codable {
+    package enum Axis: String, Codable {
         case horizontal, vertical
     }
 
     /// Where a new pane goes, relative to the one split.
-    enum Direction {
+    package enum Direction {
         case right, down, left, up
 
-        var axis: Axis { self == .right || self == .left ? .horizontal : .vertical }
+        package var axis: Axis { self == .right || self == .left ? .horizontal : .vertical }
         /// The new pane comes second (right of / below) the old one.
-        var newSecond: Bool { self == .right || self == .down }
+        package var newSecond: Bool { self == .right || self == .down }
     }
 
     /// Moving the keyboard between panes.
-    enum Focus {
+    package enum Focus {
         case previous, next, left, right, up, down
     }
 
@@ -28,17 +28,17 @@ indirect enum SplitTree<Leaf: AnyObject> {
     case split(axis: Axis, ratio: Double, first: SplitTree, second: SplitTree)
 
     /// Panes in reading order: left to right, top to bottom.
-    var leaves: [Leaf] {
+    package var leaves: [Leaf] {
         switch self {
         case .leaf(let leaf): [leaf]
         case .split(_, _, let first, let second): first.leaves + second.leaves
         }
     }
 
-    func contains(_ leaf: Leaf) -> Bool { leaves.contains { $0 === leaf } }
+    package func contains(_ leaf: Leaf) -> Bool { leaves.contains { $0 === leaf } }
 
     /// Splits `target` in two, `new` on the `direction` side, half each.
-    func inserting(_ new: Leaf, at target: Leaf, _ direction: Direction) -> SplitTree {
+    package func inserting(_ new: Leaf, at target: Leaf, _ direction: Direction) -> SplitTree {
         switch self {
         case .leaf(let leaf):
             guard leaf === target else { return self }
@@ -53,7 +53,7 @@ indirect enum SplitTree<Leaf: AnyObject> {
 
     /// Without `leaf`; its sibling takes its parent's place. Nil when it
     /// was the last pane.
-    func removing(_ leaf: Leaf) -> SplitTree? {
+    package func removing(_ leaf: Leaf) -> SplitTree? {
         switch self {
         case .leaf(let only):
             return only === leaf ? nil : self
@@ -65,7 +65,7 @@ indirect enum SplitTree<Leaf: AnyObject> {
     }
 
     /// Every split sized so each pane along it gets an equal share.
-    func equalized() -> SplitTree {
+    package func equalized() -> SplitTree {
         switch self {
         case .leaf: return self
         case .split(let axis, _, let first, let second):
@@ -88,15 +88,15 @@ indirect enum SplitTree<Leaf: AnyObject> {
 
     /// A split's divider line, the split's whole area and where it is in
     /// the tree — what dragging it needs.
-    struct Divider {
-        let path: [Bool]
-        let rect: CGRect
-        let container: CGRect
-        let axis: Axis
+    package struct Divider {
+        package let path: [Bool]
+        package let rect: CGRect
+        package let container: CGRect
+        package let axis: Axis
     }
 
     /// Each pane's rectangle in `rect`, and each split's divider.
-    func layout(in rect: CGRect, divider: CGFloat = 1) -> (panes: [(Leaf, CGRect)], dividers: [Divider]) {
+    package func layout(in rect: CGRect, divider: CGFloat = 1) -> (panes: [(Leaf, CGRect)], dividers: [Divider]) {
         var panes: [(Leaf, CGRect)] = []
         var dividers: [Divider] = []
         func walk(_ node: SplitTree, _ rect: CGRect, _ path: [Bool]) {
@@ -116,7 +116,7 @@ indirect enum SplitTree<Leaf: AnyObject> {
 
     /// `rect` cut along `axis`: first part, divider, second part. Top-left
     /// origin (the first pane of a vertical split is the top one).
-    static func divide(_ rect: CGRect, axis: Axis, ratio: Double, divider: CGFloat) -> (CGRect, CGRect, CGRect) {
+    package static func divide(_ rect: CGRect, axis: Axis, ratio: Double, divider: CGFloat) -> (CGRect, CGRect, CGRect) {
         switch axis {
         case .horizontal:
             let firstWidth = ((rect.width - divider) * ratio).rounded()
@@ -137,7 +137,7 @@ indirect enum SplitTree<Leaf: AnyObject> {
 
     /// The split at `path` (false = first child) with a new ratio, kept to
     /// 0.05…0.95 so no pane disappears.
-    func settingRatio(_ newRatio: Double, at path: [Bool]) -> SplitTree {
+    package func settingRatio(_ newRatio: Double, at path: [Bool]) -> SplitTree {
         guard case .split(let axis, let ratio, let first, let second) = self else { return self }
         guard let step = path.first else {
             return .split(axis: axis, ratio: min(max(newRatio, 0.05), 0.95), first: first, second: second)
@@ -151,7 +151,7 @@ indirect enum SplitTree<Leaf: AnyObject> {
     /// The pane to move to from `leaf`. Previous/next wrap around in reading
     /// order; directions pick the nearest pane on that side that overlaps it,
     /// preferring the most overlap.
-    func neighbor(of leaf: Leaf, _ focus: Focus) -> Leaf? {
+    package func neighbor(of leaf: Leaf, _ focus: Focus) -> Leaf? {
         let all = leaves
         guard all.count > 1, let index = all.firstIndex(where: { $0 === leaf }) else { return nil }
         switch focus {
@@ -185,7 +185,7 @@ indirect enum SplitTree<Leaf: AnyObject> {
 
     /// Ghostty's resize_split: the nearest split around `leaf` along the
     /// direction's axis moves its divider that way, by `amount` of its size.
-    func resizing(_ leaf: Leaf, toward direction: Direction, by amount: Double) -> SplitTree {
+    package func resizing(_ leaf: Leaf, toward direction: Direction, by amount: Double) -> SplitTree {
         func walk(_ node: SplitTree) -> (SplitTree, Bool) {
             guard case .split(let axis, let ratio, let first, let second) = node, node.contains(leaf) else { return (node, false) }
             let (newFirst, inFirst) = walk(first)

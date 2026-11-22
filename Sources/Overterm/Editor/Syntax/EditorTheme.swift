@@ -4,39 +4,39 @@ import AppKit
 /// theme), keyed by the Helix capture names the queries use. A capture
 /// takes its nearest named ancestor — "keyword.control.return" is a
 /// "keyword" — and one with none ("variable.other") paints nothing.
-struct EditorTheme {
-    struct Style: Equatable {
-        var color: NSColor
-        var bold = false
-        var italic = false
-        var underline = false
-        var strikethrough = false
+package struct EditorTheme {
+    package struct Style: Equatable {
+        package var color: NSColor
+        package var bold = false
+        package var italic = false
+        package var underline = false
+        package var strikethrough = false
     }
 
-    let isDark: Bool
+    package let isDark: Bool
     /// The text's own colour (Zed's `editor.foreground`).
-    let text: NSColor
-    let background: NSColor
-    let activeLine: NSColor
-    let lineNumber: NSColor
-    let activeLineNumber: NSColor
-    let indentGuide: NSColor
-    let activeIndentGuide: NSColor
-    let bracketMatch: NSColor
-    let selection: NSColor
-    let searchMatch: NSColor
-    let gitAdded: NSColor
-    let gitModified: NSColor
-    let gitDeleted: NSColor
-    let error: NSColor
-    let warning: NSColor
-    let info: NSColor
-    let hint: NSColor
+    package let text: NSColor
+    package let background: NSColor
+    package let activeLine: NSColor
+    package let lineNumber: NSColor
+    package let activeLineNumber: NSColor
+    package let indentGuide: NSColor
+    package let activeIndentGuide: NSColor
+    package let bracketMatch: NSColor
+    package let selection: NSColor
+    package let searchMatch: NSColor
+    package let gitAdded: NSColor
+    package let gitModified: NSColor
+    package let gitDeleted: NSColor
+    package let error: NSColor
+    package let warning: NSColor
+    package let info: NSColor
+    package let hint: NSColor
     private let styles: [String: Style]
 
     /// Dark or light by the terminal's background, so the editor matches
     /// the terminal beside it; the background itself stays the terminal's.
-    init(background: NSColor) {
+    package init(background: NSColor) {
         let rgb = background.usingColorSpace(.sRGB) ?? background
         let luminance = 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
         self.init(dark: luminance < 0.5, background: background)
@@ -44,21 +44,21 @@ struct EditorTheme {
 
     /// The terminal theme's own colours, for Settings ▸ Editor ▸ Colours:
     /// "The terminal theme's" — its foreground and sixteen.
-    struct Terminal: Equatable {
-        var foreground: NSColor
+    package struct Terminal: Equatable {
+        package var foreground: NSColor
         /// ANSI 0…15.
-        var ansi: [NSColor]
+        package var ansi: [NSColor]
     }
 
     /// One Dark or One Light — or, given the terminal's colours, the
     /// syntax drawn in those, so the editor reads as the terminal beside it.
-    init(background: NSColor, terminal: Terminal?) {
+    package init(background: NSColor, terminal: Terminal?) {
         let rgb = background.usingColorSpace(.sRGB) ?? background
         let luminance = 0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
         self.init(dark: luminance < 0.5, background: background, palette: terminal.flatMap(Self.palette(from:)))
     }
 
-    init(dark: Bool, background: NSColor, palette given: Palette? = nil) {
+    package init(dark: Bool, background: NSColor, palette given: Palette? = nil) {
         isDark = dark
         self.background = background
         let p = given ?? (dark ? Self.oneDark : Self.oneLight)
@@ -82,7 +82,7 @@ struct EditorTheme {
     }
 
     /// The style for a capture, or nil to leave the text as it is.
-    func style(for capture: String) -> Style? {
+    package func style(for capture: String) -> Style? {
         var name = Substring(capture)
         while true {
             if let style = styles[String(name)] { return style }
@@ -96,7 +96,7 @@ struct EditorTheme {
     /// A terminal theme's colours as a syntax palette, by the ANSI meaning
     /// editors give them (keywords magenta, strings green, functions blue…).
     /// Nil without all sixteen.
-    static func palette(from terminal: Terminal) -> Palette? {
+    package static func palette(from terminal: Terminal) -> Palette? {
         guard terminal.ansi.count >= 16 else { return nil }
         let a = terminal.ansi
         let text = terminal.foreground
@@ -107,8 +107,8 @@ struct EditorTheme {
             accent: a[4], error: a[1], warning: a[3])
     }
 
-    struct Palette {
-        let text, comment, docComment, keyword, string, escape, number, constant, function, type, operator_, property, tag,
+    package struct Palette {
+        package let text, comment, docComment, keyword, string, escape, number, constant, function, type, operator_, property, tag,
             attribute, punctuation, bracket, special, link, accent, error, warning: NSColor
     }
 

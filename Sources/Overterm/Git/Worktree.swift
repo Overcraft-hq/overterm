@@ -1,23 +1,23 @@
 import Foundation
 
 /// One entry of `git worktree list --porcelain`.
-struct Worktree: Identifiable, Hashable {
-    let path: URL
-    let head: String?
+package struct Worktree: Identifiable, Hashable {
+    package let path: URL
+    package let head: String?
     /// Short branch name (`main`), nil when detached or bare.
-    let branch: String?
-    let isBare: Bool
-    let isDetached: Bool
-    let isLocked: Bool
+    package let branch: String?
+    package let isBare: Bool
+    package let isDetached: Bool
+    package let isLocked: Bool
     /// Its directory is gone (deleted by hand); `git worktree prune` drops it.
-    var isPrunable = false
+    package var isPrunable = false
     /// The first entry: the repository's main working tree.
-    let isMain: Bool
+    package let isMain: Bool
 
-    var id: URL { path }
+    package var id: URL { path }
 
     /// What to call it in the UI.
-    var displayName: String {
+    package var displayName: String {
         if let branch { return branch }
         if isBare { return "(bare)" }
         return head.map { "(\($0.prefix(7)))" } ?? path.lastPathComponent
@@ -25,7 +25,7 @@ struct Worktree: Identifiable, Hashable {
 
     /// Parses porcelain output: blank-line separated records of
     /// `key value` lines, the first record being the main worktree.
-    static func parse(porcelain: String) -> [Worktree] {
+    package static func parse(porcelain: String) -> [Worktree] {
         var result: [Worktree] = []
         let records = porcelain.components(separatedBy: "\n\n")
         for record in records {
@@ -59,7 +59,7 @@ struct Worktree: Identifiable, Hashable {
 
     /// The worktree containing `directory` — the deepest match, since a
     /// worktree may live inside another's directory.
-    static func containing(_ directory: String, in worktrees: [Worktree]) -> Worktree? {
+    package static func containing(_ directory: String, in worktrees: [Worktree]) -> Worktree? {
         let dir = URL(fileURLWithPath: directory).standardizedFileURL.path
         return
             worktrees

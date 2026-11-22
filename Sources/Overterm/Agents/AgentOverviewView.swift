@@ -2,18 +2,18 @@ import SwiftUI
 
 /// ⇧⌘A: every tab as a card over the window — agents waiting for you
 /// first. A click goes to the tab.
-struct AgentOverviewView: View {
-    @ObservedObject var model: AgentOverviewModel
-    @ObservedObject var worktrees: WorktreeModel
-    @ObservedObject var theme: ChromeTheme
-    let onChoose: (Tab.ID) -> Void
+package struct AgentOverviewView: View {
+    @ObservedObject package var model: AgentOverviewModel
+    @ObservedObject package var worktrees: WorktreeModel
+    @ObservedObject package var theme: ChromeTheme
+    package let onChoose: (Tab.ID) -> Void
     /// Show in Activity (6.12): the page at the card's agent.
-    var onActivity: ((AgentOverviewModel.Card) -> Void)? = nil
+    package var onActivity: ((AgentOverviewModel.Card) -> Void)? = nil
     /// A server's pill: its URL opened as a link in that tab is (6.12).
-    var onOpen: ((AgentOverviewModel.Card, URL) -> Void)? = nil
-    let onDismiss: () -> Void
+    package var onOpen: ((AgentOverviewModel.Card, URL) -> Void)? = nil
+    package let onDismiss: () -> Void
 
-    var body: some View {
+    package var body: some View {
         ZStack {
             Color.black.opacity(0.35).onTapGesture(perform: onDismiss)
             VStack(alignment: .leading, spacing: 12) {
@@ -218,11 +218,11 @@ private struct AgentCard: View {
 
 /// The overview's host: takes the keyboard while shown so Esc closes it
 /// (there is no text field to catch it).
-final class AgentOverviewHostingView<Content: View>: NSHostingView<Content> {
-    var onEscape: (() -> Void)?
-    override var acceptsFirstResponder: Bool { true }
-    override func keyDown(with event: NSEvent) {
+package final class AgentOverviewHostingView<Content: View>: NSHostingView<Content> {
+    package var onEscape: (() -> Void)?
+    package override var acceptsFirstResponder: Bool { true }
+    package override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { onEscape?() } else { super.keyDown(with: event) }
     }
-    override func cancelOperation(_ sender: Any?) { onEscape?() }
+    package override func cancelOperation(_ sender: Any?) { onEscape?() }
 }

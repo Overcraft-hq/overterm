@@ -9,7 +9,7 @@ import AppKit
 /// After a Free the pill watches the port and says when it is free.
 extension TerminalWindowController {
     /// Free… on `port`'s pill in `pane`.
-    func freePort(_ port: ListeningPort, in pane: TerminalView) {
+    package func freePort(_ port: ListeningPort, in pane: TerminalView) {
         guard let window else { return }
         if let forward = port.forward {
             let question = ActivityPortFree.forwardQuestion(forward, port: port.port)
@@ -49,7 +49,7 @@ extension TerminalWindowController {
 
     /// What holds `identity` in the pane `login` and `tag` name, read now.
     /// Blocking.
-    nonisolated static func readHolder(
+    package nonisolated static func readHolder(
         _ identity: ActivityProcessID, login: pid_t?, tag: String, foreground: pid_t?, checkouts: [String], census: ActivitySampler = .app
     ) -> ActivityPortFree.Reading {
         guard let (slice, snapshot) = ProcessInspector(census: census, freshness: 0).slice(root: login, tag: tag) else { return .elsewhere }
@@ -57,14 +57,14 @@ extension TerminalWindowController {
         return ActivityPortFree.read(identity, slice: slice, in: snapshot, foregroundGroup: foreground, terminal: terminal, checkouts: checkouts)
     }
 
-    func confirmation(_ question: ActivityPortFree.Question) -> WriteConfirmation {
+    package func confirmation(_ question: ActivityPortFree.Question) -> WriteConfirmation {
         WriteConfirmation(
             title: question.title, scope: question.scope, production: question.production, detail: question.detail, button: question.button,
             critical: question.critical)
     }
 
     /// Says `title` and `detail` in a sheet that asks nothing.
-    func tell(_ title: String, _ detail: String) {
+    package func tell(_ title: String, _ detail: String) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title
@@ -172,7 +172,7 @@ extension TerminalWindowController {
     /// The pane's own route for its `login` and shell (6.10): asked by
     /// Activity already, then Terraform's guard, then the close with no
     /// second alert.
-    func closeForFree(_ pane: TerminalView, in tab: Tab) {
+    package func closeForFree(_ pane: TerminalView, in tab: Tab) {
         let split = tab.isSplit
         let proceed = { [weak self, weak tab, weak pane] in
             guard let self, let tab else { return }
@@ -187,9 +187,9 @@ extension TerminalWindowController {
     }
 
     /// How long a freed port is watched before the pill says it is still held.
-    static let freeWatch: Duration = .seconds(10)
+    package static let freeWatch: Duration = .seconds(10)
     /// How long the pill's last word stays.
-    static let freeSaid: Duration = .seconds(6)
+    package static let freeSaid: Duration = .seconds(6)
 
     /// Watches `port` after a Free: the one-off census, at most one every
     /// 2 s (7.1's spacing — any reader's answers the watch too), for 10 s,
@@ -198,7 +198,7 @@ extension TerminalWindowController {
     /// held. `freed`: the process the pill listed on the port — not the one
     /// signalled, terraform over its plugin —; nil for a container's or a
     /// forward's port, which only says free or still held.
-    func watchFreed(_ port: ListeningPort, freed: ActivityProcessID?, in pane: TerminalView, of tab: Tab) {
+    package func watchFreed(_ port: ListeningPort, freed: ActivityProcessID?, in pane: TerminalView, of tab: Tab) {
         let freeing = PortFreeing(pane: ObjectIdentifier(pane), port: port.port, proto: port.proto, state: .freeing)
         let sentAt = PortFreeing.now()
         Self.say(freeing, on: tab)
@@ -219,7 +219,7 @@ extension TerminalWindowController {
     /// watch ends with it still held — never a bind of the port (6.8).
     /// `freed`: the process listed on the port, nil for one an owner holds.
     /// `monitor` and `watch`: the census read and how long — a test's own.
-    static func watchPort(
+    package static func watchPort(
         _ port: Int, proto: String, freed: ActivityProcessID?, sentAt: UInt64, monitor: ActivityMonitor = .shared, watch: Duration = freeWatch
     ) async -> PortFreeing.State {
         let clock = ContinuousClock()

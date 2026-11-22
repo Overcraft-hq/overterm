@@ -4,51 +4,51 @@ import Foundation
 /// on the rows, and `label:` and `field:`, which go to the server
 /// (`KubeLabelSelector`, `KubeFieldSelector`) — a row is only cells, it has
 /// no labels or fields to match.
-enum KubeFilterKey: ResourceFilterKey {
+package enum KubeFilterKey: ResourceFilterKey {
     case text, namespace, status, label, field
 
-    static let names: [String: KubeFilterKey] = [
+    package static let names: [String: KubeFilterKey] = [
         "ns": .namespace, "namespace": .namespace, "status": .status, "s": .status, "label": .label, "l": .label, "field": .field, "f": .field,
     ]
 
     /// Whether the server reads it, not the rows.
-    var isServers: Bool { self == .label || self == .field }
+    package var isServers: Bool { self == .label || self == .field }
 }
 
 /// What a list is asked for with: the filter's `label:` words as a
 /// `labelSelector`, its `field:` words as a `fieldSelector`. Nil: none.
-struct KubeListSelectors: Equatable, Sendable {
-    var label: String?
-    var field: String?
+package struct KubeListSelectors: Equatable, Sendable {
+    package var label: String?
+    package var field: String?
 
-    init(label: String? = nil, field: String? = nil) {
+    package init(label: String? = nil, field: String? = nil) {
         self.label = label
         self.field = field
     }
 
-    var isEmpty: Bool { label == nil && field == nil }
+    package var isEmpty: Bool { label == nil && field == nil }
 
-    var options: KubeListOptions { KubeListOptions(labelSelector: label, fieldSelector: field) }
+    package var options: KubeListOptions { KubeListOptions(labelSelector: label, fieldSelector: field) }
 
     /// `label app=web, field status.phase=Running`; nil for none.
-    var said: String? {
+    package var said: String? {
         let parts = [label.map { "label \($0)" }, field.map { "field \($0)" }].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 
     /// Both read from a filter, with the words neither could read.
-    struct Reading: Equatable, Sendable {
-        var selectors = KubeListSelectors()
-        var refused: [String] = []
+    package struct Reading: Equatable, Sendable {
+        package var selectors = KubeListSelectors()
+        package var refused: [String] = []
     }
 
-    static func read(_ filter: ResourceFilter<KubeFilterKey>) -> Reading {
+    package static func read(_ filter: ResourceFilter<KubeFilterKey>) -> Reading {
         let label = KubeLabelSelector.read(filter)
         let field = KubeFieldSelector.read(filter)
         return Reading(selectors: KubeListSelectors(label: label.selector, field: field.selector), refused: label.refused + field.refused)
     }
 
-    static func read(_ text: String) -> Reading { read(ResourceFilter<KubeFilterKey>(text)) }
+    package static func read(_ text: String) -> Reading { read(ResourceFilter<KubeFilterKey>(text)) }
 }
 
 /// The filter's `field:` words as the field selector the list is asked
@@ -66,10 +66,10 @@ struct KubeListSelectors: Equatable, Sendable {
 ///
 /// A field has no "exists" form, and "not (a and b)" is no selector: such
 /// a word (`field:spec`, `-field:a=1,b=2`, `field:a=b=c`) is `refused`.
-enum KubeFieldSelector {
-    typealias Reading = KubeLabelSelector.Reading
+package enum KubeFieldSelector {
+    package typealias Reading = KubeLabelSelector.Reading
 
-    static func read(_ filter: ResourceFilter<KubeFilterKey>) -> Reading {
+    package static func read(_ filter: ResourceFilter<KubeFilterKey>) -> Reading {
         var read: [String] = []
         var refused: [String] = []
         for term in filter.terms where term.key == .field {
@@ -84,9 +84,9 @@ enum KubeFieldSelector {
         return Reading(selector: read.isEmpty ? nil : read.joined(separator: ","), refused: refused)
     }
 
-    static func read(_ text: String) -> Reading { read(ResourceFilter<KubeFilterKey>(text)) }
+    package static func read(_ text: String) -> Reading { read(ResourceFilter<KubeFilterKey>(text)) }
 
-    static func requirement(_ part: String, negated: Bool) -> String? {
+    package static func requirement(_ part: String, negated: Bool) -> String? {
         let not = part.range(of: "!=")
         guard let range = not ?? part.range(of: "==") ?? part.range(of: "=") else { return nil }
         let key = String(part[..<range.lowerBound])
@@ -96,7 +96,7 @@ enum KubeFieldSelector {
     }
 
     /// A field's path: dotted names (`spec.nodeName`, `involvedObject.kind`).
-    static func isPath(_ key: String) -> Bool {
+    package static func isPath(_ key: String) -> Bool {
         let names = key.split(separator: ".", omittingEmptySubsequences: false)
         return !names.isEmpty
             && names.allSatisfy { name in
@@ -106,7 +106,7 @@ enum KubeFieldSelector {
 
     /// A value as typed: nothing the selector's grammar reads (`,` `=` `!`
     /// and its escape `\\`), at most 253 characters (a DNS subdomain).
-    static func isValue(_ value: String) -> Bool {
+    package static func isValue(_ value: String) -> Bool {
         value.count <= 253 && !value.contains { ",=!\\".contains($0) || $0.isWhitespace }
     }
 }
@@ -127,15 +127,15 @@ enum KubeFieldSelector {
 /// A word that isn't a requirement the server would take (`label:a b`,
 /// `label:=x`, `-label:a=1,b=2`, which would mean "not both") is
 /// `refused`, and asks nothing.
-enum KubeLabelSelector {
-    struct Reading: Equatable, Sendable {
+package enum KubeLabelSelector {
+    package struct Reading: Equatable, Sendable {
         /// What the list asks for; nil without a `label:` word that holds.
-        var selector: String?
+        package var selector: String?
         /// The `label:` words that couldn't be read, as typed.
-        var refused: [String] = []
+        package var refused: [String] = []
     }
 
-    static func read(_ filter: ResourceFilter<KubeFilterKey>) -> Reading {
+    package static func read(_ filter: ResourceFilter<KubeFilterKey>) -> Reading {
         var read: [String] = []
         var refused: [String] = []
         for term in filter.terms where term.key == .label {
@@ -148,10 +148,10 @@ enum KubeLabelSelector {
         return Reading(selector: read.isEmpty ? nil : read.joined(separator: ","), refused: refused)
     }
 
-    static func read(_ text: String) -> Reading { read(ResourceFilter<KubeFilterKey>(text)) }
+    package static func read(_ text: String) -> Reading { read(ResourceFilter<KubeFilterKey>(text)) }
 
     /// One word's requirements; nil when one of them isn't one.
-    static func requirements(_ raw: String, negated: Bool) -> [String]? {
+    package static func requirements(_ raw: String, negated: Bool) -> [String]? {
         let parts = raw.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
         // "Not (a and b)" is no selector: refused rather than guessed.
         guard !parts.isEmpty, !(negated && parts.count > 1) else { return nil }
@@ -163,7 +163,7 @@ enum KubeLabelSelector {
         return read
     }
 
-    static func requirement(_ part: String, negated: Bool) -> String? {
+    package static func requirement(_ part: String, negated: Bool) -> String? {
         if let range = part.range(of: "!=") {
             let key = String(part[..<range.lowerBound])
             let value = String(part[range.upperBound...])
@@ -187,7 +187,7 @@ enum KubeLabelSelector {
 
     /// A label's key: an optional DNS subdomain prefix and `/`, then a name
     /// of at most 63 characters.
-    static func isKey(_ key: String) -> Bool {
+    package static func isKey(_ key: String) -> Bool {
         let pieces = key.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         guard let name = pieces.last, isName(name) else { return false }
         guard pieces.count == 2 else { return true }
@@ -198,10 +198,10 @@ enum KubeLabelSelector {
     }
 
     /// A label's value: empty, or a name.
-    static func isValue(_ value: String) -> Bool { value.isEmpty || isName(value) }
+    package static func isValue(_ value: String) -> Bool { value.isEmpty || isName(value) }
 
     /// At most 63 of letters, digits, `-`, `_` and `.`, a letter or digit at each end.
-    static func isName(_ name: String) -> Bool {
+    package static func isName(_ name: String) -> Bool {
         guard !name.isEmpty, name.count <= 63 else { return false }
         return name.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == ".") }
             && name.first.map { $0.isLetter || $0.isNumber } == true && name.last.map { $0.isLetter || $0.isNumber } == true

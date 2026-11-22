@@ -11,21 +11,21 @@ import SwiftUI
 /// Its writes (stage 2a) are verbs like any other — only on a writable
 /// context, each through the page's guard path; production's each asked
 /// in red, a destructive one by its name.
-struct KubernetesPageView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var model: KubernetesModel
-    @ObservedObject var theme: ChromeTheme
+package struct KubernetesPageView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var model: KubernetesModel
+    @ObservedObject package var theme: ChromeTheme
 
     /// The filter field's focus. The list's is the window's to give
     /// (`giveListTheKeyboard`, `focusPageList`): a `FocusState` no view is
     /// bound to takes the keyboard from the table and leaves it with the window.
-    enum Focus: Hashable { case filter }
+    package enum Focus: Hashable { case filter }
     @FocusState private var focus: Focus?
 
     /// Production's colour: the band, the context's dot, its card's edge.
-    static let production = Color(red: 0.86, green: 0.17, blue: 0.17)
+    package static let production = Color(red: 0.86, green: 0.17, blue: 0.17)
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             if let band = page.band, model.enabled {
                 HStack(spacing: 8) {
@@ -757,10 +757,10 @@ struct KubernetesPageView: View {
 
 
 /// How many things the Overview says fail, beside its section's name.
-struct KubeOverviewCount: View {
-    @ObservedObject var session: KubeClusterOverviewSession
+package struct KubeOverviewCount: View {
+    @ObservedObject package var session: KubeClusterOverviewSession
 
-    var body: some View {
+    package var body: some View {
         if session.state != .idle, session.overview.problems > 0 {
             Text(verbatim: "\(session.overview.problems)").foregroundStyle(TabStatusStyle.failed).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
         }
@@ -769,12 +769,12 @@ struct KubeOverviewCount: View {
 
 /// The filter's saved ones, for the context shown (`KubeSavedFilters`):
 /// Save This Filter, each saved filter shown again, each removed.
-struct KubeSavedFilterMenu: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
-    @ObservedObject var store: KubeSavedFilters = .shared
+package struct KubeSavedFilterMenu: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
+    @ObservedObject package var store: KubeSavedFilters = .shared
 
-    var body: some View {
+    package var body: some View {
         let saved = page.model.selectedName.map { store.filters(on: $0) } ?? []
         Menu {
             Button("Save This Filter") { page.saveFilter() }

@@ -1,10 +1,10 @@
 import Foundation
 
 /// How Processes is grouped (docs/design/activity/analysis.md, 6.5, `G`).
-enum ActivityGrouping: String, CaseIterable, Sendable {
+package enum ActivityGrouping: String, CaseIterable, Sendable {
     case checkout, tab, agent, app, user, none
 
-    var title: String {
+    package var title: String {
         switch self {
         case .checkout: "Checkout"
         case .tab: "Tab"
@@ -16,14 +16,14 @@ enum ActivityGrouping: String, CaseIterable, Sendable {
     }
 
     /// `G`'s next.
-    var next: ActivityGrouping {
+    package var next: ActivityGrouping {
         let all = Self.allCases
         return all[(all.firstIndex(of: self)! + 1) % all.count]
     }
 }
 
 /// The scope ladder (6.5): `[` narrower, `]` wider.
-enum ActivityScope: Hashable, Sendable {
+package enum ActivityScope: Hashable, Sendable {
     /// One tab's panes, what left them, the forwards it started.
     case tab(UUID)
     /// Every tab of one checkout, in any window, its containers.
@@ -33,7 +33,7 @@ enum ActivityScope: Hashable, Sendable {
     /// Everything.
     case mac
 
-    var rung: Int {
+    package var rung: Int {
         switch self {
         case .tab: 0
         case .checkout: 1
@@ -43,7 +43,7 @@ enum ActivityScope: Hashable, Sendable {
     }
 
     /// `]`: one rung wider; a tab's scope widens to its checkout's.
-    func wider(checkout: String?) -> ActivityScope {
+    package func wider(checkout: String?) -> ActivityScope {
         switch self {
         case .tab: checkout.map(ActivityScope.checkout) ?? .allTabs
         case .checkout: .allTabs
@@ -54,7 +54,7 @@ enum ActivityScope: Hashable, Sendable {
     /// `[`: one rung narrower, onto `tab` and its `checkout` — the
     /// selected row's, else the window's selected tab's. Nil where there
     /// is nothing narrower to go to.
-    func narrower(tab: UUID?, checkout: String?) -> ActivityScope? {
+    package func narrower(tab: UUID?, checkout: String?) -> ActivityScope? {
         switch self {
         case .mac: return .allTabs
         case .allTabs: return checkout.map(ActivityScope.checkout) ?? tab.map(ActivityScope.tab)
@@ -66,14 +66,14 @@ enum ActivityScope: Hashable, Sendable {
 
 /// A running container, as `DockerModel` and its usage monitor know it:
 /// what Processes lists under its checkout, "in Docker's VM" (6.5).
-struct ActivityContainer: Hashable, Sendable {
-    let id: String
-    let name: String
-    var project: String?
+package struct ActivityContainer: Hashable, Sendable {
+    package let id: String
+    package let name: String
+    package var project: String?
     /// Its compose project's working folder.
-    var folder: String?
-    var cpu: Double?
-    var memory: UInt64?
+    package var folder: String?
+    package var cpu: Double?
+    package var memory: UInt64?
 }
 
 /// A compose project's folder in its checkout's spelling (6.5): Compose
@@ -82,9 +82,9 @@ struct ActivityContainer: Hashable, Sendable {
 /// scope compares paths as strings. Made off the main thread with the
 /// rows — a real path asks the disk, which a hung mount holds —, each
 /// folder's real path kept (at most 256).
-enum ActivityFolderSpelling {
+package enum ActivityFolderSpelling {
     /// `containers` with each folder in its checkout's spelling.
-    static func spelled(_ containers: [ActivityContainer], checkouts: [String], real: (String) -> String = cachedReal) -> [ActivityContainer] {
+    package static func spelled(_ containers: [ActivityContainer], checkouts: [String], real: (String) -> String = cachedReal) -> [ActivityContainer] {
         guard containers.contains(where: { $0.folder != nil }) else { return containers }
         var spelled: [String: String] = [:]
         return containers.map { container in
@@ -104,7 +104,7 @@ enum ActivityFolderSpelling {
     /// `folder` as `checkouts` spell it when one of them is the same
     /// folder by its real path, else as it is. Pure but for `real`, asked
     /// only when the spelling differs.
-    static func folder(_ folder: String, checkouts: [String], real: (String) -> String) -> String {
+    package static func folder(_ folder: String, checkouts: [String], real: (String) -> String) -> String {
         if checkouts.contains(folder) || checkouts.isEmpty { return folder }
         let resolved = real(folder)
         return checkouts.first { real($0) == resolved } ?? folder
@@ -114,7 +114,7 @@ enum ActivityFolderSpelling {
     nonisolated(unsafe) private static var reals: [String: String] = [:]
 
     /// `path`'s real path, read once: never on the main thread.
-    static func cachedReal(_ path: String) -> String {
+    package static func cachedReal(_ path: String) -> String {
         if let known = lock.withLock({ reals[path] }) { return known }
         let real = FileTreeModel.realPath(URL(fileURLWithPath: path))
         lock.withLock {
@@ -127,30 +127,30 @@ enum ActivityFolderSpelling {
 
 /// A row of Processes that isn't a process: a group's header, a container,
 /// "+N more" (6.5).
-struct ActivityGroupRow: Equatable, Sendable {
-    enum Kind: String, Sendable {
+package struct ActivityGroupRow: Equatable, Sendable {
+    package enum Kind: String, Sendable {
         case checkout, tab, pane, agent, fixed, app, user, left, docker, container, more
     }
 
-    let id: String
-    let kind: Kind
-    var depth = 0
-    var title: String
+    package let id: String
+    package let kind: Kind
+    package var depth = 0
+    package var title: String
     /// Beside the title: the branch, the agent, its counts.
-    var detail = ""
+    package var detail = ""
     /// Processes under it.
-    var count = 0
-    var cpu: Double?
-    var memory: UInt64?
-    var ports: [Int] = []
-    var folded = false
-    var foldable = true
-    var agent: Agent?
+    package var count = 0
+    package var cpu: Double?
+    package var memory: UInt64?
+    package var ports: [Int] = []
+    package var folded = false
+    package var foldable = true
+    package var agent: Agent?
 
     /// A header spans the columns; a container's row has cells.
-    var spansColumns: Bool { kind != .container }
+    package var spansColumns: Bool { kind != .container }
 
-    var accessibilityLabel: String {
+    package var accessibilityLabel: String {
         var words = [title]
         if !detail.isEmpty { words.append(detail) }
         if kind != .container, kind != .more { words.append(count == 1 ? "1 process" : "\(count) processes") }
@@ -161,11 +161,11 @@ struct ActivityGroupRow: Equatable, Sendable {
 }
 
 /// A row of Processes as the page lists it.
-enum ActivityListItem: Equatable, Sendable {
+package enum ActivityListItem: Equatable, Sendable {
     case group(ActivityGroupRow)
     case process(ActivityProcessRow)
 
-    var id: String {
+    package var id: String {
         switch self {
         case .group(let row): row.id
         case .process(let row): row.id
@@ -177,7 +177,7 @@ extension ActivityRows {
     // MARK: Scope and words
 
     /// Whether a process `owner` places is in `scope`.
-    static func inScope(
+    package static func inScope(
         _ owner: ActivityOwner?, _ scope: ActivityScope, tabs: [UUID: ActivityTabFacts], context: ActivityContext, identity: ActivityProcessID
     ) -> Bool {
         if scope == .mac { return true }
@@ -205,19 +205,19 @@ extension ActivityRows {
 
     /// The tab a process shows under: its pane's — a detached daemon's
     /// while its pane lives — never an app's it was only started from.
-    static func paneTab(_ owner: ActivityOwner) -> UUID? {
+    package static func paneTab(_ owner: ActivityOwner) -> UUID? {
         if case .pane = owner.place { return owner.tab }
         return nil
     }
 
     /// A folder's name: what a checkout is called.
-    static func folderName(_ path: String) -> String {
+    package static func folderName(_ path: String) -> String {
         let name = (path as NSString).lastPathComponent
         return name.isEmpty ? path : name
     }
 
     /// What an owner outside the tabs is called.
-    static func ownerLabel(_ owner: ActivityOwner) -> String? {
+    package static func ownerLabel(_ owner: ActivityOwner) -> String? {
         switch owner.place {
         case .overterm: "Overterm"
         case .anotherOverterm: "another Overterm"
@@ -230,7 +230,7 @@ extension ActivityRows {
     }
 
     /// The Where column: tab · checkout · agent, else its owner.
-    static func whereText(_ row: ActivityProcessRow, tabs: [UUID: ActivityTabFacts]) -> String {
+    package static func whereText(_ row: ActivityProcessRow, tabs: [UUID: ActivityTabFacts]) -> String {
         if let owner = row.owner, let tab = paneTab(owner) {
             var words = ["“\(tabs[tab]?.title ?? "")”"]
             if let checkout = row.checkout { words.append(checkout) }
@@ -249,10 +249,10 @@ extension ActivityRows {
 
     /// The fixed groups after the tabs (6.5), in order: Overterm, another
     /// Overterm, Left Behind (6.9), your apps, yours elsewhere, macOS, other users'.
-    enum Fixed: String, CaseIterable {
+    package enum Fixed: String, CaseIterable {
         case overterm, anotherOverterm, leftBehind, apps, elsewhere, macOS, system
 
-        var title: String {
+        package var title: String {
             switch self {
             case .overterm: "Overterm (the app and its helpers)"
             case .anotherOverterm: "Another Overterm"
@@ -265,11 +265,11 @@ extension ActivityRows {
         }
 
         /// Folded until unfolded: the long tails.
-        var foldedByDefault: Bool { self == .apps || self == .elsewhere || self == .macOS || self == .system }
+        package var foldedByDefault: Bool { self == .apps || self == .elsewhere || self == .macOS || self == .system }
 
-        var id: String { "group:fixed:\(rawValue)" }
+        package var id: String { "group:fixed:\(rawValue)" }
 
-        static func of(_ owner: ActivityOwner?) -> Fixed {
+        package static func of(_ owner: ActivityOwner?) -> Fixed {
             switch owner?.place {
             case .overterm?: .overterm
             case .anotherOverterm?: .anotherOverterm
@@ -286,7 +286,7 @@ extension ActivityRows {
     /// thread. Groups keep a stable order — the strips' for tabs, then the
     /// fixed ones — never by load; within a group the tree's siblings, or
     /// the flat rows, follow the sort.
-    static func list(
+    package static func list(
         _ rows: [ActivityProcessRow], grouping: ActivityGrouping, in snapshot: ActivitySnapshot, tabs: [UUID: ActivityTabFacts], options: Options
     ) -> [ActivityListItem] {
         var builder = ListBuilder(snapshot: snapshot, tabs: tabs, options: options)
@@ -302,19 +302,19 @@ extension ActivityRows {
         return builder.items
     }
 
-    struct ListBuilder {
-        let snapshot: ActivitySnapshot
-        let tabs: [UUID: ActivityTabFacts]
-        let options: Options
-        var items: [ActivityListItem] = []
+    package struct ListBuilder {
+        package let snapshot: ActivitySnapshot
+        package let tabs: [UUID: ActivityTabFacts]
+        package let options: Options
+        package var items: [ActivityListItem] = []
         /// A filter is set: a group folded by default opens on its matches.
-        var filtering = false
+        package var filtering = false
 
-        func folded(_ id: String, default value: Bool = false) -> Bool { options.folds[id] ?? value }
+        package func folded(_ id: String, default value: Bool = false) -> Bool { options.folds[id] ?? value }
 
         /// A header with its rows' totals; its rows follow unless folded.
         /// An ended row (6.7) is shown, never counted.
-        mutating func group(_ row: ActivityGroupRow, rows: [ActivityProcessRow], containers: [ActivityContainer] = [], body: (inout ListBuilder) -> Void) {
+        package mutating func group(_ row: ActivityGroupRow, rows: [ActivityProcessRow], containers: [ActivityContainer] = [], body: (inout ListBuilder) -> Void) {
             var header = row
             let counted = rows.filter { !$0.ended }
             header.count = counted.count
@@ -335,7 +335,7 @@ extension ActivityRows {
 
         // MARK: Checkout and tab
 
-        mutating func byTabs(_ rows: [ActivityProcessRow], checkouts: Bool) {
+        package mutating func byTabs(_ rows: [ActivityProcessRow], checkouts: Bool) {
             var byTab: [UUID: [ActivityProcessRow]] = [:]
             var rest: [ActivityProcessRow] = []
             for row in rows {
@@ -370,13 +370,13 @@ extension ActivityRows {
 
         /// The folder a container's compose project works in, as the
         /// longest known checkout holding it.
-        func checkout(of container: ActivityContainer) -> String? {
+        package func checkout(of container: ActivityContainer) -> String? {
             guard let folder = container.folder else { return nil }
             let known = Set(tabs.values.compactMap(\.checkout)).union(options.checkouts)
             return known.filter { ActivityPaneSet.isInside(folder, $0) }.max { $0.count < $1.count }
         }
 
-        func checkoutTitle(_ checkout: String?, tabs its: [UUID]) -> String {
+        package func checkoutTitle(_ checkout: String?, tabs its: [UUID]) -> String {
             guard let checkout else { return "Tabs outside a checkout" }
             let facts = its.first.flatMap { tabs[$0] }
             let name = facts?.repository ?? folderName(checkout)
@@ -384,7 +384,7 @@ extension ActivityRows {
             return name
         }
 
-        func checkoutDetail(_ rows: [ActivityProcessRow], tabs its: [UUID]) -> String {
+        package func checkoutDetail(_ rows: [ActivityProcessRow], tabs its: [UUID]) -> String {
             var words: [String] = []
             let agents = Set(rows.compactMap { $0.owner?.paneRole == .agent && !$0.ended ? $0.owner?.agentKind : nil })
             for agent in Agent.allCases where agents.contains(agent) { words.append("✳ \(agent.name)") }
@@ -395,7 +395,7 @@ extension ActivityRows {
         /// A tab's header, its panes (named only in a split tab) and their
         /// trees; what left its terminal under it `withLeft` (grouped by
         /// tab), else under the checkout, after its tabs.
-        mutating func tabGroup(_ tab: UUID, rows: [ActivityProcessRow], depth: Int, withLeft: Bool) {
+        package mutating func tabGroup(_ tab: UUID, rows: [ActivityProcessRow], depth: Int, withLeft: Bool) {
             let id = "group:tab:\(tab.uuidString)"
             let shown = rows.filter { $0.owner?.marks.contains(.leftTerminal) != true }
             var header = ActivityGroupRow(id: id, kind: .tab, depth: depth, title: "“\(tabs[tab]?.title ?? "")”", folded: folded(id))
@@ -423,7 +423,7 @@ extension ActivityRows {
         }
 
         /// "Left its terminal (N)" (rule 9) under its checkout or tab.
-        mutating func left(_ rows: [ActivityProcessRow], depth: Int, under parent: String) {
+        package mutating func left(_ rows: [ActivityProcessRow], depth: Int, under parent: String) {
             let left = rows.filter { $0.owner?.marks.contains(.leftTerminal) == true }
             guard !left.isEmpty else { return }
             let id = "group:left:\(parent)"
@@ -435,7 +435,7 @@ extension ActivityRows {
 
         /// A checkout's containers, "in Docker's VM": their processes run
         /// inside its one VM process (rule 6).
-        mutating func docker(_ containers: [ActivityContainer], under parent: String) {
+        package mutating func docker(_ containers: [ActivityContainer], under parent: String) {
             let id = "group:docker:\(parent)"
             let names = containers.map(\.name).joined(separator: ", ")
             let projects = Set(containers.compactMap(\.project)).sorted()
@@ -454,7 +454,7 @@ extension ActivityRows {
 
         /// An agent row's counts: what runs under it, by role — what ended
         /// not counted.
-        func roleCounts(_ agent: ActivityProcessRow, in rows: [ActivityProcessRow]) -> String {
+        package func roleCounts(_ agent: ActivityProcessRow, in rows: [ActivityProcessRow]) -> String {
             let under = rows.filter { $0.owner?.agent == agent.identity && $0.identity != agent.identity && !$0.ended }
             var counts: [String] = []
             for role in [ProcessRole.mcp, .shell, .server] {
@@ -465,7 +465,7 @@ extension ActivityRows {
         }
 
         /// The groups after the tabs.
-        mutating func fixed(_ rows: [ActivityProcessRow]) {
+        package mutating func fixed(_ rows: [ActivityProcessRow]) {
             let byGroup = Dictionary(grouping: rows) { Fixed.of($0.owner) }
             for fixed in Fixed.allCases {
                 guard let members = byGroup[fixed], !members.isEmpty else { continue }
@@ -483,7 +483,7 @@ extension ActivityRows {
         }
 
         /// Apps and engines, each a group of its own, by name.
-        mutating func apps(_ rows: [ActivityProcessRow], depth: Int) {
+        package mutating func apps(_ rows: [ActivityProcessRow], depth: Int) {
             let byApp = Dictionary(grouping: rows) { row -> String in
                 switch row.owner?.place {
                 case .app(let name)?: name
@@ -506,7 +506,7 @@ extension ActivityRows {
 
         // MARK: Agent, app, user
 
-        mutating func byAgent(_ rows: [ActivityProcessRow]) {
+        package mutating func byAgent(_ rows: [ActivityProcessRow]) {
             let agents = rows.filter { $0.owner?.paneRole == .agent && !$0.ended }.sorted { lhs, rhs in
                 (lhs.owner?.tab.flatMap { tabs[$0]?.order } ?? .max, lhs.identity) < (rhs.owner?.tab.flatMap { tabs[$0]?.order } ?? .max, rhs.identity)
             }
@@ -532,7 +532,7 @@ extension ActivityRows {
         }
 
         /// Apps with their helpers; the rest by executable ("node ×14").
-        mutating func byApp(_ rows: [ActivityProcessRow]) {
+        package mutating func byApp(_ rows: [ActivityProcessRow]) {
             let byKey = Dictionary(grouping: rows) { row -> String in
                 switch row.owner?.place {
                 case .app(let name)?: name
@@ -559,7 +559,7 @@ extension ActivityRows {
             }
         }
 
-        mutating func byUser(_ rows: [ActivityProcessRow]) {
+        package mutating func byUser(_ rows: [ActivityProcessRow]) {
             let byUser = Dictionary(grouping: rows, by: \.user)
             let mine = rows.first(where: \.isOwn)?.user
             let order = byUser.keys.sorted { lhs, rhs in
@@ -582,7 +582,7 @@ extension ActivityRows {
         /// `rows` as a tree by their parents (linked by start time in the
         /// table) at `depth`, siblings in the sort's order — or flat, sorted
         /// — at most `groupLimit` process rows, then "+N more".
-        func tree(_ rows: [ActivityProcessRow], depth: Int, group: String) -> [ActivityListItem] {
+        package func tree(_ rows: [ActivityProcessRow], depth: Int, group: String) -> [ActivityListItem] {
             let sort = options.processSort
             let moreID = "more:\(group)"
             let limit = folded(moreID, default: true) ? max(options.groupLimit, 1) : Int.max

@@ -11,7 +11,7 @@ import Foundation
 /// So a credential failure stops that context's requests (`stopsRequests`)
 /// until the user signs in again (`KubeProxies.retry`); a network failure
 /// doesn't — the VPN comes back.
-enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
+package enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
     /// `aws eks get-token` failed: the SSO session expired.
     case awsSignIn(profile: String?)
     /// kubelogin's browser sign-in nobody finished (it waited 181 s in the spike).
@@ -51,7 +51,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
 
     /// Whether the context's requests stop until the user signs in again:
     /// each one would run the failing plugin again.
-    var stopsRequests: Bool {
+    package var stopsRequests: Bool {
         switch self {
         case .awsSignIn, .signInTimedOut, .signInFailed, .pluginMissing, .needsTerminal, .signingInAtTerminal, .credentials: true
         case .unreachable, .transport, .noKubectl, .noKubeconfig, .socket, .noSlot, .proxyFailed, .closedWhileOpening, .needsPageSignIn: false
@@ -59,7 +59,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
     }
 
     /// What to run in a terminal tab to put it right, when something does.
-    var command: String? {
+    package var command: String? {
         switch self {
         case .awsSignIn(let profile): "aws sso login" + (profile.map { " --profile \(Self.shellQuoted($0))" } ?? "")
         case .needsTerminal(let context): "kubectl --context \(Self.shellQuoted(context)) version"
@@ -68,7 +68,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
         }
     }
 
-    var reason: String {
+    package var reason: String {
         switch self {
         case .awsSignIn: "Sign in again: \(command ?? "aws sso login")"
         case .signInTimedOut: "The browser sign-in timed out. Try again to sign in."
@@ -89,7 +89,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
         }
     }
 
-    var errorDescription: String? { reason }
+    package var errorDescription: String? { reason }
 
     /// What a response from the proxy means, or nil when it is the server's
     /// own answer (anything but a 500, or a 500 with Status JSON). `text` is
@@ -103,7 +103,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
     /// refused ran five times for four requests. So it stops the context
     /// as a failed plugin does; a certificate or a token in the kubeconfig
     /// runs nothing, and its 401 is left to the request.
-    static func classify(status: Int, contentType: String?, text: String, stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
+    package static func classify(status: Int, contentType: String?, text: String, stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
         if status == 401, let plugin = signIn.pluginName {
             return .credentials("the cluster refused the credential \(plugin) gave (401 Unauthorized)")
         }
@@ -133,7 +133,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
     /// A stream's error answer, read as `classify` reads a response: its
     /// `Content-Type` and body when the transport kept them (a JSON
     /// Status's message is not the proxy's plain text), else its message.
-    static func classify(_ error: HTTPError, stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
+    package static func classify(_ error: HTTPError, stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
         guard let response = error.response else {
             return classify(status: error.status, contentType: nil, text: error.message, stderr: stderr, signIn: signIn)
         }
@@ -143,11 +143,11 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
     }
 
     /// The last line that says something.
-    static func lastLine(of text: String) -> String? {
+    package static func lastLine(of text: String) -> String? {
         text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.last { !$0.isEmpty }
     }
 
-    static func shellQuoted(_ text: String) -> String {
+    package static func shellQuoted(_ text: String) -> String {
         let plain = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./:@=+,"))
         if !text.isEmpty, text.unicodeScalars.allSatisfy(plain.contains) { return text }
         if ShellWord.hasControl(text) { return ShellWord.ansiC(text) }
@@ -157,8 +157,8 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
 
 /// A Kubernetes version's minor, as `/version` and `kubectl version
 /// --client -o json` say it: `"30"`, EKS's `"30+"`.
-enum KubeVersion {
-    static func minor(_ data: Data, under key: String? = nil) -> Int? {
+package enum KubeVersion {
+    package static func minor(_ data: Data, under key: String? = nil) -> Int? {
         guard var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         if let key {
             guard let inner = object[key] as? [String: Any] else { return nil }

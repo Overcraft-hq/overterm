@@ -6,43 +6,43 @@ import Foundation
 /// statements, applied in one transaction, then the rows read again.
 /// Nothing runs before Save. docs/architecture.md, Database: Editing rows.
 @MainActor
-final class ResultEditor: ObservableObject {
-    enum State: Equatable {
+package final class ResultEditor: ObservableObject {
+    package enum State: Equatable {
         case checking
         case editable(EditableResult)
         /// Why not, as the status bar says it.
         case refused(String)
     }
 
-    let runID: UUID
-    let sql: String
+    package let runID: UUID
+    package let sql: String
     private weak var console: SQLConsole?
     private let session: DatabaseSession
-    @Published private(set) var state = State.checking
-    @Published private(set) var edits = PendingEdits()
-    @Published private(set) var saving = false
-    @Published var error: String?
+    @Published package private(set) var state = State.checking
+    @Published package private(set) var edits = PendingEdits()
+    @Published package private(set) var saving = false
+    @Published package var error: String?
 
-    init(runID: UUID, sql: String, console: SQLConsole, session: DatabaseSession) {
+    package init(runID: UUID, sql: String, console: SQLConsole, session: DatabaseSession) {
         self.runID = runID
         self.sql = sql.trimmingCharacters(in: .whitespacesAndNewlines)
         self.console = console
         self.session = session
     }
 
-    var editable: EditableResult? {
+    package var editable: EditableResult? {
         if case .editable(let result) = state { return result }
         return nil
     }
 
     /// The rows as they were read (the run's), in the result's order.
-    var rows: [[String?]] { console?.runs.first { $0.id == runID }?.result?.rows ?? [] }
+    package var rows: [[String?]] { console?.runs.first { $0.id == runID }?.result?.rows ?? [] }
     private var resultColumns: [String] { console?.runs.first { $0.id == runID }?.result?.columns ?? [] }
     private var result: QueryResult? { console?.runs.first { $0.id == runID }?.result }
 
     /// One table, its key, its columns matched to the result's — or, a kind
     /// whose rows are documents or items, as its driver finds them.
-    func resolve() async {
+    package func resolve() async {
         guard let driver = session.editing else { return state = .refused("") }
         if let result {
             do {
@@ -78,50 +78,50 @@ final class ResultEditor: ObservableObject {
 
     // MARK: Changes
 
-    func set(row: Int, column: Int, to value: CellValue) {
+    package func set(row: Int, column: Int, to value: CellValue) {
         guard let result = editable, result.isUpdatable(column), rows.indices.contains(row) else { return }
         edits.set(row: row, column: column, to: value, original: rows[row][safe: column] ?? nil)
     }
 
-    func set(new index: Int, column: Int, to value: CellValue?) {
+    package func set(new index: Int, column: Int, to value: CellValue?) {
         guard let result = editable, result.isEditable(column) else { return }
         edits.set(new: index, column: column, to: value)
     }
 
-    func addRow() {
+    package func addRow() {
         guard editable != nil else { return }
         edits.add()
     }
 
-    func duplicate(_ rowIndexes: [Int]) {
+    package func duplicate(_ rowIndexes: [Int]) {
         guard let result = editable else { return }
         for row in rowIndexes where rows.indices.contains(row) { edits.add(PendingEdits.duplicate(rows[row], result: result)) }
     }
 
-    func delete(_ rowIndexes: [Int], new newIndexes: [Int] = []) {
+    package func delete(_ rowIndexes: [Int], new newIndexes: [Int] = []) {
         guard editable != nil else { return }
         edits.delete(rows: rowIndexes.filter { rows.indices.contains($0) })
         for index in newIndexes.sorted(by: >) { edits.remove(new: index) }
     }
 
-    func revert(_ rowIndexes: [Int], new newIndexes: [Int] = []) {
+    package func revert(_ rowIndexes: [Int], new newIndexes: [Int] = []) {
         for row in rowIndexes { edits.revert(row: row) }
         for index in newIndexes.sorted(by: >) { edits.remove(new: index) }
     }
 
-    func discard() {
+    package func discard() {
         edits.discard()
         error = nil
     }
 
     /// What a Save would run, in order, in the engine's own words.
-    func statements() async throws -> [EditStatement] {
+    package func statements() async throws -> [EditStatement] {
         guard let result = editable, let driver = session.editing else { return [] }
         return try await driver.editStatements(edits, rows: rows, result: result)
     }
 
     /// The statements as the preview shows them, or why they can't be made.
-    func preview() async -> String {
+    package func preview() async -> String {
         do {
             let statements = try await statements()
             return statements.isEmpty ? "Nothing to save." : EditStatement.listing(statements)
@@ -133,7 +133,7 @@ final class ResultEditor: ObservableObject {
     }
 
     /// Asked with every statement shown; applied together; the rows read again.
-    func save() async {
+    package func save() async {
         guard let driver = session.editing, let console, !edits.isEmpty, !saving else { return }
         let statements: [EditStatement]
         do {

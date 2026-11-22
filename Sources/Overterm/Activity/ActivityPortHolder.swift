@@ -13,9 +13,9 @@ import Foundation
 /// as its class asks (`ActivitySignalCheck`'s `.freePort`): its plan
 /// (`Plan`) made again from a fresh read as the sheet opens, every holder
 /// listed, its supervisor named and never added. Pure.
-enum ActivityPortHolder {
+package enum ActivityPortHolder {
     /// What freeing a row's port takes.
-    enum Step: Hashable, Sendable {
+    package enum Step: Hashable, Sendable {
         /// A local engine's container publishes it: the Docker page's Stop.
         case stopContainer(name: String, project: String?)
         /// Overterm's own `kubectl port-forward`, by kubectl's pid.
@@ -39,7 +39,7 @@ enum ActivityPortHolder {
     /// The step for `row`'s port, by the owner Listening found (6.8): its
     /// first matching owner decides. Nil for what has no port to free — a
     /// connection, the ephemeral fold.
-    static func step(for row: ActivityPortRow) -> Step? {
+    package static func step(for row: ActivityPortRow) -> Step? {
         guard row.kind == .listener else { return nil }
         switch row.portOwner {
         case .container(let name, let project):
@@ -97,7 +97,7 @@ enum ActivityPortHolder {
     }
 
     /// Why the Free verb is greyed for `row`; nil when it can run.
-    static func unavailable(_ row: ActivityPortRow) -> String? {
+    package static func unavailable(_ row: ActivityPortRow) -> String? {
         switch step(for: row) {
         case nil: return "Only a listening port is freed"
         case .refused(let reason)?: return reason
@@ -106,7 +106,7 @@ enum ActivityPortHolder {
     }
 
     /// The verb's name for `step`: the owner's own.
-    static func title(_ step: Step, port: Int) -> String {
+    package static func title(_ step: Step, port: Int) -> String {
         switch step {
         case .stopContainer: "Stop Container…"
         case .stopForward: "Stop Forward…"
@@ -121,7 +121,7 @@ enum ActivityPortHolder {
     /// The command a step types into a new tab: the service's own stop,
     /// or the read route's `lsof`. `uid`, the gui domain's. Nil for a step
     /// that types nothing.
-    static func command(_ step: Step, port: Int, proto: String, uid: uid_t = getuid()) -> String? {
+    package static func command(_ step: Step, port: Int, proto: String, uid: uid_t = getuid()) -> String? {
         switch step {
         case .stopService(let job):
             guard launchdLabel(job.label) else { return nil }
@@ -137,14 +137,14 @@ enum ActivityPortHolder {
 
     /// Whether the command is run (Return pressed) or left for the person:
     /// the read route asks for a password and so is only typed.
-    static func runs(_ step: Step) -> Bool {
+    package static func runs(_ step: Step) -> Bool {
         if case .stopService = step { return true }
         return false
     }
 
     /// AirPlay Receiver's switch: System Settings ▸ General ▸ AirDrop &
     /// Handoff, opened — the app changes no setting itself.
-    static let airPlaySettings = URL(string: "x-apple.systempreferences:com.apple.AirDrop-Handoff-Settings.extension")!
+    package static let airPlaySettings = URL(string: "x-apple.systempreferences:com.apple.AirDrop-Handoff-Settings.extension")!
 
     /// Whether `label` is made of launchd's label characters alone — what
     /// a service's stop may type (its formula is part of it). The label is
@@ -152,7 +152,7 @@ enum ActivityPortHolder {
     /// a command typed into a shell reaches its line editor as keys: a
     /// control character inside quotes still acts (^C or ^U drops the
     /// line, a return accepts it, ESC runs a widget).
-    static func launchdLabel(_ label: String) -> Bool {
+    package static func launchdLabel(_ label: String) -> Bool {
         !label.isEmpty && label.utf8.count <= 255
             && label.unicodeScalars.allSatisfy { scalar in
                 scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar) || "._@+-".unicodeScalars.contains(scalar))
@@ -160,7 +160,7 @@ enum ActivityPortHolder {
     }
 
     /// A word for a shell, single-quoted when it needs to be.
-    static func quoted(_ word: String) -> String {
+    package static func quoted(_ word: String) -> String {
         let plain = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@%+=:,./-_")
         if !word.isEmpty, word.unicodeScalars.allSatisfy(plain.contains) { return word }
         return "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
@@ -168,7 +168,7 @@ enum ActivityPortHolder {
 
     /// The question before `step` (6.8's table), as `WriteConfirmation`
     /// asks it; nil for a refusal, which asks nothing.
-    static func question(_ step: Step, row: ActivityPortRow, uid: uid_t = getuid()) -> ActivityPortFree.Question? {
+    package static func question(_ step: Step, row: ActivityPortRow, uid: uid_t = getuid()) -> ActivityPortFree.Question? {
         let port = row.port
         let holder = row.holder.map { "\(DockerMCP.displayed(row.process)) (pid \($0.pid))" }
         switch step {
@@ -220,7 +220,7 @@ enum ActivityPortHolder {
     /// read from a fresh census as the sheet opens (6.8: "the plan is made
     /// again"). `holders`: the user's processes holding it now. Nil: ask;
     /// else what is said instead, and nothing is asked.
-    static func changed(_ row: ActivityPortRow, step: Step, holders: [ActivityProcessID], snapshot: ActivitySnapshot) -> String? {
+    package static func changed(_ row: ActivityPortRow, step: Step, holders: [ActivityProcessID], snapshot: ActivitySnapshot) -> String? {
         switch step {
         case .stopContainer, .readRoute:
             // The engine's or another user's: not among the user's own
@@ -253,40 +253,40 @@ extension ActivityPortHolder {
     /// the port: a socket inherited by several processes stays open until
     /// each has ended, and a Free ends one of them only. Made from the
     /// read as the sheet opens, and again at the button. Pure.
-    struct Plan: Sendable {
+    package struct Plan: Sendable {
         /// Another process of the user's holding the port.
-        struct Other: Hashable, Sendable {
-            let identity: ActivityProcessID
-            let name: String
+        package struct Other: Hashable, Sendable {
+            package let identity: ActivityProcessID
+            package let name: String
             /// It holds the very socket the holder does (`soi_so`): one it
             /// inherited — a child's, a pre-fork server's worker.
-            let sharesSocket: Bool
+            package let sharesSocket: Bool
         }
 
-        let port: Int
-        let proto: String
+        package let port: Int
+        package let proto: String
         /// Who the verb is for: the holder, or the terraform write it runs
         /// under — a provider plugin holds terraform's ports, and is never
         /// the one stopped (`subject(of:in:owners:known:)`).
-        var subject: ActivityVerbSubject
-        var rule: ActivityRule
+        package var subject: ActivityVerbSubject
+        package var rule: ActivityRule
         /// The process the row listed on the port, and its name: the one
         /// the watch follows.
-        var holder: ActivityProcessID
-        var holderName: String
+        package var holder: ActivityProcessID
+        package var holderName: String
         /// Every other holder, oldest first.
-        var others: [Other]
+        package var others: [Other]
     }
 
     /// How far up a holder's parents are looked at for a write it runs under.
-    static let ancestorLimit = 64
+    package static let ancestorLimit = 64
 
     /// `holder` as the policy sees it, read in `snapshot`: itself — or, when
     /// it runs under a terraform, tofu or terragrunt write, that write,
     /// which only Interrupt may reach (a provider plugin holds terraform's
     /// ports); under a helm or pulumi write, itself marked as that write's,
     /// its sheet critical (6.10). Nil once it is gone.
-    static func subject(
+    package static func subject(
         of holder: ActivityProcessID, in snapshot: ActivitySnapshot, owners: ActivityAttribution, known: ActivityVerbSubject.Known
     ) -> ActivityVerbSubject? {
         guard var subject = ActivityVerbSubject.read(holder, in: snapshot, owners: owners, known: known) else { return nil }
@@ -305,7 +305,7 @@ extension ActivityPortHolder {
     /// The plan for `row`'s port, its holder read as `subject`; `holders`,
     /// every process of the user's holding the port in `snapshot`, read as
     /// the sheet opens (`ListeningPorts.holders`).
-    static func plan(
+    package static func plan(
         _ row: ActivityPortRow, subject: ActivityVerbSubject, holders: [ActivityProcessID], snapshot: ActivitySnapshot, user: uid_t = getuid()
     ) -> Plan {
         let identity = row.holder ?? subject.signal.identity
@@ -333,7 +333,7 @@ extension ActivityPortHolder {
     /// every other holder, which a Free doesn't end. Nil for a refusal or
     /// a route the page doesn't take, which ask nothing. `pane`: for the
     /// close route, its tab's title and whether it is split.
-    static func question(
+    package static func question(
         _ plan: Plan, scope: String?, pane: (title: String, isSplit: Bool)? = nil, timeZone: TimeZone = .current
     ) -> ActivityPortFree.Question? {
         guard ActivityPageModel.unavailable(plan.rule) == nil,
@@ -364,7 +364,7 @@ extension ActivityPortHolder {
     /// Why the button refuses what the sheet asked (6.10 step 4, 6.8's
     /// plan made again): the holder read again is gone, another holds the
     /// port, or the policy says something else of it now. Nil: do it.
-    static func changedAtButton(_ asked: Plan, now: Plan?, holders: [ActivityProcessID]) -> String? {
+    package static func changedAtButton(_ asked: Plan, now: Plan?, holders: [ActivityProcessID]) -> String? {
         let port = ":\(asked.port)"
         guard let now, now.subject.signal.identity == asked.subject.signal.identity, now.holder == asked.holder, holders.contains(asked.holder) else {
             return "What held \(port) ended or let it go while you were asked: nothing was sent."

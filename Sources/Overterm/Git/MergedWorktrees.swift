@@ -10,14 +10,14 @@ import Foundation
 ///
 /// Reachability alone is not enough: a New Task branch with no commits yet
 /// is reachable from main too. Never pushed means never merged here.
-enum MergedWorktrees {
-    struct Branch: Equatable {
-        let name: String
-        let hasUpstream: Bool
-        let upstreamGone: Bool
+package enum MergedWorktrees {
+    package struct Branch: Equatable {
+        package let name: String
+        package let hasUpstream: Bool
+        package let upstreamGone: Bool
     }
 
-    enum Reason: Equatable {
+    package enum Reason: Equatable {
         case upstreamGone
         case mergedInto(String)
         /// Its pull request is merged, and the branch has nothing since.
@@ -27,7 +27,7 @@ enum MergedWorktrees {
     /// Merged pull requests of linked worktrees' branches, where the branch
     /// still points at the merged head: a reused branch name with new work
     /// on it is not merged. `tips`: branch → commit.
-    static func mergedByPullRequest(
+    package static func mergedByPullRequest(
         _ pullRequests: [String: PullRequestSummary], branches: [String], tips: [String: String]
     ) -> [String: Reason] {
         var result: [String: Reason] = [:]
@@ -39,7 +39,7 @@ enum MergedWorktrees {
     }
 
     /// `git for-each-ref --format=%(refname:short)%00%(upstream:short)%00%(upstream:track) refs/heads`
-    static func parse(refs output: String) -> [Branch] {
+    package static func parse(refs output: String) -> [Branch] {
         output.split(separator: "\n").compactMap { line in
             let fields = line.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)
             guard let name = fields.first, !name.isEmpty else { return nil }
@@ -55,7 +55,7 @@ enum MergedWorktrees {
     /// and never pushed — Clean Up would delete those commits with the
     /// branch. Unpushed, it takes a merged pull request at that very tip
     /// (mergedByPullRequest) to count.
-    static func merged(branches: [Branch], reachable: Set<String>, pushed: Set<String>, base: String, protected: Set<String>)
+    package static func merged(branches: [Branch], reachable: Set<String>, pushed: Set<String>, base: String, protected: Set<String>)
         -> [String: Reason]
     {
         var result: [String: Reason] = [:]
@@ -71,7 +71,7 @@ enum MergedWorktrees {
 
     /// The default branch to compare against: the remote's HEAD
     /// (`origin/main`), else the main worktree's branch.
-    static func base(in repo: URL, mainBranch: String?) async -> String? {
+    package static func base(in repo: URL, mainBranch: String?) async -> String? {
         let remoteHead = try? await Git.run(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"], in: repo)
         if let remoteHead = remoteHead?.trimmingCharacters(in: .whitespacesAndNewlines), !remoteHead.isEmpty {
             return remoteHead
@@ -80,13 +80,13 @@ enum MergedWorktrees {
     }
 
     /// The same, finding the main worktree's branch itself.
-    static func base(in repo: URL) async -> String? {
+    package static func base(in repo: URL) async -> String? {
         let listed = (try? await Git.run(["worktree", "list", "--porcelain"], in: repo)).map(Worktree.parse(porcelain:)) ?? []
         return await base(in: repo, mainBranch: listed.first { $0.isMain }?.branch)
     }
 
     /// Merged branches among `worktrees`' (the main worktree's is never one).
-    static func find(in repo: URL, worktrees: [Worktree]) async -> [String: Reason] {
+    package static func find(in repo: URL, worktrees: [Worktree]) async -> [String: Reason] {
         let mainBranch = worktrees.first { $0.isMain }?.branch
         guard let base = await base(in: repo, mainBranch: mainBranch) else { return [:] }
         let format = "--format=%(refname:short)%00%(upstream:short)%00%(upstream:track)"
@@ -105,7 +105,7 @@ enum MergedWorktrees {
     /// Branches whose tip is on some remote ref — so all their commits are.
     /// One `rev-list` of every local commit no remote has, not one call per
     /// branch.
-    static func pushedBranches(in repo: URL) async -> Set<String> {
+    package static func pushedBranches(in repo: URL) async -> Set<String> {
         guard let tips = try? await Git.run(["for-each-ref", "--format=%(refname:short)%00%(objectname)", "refs/heads"], in: repo),
             let unpushed = try? await Git.run(["rev-list", "--branches", "--not", "--remotes"], in: repo)
         else { return [] }
@@ -120,7 +120,7 @@ enum MergedWorktrees {
 
     /// `git fetch --prune`, so gone upstreams and new merges show. Best
     /// effort: offline, or no remote, just leaves the local view.
-    static func fetch(in repo: URL) async {
+    package static func fetch(in repo: URL) async {
         // BatchMode: an ssh passphrase prompt nobody can see would hang it.
         _ = try? await Git.run(["-c", "core.sshCommand=ssh -o BatchMode=yes", "fetch", "--prune", "--quiet"], in: repo)
     }

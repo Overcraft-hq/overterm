@@ -6,31 +6,31 @@ import SwiftUI
 /// a window's banner Keeps the new one, or Revert writes the old one back
 /// (docs/design/terraform/analysis.md 5.8, D-7). Which settings are held is
 /// `SettingSpec.heldWhenEditedOutside`.
-struct HeldSetting: Equatable, Sendable {
-    let key: String
+package struct HeldSetting: Equatable, Sendable {
+    package let key: String
     /// In effect now; nil: the default.
-    let current: SettingValue?
+    package let current: SettingValue?
     /// What the file says now, as it would apply; nil: unset, or a value
     /// the setting can't hold — the default.
-    let proposed: SettingValue?
+    package let proposed: SettingValue?
     /// The file's own value before, not fitted: what Revert writes back,
     /// and what `Settings.fileValue` answers meanwhile. Nil: not set.
-    let before: SettingValue?
+    package let before: SettingValue?
     /// The file's own value now, not fitted; nil: not set, or not a value.
-    let written: SettingValue?
+    package let written: SettingValue?
 
     /// One thing the change does, in words.
-    struct Line: Equatable, Sendable {
-        let text: String
+    package struct Line: Equatable, Sendable {
+        package let text: String
         /// Adds or loosens something (a name added, an entry changed or
         /// removed, a value set): listed before what only narrows.
-        let widens: Bool
+        package let widens: Bool
     }
 
     /// The change in words, a line for each name or entry, names quoted
     /// and every character visible (an agent wrote them), never cut:
     /// `kubernetes.agentWrites: adds "acme-prod"`.
-    @MainActor var lines: [Line] {
+    @MainActor package var lines: [Line] {
         let fallback = SettingsSchema.byKey[key]?.defaultValue
         var found = Self.change(from: current ?? fallback, to: proposed ?? fallback)
         if written != nil && proposed == nil {
@@ -42,7 +42,7 @@ struct HeldSetting: Equatable, Sendable {
     /// What changed from `old` to `new`: each name a list adds or removes,
     /// each entry of an object added, removed or changed field by field,
     /// else the two values.
-    static func change(from old: SettingValue?, to new: SettingValue?) -> [Line] {
+    package static func change(from old: SettingValue?, to new: SettingValue?) -> [Line] {
         if let before = old?.list, let after = new?.list {
             let added = after.filter { !before.contains($0) }.map { Line(text: "adds " + quoted($0), widens: true) }
             let removed = before.filter { !after.contains($0) }.map { Line(text: "removes " + quoted($0), widens: false) }
@@ -79,18 +79,18 @@ struct HeldSetting: Equatable, Sendable {
 /// length. Anything left out or cut means Keep is not in the banner — the
 /// whole change is reviewed first (`HeldReviewProgress`): an agent decides
 /// what would fall past a cut, and could put its production name there.
-struct HeldBannerSummary: Equatable {
-    static let maxLines = 6
-    static let maxLength = 160
+package struct HeldBannerSummary: Equatable {
+    package static let maxLines = 6
+    package static let maxLength = 160
 
     /// The lines the banner shows, a long one cut with "…".
-    let shown: [String]
+    package let shown: [String]
     /// Lines not in the banner.
-    let hidden: Int
+    package let hidden: Int
     /// Whether a shown line was cut.
-    let cut: Bool
+    package let cut: Bool
 
-    init(_ lines: [String]) {
+    package init(_ lines: [String]) {
         let first = lines.prefix(Self.maxLines)
         shown = first.map { $0.count > Self.maxLength ? String($0.prefix(Self.maxLength)) + "…" : $0 }
         hidden = lines.count - first.count
@@ -98,40 +98,40 @@ struct HeldBannerSummary: Equatable {
     }
 
     /// Whether the banner shows the whole change, so Keep can be in it.
-    var keepInBanner: Bool { hidden == 0 && !cut }
+    package var keepInBanner: Bool { hidden == 0 && !cut }
 }
 
 /// The review of a change too long for the banner: Keep only once every
 /// line has been on screen.
-struct HeldReviewProgress: Equatable {
-    let count: Int
-    private(set) var seen: Set<Int> = []
+package struct HeldReviewProgress: Equatable {
+    package let count: Int
+    package private(set) var seen: Set<Int> = []
 
-    init(count: Int) { self.count = count }
+    package init(count: Int) { self.count = count }
 
-    mutating func saw(_ index: Int) {
+    package mutating func saw(_ index: Int) {
         if (0..<count).contains(index) { seen.insert(index) }
     }
 
-    var canKeep: Bool { count > 0 && seen.count == count }
+    package var canKeep: Bool { count > 0 && seen.count == count }
 }
 
 /// The banner over every window while `Settings.held` has something: the
 /// changes in words, Keep and Revert — the same in each window, either
 /// answering for all.
-struct SettingsHeldBanner: View {
-    @ObservedObject var settings: Settings
-    @ObservedObject var theme: ChromeTheme
+package struct SettingsHeldBanner: View {
+    @ObservedObject package var settings: Settings
+    @ObservedObject package var theme: ChromeTheme
     @State private var reviewing = false
 
     /// Every line of the change, untruncated: what widens first, then by
     /// key, each setting's lines in their own order.
-    @MainActor static func lines(_ held: [String: HeldSetting]) -> [String] {
+    @MainActor package static func lines(_ held: [String: HeldSetting]) -> [String] {
         let all = held.keys.sorted().flatMap { held[$0]!.lines }
         return all.filter(\.widens).map(\.text) + all.filter { !$0.widens }.map(\.text)
     }
 
-    var body: some View {
+    package var body: some View {
         let shown = settings.held
         if !shown.isEmpty {
             let lines = Self.lines(shown)

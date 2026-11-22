@@ -5,13 +5,13 @@ import SwiftUI
 /// each line with its service — what `docker compose logs -f` prints, read
 /// only while its Logs tab is on screen.
 @MainActor
-final class ProjectSession: ObservableObject {
-    let name: String
-    let feed = LogFeed()
+package final class ProjectSession: ObservableObject {
+    package let name: String
+    package let feed = LogFeed()
     /// The one service the Logs tab shows, or all of them merged; every
     /// service is followed either way, so all come back at once. A session
     /// is the project's while it is selected: another starts with all.
-    @Published var service: String? {
+    @Published package var service: String? {
         didSet {
             guard service != oldValue, let project = docker.projects.first(where: { $0.name == name }) else { return }
             feed.terminalCommand = terminalCommand(project)
@@ -23,7 +23,7 @@ final class ProjectSession: ObservableObject {
     private var watching: AnyCancellable?
     private var wanted = false
 
-    init(name: String, docker: DockerModel = .shared) {
+    package init(name: String, docker: DockerModel = .shared) {
         self.name = name
         self.docker = docker
         if let project = docker.projects.first(where: { $0.name == name }) { feed.terminalCommand = terminalCommand(project) }
@@ -34,7 +34,7 @@ final class ProjectSession: ObservableObject {
             .sink { [weak self] _ in DispatchQueue.main.async { self?.sync() } }
     }
 
-    func follow(shown: Bool) {
+    package func follow(shown: Bool) {
         wanted = shown
         sync()
     }
@@ -72,7 +72,7 @@ final class ProjectSession: ObservableObject {
         if feed.following != any { feed.following = any }
     }
 
-    func close() {
+    package func close() {
         wanted = false
         followers.values.forEach { $0.stop() }
         watching = nil
@@ -82,24 +82,24 @@ final class ProjectSession: ObservableObject {
 /// A compose project, at the side of the list: its state, its verbs, its
 /// services' merged logs and the services themselves — before it runs,
 /// its services as its compose files say them.
-struct ProjectDetailView: View {
-    let project: ComposeProject
-    @ObservedObject var session: ProjectSession
-    @ObservedObject var page: DockerPageModel
+package struct ProjectDetailView: View {
+    package let project: ComposeProject
+    @ObservedObject package var session: ProjectSession
+    @ObservedObject package var page: DockerPageModel
     /// Observed for the line saying what Up on Free Ports moved.
-    @ObservedObject var ports: ComposePortStore
+    @ObservedObject package var ports: ComposePortStore
     /// Observed for the line saying which services' images are newer in
     /// their registries.
-    @ObservedObject var updates: DockerImageUpdates
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+    @ObservedObject package var updates: DockerImageUpdates
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
     /// What Compose said when it last couldn't read the files, for a
     /// project before it runs.
-    var planError: String? = nil
+    package var planError: String? = nil
 
-    enum Tab: String, CaseIterable { case logs, services }
+    package enum Tab: String, CaseIterable { case logs, services }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
@@ -279,11 +279,11 @@ struct ProjectDetailView: View {
 /// Up With Profiles…: one toggle a profile the project's files name, and
 /// the command it types. Services in a profile ticked start with the rest;
 /// a service named in no profile always does.
-struct ComposeProfilesSheet: View {
-    @ObservedObject var page: DockerPageModel
-    let endpoint: DockerEndpoint?
+package struct ComposeProfilesSheet: View {
+    @ObservedObject package var page: DockerPageModel
+    package let endpoint: DockerEndpoint?
 
-    var body: some View {
+    package var body: some View {
         if let choice = page.profileChoice {
             VStack(alignment: .leading, spacing: 12) {
                 Text(verbatim: "Up “\(choice.project.name)” With Profiles").font(.system(size: ChromeMetrics.text(14), weight: .semibold))

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// What a Files tab lists from: a container's session, or a volume's.
 @MainActor
-protocol DockerFolderBrowsing: ObservableObject {
+package protocol DockerFolderBrowsing: ObservableObject {
     var folder: String? { get }
     var entries: [DockerFiles.Entry] { get }
     var filesError: String? { get }
@@ -19,7 +19,7 @@ extension DockerFolderBrowsing {
     /// else looked at: while a folder is being listed, the list may be
     /// another folder's, or this one's before the last copy — and the
     /// folder is listed again once they are in.
-    func copyIn(_ urls: [URL], into folder: String, of source: DockerFileSource, actions: DockerActions, transfers: DockerFileTransfers = .shared) {
+    package func copyIn(_ urls: [URL], into folder: String, of source: DockerFileSource, actions: DockerActions, transfers: DockerFileTransfers = .shared) {
         let listed = folder == self.folder && filesError == nil && !listing ? entries : nil
         transfers.copyIn(urls, into: folder, of: source, listed: listed, confirm: actions.confirm) { [weak self] in
             guard let self, self.folder == folder else { return }
@@ -34,16 +34,16 @@ extension DockerFolderBrowsing {
 /// and folders dropped from Finder go into the folder shown, or into a
 /// folder row they are dropped on; a row dragged out to Finder is copied
 /// there (`DockerFileDrag`). Each copy shows at the foot until it is done.
-struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
-    @ObservedObject var browser: Browser
-    let source: DockerFileSource
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
-    var placeholder = "Open a path — /etc/nginx/nginx.conf"
+package struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
+    @ObservedObject package var browser: Browser
+    package let source: DockerFileSource
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
+    package var placeholder = "Open a path — /etc/nginx/nginx.conf"
     /// Left of the crumbs: a container's Folders | Changes.
-    var leading: AnyView? = nil
+    package var leading: AnyView? = nil
     /// Under the error, when there is one: what to do about it.
-    var remedy: AnyView? = nil
+    package var remedy: AnyView? = nil
     @State private var path = ""
     /// A drag from Finder is over the list, or over a folder row in it.
     @State private var dropTargeted = false
@@ -51,7 +51,7 @@ struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
 
     private var shown: String { browser.folder ?? "/" }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
                 if let leading { leading.padding(.trailing, 8) }
@@ -205,7 +205,7 @@ struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
         self.path = ""
     }
 
-    static func symbol(_ kind: DockerFiles.Entry.Kind) -> String {
+    package static func symbol(_ kind: DockerFiles.Entry.Kind) -> String {
         switch kind {
         case .folder: "folder"
         case .file: "doc"
@@ -237,14 +237,14 @@ struct DockerFolderList<Browser: DockerFolderBrowsing>: View {
 /// A volume's Files tab: its folders as a container's are, the paths the
 /// volume's own (`/` its top). A running container that mounts it sees a
 /// saved file at once, and the tab says so first.
-struct VolumeFilesPane: View {
-    let volume: VolumeSummary
-    @ObservedObject var session: VolumeFilesSession
-    @ObservedObject var docker: DockerModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+package struct VolumeFilesPane: View {
+    package let volume: VolumeSummary
+    @ObservedObject package var session: VolumeFilesSession
+    @ObservedObject package var docker: DockerModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             let running = docker.containers(mounting: volume).filter { $0.state == .running }.map(\.name)
             if !running.isEmpty {
@@ -266,7 +266,7 @@ struct VolumeFilesPane: View {
     }
 
     /// `Mounted by db, running: it sees a saved file at once.` Pure.
-    nonisolated static func mountedNote(_ names: [String]) -> String {
+    package nonisolated static func mountedNote(_ names: [String]) -> String {
         "Mounted by \(names.joined(separator: ", ")), running: \(names.count == 1 ? "it sees" : "they see") a saved file at once."
     }
 

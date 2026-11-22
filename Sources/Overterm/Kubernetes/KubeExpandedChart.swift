@@ -12,28 +12,28 @@ import SwiftUI
 /// keeps the last chart it had, said with its time, and nothing is read.
 /// Its own crosshair: the tab's charts aren't beside it.
 @MainActor
-final class KubeExpandedChart: ObservableObject, Identifiable {
+package final class KubeExpandedChart: ObservableObject, Identifiable {
     /// What it shows: the chart, its span ("last 15 min") and the tab's caption.
-    struct Shown: Equatable {
-        var chart: KubePodCharts.Chart
-        var span: String
-        var caption: String?
+    package struct Shown: Equatable {
+        package var chart: KubePodCharts.Chart
+        package var span: String
+        package var caption: String?
     }
 
-    let id = UUID()
+    package let id = UUID()
     /// The detail it came from.
-    let ref: KubeObjectRef
+    package let ref: KubeObjectRef
     /// Its chart's id among the tab's (`KubeChartData.id`).
-    let chartID: String
+    package let chartID: String
     /// A pod's chart: the container whose log "Logs from Here" opens, as
     /// the tab's chart has it (nil, the pod's own: the first container's).
-    let container: String?
-    let cursor = KubeChartCursor()
+    package let container: String?
+    package let cursor = KubeChartCursor()
     /// The last it was drawn from the tab, and when.
-    @Published private(set) var last: Shown
-    @Published private(set) var updated: Date
+    @Published package private(set) var last: Shown
+    @Published package private(set) var updated: Date
 
-    init(ref: KubeObjectRef, shown: Shown, container: String? = nil, now: Date = Date()) {
+    package init(ref: KubeObjectRef, shown: Shown, container: String? = nil, now: Date = Date()) {
         self.ref = ref
         self.container = container
         chartID = shown.chart.id
@@ -42,7 +42,7 @@ final class KubeExpandedChart: ObservableObject, Identifiable {
     }
 
     /// The tab built it again: kept, in case the tab goes.
-    func remember(_ shown: Shown, now: Date = Date()) {
+    package func remember(_ shown: Shown, now: Date = Date()) {
         guard shown != last else { return }
         last = shown
         updated = now
@@ -50,17 +50,17 @@ final class KubeExpandedChart: ObservableObject, Identifiable {
 
     /// Its identifier part: the tab's chart's, under `expanded.` — so the
     /// dump, the registry and the draw counter tell the two apart.
-    static func identifier(_ chartID: String) -> String { "expanded." + chartID }
+    package static func identifier(_ chartID: String) -> String { "expanded." + chartID }
 
     /// The chart's data as the slot draws it: the tab's, under its own identifier.
-    static func data(_ shown: Shown) -> KubeChartData {
+    package static func data(_ shown: Shown) -> KubeChartData {
         var data = shown.chart.data
         data.id = identifier(data.id)
         return data
     }
 
     /// What the slot says when the tab no longer feeds it. Pure.
-    static func stale(since updated: Date) -> String {
+    package static func stale(since updated: Date) -> String {
         "As of \(KubeChartTime.clock(updated)): its Metrics tab isn't open any more, so nothing is read for it. Show in Kubernetes to follow it again."
     }
 }
@@ -69,18 +69,18 @@ final class KubeExpandedChart: ObservableObject, Identifiable {
 /// chart at the slot's height (its context menu's Copy PromQL and Copy
 /// Values as CSV, a drag zooming the tab's charts with it), the tab's
 /// caption — or, the tab gone, the time it is from.
-struct KubeExpandedChartView: View {
-    static let identifier = "kubernetes.expanded"
+package struct KubeExpandedChartView: View {
+    package static let identifier = "kubernetes.expanded"
 
-    @ObservedObject var expanded: KubeExpandedChart
-    @ObservedObject var page: KubernetesPageModel
+    @ObservedObject package var expanded: KubeExpandedChart
+    @ObservedObject package var page: KubernetesPageModel
     /// Observed so the chart follows the tab's samples and answers.
-    @ObservedObject var metrics: KubeMetricsMonitor
-    @ObservedObject var prometheus: KubePrometheusMonitor
-    @ObservedObject var theme: ChromeTheme
-    let onClose: () -> Void
+    @ObservedObject package var metrics: KubeMetricsMonitor
+    @ObservedObject package var prometheus: KubePrometheusMonitor
+    @ObservedObject package var theme: ChromeTheme
+    package let onClose: () -> Void
     /// "Show in Kubernetes": the page, on the chart's object's Metrics tab.
-    let onShowPage: () -> Void
+    package let onShowPage: () -> Void
 
     /// What a marker, or "Logs from Here", opens is on the page: shown
     /// first, as Show in Kubernetes does, then the tab or the log.
@@ -89,7 +89,7 @@ struct KubeExpandedChartView: View {
         then()
     }
 
-    var body: some View {
+    package var body: some View {
         let live = page.liveChart(for: expanded)
         let shown = live ?? expanded.last
         VStack(alignment: .leading, spacing: 0) {

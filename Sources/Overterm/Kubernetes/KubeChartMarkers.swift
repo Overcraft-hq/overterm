@@ -15,8 +15,8 @@ import Foundation
 /// nothing is asked (metrics.md 3.3): drawn from the sampled tier that
 /// holds it (`tier`); with Prometheus the charts are asked again over it
 /// at its own step (`KubeMetricsSpan`). In memory, the page's, never saved. Pure.
-struct KubeChartWindow: Equatable, Hashable, Sendable {
-    enum Kind: String, Equatable, Hashable, Sendable {
+package struct KubeChartWindow: Equatable, Hashable, Sendable {
+    package enum Kind: String, Equatable, Hashable, Sendable {
         /// A marker's ± 30 minutes.
         case around
         /// A drag across a chart.
@@ -25,18 +25,18 @@ struct KubeChartWindow: Equatable, Hashable, Sendable {
         case custom
     }
 
-    var start: Date
-    var end: Date
-    var kind: Kind = .around
+    package var start: Date
+    package var end: Date
+    package var kind: Kind = .around
     /// The sampled tier its points come from: 6h's minutes, or Live's raw
     /// samples for a zoom inside Live's 15 minutes.
-    var sampledTier: KubeMetricsRange = .sixHours
+    package var sampledTier: KubeMetricsRange = .sixHours
 
     /// Either side of a marker.
-    static let around: TimeInterval = 1800
+    package static let around: TimeInterval = 1800
 
     /// `time` ± 30 minutes, the end at `now` at the latest — never empty.
-    static func around(_ time: Date, now: Date) -> KubeChartWindow {
+    package static func around(_ time: Date, now: Date) -> KubeChartWindow {
         let end = min(time.addingTimeInterval(around), now)
         let start = min(time.addingTimeInterval(-around), end.addingTimeInterval(-60))
         return KubeChartWindow(start: start, end: end)
@@ -48,14 +48,14 @@ struct KubeChartWindow: Equatable, Hashable, Sendable {
     /// samples never hold the whole of it; one tier for the whole axis,
     /// never two spacings on one line — and Live's raw samples for a zoom
     /// drawn inside them.
-    var tier: KubeMetricsRange { sampledTier }
+    package var tier: KubeMetricsRange { sampledTier }
 
     /// `13:28–14:28`.
-    var title: String { "\(KubeChartTime.clock(start))–\(KubeChartTime.clock(end))" }
+    package var title: String { "\(KubeChartTime.clock(start))–\(KubeChartTime.clock(end))" }
 
     /// `data` narrowed to the window: its usage points and breaks inside
     /// it, a reference's steps up to its end; versioned anew.
-    func narrow(_ data: KubeChartData) -> KubeChartData {
+    package func narrow(_ data: KubeChartData) -> KubeChartData {
         var data = data
         data.start = start
         data.end = end
@@ -87,49 +87,49 @@ struct KubeChartWindow: Equatable, Hashable, Sendable {
 /// workload's pods (metrics.md 2.3, 2.5; W2's markers), decoded from the
 /// pod objects of one bounded read — everything else dropped as it is
 /// decoded, env and all; no object kept. Pure.
-struct KubePodStates: Equatable, Sendable {
-    struct Container: Equatable, Sendable {
-        var name: String
-        var restarts: Int
-        var last: KubePodCharts.Termination?
+package struct KubePodStates: Equatable, Sendable {
+    package struct Container: Equatable, Sendable {
+        package var name: String
+        package var restarts: Int
+        package var last: KubePodCharts.Termination?
     }
 
-    struct Pod: Equatable, Sendable {
-        var name: String
-        var containers: [Container]
+    package struct Pod: Equatable, Sendable {
+        package var name: String
+        package var containers: [Container]
     }
 
     /// The workload's pods read at most: a workload of more is marked for these.
-    static let limit = 250
+    package static let limit = 250
     /// The most of an answer read: 250 pods' whole objects (managedFields,
     /// env, annotations) at 64 KB each. Past it the read stops there, its
     /// connection closed, and the tab says so (`tooLarge`).
-    static let maxBytes = 16 << 20
+    package static let maxBytes = 16 << 20
 
     /// What the tab says of an answer past `maxBytes`.
-    static func tooLarge(limit: Int) -> String {
+    package static func tooLarge(limit: Int) -> String {
         let size = limit >= 1 << 20 ? "\(limit >> 20) MB" : "\(limit >> 10) KB"
         return "their answer passed \(size), more than is read here, so restarts and OOMKills aren't marked."
     }
 
-    var pods: [Pod]
+    package var pods: [Pod]
     /// More than `limit` matched: the rest not read.
-    var more = false
-    var read: Date
+    package var more = false
+    package var read: Date
 
-    struct Malformed: Error, LocalizedError {
-        var errorDescription: String? { "The pods' answer isn't a pod or a pod list." }
+    package struct Malformed: Error, LocalizedError {
+        package var errorDescription: String? { "The pods' answer isn't a pod or a pod list." }
     }
 
     /// One pod's object, as its containers' states.
-    static func pod(_ object: [String: Any]) -> Pod? {
+    package static func pod(_ object: [String: Any]) -> Pod? {
         guard let name = (object["metadata"] as? [String: Any])?["name"] as? String else { return nil }
         let containers = KubePodCharts.containers(of: object).map { Container(name: $0.name, restarts: $0.restarts, last: $0.lastTerminated) }
         return Pod(name: name, containers: containers)
     }
 
     /// A PodList's (or one Pod's) answer.
-    static func read(_ data: Data, at read: Date) throws -> KubePodStates {
+    package static func read(_ data: Data, at read: Date) throws -> KubePodStates {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw Malformed() }
         if let items = object["items"] as? [[String: Any]] {
             let token = ((object["metadata"] as? [String: Any])?["continue"] as? String) ?? ""
@@ -145,32 +145,32 @@ struct KubePodStates: Equatable, Sendable {
 /// last one's own time is its `lastState`'s, the others' only the stretch
 /// ("restarted between 14:02 and 14:03"). Kept for the detail, bounded;
 /// dropped with it. Pure.
-struct KubeRestartLog: Equatable, Sendable {
-    struct Restart: Equatable, Sendable {
-        var pod: String
-        var container: String
-        var from: Date
-        var to: Date
-        var count: Int
+package struct KubeRestartLog: Equatable, Sendable {
+    package struct Restart: Equatable, Sendable {
+        package var pod: String
+        package var container: String
+        package var from: Date
+        package var to: Date
+        package var count: Int
         /// Its last termination changed between the two reads: that one is
         /// this restart (one), its own time exact — kept, since the pod's
         /// status keeps only the last.
-        var termination: KubePodCharts.Termination?
-        var exact: Bool { termination != nil }
+        package var termination: KubePodCharts.Termination?
+        package var exact: Bool { termination != nil }
     }
 
     /// The restarts kept, the newest.
-    static let kept = 200
+    package static let kept = 200
 
     /// The last read.
-    private(set) var states: KubePodStates?
+    package private(set) var states: KubePodStates?
     /// Oldest first.
-    private(set) var restarts: [Restart] = []
+    package private(set) var restarts: [Restart] = []
 
-    init(_ states: KubePodStates? = nil) { self.states = states }
+    package init(_ states: KubePodStates? = nil) { self.states = states }
 
     /// A read: each container's restarts against the last read's — a pod or a container new since says nothing.
-    mutating func record(_ new: KubePodStates) {
+    package mutating func record(_ new: KubePodStates) {
         if let old = states, new.read > old.read {
             for pod in new.pods {
                 guard let before = old.pods.first(where: { $0.name == pod.name }) else { continue }
@@ -191,30 +191,30 @@ struct KubeRestartLog: Equatable, Sendable {
 }
 
 /// What a tab's markers are joined from: what its detail already holds. Pure.
-struct KubeChartChanges: Equatable, Sendable {
+package struct KubeChartChanges: Equatable, Sendable {
     /// A workload's History, newest first.
-    var timeline: [KubeTimelineEntry] = []
+    package var timeline: [KubeTimelineEntry] = []
     /// The detail's own events (a kind without a History: a pod, an HPA, a node…).
-    var events: [KubeEvent] = []
+    package var events: [KubeEvent] = []
     /// Its pods' states as read last, and the restarts seen between reads.
-    var restarts = KubeRestartLog()
+    package var restarts = KubeRestartLog()
     /// The pods' states are a workload's: its markers name each pod.
-    var namesPods = false
+    package var namesPods = false
     /// Why the pods' states couldn't be read: said under the charts.
-    var problem: String?
+    package var problem: String?
     /// Events are one of its sources — a History (which always reads the
     /// object's events), or its own events once loaded — whether any came
     /// back or not: the "events: last hour" note says why older ones
     /// aren't marked, most of all when none are.
-    var eventsJoined = false
+    package var eventsJoined = false
     /// The OOMKills Prometheus saw (kube-state-metrics, cAdvisor), older
     /// than what `lastState` keeps: on the step, each its container's.
-    var ooms: [KubeChartMarker] = []
+    package var ooms: [KubeChartMarker] = []
 
-    var isEmpty: Bool { timeline.isEmpty && events.isEmpty && restarts.states == nil }
+    package var isEmpty: Bool { timeline.isEmpty && events.isEmpty && restarts.states == nil }
 
     /// What the charts' cache is keyed by.
-    var version: Int {
+    package var version: Int {
         var hasher = Hasher()
         for entry in timeline { hasher.combine(entry.id) }
         for event in events {
@@ -233,18 +233,18 @@ struct KubeChartChanges: Equatable, Sendable {
 
 /// The join (metrics.md 3.2): History entries, events, terminations and
 /// restarts as markers; capped to a chart's window; the events' note. Pure.
-enum KubeChartMarkers {
+package enum KubeChartMarkers {
     /// At most this many a chart: the newest; the older ones "+N earlier".
-    static let cap = 50
+    package static let cap = 50
     /// The API server keeps events about this long (`--event-ttl`).
-    static let eventsKept: TimeInterval = 3600
-    static let eventsNote = "events: last hour"
+    package static let eventsKept: TimeInterval = 3600
+    package static let eventsNote = "events: last hour"
 
     // MARK: Sources
 
     /// A workload's History: its revisions (rollouts, restarts, rollbacks)
     /// and Helm revisions blue, its scaling grey, its warnings yellow.
-    static func timeline(_ entries: [KubeTimelineEntry]) -> [KubeChartMarker] {
+    package static func timeline(_ entries: [KubeTimelineEntry]) -> [KubeChartMarker] {
         entries.compactMap { entry in
             guard let time = entry.time else { return nil }
             let kind: KubeChartMarker.Kind =
@@ -263,7 +263,7 @@ enum KubeChartMarkers {
 
     /// The detail's own events: its warnings, and an HPA's or a
     /// Deployment's scaling (`SuccessfulRescale`, `ScalingReplicaSet`).
-    static func events(_ events: [KubeEvent]) -> [KubeChartMarker] {
+    package static func events(_ events: [KubeEvent]) -> [KubeChartMarker] {
         events.compactMap { event in
             guard let time = event.last ?? event.first else { return nil }
             let kind: KubeChartMarker.Kind
@@ -285,7 +285,7 @@ enum KubeChartMarkers {
     /// and the restarts seen between reads but one whose termination
     /// changed meanwhile (that one is the same restart, said exactly) —
     /// of `pod` and `container` when named. `namesPods`: a workload's, each named by its pod.
-    static func pods(_ log: KubeRestartLog, pod only: String? = nil, container: String? = nil, namesPods: Bool) -> [KubeChartMarker] {
+    package static func pods(_ log: KubeRestartLog, pod only: String? = nil, container: String? = nil, namesPods: Bool) -> [KubeChartMarker] {
         guard let states = log.states else { return [] }
         var out: [KubeChartMarker] = []
         var seen: Set<String> = []
@@ -316,7 +316,7 @@ enum KubeChartMarkers {
     }
 
     /// A container's last termination, where its time is known: OOMKilled red, any other a restart.
-    static func termination(_ container: KubePodStates.Container, pod: String? = nil) -> KubeChartMarker? {
+    package static func termination(_ container: KubePodStates.Container, pod: String? = nil) -> KubeChartMarker? {
         guard let last = container.last, let time = last.finishedAt else { return nil }
         let oom = last.reason == "OOMKilled"
         let exit = last.exitCode.map { " (exit \($0))" } ?? ""
@@ -333,7 +333,7 @@ enum KubeChartMarkers {
 
     /// Those inside `start…end`, once each (the first of an id), oldest
     /// first: the newest `cap`, and how many older were left out.
-    static func capped(_ markers: [KubeChartMarker], start: Date, end: Date) -> (markers: [KubeChartMarker], earlier: Int) {
+    package static func capped(_ markers: [KubeChartMarker], start: Date, end: Date) -> (markers: [KubeChartMarker], earlier: Int) {
         var seen: Set<String> = []
         let inside = markers.filter { $0.time >= start && $0.time <= end && seen.insert($0.id).inserted }
             .enumerated().sorted { $0.element.time == $1.element.time ? $0.offset < $1.offset : $0.element.time < $1.element.time }.map(\.element)
@@ -345,13 +345,13 @@ enum KubeChartMarkers {
     /// tab joins events says so, whether or not any is marked — none
     /// marked on 6h may only mean they expired; older warnings come only
     /// from a History.
-    static func note(eventsJoined: Bool, start: Date, now: Date) -> String? {
+    package static func note(eventsJoined: Bool, start: Date, now: Date) -> String? {
         eventsJoined && start < now.addingTimeInterval(-eventsKept) ? eventsNote : nil
     }
 
     /// `data` with its markers: those in its window, capped, the note,
     /// its version changed with them.
-    static func apply(_ markers: [KubeChartMarker], eventsJoined: Bool, to data: KubeChartData, now: Date) -> KubeChartData {
+    package static func apply(_ markers: [KubeChartMarker], eventsJoined: Bool, to data: KubeChartData, now: Date) -> KubeChartData {
         var data = data
         let (kept, earlier) = capped(data.markers + markers, start: data.start, end: data.end)
         data.markers = kept
@@ -370,7 +370,7 @@ enum KubeChartMarkers {
 
     /// A pod's tab: every chart its pod's terminations, restarts and
     /// events; a container's charts that container's.
-    static func mark(_ charts: KubePodCharts, pod: String, changes: KubeChartChanges, window: KubeChartWindow?, now: Date) -> KubePodCharts {
+    package static func mark(_ charts: KubePodCharts, pod: String, changes: KubeChartChanges, window: KubeChartWindow?, now: Date) -> KubePodCharts {
         var charts = charts
         let events = Self.events(changes.events)
         func finish(_ chart: KubePodCharts.Chart, container: String?) -> KubePodCharts.Chart {
@@ -394,7 +394,7 @@ enum KubeChartMarkers {
     /// A workload's, an HPA's, a node's or a namespace's tab: every chart
     /// its History's or its events' markers; a workload's CPU and memory
     /// (W1, W2) also its pods' OOMKills and restarts.
-    static func mark(_ charts: KubeObjectCharts, changes: KubeChartChanges, window: KubeChartWindow?, now: Date) -> KubeObjectCharts {
+    package static func mark(_ charts: KubeObjectCharts, changes: KubeChartChanges, window: KubeChartWindow?, now: Date) -> KubeObjectCharts {
         var charts = charts
         let shared = timeline(changes.timeline) + events(changes.events)
         let podMarkers = pods(changes.restarts, namesPods: changes.namesPods) + changes.ooms
@@ -437,7 +437,7 @@ extension KubeObjectCharts {
 
 extension KubeChartMarkers {
     /// A window with nothing in it: sampled only while shown, so nothing from then.
-    static func nothingSampled(_ window: KubeChartWindow) -> String {
+    package static func nothingSampled(_ window: KubeChartWindow) -> String {
         "Nothing was sampled between \(window.title): metrics-server keeps no history, and Overterm samples only while a chart shows. Reset shows the range again."
     }
 }

@@ -4,13 +4,13 @@ import Foundation
 /// folder or from the vault's root, else a name — `[[Plan]]` is whichever
 /// `Plan.md` is closest: in the note's own folder, else the shortest path.
 /// Case doesn't matter; a link without an extension means a note.
-struct LinkResolver: Sendable {
+package struct LinkResolver: Sendable {
     /// Every file, vault-relative, `.md` kept.
-    let files: [String]
+    package let files: [String]
     private let byPath: [String: String]
     private let byName: [String: [String]]
 
-    init(files: [String]) {
+    package init(files: [String]) {
         self.files = files
         var byPath: [String: String] = [:]
         var byName: [String: [String]] = [:]
@@ -23,13 +23,13 @@ struct LinkResolver: Sendable {
     }
 
     /// `Folder/Plan.md` → `Plan.md`.
-    static func name(of path: String) -> String { (path as NSString).lastPathComponent }
+    package static func name(of path: String) -> String { (path as NSString).lastPathComponent }
 
-    static func folder(of path: String) -> String { (path as NSString).deletingLastPathComponent }
+    package static func folder(of path: String) -> String { (path as NSString).deletingLastPathComponent }
 
     /// The file `target` names from the note at `source`; nil when none does
     /// (a link to a note not written yet). An empty target is the note itself.
-    func resolve(_ target: String, from source: String) -> String? {
+    package func resolve(_ target: String, from source: String) -> String? {
         var target = target.trimmingCharacters(in: .whitespaces)
         if target.isEmpty { return source }
         if target.hasPrefix("/") { target.removeFirst() }
@@ -60,7 +60,7 @@ struct LinkResolver: Sendable {
     /// How a new link names `path` from `source`: Obsidian's "shortest"
     /// (the name, when no other file has it), "relative" or "absolute".
     /// A note without `.md`, anything else whole.
-    func linkText(for path: String, from source: String, format: String = "shortest") -> String {
+    package func linkText(for path: String, from source: String, format: String = "shortest") -> String {
         let shown = path.lowercased().hasSuffix(".md") ? String(path.dropLast(3)) : path
         switch format {
         case "absolute":
@@ -87,7 +87,7 @@ struct LinkResolver: Sendable {
     }
 
     /// `a/b/../c` → `a/c`; nil when it climbs out of the vault.
-    static func standardized(_ path: String) -> String? {
+    package static func standardized(_ path: String) -> String? {
         var parts: [Substring] = []
         for part in path.split(separator: "/") {
             switch part {
@@ -101,7 +101,7 @@ struct LinkResolver: Sendable {
         return parts.joined(separator: "/")
     }
 
-    static func relative(_ path: String, from folder: String) -> String {
+    package static func relative(_ path: String, from folder: String) -> String {
         let to = path.split(separator: "/")
         let from = folder.split(separator: "/")
         var common = 0
@@ -115,52 +115,52 @@ struct LinkResolver: Sendable {
 /// headings and tasks — so backlinks, the tag list and the task list are
 /// lookups, not reads. A value: built off the main thread, handed over
 /// whole; a rebuild reads only the notes whose date changed.
-struct NotesIndex: Sendable {
-    struct Entry: Sendable {
-        var document: NoteDocument
-        var modified: Date
-        var isEvicted = false
+package struct NotesIndex: Sendable {
+    package struct Entry: Sendable {
+        package var document: NoteDocument
+        package var modified: Date
+        package var isEvicted = false
     }
 
     /// A link into a note, from another.
-    struct Backlink: Equatable, Hashable, Sendable {
-        var source: String
-        var link: NoteDocument.Link
+    package struct Backlink: Equatable, Hashable, Sendable {
+        package var source: String
+        package var link: NoteDocument.Link
     }
 
-    struct TaskItem: Equatable, Hashable, Sendable {
-        var path: String
-        var task: NoteDocument.Task
+    package struct TaskItem: Equatable, Hashable, Sendable {
+        package var path: String
+        package var task: NoteDocument.Task
     }
 
     /// Notes by vault-relative path (`.md` kept).
-    private(set) var notes: [String: Entry] = [:]
-    private(set) var resolver = LinkResolver(files: [])
+    package private(set) var notes: [String: Entry] = [:]
+    package private(set) var resolver = LinkResolver(files: [])
     /// Into each path, from every note linking it.
-    private(set) var incoming: [String: [Backlink]] = [:]
+    package private(set) var incoming: [String: [Backlink]] = [:]
     /// Links to notes not written yet, by what they name.
-    private(set) var unresolved: [String: [Backlink]] = [:]
+    package private(set) var unresolved: [String: [Backlink]] = [:]
 
-    init() {}
+    package init() {}
 
-    init(notes: [String: Entry], files: [String]) {
+    package init(notes: [String: Entry], files: [String]) {
         self.notes = notes
         relink(files: files)
     }
 
     /// The notes' paths in Finder's order, sorted once a change (it was a
     /// sort a keystroke, and a hover in the graph).
-    private(set) var paths: [String] = []
+    package private(set) var paths: [String] = []
 
-    func document(_ path: String) -> NoteDocument? { notes[path]?.document }
+    package func document(_ path: String) -> NoteDocument? { notes[path]?.document }
 
-    func resolve(_ link: NoteDocument.Link, from source: String) -> String? { resolver.resolve(link.target, from: source) }
+    package func resolve(_ link: NoteDocument.Link, from source: String) -> String? { resolver.resolve(link.target, from: source) }
 
-    func backlinks(of path: String) -> [Backlink] { incoming[path, default: []].filter { $0.source != path } }
+    package func backlinks(of path: String) -> [Backlink] { incoming[path, default: []].filter { $0.source != path } }
 
     /// Every tag with how many notes carry it — a nested tag's notes count
     /// for its parents too, as Obsidian's tag pane counts them.
-    var tags: [String: Int] {
+    package var tags: [String: Int] {
         var counts: [String: Int] = [:]
         for entry in notes.values {
             var seen = Set<String>()
@@ -176,20 +176,20 @@ struct NotesIndex: Sendable {
     }
 
     /// Notes carrying `tag` or one nested under it.
-    func notes(tagged tag: String) -> [String] {
+    package func notes(tagged tag: String) -> [String] {
         let lowered = tag.lowercased()
         return paths.filter { path in
             notes[path]!.document.allTags.contains { $0.lowercased() == lowered || $0.lowercased().hasPrefix(lowered + "/") }
         }
     }
 
-    var tasks: [TaskItem] {
+    package var tasks: [TaskItem] {
         paths.flatMap { path in notes[path]!.document.tasks.map { TaskItem(path: path, task: $0) } }
     }
 
     /// Notes whose name, path or alias holds `query`, best first: the name
     /// starting with it, then holding it, then the rest.
-    func notes(matching query: String, limit: Int = 50) -> [String] {
+    package func notes(matching query: String, limit: Int = 50) -> [String] {
         let query = query.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return Array(paths.prefix(limit)) }
         func rank(_ path: String) -> Int? {
@@ -207,14 +207,14 @@ struct NotesIndex: Sendable {
 
     // MARK: Changing
 
-    mutating func set(_ path: String, text: String, modified: Date) {
+    package mutating func set(_ path: String, text: String, modified: Date) {
         notes[path] = Entry(document: NoteParser.parse(text), modified: modified)
         var files = resolver.files
         if !files.contains(path) { files.append(path) }
         relink(files: files)
     }
 
-    mutating func remove(_ path: String) {
+    package mutating func remove(_ path: String) {
         notes[path] = nil
         relink(files: resolver.files.filter { $0 != path })
     }
@@ -240,7 +240,7 @@ struct NotesIndex: Sendable {
 
     /// Reads the vault: the notes whose modification date `previous` already
     /// has are kept, the others read and parsed. Runs off the main thread.
-    nonisolated static func build(_ vault: NotesVault, tree: NoteItem? = nil, previous: NotesIndex = NotesIndex()) -> NotesIndex {
+    package nonisolated static func build(_ vault: NotesVault, tree: NoteItem? = nil, previous: NotesIndex = NotesIndex()) -> NotesIndex {
         let tree = tree ?? NoteFiles.tree(of: vault)
         var notes: [String: Entry] = [:]
         var files: [String] = []

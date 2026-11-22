@@ -8,39 +8,39 @@ import os
 /// under the mouse its tooltip (metrics.md, 3.1). Only `TimeChartOverlay`
 /// observes it, so a move redraws the overlays and nothing else.
 @MainActor
-final class TimeChartCursor: ObservableObject {
-    struct Hover: Equatable {
-        var time: Date
+package final class TimeChartCursor: ObservableObject {
+    package struct Hover: Equatable {
+        package var time: Date
         /// The chart under the mouse (its identifier): the one that shows the tooltip.
-        var owner: String
+        package var owner: String
     }
 
-    @Published private(set) var hover: Hover?
+    @Published package private(set) var hover: Hover?
 
     /// A drag across a chart, while it goes: the band every chart of the scope draws.
-    struct Selection: Equatable {
-        var from: Date
-        var to: Date
-        var owner: String
+    package struct Selection: Equatable {
+        package var from: Date
+        package var to: Date
+        package var owner: String
     }
 
-    @Published private(set) var selection: Selection?
+    @Published package private(set) var selection: Selection?
 
-    func select(from: Date, to: Date, owner: String) {
+    package func select(from: Date, to: Date, owner: String) {
         let next = Selection(from: from, to: to, owner: owner)
         if next != selection { selection = next }
     }
 
-    func endSelection() {
+    package func endSelection() {
         if selection != nil { selection = nil }
     }
 
-    func move(to time: Date?, owner: String) {
+    package func move(to time: Date?, owner: String) {
         let next = time.map { Hover(time: $0, owner: owner) }
         if next != hover { hover = next }
     }
 
-    func leave(_ owner: String) {
+    package func leave(_ owner: String) {
         if hover?.owner == owner { hover = nil }
     }
 }
@@ -52,17 +52,17 @@ final class TimeChartCursor: ObservableObject {
 /// holds the cursor (`KubePrometheusChartView`) — what `kubernetesPerf`
 /// and `kubernetesPrometheus` read to show a hover redraws only the
 /// overlays, and the tooltip only on the chart hovered.
-final class TimeChartDraws: Sendable {
-    static let shared = TimeChartDraws()
+package final class TimeChartDraws: Sendable {
+    package static let shared = TimeChartDraws()
 
-    struct Counts: Equatable, Sendable {
-        var series = 0
-        var overlay = 0
-        var tooltip = 0
+    package struct Counts: Equatable, Sendable {
+        package var series = 0
+        package var overlay = 0
+        package var tooltip = 0
         /// The body of the view holding the charts and their cursor (keyed by its own identifier).
-        var container = 0
+        package var container = 0
 
-        static func + (a: Counts, b: Counts) -> Counts {
+        package static func + (a: Counts, b: Counts) -> Counts {
             Counts(series: a.series + b.series, overlay: a.overlay + b.overlay, tooltip: a.tooltip + b.tooltip, container: a.container + b.container)
         }
     }
@@ -74,7 +74,7 @@ final class TimeChartDraws: Sendable {
 
     private let counts = OSAllocatedUnfairLock<[Key: Counts]>(initialState: [:])
 
-    func drew(_ id: String, window: ObjectIdentifier, overlay: Bool, tooltip: Bool = false) {
+    package func drew(_ id: String, window: ObjectIdentifier, overlay: Bool, tooltip: Bool = false) {
         counts.withLock { counts in
             let key = Key(id: id, window: window)
             if overlay { counts[key, default: Counts()].overlay += 1 } else { counts[key, default: Counts()].series += 1 }
@@ -82,12 +82,12 @@ final class TimeChartDraws: Sendable {
         }
     }
 
-    func composed(_ id: String, window: ObjectIdentifier) {
+    package func composed(_ id: String, window: ObjectIdentifier) {
         counts.withLock { $0[Key(id: id, window: window), default: Counts()].container += 1 }
     }
 
     /// One window's counts, or every window's added up.
-    func of(_ id: String, in window: ObjectIdentifier? = nil) -> Counts {
+    package func of(_ id: String, in window: ObjectIdentifier? = nil) -> Counts {
         counts.withLock { counts in
             counts.filter { $0.key.id == id && (window == nil || $0.key.window == window) }.values.reduce(Counts(), +)
         }
@@ -98,22 +98,22 @@ final class TimeChartDraws: Sendable {
 /// whenever the key (`data.version`, the size, the series hidden) changes,
 /// published in one assignment.
 @MainActor
-final class TimeChartState: ObservableObject {
-    @Published private(set) var plot: TimePlot?
+package final class TimeChartState: ObservableObject {
+    @Published package private(set) var plot: TimePlot?
     private var wanted: TimePlot.Key?
     private var building: Task<Void, Never>?
     /// Its chart's entry in `TimeChartRegistry`.
-    let token = UUID()
+    package let token = UUID()
     /// Between its chart's appearing and its disappearing: only then is it
     /// in the registry. A view a `LazyVStack` built ahead, or kept after it
     /// scrolled off, still hears its data change and its plot built — and
     /// put back an entry nobody removed, a chart of 0×0 with no plot that
     /// a lookup by identifier could find before the one on screen.
-    private(set) var onScreen = false
+    package private(set) var onScreen = false
     /// The registry it is listed in: the app's, or a test's.
-    let registry: TimeChartRegistry
+    package let registry: TimeChartRegistry
 
-    init(registry: TimeChartRegistry = .shared) { self.registry = registry }
+    package init(registry: TimeChartRegistry = .shared) { self.registry = registry }
 
     deinit {
         // Gone without its disappearing (its hosting view torn down): its entry goes too.
@@ -122,26 +122,26 @@ final class TimeChartState: ObservableObject {
     }
 
     /// Its chart appeared: listed from now, as it is.
-    func appear(_ data: TimeChartData, window: ObjectIdentifier, cursor: TimeChartCursor, size: CGSize) {
+    package func appear(_ data: TimeChartData, window: ObjectIdentifier, cursor: TimeChartCursor, size: CGSize) {
         onScreen = true
         register(data, window: window, cursor: cursor, size: size)
     }
 
     /// Its chart went off screen: unlisted, and kept so whatever changes
     /// after (its data, its plot) until it appears again.
-    func disappear() {
+    package func disappear() {
         onScreen = false
         registry.hide(token)
     }
 
     /// Its entry brought up to date — only while it is on screen. `plot`:
     /// the one `$plot` is emitting, before the property holds it.
-    func register(_ data: TimeChartData, plot: TimePlot? = nil, window: ObjectIdentifier, cursor: TimeChartCursor, size: CGSize) {
+    package func register(_ data: TimeChartData, plot: TimePlot? = nil, window: ObjectIdentifier, cursor: TimeChartCursor, size: CGSize) {
         guard onScreen else { return }
         registry.show(data, plot: plot ?? self.plot, token: token, window: window, cursor: cursor, size: size)
     }
 
-    func want(_ data: TimeChartData, size: CGSize, hidden: Set<String>, hideReferences: Bool) {
+    package func want(_ data: TimeChartData, size: CGSize, hidden: Set<String>, hideReferences: Bool) {
         guard size.width > 1, size.height > 1 else { return }
         let key = TimePlot.Key(
             version: data.version, width: Int(size.width.rounded()), height: Int(size.height.rounded()), hidden: hidden, hideReferences: hideReferences)
@@ -156,7 +156,7 @@ final class TimeChartState: ObservableObject {
         }
     }
 
-    nonisolated static func build(_ data: TimeChartData, size: CGSize, hidden: Set<String>, hideReferences: Bool) async -> TimePlot {
+    package nonisolated static func build(_ data: TimeChartData, size: CGSize, hidden: Set<String>, hideReferences: Bool) async -> TimePlot {
         await Task.detached(priority: .userInitiated) {
             TimePlot(data, size: size, hidden: hidden, hideReferences: hideReferences)
         }.value
@@ -171,54 +171,54 @@ final class TimeChartState: ObservableObject {
 /// show the new view before the old one goes — one's going never takes
 /// the other's entry with it.
 @MainActor
-final class TimeChartRegistry {
-    static let shared = TimeChartRegistry()
+package final class TimeChartRegistry {
+    package static let shared = TimeChartRegistry()
 
-    struct Shown {
-        var data: TimeChartData
-        var plot: TimePlot?
+    package struct Shown {
+        package var data: TimeChartData
+        package var plot: TimePlot?
         /// The window it is in, by its `ChromeTheme` (one a window).
-        var window: ObjectIdentifier
+        package var window: ObjectIdentifier
         /// The crosshair it shares with its scope's other charts.
-        var cursor: TimeChartCursor
+        package var cursor: TimeChartCursor
         /// The plot's size as the view last had it laid out; zero, never laid out.
-        var size: CGSize = .zero
+        package var size: CGSize = .zero
     }
 
     private var entries: [UUID: Shown] = [:]
 
-    func show(_ data: TimeChartData, plot: TimePlot?, token: UUID, window: ObjectIdentifier, cursor: TimeChartCursor, size: CGSize = .zero) {
+    package func show(_ data: TimeChartData, plot: TimePlot?, token: UUID, window: ObjectIdentifier, cursor: TimeChartCursor, size: CGSize = .zero) {
         entries[token] = Shown(data: data, plot: plot, window: window, cursor: cursor, size: size)
     }
 
-    func hide(_ token: UUID) { entries[token] = nil }
+    package func hide(_ token: UUID) { entries[token] = nil }
 
     /// The chart of that identifier on screen — in that window, or in any.
-    func chart(_ identifier: String, in window: ObjectIdentifier? = nil) -> Shown? {
+    package func chart(_ identifier: String, in window: ObjectIdentifier? = nil) -> Shown? {
         entries.values.first { $0.data.identifier == identifier && (window == nil || $0.window == window) }
     }
 
     /// The identifiers of one window's charts on screen, or of every window's.
-    func identifiers(in window: ObjectIdentifier? = nil) -> [String] {
+    package func identifiers(in window: ObjectIdentifier? = nil) -> [String] {
         entries.values.filter { window == nil || $0.window == window }.map(\.data.identifier).sorted()
     }
 
     /// The dump's lines of one window's charts, or of every window's.
-    func lines(in window: ObjectIdentifier? = nil) -> [String] {
+    package func lines(in window: ObjectIdentifier? = nil) -> [String] {
         entries.values.filter { window == nil || $0.window == window }
             .sorted { $0.data.identifier < $1.data.identifier }
             .map { TimeChartSummary.dump($0.data, plot: $0.plot) + " size=\(Int($0.size.width))x\(Int($0.size.height))" }
     }
 
     /// The tooltip a chart would show at `time`.
-    func tooltip(_ identifier: String, in window: ObjectIdentifier? = nil, at time: Date) -> TimeChartTooltip? {
+    package func tooltip(_ identifier: String, in window: ObjectIdentifier? = nil, at time: Date) -> TimeChartTooltip? {
         guard let shown = chart(identifier, in: window), let plot = shown.plot else { return nil }
         return TimeChartTooltip.at(time, plot: plot, step: shown.data.step)
     }
 }
 
 extension TimeChartPalette.RGB {
-    var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: 1) }
+    package var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: 1) }
 }
 
 /// One chart: its header (title, latest value, legend), the plot drawn in
@@ -229,37 +229,37 @@ extension TimeChartPalette.RGB {
 /// search). The legend isolates a series with a click, adds or removes
 /// one with ⌘-click, dims the others while hovered; "Lines" toggles the
 /// reference lines together (metrics.md, 3.6, 5.2).
-struct TimeChartView: View {
-    var data: TimeChartData
-    let cursor: TimeChartCursor
+package struct TimeChartView: View {
+    package var data: TimeChartData
+    package let cursor: TimeChartCursor
     /// How it is said beside the title; nil, the latest value.
-    var headline: String?
+    package var headline: String?
     /// "last 1h", for its accessibility summary.
-    var span: String
-    var height: CGFloat = 120
+    package var span: String
+    package var height: CGFloat = 120
     /// What the header says beside the value: `48% of request`, red when it warns.
-    var chips: [TimeChartChip] = []
+    package var chips: [TimeChartChip] = []
     /// A marker's popover's button: what it opens (a restart's previous log,
     /// a change's diff, an event); nil, its popover only says what it is.
-    var openMarker: ((KubeChartMarker) -> Void)? = nil
+    package var openMarker: ((KubeChartMarker) -> Void)? = nil
     /// ⌥-click, or the popover's "Show ±30 min": the tab's window around it; nil, not offered.
-    var showAround: ((KubeChartMarker) -> Void)? = nil
+    package var showAround: ((KubeChartMarker) -> Void)? = nil
     /// The context menu's "Logs from here", at the crosshair's time; nil, no such item.
-    var logsFromHere: ((Date) -> Void)? = nil
+    package var logsFromHere: ((Date) -> Void)? = nil
     /// A drag across the plot released: the window from one time to the
     /// other (metrics.md 3.3) — every chart of the tab moves to it; nil, no zoom.
-    var zoom: ((Date, Date) -> Void)? = nil
+    package var zoom: ((Date, Date) -> Void)? = nil
     /// The context menu's "Copy PromQL" (a Prometheus chart's) and "Copy
     /// Values as CSV" (the window shown, the series shown): the clipboard;
     /// nil, neither is offered (metrics.md 3.9, M9).
-    var copy: ((String) -> Void)? = nil
+    package var copy: ((String) -> Void)? = nil
     /// ⤢ and the context menu's "Expand": the chart alone in the window's
     /// right slot; nil, not offered.
-    var expand: (() -> Void)? = nil
+    package var expand: (() -> Void)? = nil
     /// The context menu's "Ask Agent About This Chart" (M11): the chart as
     /// `k8s_metrics` says it, in the Ask Agent sheet; nil, not offered.
-    var ask: (() -> Void)? = nil
-    @ObservedObject var theme: ChromeTheme
+    package var ask: (() -> Void)? = nil
+    @ObservedObject package var theme: ChromeTheme
     @StateObject private var state = TimeChartState()
     /// Where the mouse last was over the plot: the context menu's time —
     /// the hover has ended by the time its item is picked. Held, not observed.
@@ -271,7 +271,7 @@ struct TimeChartView: View {
     /// The marker whose popover is open.
     @State private var popover: String?
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             header
             plotArea
@@ -623,7 +623,7 @@ struct TimeChartView: View {
 
     /// The series layer: grid, bands, lines, references — one pass. Made
     /// outside the view's isolation: SwiftUI calls it while drawing.
-    nonisolated static func renderer(
+    package nonisolated static func renderer(
         _ id: String, window: ObjectIdentifier, plot: TimePlot?, colours: [Color], references: [TimeChartRole: Color], markers: [KubeChartMarker.Kind: Color] = [:],
         grid: Color, highlighted: String?, bandColour: Color = .orange
     ) -> (inout GraphicsContext, CGSize) -> Void {
@@ -674,34 +674,34 @@ struct TimeChartView: View {
 
 /// The time the mouse was last over a chart at: a class held in `@State`,
 /// so writing it on every move redraws nothing.
-final class TimeChartHoverMemo {
-    var time: Date?
+package final class TimeChartHoverMemo {
+    package var time: Date?
 }
 
 /// A number a chart's header says beside its value — `48% of request`,
 /// `working set 93% of limit · OOM risk` — red when it warns.
-struct TimeChartChip: Equatable, Sendable {
-    var text: String
-    var alert = false
+package struct TimeChartChip: Equatable, Sendable {
+    package var text: String
+    package var alert = false
 }
 
 /// Over a chart: the crosshair at the cursor's time, the hovered points,
 /// and on the chart under the mouse the tooltip. The only part that
 /// observes the cursor.
-struct TimeChartOverlay: View {
+package struct TimeChartOverlay: View {
     /// A chart identifier's scope: `kubernetes` of `kubernetes.chart.cluster.cpu`.
-    static func scope(of identifier: String) -> String {
+    package static func scope(of identifier: String) -> String {
         identifier.range(of: ".chart.").map { String(identifier[..<$0.lowerBound]) } ?? "kubernetes"
     }
 
-    @ObservedObject var cursor: TimeChartCursor
-    var id: String
-    var plot: TimePlot?
-    var step: TimeInterval
-    var colours: [Color]
-    @ObservedObject var theme: ChromeTheme
+    @ObservedObject package var cursor: TimeChartCursor
+    package var id: String
+    package var plot: TimePlot?
+    package var step: TimeInterval
+    package var colours: [Color]
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         let hover = cursor.hover
         let band = cursor.selection.flatMap { selection in plot.map { (min($0.x(of: selection.from), $0.x(of: selection.to)), max($0.x(of: selection.from), $0.x(of: selection.to))) } }
         // The tooltip over the Canvas, not beside it: an overlay never sizes
@@ -759,7 +759,7 @@ struct TimeChartOverlay: View {
         .padding(.top, 4)
     }
 
-    nonisolated static func renderer(
+    package nonisolated static func renderer(
         _ id: String, window: ObjectIdentifier, plot: TimePlot?, time: Date?, owns: Bool, step: TimeInterval, colours: [Color], line: Color,
         band: (CGFloat, CGFloat)? = nil
     ) -> (inout GraphicsContext, CGSize) -> Void {
@@ -794,12 +794,12 @@ struct TimeChartOverlay: View {
 
 /// A chart for VoiceOver's Audio Graph (`AXChartDescriptor`): the series
 /// a Canvas otherwise hides behind its one label (metrics.md, 5.2).
-struct TimeChartDescriptor: AXChartDescriptorRepresentable {
-    var data: TimeChartData
+package struct TimeChartDescriptor: AXChartDescriptorRepresentable {
+    package var data: TimeChartData
 
-    func makeChartDescriptor() -> AXChartDescriptor { Self.make(data) }
+    package func makeChartDescriptor() -> AXChartDescriptor { Self.make(data) }
 
-    nonisolated static func make(_ data: TimeChartData) -> AXChartDescriptor {
+    package nonisolated static func make(_ data: TimeChartData) -> AXChartDescriptor {
         let unit = data.unit
         let values = data.series.flatMap { $0.points.map(\.value) }
         let top = TimePlot.niceScale(values.max() ?? 0, unit: unit).top
@@ -822,18 +822,18 @@ struct TimeChartDescriptor: AXChartDescriptorRepresentable {
 
 /// Views laid left to right, wrapping onto the next line when the width
 /// runs out: a legend of many series.
-struct ChartFlowLayout: Layout {
-    var spacing: CGFloat = 8
-    var lineSpacing: CGFloat = 3
+package struct ChartFlowLayout: Layout {
+    package var spacing: CGFloat = 8
+    package var lineSpacing: CGFloat = 3
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    package func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? .infinity
         let frames = place(subviews, width: width)
         let used = frames.reduce(CGRect.zero) { $0.union($1) }
         return CGSize(width: proposal.width.map { min($0, used.width) } ?? used.width, height: used.height)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    package func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         for (subview, frame) in zip(subviews, place(subviews, width: bounds.width)) {
             subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
         }

@@ -2,14 +2,14 @@ import SwiftUI
 
 /// Colours a tab can be marked with — a fixed, Chrome-tab-group-like set
 /// rather than a picker, so marks stay distinguishable at a glance.
-enum TabColor: String, CaseIterable, Identifiable {
+package enum TabColor: String, CaseIterable, Identifiable {
     case red, orange, yellow, green, cyan, blue, purple, pink, gray
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var name: String { rawValue.capitalized }
+    package var name: String { rawValue.capitalized }
 
-    var color: Color {
+    package var color: Color {
         switch self {
         case .red: Color(red: 0.94, green: 0.33, blue: 0.31)
         case .orange: Color(red: 0.98, green: 0.58, blue: 0.24)

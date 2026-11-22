@@ -2,15 +2,15 @@ import AppKit
 import SwiftUI
 
 /// What the state view's buttons do, the window's way.
-struct TerraformStateActions {
+package struct TerraformStateActions {
     /// Read the state again.
-    var refresh: (TerraformStateRead) -> Void
+    package var refresh: (TerraformStateRead) -> Void
     /// An output's offer: the browser column, the Database client's form,
     /// the API environment, the Kubernetes page (2.4).
-    var offer: (TerraformOutputLinks.Offer, TerraformState.Output, TerraformStateRead) -> Void
+    package var offer: (TerraformOutputLinks.Offer, TerraformState.Output, TerraformStateRead) -> Void
     /// A file of the checkout at a line ("Open block").
-    var open: (URL, Int?) -> Void
-    var close: () -> Void
+    package var open: (URL, Int?) -> Void
+    package var close: () -> Void
 }
 
 /// A root's state in the right slot (analysis 2.4, stage 2c): its outputs —
@@ -19,15 +19,15 @@ struct TerraformStateActions {
 /// opening into its attributes as the masked model has them: a value
 /// marked sensitive is ••••••, never a value. `state list`'s addresses
 /// show at once; the values once `show -json` is read.
-struct TerraformStateView: View {
-    @ObservedObject var read: TerraformStateRead
-    @ObservedObject var theme: ChromeTheme
-    let actions: TerraformStateActions
+package struct TerraformStateView: View {
+    @ObservedObject package var read: TerraformStateRead
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: TerraformStateActions
     @State private var filter = ""
 
     private var red: Color { TerraformPanelView.production }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.4)
@@ -248,7 +248,7 @@ struct TerraformStateView: View {
     // MARK: Pieces
 
     /// A value as drawn: a sensitive one inside it is ••••••, as the plan's are.
-    static func drawn(_ said: String) -> String { said.replacingOccurrences(of: "(sensitive)", with: TerraformPlan.redaction) }
+    package static func drawn(_ said: String) -> String { said.replacingOccurrences(of: "(sensitive)", with: TerraformPlan.redaction) }
 
     private func progress(_ text: String) -> some View {
         HStack(spacing: 8) {

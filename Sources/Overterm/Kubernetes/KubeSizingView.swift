@@ -5,17 +5,17 @@ import SwiftUI
 /// p95 and max as bars against its request (green, dashed) and limit (red,
 /// long dashes), the suggestion beside — or why nothing was sized. Its
 /// queries copied as sent; Hide closes it. Nothing on it changes anything.
-struct KubeSizingView: View {
-    static let identifier = "kubernetes.metrics.sizing.card"
+package struct KubeSizingView: View {
+    package static let identifier = "kubernetes.metrics.sizing.card"
 
-    var reading: KubeSizingReading
-    var card: KubeSizingCard?
-    @ObservedObject var theme: ChromeTheme
-    var copy: ((String) -> Void)?
-    var again: () -> Void
-    var hide: () -> Void
+    package var reading: KubeSizingReading
+    package var card: KubeSizingCard?
+    @ObservedObject package var theme: ChromeTheme
+    package var copy: ((String) -> Void)?
+    package var again: () -> Void
+    package var hide: () -> Void
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text(verbatim: card?.title ?? "Sizing").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)

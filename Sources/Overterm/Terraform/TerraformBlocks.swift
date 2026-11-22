@@ -6,38 +6,38 @@ import Foundation
 /// brace scan that knows HCL's strings, templates (`"${…}"`), heredocs and
 /// comments (analysis 4.12, 4.14). Pure; ranges are UTF-16, the editor's.
 /// What it doesn't understand it skips: it never throws.
-struct TerraformBlocks: Equatable, Sendable {
-    struct Block: Equatable, Sendable {
+package struct TerraformBlocks: Equatable, Sendable {
+    package struct Block: Equatable, Sendable {
         /// `resource`, `data`, `variable`, `output`, `locals`, `module`…
-        var type: String
+        package var type: String
         /// The labels, unquoted: `["aws_s3_bucket", "logs"]`.
-        var labels: [String]
+        package var labels: [String]
         /// From the type's first character to the closing brace (to the
         /// end of the text when it never closes).
-        var range: NSRange
+        package var range: NSRange
         /// The name a jump selects: the last label's text inside its
         /// quotes, else the type.
-        var nameRange: NSRange
+        package var nameRange: NSRange
         /// A `locals` block's names, and any block's attributes one level in.
-        var attributes: [Attribute]
+        package var attributes: [Attribute]
     }
 
-    struct Attribute: Equatable, Sendable {
-        var name: String
-        var nameRange: NSRange
+    package struct Attribute: Equatable, Sendable {
+        package var name: String
+        package var nameRange: NSRange
         /// The value when it is one plain literal on its line: a string
         /// without a template (`"acme-tfstate"`), `true`, `false`, or a
         /// bare word; nil for anything else (an expression, a number, an
         /// object). What the root facts read (the backend's keys, a
         /// module's `source`, `required_version`), never evaluated.
-        var value: String? = nil
+        package var value: String? = nil
     }
 
-    var blocks: [Block]
+    package var blocks: [Block]
     /// Attributes outside any block.
-    var attributes: [Attribute]
+    package var attributes: [Attribute]
 
-    init(blocks: [Block] = [], attributes: [Attribute] = []) {
+    package init(blocks: [Block] = [], attributes: [Attribute] = []) {
         self.blocks = blocks
         self.attributes = attributes
     }
@@ -56,7 +56,7 @@ struct TerraformBlocks: Equatable, Sendable {
         case other
     }
 
-    static func scan(_ text: String) -> TerraformBlocks {
+    package static func scan(_ text: String) -> TerraformBlocks {
         let tokens = tokenize(text as NSString)
         var result = TerraformBlocks()
         var depth = 0
@@ -158,7 +158,7 @@ struct TerraformBlocks: Equatable, Sendable {
     /// The text between a block's braces, and where it starts in `text`
     /// (UTF-16): scanned again, its own blocks are the nested ones
     /// (`terraform { backend "s3" { … } }`, a resource's `provisioner`).
-    static func body(of block: Block, in text: String) -> (text: String, offset: Int)? {
+    package static func body(of block: Block, in text: String) -> (text: String, offset: Int)? {
         let ns = text as NSString
         let end = min(NSMaxRange(block.range), ns.length)
         var open = block.nameRange.location + block.nameRange.length
@@ -172,7 +172,7 @@ struct TerraformBlocks: Equatable, Sendable {
     }
 
     /// The blocks inside `block`, by a scan of its body.
-    static func nested(in block: Block, of text: String) -> TerraformBlocks {
+    package static func nested(in block: Block, of text: String) -> TerraformBlocks {
         guard let body = body(of: block, in: text) else { return TerraformBlocks() }
         return scan(body.text)
     }

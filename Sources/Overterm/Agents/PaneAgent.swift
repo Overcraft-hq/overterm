@@ -5,17 +5,17 @@ import Foundation
 /// first agent (`Agent.of`: Claude Code, Codex, opencode, pi, Gemini CLI) in its panes' trees, in the order asked —
 /// each pane's slice of one snapshot, a lookup, where each reader walked
 /// every pane's tree with a scan of its own (2.4 item 2).
-struct PaneAgent: Equatable, Sendable {
-    let identity: ActivityProcessID
-    let kind: Agent
+package struct PaneAgent: Equatable, Sendable {
+    package let identity: ActivityProcessID
+    package let kind: Agent
     /// Its argv, masked as the census read it (9.3); "" when not read.
-    let command: String
+    package let command: String
     /// The session a Claude's `--resume <id>` or `-r <id>` picks back up,
     /// read off argv's raw words (`ProcessArguments.resumes`): Sessions'
     /// match, which the masked command can lose.
-    var resumes: String? = nil
+    package var resumes: String? = nil
     /// Where it works, when known.
-    let folder: String?
+    package let folder: String?
 
     /// The first agent among `tags`' panes, in that order, as `snapshot`
     /// read them: in each pane, the first of its placed processes — its
@@ -30,7 +30,7 @@ struct PaneAgent: Equatable, Sendable {
     /// looked at. Its folder is the snapshot's, else `folder`'s answer.
     /// `only`: that kind's alone, anywhere in the pane — Sessions' Claude
     /// in a pane whose first agent is Codex. Pure.
-    static func first(
+    package static func first(
         _ tags: [String], tab: UUID, in snapshot: ActivitySnapshot, only: Agent? = nil,
         folder: (ActivityProcessID) -> String? = { _ in nil }
     ) -> PaneAgent? {
@@ -61,7 +61,7 @@ struct PaneAgent: Equatable, Sendable {
     /// Sessions show it at once. Blocking: call off the main thread, on a
     /// GCD thread (7.7). The lookup reads the context the app's monitor
     /// last built: a caller on the main actor goes through `pairing`.
-    static func lookup(
+    package static func lookup(
         _ tabs: [(id: UUID, tags: [String])], census: ActivitySampler = .app, only: Agent? = nil, folders: Bool,
         within: UInt64 = ProcessInspector.freshness
     ) -> [UUID: PaneAgent] {
@@ -70,7 +70,7 @@ struct PaneAgent: Equatable, Sendable {
 
     /// `lookup`, with the snapshot it read: what `pairing` pairs a surface
     /// still waiting from.
-    static func lookupAndSnapshot(
+    package static func lookupAndSnapshot(
         _ tabs: [(id: UUID, tags: [String])], census: ActivitySampler = .app, only: Agent? = nil, folders: Bool,
         within: UInt64 = ProcessInspector.freshness
     ) -> (agents: [UUID: PaneAgent], snapshot: ActivitySnapshot?) {
@@ -94,7 +94,7 @@ struct PaneAgent: Equatable, Sendable {
 
     /// `lookup`, on a GCD thread (7.7: never a blocked Swift-concurrency
     /// thread), awaited — through `pairing`.
-    @MainActor static func read(
+    @MainActor package static func read(
         _ tabs: [(id: UUID, tags: [String])], census: ActivitySampler = .app, folders: Bool,
         surfaces: SurfaceProcesses = .shared, monitor: ActivityMonitor = .shared
     ) async -> [UUID: PaneAgent] {
@@ -114,7 +114,7 @@ struct PaneAgent: Equatable, Sendable {
     /// more — a drop in a new pane's first moments, an MCP call from a
     /// pane made while no window showed (no light tick). Only for the
     /// census `monitor` reads with: the app's surfaces are its panes.
-    @MainActor static func pairing<T: Sendable>(
+    @MainActor package static func pairing<T: Sendable>(
         census: ActivitySampler, surfaces: SurfaceProcesses = .shared, monitor: ActivityMonitor = .shared,
         _ read: @escaping @Sendable () -> (T, ActivitySnapshot?)
     ) async -> T {
@@ -128,7 +128,7 @@ struct PaneAgent: Equatable, Sendable {
     }
 
     /// `work` on a GCD thread, awaited (7.7).
-    nonisolated static func offMain<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+    package nonisolated static func offMain<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async { continuation.resume(returning: work()) }
         }
@@ -140,7 +140,7 @@ extension ActivitySnapshot {
     /// made before a pane's `login` was paired read that pane with none —
     /// an empty tree — and answers nothing of it once the pairing is made.
     /// A `login` gone from its table is no reason to read again.
-    func readPairings(of tags: [String], as context: ActivityContext) -> Bool {
+    package func readPairings(of tags: [String], as context: ActivityContext) -> Bool {
         for tag in tags {
             guard let login = context.panes.first(where: { $0.tag == tag })?.login else { continue }
             if pane(tag)?.login != login, table.process(login) != nil { return false }

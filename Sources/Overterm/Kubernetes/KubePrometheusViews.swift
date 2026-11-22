@@ -3,11 +3,11 @@ import SwiftUI
 /// The range a Prometheus chart covers (1 h, 6 h, 24 h, 7 d): only where
 /// the context's Prometheus is found — without it there is no range to
 /// pick, the chart covers the time it has been shown, and says so.
-struct KubeChartRangePicker: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var monitor: KubePrometheusMonitor
+package struct KubeChartRangePicker: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var monitor: KubePrometheusMonitor
 
-    var body: some View {
+    package var body: some View {
         Picker(
             "Range",
             selection: Binding(get: { monitor.range }, set: { page.chartRange = $0 })
@@ -28,17 +28,17 @@ struct KubeChartRangePicker: View {
 /// requests, limits, allocatable and capacity, its CPU by namespace, its
 /// nodes; a claim's its usage with its fill forecast (V1) and, toggled,
 /// its inodes (V2).
-struct KubePrometheusChartView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var monitor: KubePrometheusMonitor
-    var chart: KubeChart
-    @ObservedObject var theme: ChromeTheme
+package struct KubePrometheusChartView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var monitor: KubePrometheusMonitor
+    package var chart: KubeChart
+    @ObservedObject package var theme: ChromeTheme
     /// The crosshair its charts share — held, not observed: a class in
     /// `@State` subscribes nothing, so a hover redraws the charts'
     /// overlays and never this body (metrics.md, 5.2).
     @State private var cursor = KubeChartCursor()
 
-    var body: some View {
+    package var body: some View {
         // Counted: `kubernetesPrometheus` checks a hover never runs it.
         let _ = KubeChartDraws.shared.composed(identifier, window: ObjectIdentifier(theme))
         VStack(alignment: .leading, spacing: 8) {
@@ -257,7 +257,7 @@ extension KubeChartData {
     /// (instant totals, flat across), a volume's capacity (stepped) and its
     /// fill forecast (dotted, to a quarter of the range past now) — neither
     /// for a volume with no fixed size (EFS). Pure.
-    static func of(_ reading: KubeChartReading, chart: KubeChart, measure: KubeChartMeasure) -> KubeChartData {
+    package static func of(_ reading: KubeChartReading, chart: KubeChart, measure: KubeChartMeasure) -> KubeChartData {
         // The subject names its object: two pods' charts are two charts.
         let (subject, title): (String, String) =
             switch chart {

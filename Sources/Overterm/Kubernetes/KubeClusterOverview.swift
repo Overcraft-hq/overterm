@@ -4,47 +4,47 @@ import Foundation
 /// (`app.kubernetes.io/name`, `/instance`, `/part-of`): the workloads of
 /// one install — an instance, else a name — together, and the
 /// applications that are part of one system under it. Pure.
-enum KubeApplications {
-    static let prefix = "app.kubernetes.io/"
-    static let nameLabel = "app.kubernetes.io/name"
-    static let instanceLabel = "app.kubernetes.io/instance"
-    static let partOfLabel = "app.kubernetes.io/part-of"
-    static let componentLabel = "app.kubernetes.io/component"
+package enum KubeApplications {
+    package static let prefix = "app.kubernetes.io/"
+    package static let nameLabel = "app.kubernetes.io/name"
+    package static let instanceLabel = "app.kubernetes.io/instance"
+    package static let partOfLabel = "app.kubernetes.io/part-of"
+    package static let componentLabel = "app.kubernetes.io/component"
 
     /// One workload of an application.
-    struct Member: Equatable, Sendable {
-        var kind: KubeResourceKind
-        var id: KubeRowID
-        var component: String?
-        var ready: Bool
+    package struct Member: Equatable, Sendable {
+        package var kind: KubeResourceKind
+        package var id: KubeRowID
+        package var component: String?
+        package var ready: Bool
     }
 
-    struct Application: Equatable, Sendable, Identifiable {
+    package struct Application: Equatable, Sendable, Identifiable {
         /// The name label, else the instance's.
-        var name: String
-        var instance: String?
-        var partOf: String?
-        var namespace: String?
-        var members: [Member]
+        package var name: String
+        package var instance: String?
+        package var partOf: String?
+        package var namespace: String?
+        package var members: [Member]
 
-        var id: String { [partOf ?? "", namespace ?? "", instance ?? name].joined(separator: "\u{0}") }
-        var notReady: Int { members.filter { !$0.ready }.count }
+        package var id: String { [partOf ?? "", namespace ?? "", instance ?? name].joined(separator: "\u{0}") }
+        package var notReady: Int { members.filter { !$0.ready }.count }
     }
 
     /// The system an application is part of, and its applications; nil
     /// `partOf` for those part of none.
-    struct System: Equatable, Sendable, Identifiable {
-        var partOf: String?
-        var applications: [Application]
+    package struct System: Equatable, Sendable, Identifiable {
+        package var partOf: String?
+        package var applications: [Application]
 
-        var id: String { partOf ?? "" }
+        package var id: String { partOf ?? "" }
     }
 
     /// `workloads`' rows (with their labels) grouped: by namespace and
     /// instance (else name) into applications, those by `part-of` into
     /// systems — the systems by name, the unnamed last; a row with none of
     /// the labels is in no application.
-    static func group(_ workloads: [(kind: KubeResourceKind, row: KubeRow, ready: Bool)]) -> [System] {
+    package static func group(_ workloads: [(kind: KubeResourceKind, row: KubeRow, ready: Bool)]) -> [System] {
         var applications: [String: Application] = [:]
         for (kind, row, ready) in workloads {
             let labels = row.labels
@@ -73,12 +73,12 @@ enum KubeApplications {
 }
 
 /// A workload's state as its Table row says it: ready, or how far off. Pure.
-enum KubeWorkloadState {
+package enum KubeWorkloadState {
     /// Whether the row's workload is where it should be: a Deployment's or
     /// StatefulSet's Ready `n/n` (`0/0` scaled to nothing is fine), a
     /// DaemonSet's Ready against Desired, a Job not Failed. Nil when the
     /// row says nothing of it.
-    static func ready(_ row: KubeRow, columns: [KubeColumn], kind: String) -> Bool? {
+    package static func ready(_ row: KubeRow, columns: [KubeColumn], kind: String) -> Bool? {
         switch kind {
         case "deployments", "statefulsets", "replicasets":
             if let ready = row.cell("Ready", in: columns)?.text, let (have, want) = pair(ready) { return have >= want }
@@ -98,7 +98,7 @@ enum KubeWorkloadState {
 
     /// How far off a workload is, as its row says it: `2/3 ready` (a
     /// DaemonSet's Ready of its Desired), a Job's status. Nil when it says nothing.
-    static func said(_ row: KubeRow, columns: [KubeColumn], kind: String) -> String? {
+    package static func said(_ row: KubeRow, columns: [KubeColumn], kind: String) -> String? {
         switch kind {
         case "deployments", "statefulsets", "replicasets":
             if let ready = row.cell("Ready", in: columns)?.text, pair(ready) != nil { return "\(ready) ready" }
@@ -113,13 +113,13 @@ enum KubeWorkloadState {
     }
 
     /// `2/3` as (2, 3).
-    static func pair(_ text: String) -> (Int, Int)? {
+    package static func pair(_ text: String) -> (Int, Int)? {
         let parts = text.split(separator: "/").map { Int($0.trimmingCharacters(in: .whitespaces)) }
         guard parts.count == 2, let have = parts[0], let want = parts[1] else { return nil }
         return (have, want)
     }
 
-    static func number(_ cell: KubeCell?) -> Int? {
+    package static func number(_ cell: KubeCell?) -> Int? {
         switch cell {
         case .integer(let value): value
         case .number(let value): Int(value)
@@ -134,69 +134,69 @@ enum KubeWorkloadState {
 /// ready, recent Warning events), then the counts per kind and pods by
 /// phase, then the applications. Made from the rows the section follows
 /// (`KubeClusterOverviewSession`). Pure.
-struct KubeClusterOverview: Equatable, Sendable {
+package struct KubeClusterOverview: Equatable, Sendable {
     /// Pods by phase, in the API's order.
-    static let phases = ["Running", "Pending", "Succeeded", "Failed", "Unknown"]
+    package static let phases = ["Running", "Pending", "Succeeded", "Failed", "Unknown"]
 
-    struct WorkloadCount: Equatable, Sendable, Identifiable {
-        var title: String
-        var resource: String
-        var total: Int
-        var notReady: [KubeRowID]
+    package struct WorkloadCount: Equatable, Sendable, Identifiable {
+        package var title: String
+        package var resource: String
+        package var total: Int
+        package var notReady: [KubeRowID]
         /// How far off a row not ready is, as its row says it (`0/1 ready`, `Failed`).
-        var said: [KubeRowID: String] = [:]
+        package var said: [KubeRowID: String] = [:]
 
-        var id: String { resource }
+        package var id: String { resource }
     }
 
-    struct Warning: Equatable, Sendable, Identifiable {
-        var object: String
-        var reason: String
-        var message: String
-        var namespace: String?
+    package struct Warning: Equatable, Sendable, Identifiable {
+        package var object: String
+        package var reason: String
+        package var message: String
+        package var namespace: String?
         /// How long ago it was last seen, in seconds; nil when unknown.
-        var age: TimeInterval?
-        var count: Int?
+        package var age: TimeInterval?
+        package var count: Int?
         /// The event's own name: what tells two alike apart.
-        var event = ""
+        package var event = ""
 
-        var id: String { [namespace ?? "", event, object, reason].joined(separator: "\u{0}") }
+        package var id: String { [namespace ?? "", event, object, reason].joined(separator: "\u{0}") }
     }
 
-    var workloads: [WorkloadCount] = []
+    package var workloads: [WorkloadCount] = []
     /// Pods in each phase (`phases`), for the phases that could be read.
-    var phases: [String: Int] = [:]
-    var failingPods: [KubePodSummary] = []
+    package var phases: [String: Int] = [:]
+    package var failingPods: [KubePodSummary] = []
     /// Of those, the ones whose phase is Pending (an image not pulled): counted once, as failing.
-    var failingPending = 0
-    var nodes = 0
-    var notReadyNodes: [String] = []
+    package var failingPending = 0
+    package var nodes = 0
+    package var notReadyNodes: [String] = []
     /// The last hour's Warning events, newest first.
-    var warnings: [Warning] = []
-    var systems: [KubeApplications.System] = []
+    package var warnings: [Warning] = []
+    package var systems: [KubeApplications.System] = []
     /// Workloads that carry none of the recommended labels.
-    var unlabelled = 0
+    package var unlabelled = 0
 
-    var pods: Int { phases.values.reduce(0, +) }
-    var applications: Int { systems.reduce(0) { $0 + $1.applications.count } }
+    package var pods: Int { phases.values.reduce(0, +) }
+    package var applications: Int { systems.reduce(0) { $0 + $1.applications.count } }
     /// What fails, in all: the first things shown.
-    var problems: Int { failingPods.count + workloads.reduce(0) { $0 + $1.notReady.count } + notReadyNodes.count }
+    package var problems: Int { failingPods.count + workloads.reduce(0) { $0 + $1.notReady.count } + notReadyNodes.count }
 
     /// How recent a warning must be to be shown.
-    static let recent: TimeInterval = 3600
-    static let maxWarnings = 50
+    package static let recent: TimeInterval = 3600
+    package static let maxWarnings = 50
 
     /// Rows and their columns, by what the section follows.
-    struct Input {
-        var pods: [String: KubeRows] = [:]
-        var workloads: [(kind: KubeResourceKind, rows: KubeRows)] = []
-        var nodes: KubeRows?
-        var warnings: KubeRows?
+    package struct Input {
+        package var pods: [String: KubeRows] = [:]
+        package var workloads: [(kind: KubeResourceKind, rows: KubeRows)] = []
+        package var nodes: KubeRows?
+        package var warnings: KubeRows?
         /// Each warning row's anchor, for its age.
-        var anchors: [KubeRowID: KubeAge.Anchor] = [:]
+        package var anchors: [KubeRowID: KubeAge.Anchor] = [:]
     }
 
-    static func of(_ input: Input, now: Date = Date()) -> KubeClusterOverview {
+    package static func of(_ input: Input, now: Date = Date()) -> KubeClusterOverview {
         var overview = KubeClusterOverview()
         for phase in phases {
             guard let rows = input.pods[phase] else { continue }

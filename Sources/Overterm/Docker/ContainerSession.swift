@@ -5,41 +5,41 @@ import Foundation
 /// data, read again when the list says its state changed; its logs while
 /// the Logs tab is open, its stats while Stats is.
 @MainActor
-final class ContainerSession: ObservableObject {
-    let id: String
-    @Published private(set) var detail: ContainerDetail?
-    @Published private(set) var error: String?
+package final class ContainerSession: ObservableObject {
+    package let id: String
+    @Published package private(set) var detail: ContainerDetail?
+    @Published package private(set) var error: String?
 
     /// Its log, as the Logs tab shows it.
-    let feed = LogFeed()
-    var lines: [LogLine] { feed.lines }
+    package let feed = LogFeed()
+    package var lines: [LogLine] { feed.lines }
     /// Whether the log is followed now — false once the container stops
     /// (the engine ends the stream), true again when it starts.
-    var following: Bool { feed.following }
-    @Published private(set) var usage: DockerUsage?
+    package var following: Bool { feed.following }
+    @Published package private(set) var usage: DockerUsage?
     /// The last minute of samples, for the sparklines.
-    @Published private(set) var history: [DockerUsage] = []
+    @Published package private(set) var history: [DockerUsage] = []
     /// Inspect as the engine wrote it, secrets taken out.
-    @Published private(set) var json: String?
+    @Published package private(set) var json: String?
     /// The Files tab: the folder shown, its entries, what went wrong.
-    @Published private(set) var folder: String?
-    @Published private(set) var entries: [DockerFiles.Entry] = []
-    @Published private(set) var filesError: String?
-    @Published private(set) var listing = false
+    @Published package private(set) var folder: String?
+    @Published package private(set) var entries: [DockerFiles.Entry] = []
+    @Published package private(set) var filesError: String?
+    @Published package private(set) var listing = false
     /// Its processes, as `top` says them, while Stats shows.
-    @Published private(set) var processes: (titles: [String], rows: [[String]])?
+    @Published package private(set) var processes: (titles: [String], rows: [[String]])?
     /// What changed in its filesystem since it started (Files ▸ Changes).
-    @Published private(set) var changes: [DockerEngine.Change]?
+    @Published package private(set) var changes: [DockerEngine.Change]?
 
     /// It couldn't start: its host port is taken, and by whom.
-    @Published private(set) var conflict: DockerPortConflict?
+    @Published package private(set) var conflict: DockerPortConflict?
     /// The windows' tab holding a port: its id, title and process — from
     /// a census of every pane, a tab never visited too (the app sets it).
-    static var tabHolding: @MainActor (Int) async -> (UUID, String, String)? = { _ in nil }
+    package static var tabHolding: @MainActor (Int) async -> (UUID, String, String)? = { _ in nil }
 
-    static let tail = 500
+    package static let tail = 500
 
-    let docker: DockerModel
+    package let docker: DockerModel
     private var watching: AnyCancellable?
     private var starts: AnyCancellable?
     private var loading: Task<Void, Never>?
@@ -50,7 +50,7 @@ final class ContainerSession: ObservableObject {
     private var wantsLogs = false
     private var wantsStats = false
 
-    init(id: String, docker: DockerModel = .shared) {
+    package init(id: String, docker: DockerModel = .shared) {
         self.id = id
         self.docker = docker
         load()
@@ -84,7 +84,7 @@ final class ContainerSession: ObservableObject {
 
     private var container: ContainerSummary? { docker.container(id) }
 
-    func load() {
+    package func load() {
         loading?.cancel()
         loading = Task { [weak self, docker, id] in
             guard let engine = docker.engine else { return }
@@ -127,7 +127,7 @@ final class ContainerSession: ObservableObject {
 
     /// Logs read only while Logs shows, stats while Stats does — on
     /// screen. Its owner calls this as those change.
-    func follow(_ tab: ContainerTab, shown: Bool) {
+    package func follow(_ tab: ContainerTab, shown: Bool) {
         if shown && tab == .logs { showLogs() } else { hideLogs() }
         if shown && tab == .stats { showStats() } else { hideStats() }
         if shown && tab == .files && folder == nil { open(detail?.Config.WorkingDir.flatMap { $0.isEmpty ? nil : $0 } ?? "/") }
@@ -135,7 +135,7 @@ final class ContainerSession: ObservableObject {
 
     // MARK: Files
 
-    func loadChanges() {
+    package func loadChanges() {
         Task { [weak self, docker, id] in
             guard let engine = docker.engine else { return }
             let changes = (try? await engine.changes(id)) ?? []
@@ -147,7 +147,7 @@ final class ContainerSession: ObservableObject {
     /// folder's entries go at once: under its path, a row would name a
     /// file that isn't there — opened, dragged out, or taken for one a
     /// drop replaces.
-    func open(_ folder: String) {
+    package func open(_ folder: String) {
         if folder != self.folder { entries = [] }
         self.folder = folder
         listing = true
@@ -171,18 +171,18 @@ final class ContainerSession: ObservableObject {
     // MARK: Logs
 
     /// The Logs tab is open: the last lines, then what comes.
-    func showLogs() {
+    package func showLogs() {
         wantsLogs = true
         if !following { followLogs() }
     }
 
-    func hideLogs() {
+    package func hideLogs() {
         wantsLogs = false
         follower?.stop()
     }
 
     /// The view's lines go; what comes after now still shows.
-    func clearLogs() { feed.clear() }
+    package func clearLogs() { feed.clear() }
 
     private func followLogs() {
         if follower == nil {
@@ -200,12 +200,12 @@ final class ContainerSession: ObservableObject {
 
     // MARK: Stats
 
-    func showStats() {
+    package func showStats() {
         wantsStats = true
         if sampling == nil { sample(running: container?.state == .running) }
     }
 
-    func hideStats() {
+    package func hideStats() {
         wantsStats = false
         sampling?.cancel()
         sampling = nil
@@ -236,7 +236,7 @@ final class ContainerSession: ObservableObject {
 
     // MARK: Inspect
 
-    func loadJSON() {
+    package func loadJSON() {
         Task { [weak self, docker, id] in
             guard let engine = docker.engine, let text = try? await engine.containerJSON(id) else { return }
             self?.json = Self.redacted(inspect: text)
@@ -246,7 +246,7 @@ final class ContainerSession: ObservableObject {
     /// Inspect's text with its env's secrets taken out — the env read from
     /// the same text: a detail read apart may not have come yet, and the
     /// text went up unmasked then.
-    nonisolated static func redacted(inspect text: String) -> String {
+    package nonisolated static func redacted(inspect text: String) -> String {
         let json = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
         let env = ((json?["Config"] as? [String: Any])?["Env"] as? [String] ?? []).map { entry -> (key: String, value: String) in
             let parts = entry.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
@@ -262,7 +262,7 @@ final class ContainerSession: ObservableObject {
         return DockerSecrets.maskURLs(in: DockerSecrets.redact(text, values: values))
     }
 
-    func close() {
+    package func close() {
         loading?.cancel()
         hideLogs()
         hideStats()

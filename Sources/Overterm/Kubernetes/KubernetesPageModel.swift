@@ -3,99 +3,99 @@ import Combine
 import Foundation
 
 /// What the Kubernetes page asks the window to do.
-struct KubernetesActions {
+package struct KubernetesActions {
     /// A command typed into a new terminal tab (`aws sso login`): never a
     /// kubectl that changes a cluster.
-    var run: (String) -> Void
+    package var run: (String) -> Void
     /// Settings ▸ Kubernetes.
-    var settings: () -> Void
-    var copy: (String) -> Void
+    package var settings: () -> Void
+    package var copy: (String) -> Void
     /// One Secret value, Copy pressed for it: marked concealed, so
     /// clipboard managers that honour the marker keep no history of it.
-    var copySecret: (String) -> Void
+    package var copySecret: (String) -> Void
     /// A file the user asked for (the list as CSV): a save panel, its name
     /// suggested — in a scenario, the run's own folder.
-    var save: (_ name: String, _ text: String) -> Void = { _, _ in }
+    package var save: (_ name: String, _ text: String) -> Void = { _, _ in }
     /// Lines of a log, scrubbed, to an agent (⌘L): the Ask Agent sheet,
     /// with what they come from.
-    var askAgent: (_ text: String, _ about: AskAgentModel.Part) -> Void = { _, _ in }
+    package var askAgent: (_ text: String, _ about: AskAgentModel.Part) -> Void = { _, _ in }
     /// Terminal in this context: a tab whose plain `kubectl` goes to the
     /// context, in the namespace (nil: the context's own). On production
     /// asked first, naming it.
-    var openTerminal: (_ context: KubeContext, _ namespace: String?) -> Void = { _, _ in }
+    package var openTerminal: (_ context: KubeContext, _ namespace: String?) -> Void = { _, _ in }
     /// A pod's command — a shell, attach, a log followed (`KubeCommands`) —
     /// typed into a new tab pinned to the context, in the namespace.
-    var runInTab: (_ command: String, _ context: KubeContext, _ namespace: String) -> Void = { _, _, _ in }
+    package var runInTab: (_ command: String, _ context: KubeContext, _ namespace: String) -> Void = { _, _, _ in }
     /// The same for a pod's own command, with the pod's plain env values:
     /// what ⌘L in that tab scrubs, as the page's Logs tab does. Nil:
     /// `runInTab`.
-    var runPodInTab: ((_ command: String, _ context: KubeContext, _ namespace: String, _ env: [(key: String, value: String)]) -> Void)?
+    package var runPodInTab: ((_ command: String, _ context: KubeContext, _ namespace: String, _ env: [(key: String, value: String)]) -> Void)?
     /// Asked first, with this button and Cancel (a shell on production).
-    var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void = { _, _, _, _ in }
+    package var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void = { _, _, _, _ in }
     /// A line of text asked for, with OK and Cancel (a path in a container):
     /// `then` gets it trimmed, only when OK was pressed with something in it.
-    var askText: (_ title: String, _ detail: String, _ initial: String, _ then: @escaping (String) -> Void) -> Void = { _, _, _, _ in }
+    package var askText: (_ title: String, _ detail: String, _ initial: String, _ then: @escaping (String) -> Void) -> Void = { _, _, _, _ in }
     /// Where on this Mac a file goes: a save panel, the name suggested.
-    var pickSave: (_ name: String, _ then: @escaping (URL) -> Void) -> Void = { _, _ in }
+    package var pickSave: (_ name: String, _ then: @escaping (URL) -> Void) -> Void = { _, _ in }
     /// A file or folder on this Mac: an open panel, one item.
-    var pickOpen: (_ message: String, _ then: @escaping (URL) -> Void) -> Void = { _, _ in }
+    package var pickOpen: (_ message: String, _ then: @escaping (URL) -> Void) -> Void = { _, _ in }
     /// One of these chosen, or Cancel: the index of the one chosen (a container).
-    var choose: (_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) -> Void = { _, _, _, _ in }
+    package var choose: (_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) -> Void = { _, _, _, _ in }
     /// A forward's URL: the browser column (the page steps aside), or the
     /// default browser, as links open.
-    var openURL: (URL) -> Void = { _ in }
+    package var openURL: (URL) -> Void = { _ in }
     /// The tab under the page: a forward started now is its pill's.
-    var currentTab: () -> UUID? = { nil }
+    package var currentTab: () -> UUID? = { nil }
     /// Where an Ingress is reached: the default browser — it is the
     /// cluster's front door, not a page of this Mac's.
-    var openExternal: (URL) -> Void = { _ in }
+    package var openExternal: (URL) -> Void = { _ in }
     /// A database pod's connection through its forward, in the Database
     /// client's form, filled in: nothing is saved or connected until the
     /// user does (a password given goes to the keychain only then).
-    var openDatabase: (DockerDatabaseGuess.Guess) -> Void = { _ in }
+    package var openDatabase: (DockerDatabaseGuess.Guess) -> Void = { _ in }
     /// Run Locally (3.12): the Docker page's Run window, filled in from a
     /// pod's container — its Secret-backed values asked in the tab, not here.
-    var runLocally: (DockerRunSpec) -> Void = { _ in }
+    package var runLocally: (DockerRunSpec) -> Void = { _ in }
     /// Scan (3.12): the image on the Docker page's Vulnerabilities tab,
     /// scanned there; what runs it, for the question when it isn't pulled.
-    var scanImage: (_ image: KubeRunLocally.Image, _ origin: String) -> Void = { _, _ in }
+    package var scanImage: (_ image: KubeRunLocally.Image, _ origin: String) -> Void = { _, _ in }
     /// A forward's OpenAPI document, imported into the API client on a press.
-    var importAPI: (APIDiscovery.Source) -> Void = { _ in }
+    package var importAPI: (APIDiscovery.Source) -> Void = { _ in }
     /// Ask Why: a failing pod's or a stuck rollout's brief, scrubbed, in
     /// the Ask Agent sheet — the whole brief shown before it is sent.
-    var askWhy: (KubeAgentBrief) -> Void = { _ in }
+    package var askWhy: (KubeAgentBrief) -> Void = { _ in }
     /// The selected tab's checkout's binding: the one Ask Why's brief
     /// speaks for when it is bound to the namespace (several checkouts
     /// often are).
-    var selectedBinding: () -> KubeBinding? = { nil }
+    package var selectedBinding: () -> KubeBinding? = { nil }
     /// A write asked first (rule 3), in the window: the context and
     /// namespace, the object, the kubectl it equals, a field for the name
     /// where rule 4 asks one, the image where a debug container or a node
     /// shell runs one; `then` gets what was typed, only when the button was
     /// pressed — the page checks it.
-    var confirmWrite: (_ confirmation: KubeWriteConfirmation, _ then: @escaping (KubeWriteAnswer) -> Void) -> Void = { _, _ in }
+    package var confirmWrite: (_ confirmation: KubeWriteConfirmation, _ then: @escaping (KubeWriteAnswer) -> Void) -> Void = { _, _ in }
     /// A template's copy in the editor: the page steps aside.
-    var openEditor: (URL) -> Void = { _ in }
+    package var openEditor: (URL) -> Void = { _ in }
     /// An object's YAML — its one buffer, the YAML tab's — in the window's
     /// editor (`y`): the page steps aside.
-    var openResource: (KubeResourceBuffer) -> Void = { _ in }
+    package var openResource: (KubeResourceBuffer) -> Void = { _ in }
     /// A change of a workload's timeline, its diff masked, in the changes
     /// pane: the page steps aside.
-    var showChange: (KubeChangeDiff) -> Void = { _ in }
+    package var showChange: (KubeChangeDiff) -> Void = { _ in }
     /// The Snippets store's snippets: those naming `${context}`, `${pod}`…
     /// are offered in the verb menu (`KubeSnippet`).
-    var snippets: () -> [Snippet] = { [] }
+    package var snippets: () -> [Snippet] = { [] }
     /// A snippet's own `{{…}}` asked for, as Snippets asks: `then` gets the
     /// filled line, only when the user goes on.
-    var fillSnippet: (_ snippet: Snippet, _ then: @escaping (String) -> Void) -> Void = { snippet, then in then(snippet.command) }
+    package var fillSnippet: (_ snippet: Snippet, _ then: @escaping (String) -> Void) -> Void = { snippet, then in then(snippet.command) }
     /// A Metrics tab's chart alone in the window's right slot (M9): the
     /// page steps aside.
-    var expandChart: (KubeExpandedChart) -> Void = { _ in }
+    package var expandChart: (KubeExpandedChart) -> Void = { _ in }
     /// The checkouts open in the window's tabs: where an Argo CD history
     /// entry's diff is read, when one has the Application's repository.
-    var checkouts: () -> [URL] = { [] }
+    package var checkouts: () -> [URL] = { [] }
     /// A review tab for a range of a checkout (an Argo CD history entry's diff).
-    var openReview: (ReviewSource, URL) -> Void = { _, _ in }
+    package var openReview: (ReviewSource, URL) -> Void = { _, _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
@@ -103,16 +103,16 @@ struct KubernetesActions {
 /// Section 7); the writes (`r`, `+`, `-`, `=`, ⌫) each go through the
 /// guard path — the access review, the confirmation, a typed name where
 /// rule 4 says. Pure.
-enum KubernetesKey: String, ResourceKey {
+package enum KubernetesKey: String, ResourceKey {
     case overview, workloads, network, config, storage, cluster, custom, helm, gitops, forwards
     case open, back, forward, close, logs, history, tree, metrics, earlierRange, laterRange, followInTab, shell, attach, portForward, openForward, database,
         askWhy
     case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete, edit
     case command, namespace, context, wide, allNamespaces, copyKubectl, groupBy, filter, help
 
-    var section: KubeSection? { KubeSection(rawValue: rawValue) }
+    package var section: KubeSection? { KubeSection(rawValue: rawValue) }
 
-    var key: String {
+    package var key: String {
         if let section { return section.key }
         switch self {
         case .open: return "↩"
@@ -155,7 +155,7 @@ enum KubernetesKey: String, ResourceKey {
         }
     }
 
-    var title: String {
+    package var title: String {
         if let section { return section.title }
         switch self {
         case .open: return "The detail: overview, YAML, events — a pod's logs (a click opens it too)"
@@ -214,24 +214,24 @@ enum KubernetesKey: String, ResourceKey {
 }
 
 /// One row of a list: the server's row, and — for a pod — what its cells say of it.
-struct KubeListRow: ResourceTableRow {
-    let row: KubeRow
-    let summary: KubePodSummary?
+package struct KubeListRow: ResourceTableRow {
+    package let row: KubeRow
+    package let summary: KubePodSummary?
     /// A Deployment's state off its cells, where the Table has no Status.
-    var hint: KubeDeploymentHint? = nil
+    package var hint: KubeDeploymentHint? = nil
 
-    var id: String { row.id.description }
-    var height: CGFloat { 26 }
+    package var id: String { row.id.description }
+    package var height: CGFloat { 26 }
 }
 
 /// A window's Kubernetes page: which section, what the filter says, what is
 /// selected, how the list is sorted, the `:` bar. The contexts, the kind
 /// shown and its rows are the app's (`KubernetesModel`).
 @MainActor
-final class KubernetesPageModel: ObservableObject {
+package final class KubernetesPageModel: ObservableObject {
     /// The section shown: the kind's, else one picked whose kinds aren't
     /// known yet (discovery not read) or that has none.
-    @Published private(set) var section: KubeSection = .workloads {
+    @Published package private(set) var section: KubeSection = .workloads {
         didSet {
             guard section != oldValue else { return }
             updateHelmReading()
@@ -246,33 +246,33 @@ final class KubernetesPageModel: ObservableObject {
         }
     }
     /// `:`: the command bar over the page.
-    @Published var command: KubeCommandBar?
+    @Published package var command: KubeCommandBar?
     /// What the filter field says. Its `label:` and `field:` words go to
     /// the server (`KubeListSelectors`), a moment after the typing stops.
-    @Published var filter = "" {
+    @Published package var filter = "" {
         didSet { if filter != oldValue { selectorChanged() } }
     }
     /// Rows by `namespace/name` (`KubeRowID.description`).
-    @Published var selection: Set<String> = []
+    @Published package var selection: Set<String> = []
     /// Nil: by namespace, then name.
-    @Published var sort: ResourceSort?
+    @Published package var sort: ResourceSort?
     /// Every column, `-o wide`'s too (`w`).
-    @Published var wide = false
-    @Published var cheatSheet = false
+    @Published package var wide = false
+    @Published package var cheatSheet = false
     /// `n` or `c`: the namespace or context picker over the page.
-    @Published var picker: KubePicker?
+    @Published package var picker: KubePicker?
     /// Bumped to give the list the keyboard (`focusPageList`), and the filter field.
-    @Published private(set) var focusList = 0
+    @Published package private(set) var focusList = 0
     /// Bumped when the list may take the keyboard if nobody has it.
-    @Published private(set) var offerList = 0
-    @Published private(set) var focusFilter = 0
+    @Published package private(set) var offerList = 0
+    @Published package private(set) var focusFilter = 0
     /// Bumped to give a pod's Logs tab's filter the keyboard (⌘F there).
-    @Published private(set) var focusLogFilter = 0
+    @Published package private(set) var focusLogFilter = 0
     /// Whether the page shows in its window. Shown, its filter's selector
     /// is the list's again — another window's page may have had its own;
     /// hidden, it gives the list back, so nothing is narrowed by a filter
     /// that isn't on screen (the ⌃⌘J switcher's pods, another page's).
-    @Published var visible = false {
+    @Published package var visible = false {
         didSet {
             guard visible != oldValue else { return }
             if visible {
@@ -293,7 +293,7 @@ final class KubernetesPageModel: ObservableObject {
         }
     }
     /// Whether its window is on screen at all.
-    @Published var windowVisible = true {
+    @Published package var windowVisible = true {
         didSet {
             if !windowVisible {
                 detail?.secret?.drop(.pageHidden)
@@ -310,65 +310,65 @@ final class KubernetesPageModel: ObservableObject {
     }
     /// How a pod's log shows — wrap, timestamps, newest first, the search
     /// as a regular expression or marking matches — kept for the window.
-    @Published var logOptions = LogViewOptions()
+    @Published package var logOptions = LogViewOptions()
     /// How far back a pod's log goes, kept for the window.
-    @Published var logSince: KubeLogSince = .all {
+    @Published package var logSince: KubeLogSince = .all {
         didSet { if logSince != oldValue { updateLogsReading() } }
     }
-    var actions: KubernetesActions?
+    package var actions: KubernetesActions?
 
-    let model: KubernetesModel
+    package let model: KubernetesModel
     /// The app's port-forwards: the Forwards section, `f`, `o`.
-    let forwards: KubeForwards
+    package let forwards: KubeForwards
     /// The Helm section's releases and the one opened: this window's.
-    let helm: KubeHelmSession
+    package let helm: KubeHelmSession
     private var helmWatch: AnyCancellable?
     /// The GitOps section's reading and its summaries: this window's.
-    let gitOps = KubeGitOpsSession()
+    package let gitOps = KubeGitOpsSession()
     /// How the GitOps section is looked at: selection, order, chip, filters.
     /// Another row picked (a click, the arrows): the keyboard leaves an
     /// app's tree for the rows.
-    @Published var gitOpsView = KubeGitOpsViewState() {
+    @Published package var gitOpsView = KubeGitOpsViewState() {
         didSet { if gitOpsView.selection != oldValue.selection, markedNode != nil { markedNode = nil } }
     }
     /// An app read from marks whose detail shows beside the GitOps section
     /// (gitops.md 14.2.3): set by `openMarkedApp` and `closeMarkedApp` alone.
-    @Published var markedDetail: KubeMarkedDetailRef?
+    @Published package var markedDetail: KubeMarkedDetailRef?
     /// The node of that detail's tree the keyboard is on (14.2.3, ↩ on a
     /// node; `markedTreePress`): nil, the section's rows have the arrows.
-    @Published var markedNode: String?
+    @Published package var markedNode: String?
     /// What that detail reads of its app (M4): only while it shows.
-    let markedRead = KubeMarkedDetailSession()
+    package let markedRead = KubeMarkedDetailSession()
     /// An object opened from that detail: `[` comes back to the app's
     /// detail, and — one of the app's own — its writes say Argo CD may
     /// undo them.
-    var markedOrigin: KubeMarkedOrigin?
+    package var markedOrigin: KubeMarkedOrigin?
     private var markedAppsWatch: AnyCancellable?
     /// What the marks' reads could say, and the section's mode, kept with
     /// its apps for the rail and `k8s_gitops` as they change.
     private var markedKeepWatch: AnyCancellable?
     private var gitOpsWatch: AnyCancellable?
     /// The section a detail opened from a section's row goes back to (`[`).
-    var detailOpenedFrom: KubeSection = .overview
+    package var detailOpenedFrom: KubeSection = .overview
     /// The Overview section's reading: this window's, while it shows.
-    let clusterOverview = KubeClusterOverviewSession()
+    package let clusterOverview = KubeClusterOverviewSession()
     /// The Overview's health checks (3.9): read once while it shows.
-    let health = KubeHealthSession()
+    package let health = KubeHealthSession()
     /// The pinned contexts' cards on the Overview, read only while one shows:
     /// the app's, every window's Overview the same.
-    var pinnedHealth: KubePinnedHealthSession { model.pinnedHealth }
+    package var pinnedHealth: KubePinnedHealthSession { model.pinnedHealth }
     /// "Compare with…": the object its picker is for, and the comparison being read.
-    var compareRef: KubeObjectRef?
-    var comparing: Task<Void, Never>?
+    package var compareRef: KubeObjectRef?
+    package var comparing: Task<Void, Never>?
     /// How the last comparison stands, said for the object it is of —
     /// in its detail, or on the list's bar with no detail open.
-    @Published var compareStatus: KubeCompareStatus?
+    @Published package var compareStatus: KubeCompareStatus?
     private var overviewWatch: AnyCancellable?
     private var metricsKindWatch: AnyCancellable?
     private var prometheusWatch: AnyCancellable?
     private var metricsTabWatch: AnyCancellable?
     /// How long the typing must stop before `label:` or `field:` asks the server again.
-    var selectorDelay: Duration = .milliseconds(350)
+    package var selectorDelay: Duration = .milliseconds(350)
     private var selecting: Task<Void, Never>?
     private var pickerWatch: AnyCancellable?
     private var kindWatch: AnyCancellable?
@@ -380,132 +380,132 @@ final class KubernetesPageModel: ObservableObject {
 
     /// `f`: the forward sheet over the page — a target's ports, the local
     /// port, the address, https — or one being edited.
-    @Published var forwardDraft: KubeForwardDraft?
+    @Published package var forwardDraft: KubeForwardDraft?
     /// Why the sheet's forward can't start as it stands.
-    @Published var forwardProblem: String?
+    @Published package var forwardProblem: String?
     /// The forward picked in the Forwards section (`o` opens it).
-    @Published var forwardSelection: UUID?
+    @Published package var forwardSelection: UUID?
     /// Whether something on this Mac listens on a port: a test's stands in.
-    var isPortBound: (Int) -> Bool = { ListeningPorts.isBound($0) }
+    package var isPortBound: (Int) -> Bool = { ListeningPorts.isBound($0) }
 
     /// The object Ask Why is reading a brief for, while it does.
-    @Published var askingWhy: KubeObjectRef?
+    @Published package var askingWhy: KubeObjectRef?
     /// The app read from marks Ask Why is reading a brief for, while it does.
-    @Published var askingWhyApp: KubeTrackingID.AppKey?
+    @Published package var askingWhyApp: KubeTrackingID.AppKey?
 
     /// The detail beside the list: one object, read once as it opens.
     /// How the last write stands: asked, sent, done or why not.
-    @Published var writeStatus: KubeWriteStatus?
+    @Published package var writeStatus: KubeWriteStatus?
     /// Makes the YAML tab's editor (the window's: its theme, its opener,
     /// its confirmations); nil in a test without a window.
-    var makeYAMLEditor: (() -> EditorViewController)?
-    var madeYAMLEditor: EditorViewController?
+    package var makeYAMLEditor: (() -> EditorViewController)?
+    package var madeYAMLEditor: EditorViewController?
     /// `=`: the scale sheet, over the page.
-    @Published var scaleDraft: KubeScaleDraft?
+    @Published package var scaleDraft: KubeScaleDraft?
     /// Resize in Place…: the pod's containers' values, over the page.
-    @Published var resizeDraft: KubeResizeDraft?
+    @Published package var resizeDraft: KubeResizeDraft?
     /// `N`: the new namespace's sheet, over the page.
-    @Published var namespaceDraft: KubeNamespaceDraft?
+    @Published package var namespaceDraft: KubeNamespaceDraft?
     /// A context's settings, over the page (`openContextSettings`).
-    @Published var contextSettingsDraft: KubeContextSettingsDraft?
+    @Published package var contextSettingsDraft: KubeContextSettingsDraft?
     /// Where they are written: settings.json — a test's own file instead.
-    var settingsStore: Settings = .shared
+    package var settingsStore: Settings = .shared
     /// What a write is stamped with (a rollout restart's `restartedAt`).
-    var clock: () -> Date = { Date() }
+    package var clock: () -> Date = { Date() }
     /// Whether Docker is on (`docker.enabled`): a test's own answer instead of the user's settings.
-    var dockerEnabled: () -> Bool = { Settings.shared.dockerEnabled }
+    package var dockerEnabled: () -> Bool = { Settings.shared.dockerEnabled }
     /// A triggered Job's name's last five characters.
-    var jobSuffix: () -> String = { KubeWrites.randomSuffix() }
+    package var jobSuffix: () -> String = { KubeWrites.randomSuffix() }
     /// The write between its key and its confirmation (the access review,
     /// the reads): another one isn't started meanwhile — two triggers
     /// confirmed would make two Jobs. Its token, so a later one isn't
     /// ended by an earlier one's finish.
-    var writeChecking: Int?
-    var writeChecks = 0
-    @Published private(set) var detail: KubeDetailSession?
-    @Published var detailTab: KubeDetailTab = .overview
+    package var writeChecking: Int?
+    package var writeChecks = 0
+    @Published package private(set) var detail: KubeDetailSession?
+    @Published package var detailTab: KubeDetailTab = .overview
     /// The Metrics tab's range: one a page, in memory, never saved (metrics.md 3.4).
-    @Published var metricsRange: KubeMetricsRange = .live
+    @Published package var metricsRange: KubeMetricsRange = .live
     /// Whether a range was picked on this page: until one is, the tab opens
     /// on Live where metrics-server answers, else on 1h (decision 7).
-    var metricsRangePicked = false
+    package var metricsRangePicked = false
     /// The windows over it, the last the one shown — a marker's ± 30 min
     /// (metrics.md 3.2), a drag across a chart (a zoom, 3.3), Custom's
     /// dates — until a range is picked, or another object shows; Reset or
     /// Esc pops one.
-    @Published var metricsZoom: [KubeChartWindow] = []
+    @Published package var metricsZoom: [KubeChartWindow] = []
     /// Live paused: 15 minutes without input in the window (metrics.md 3.5).
-    @Published var metricsPaused = false
+    @Published package var metricsPaused = false
     /// The last key or mouse move over the page: what Live's pause counts from.
-    var metricsLastInput = Date()
+    package var metricsLastInput = Date()
     /// How long Live runs without input (15 minutes; a scenario's shorter).
-    var metricsIdleLimit: TimeInterval = 900
-    var metricsIdleTask: Task<Void, Never>?
+    package var metricsIdleLimit: TimeInterval = 900
+    package var metricsIdleTask: Task<Void, Never>?
     /// The groups read only while on screen that are (their view says), by title: a node's top pods, its disks and network.
-    var metricsGroupsShown: Set<String> = []
+    package var metricsGroupsShown: Set<String> = []
     /// The Metrics tab's chart expanded into the window's right slot, the
     /// last one (metrics.md 2.1, M9): the slot holds one.
-    @Published var expandedChart: KubeExpandedChart?
+    @Published package var expandedChart: KubeExpandedChart?
     /// Whether the slot shows it in a window on screen (the window says):
     /// the page hidden, its tab's reads go on for it (`chartsShown`).
-    var expandedChartOnScreen = false {
+    package var expandedChartOnScreen = false {
         didSet { if expandedChartOnScreen != oldValue { updateMetricsWanted() } }
     }
     /// A claim's inodes (V2) shown beside its usage: read only while it is on.
-    @Published var volumeInodesShown = false
+    @Published package var volumeInodesShown = false
     /// Custom's popover, shown (its button, or `.` past 7d).
-    @Published var customRangeShown = false
+    @Published package var customRangeShown = false
     /// A pod's or a workload's facts the tab's queries need, by its object's version.
-    var tabFactsCache: (key: String, subject: KubeTabSubject?)?
+    package var tabFactsCache: (key: String, subject: KubeTabSubject?)?
     /// The detail's GPUs as its objects say them (decision 12), by what they were read from.
-    var gpuCache: (key: String, allocation: KubeGPUAllocation?)?
+    package var gpuCache: (key: String, allocation: KubeGPUAllocation?)?
     /// The pods' states read for the Metrics tab's markers (the pod's,
     /// a workload's pods'), and the restarts seen between reads: the
     /// detail shown's, dropped with it.
-    @Published var podStates: KubePodStatesReading?
-    var podStatesTask: Task<Void, Never>?
+    @Published package var podStates: KubePodStatesReading?
+    package var podStatesTask: Task<Void, Never>?
     /// How often they are read while the tab shows (a scenario's shorter).
-    var podStatesInterval: Duration = .seconds(60)
+    package var podStatesInterval: Duration = .seconds(60)
     /// The most of their answer read (a test's smaller).
-    var podStatesMaxBytes = KubePodStates.maxBytes
+    package var podStatesMaxBytes = KubePodStates.maxBytes
     /// The History entry or the event a marker opened: marked where it is listed.
-    @Published var markedEntry: String?
+    @Published package var markedEntry: String?
     /// The Metrics tab's charts, as last built, and what they were built
     /// from (`podCharts`): built again only when that changes.
-    var podChartsCache: (key: KubePodChartsKey, charts: KubePodCharts?)?
+    package var podChartsCache: (key: KubePodChartsKey, charts: KubePodCharts?)?
     /// How many times they were built, for the tests.
-    var podChartsBuilds = 0
+    package var podChartsBuilds = 0
     /// A workload's, an HPA's, a node's or a namespace's charts, as last
     /// built (`objectCharts`), and how many times they were.
-    var objectChartsCache: (key: KubeObjectChartsKey, charts: KubeObjectCharts?)?
-    var objectChartsBuilds = 0
+    package var objectChartsCache: (key: KubeObjectChartsKey, charts: KubeObjectCharts?)?
+    package var objectChartsBuilds = 0
     /// What the tab looked up once as it opened: a workload's HPA, a namespace's quota.
-    @Published var chartLookups = KubeChartLookups()
+    @Published package var chartLookups = KubeChartLookups()
     /// A workload's charts: Total or Per pod, picked for the page (nil: by its pods' count).
-    @Published var workloadChartView: KubeWorkloadView?
+    @Published package var workloadChartView: KubeWorkloadView?
     /// The last press of Sizing (M10): its want stands while its object's
     /// Metrics tab shows, until it is read; its answer is the monitor's.
-    @Published var sizingAsked: KubeSizingRequest?
+    @Published package var sizingAsked: KubeSizingRequest?
     /// A node's "Sample top pods", while on (and after, stopped).
-    @Published var topPodsSampling: KubeTopPodsSampling?
-    var topPodsStop: Task<Void, Never>?
+    @Published package var topPodsSampling: KubeTopPodsSampling?
+    package var topPodsStop: Task<Void, Never>?
     /// How long "Sample top pods" reads (15 minutes; a scenario's shorter).
-    var topPodsDuration: Duration = .seconds(900)
+    package var topPodsDuration: Duration = .seconds(900)
     /// Bumped for `x`: the Overview scrolls its dependency tree into view.
-    @Published var revealTree = 0
+    @Published package var revealTree = 0
     /// Where the detail has been, back and forward: this page's, across
     /// kinds, in the context shown.
-    @Published private(set) var history = KubeHistory()
+    @Published package private(set) var history = KubeHistory()
     /// Why a link couldn't be followed (its kind isn't served).
-    @Published private(set) var linkProblem: String?
+    @Published package private(set) var linkProblem: String?
 
     /// The window shown over the Metrics tab's range: the last of `metricsZoom`.
-    var metricsWindow: KubeChartWindow? {
+    package var metricsWindow: KubeChartWindow? {
         get { metricsZoom.last }
         set { metricsZoom = newValue.map { [$0] } ?? [] }
     }
 
-    init(model: KubernetesModel = .shared, forwards: KubeForwards = .shared) {
+    package init(model: KubernetesModel = .shared, forwards: KubeForwards = .shared) {
         self.model = model
         self.forwards = forwards
         helm = KubeHelmSession(consent: model.secretConsent)
@@ -652,11 +652,11 @@ final class KubernetesPageModel: ObservableObject {
 
     /// A section picked that has no kind to show: discovery not read yet,
     /// or none of its kinds served (no CRDs).
-    @Published private(set) var waitingForSection = false
+    @Published package private(set) var waitingForSection = false
 
     /// A section's digit: its kind last shown, else its first — or, while
     /// it has none, the section alone until it has.
-    func showSection(_ section: KubeSection) {
+    package func showSection(_ section: KubeSection) {
         // `g` opens GitOps on every context: where Argo CD isn't served its
         // apps are read from marks (gitops.md 14.2.1). A Flux-only filter
         // left from `:flux` goes where Flux isn't served.
@@ -683,7 +683,7 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// The list on `kind`, its section with it.
-    func showKind(_ kind: KubeResourceKind) {
+    package func showKind(_ kind: KubeResourceKind) {
         waitingForSection = false
         if let shown = model.catalog.section(of: kind) {
             section = shown
@@ -701,15 +701,15 @@ final class KubernetesPageModel: ObservableObject {
 
     /// Whether the list shows the section's kind: false while a section is
     /// picked that has none to show.
-    var showsSection: Bool { !waitingForSection && section.listsKinds }
+    package var showsSection: Bool { !waitingForSection && section.listsKinds }
 
     /// The list's title: the kind's, as the page calls it.
-    var title: String { showsSection ? KubeKindCatalog.title(of: model.kind) : section.title }
+    package var title: String { showsSection ? KubeKindCatalog.title(of: model.kind) : section.title }
 
     // MARK: Keys
 
     /// A key down while the list has the keyboard: true when it meant something.
-    func press(_ characters: String) -> Bool {
+    package func press(_ characters: String) -> Bool {
         noteMetricsInput()
         // The forward sheet's fields have the keys; Esc closes it.
         if forwardDraft != nil {
@@ -809,7 +809,7 @@ final class KubernetesPageModel: ObservableObject {
     // MARK: The detail
 
     /// The object a row of the list is: the kind shown, in the context shown.
-    func ref(for id: String) -> KubeObjectRef? {
+    package func ref(for id: String) -> KubeObjectRef? {
         guard let context = model.selectedName, let row = model.rows.sorted.first(where: { $0.id.description == id }) else { return nil }
         return KubeObjectRef(context: context, kind: model.kind, namespace: row.id.namespace, name: row.id.name)
     }
@@ -817,7 +817,7 @@ final class KubernetesPageModel: ObservableObject {
     /// ↩: the detail of the selected row (the first, of several, in the
     /// list's order).
     @discardableResult
-    func openSelected() -> Bool {
+    package func openSelected() -> Bool {
         guard let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id) else { return false }
         // A pod's ↩ is its logs (docs/design/kubernetes/analysis.md, Section
         // 7); another kind's is its detail — a workload's logs are `l`.
@@ -830,7 +830,7 @@ final class KubernetesPageModel: ObservableObject {
     /// `l`: the selected pod's logs, or a workload's (a Job's, a Service's)
     /// pods' merged; nothing for another kind.
     @discardableResult
-    func openLogs() -> Bool {
+    package func openLogs() -> Bool {
         guard let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id), ref.hasLogs else { return false }
         detailTab = .logs
         open(ref, from: .list)
@@ -840,7 +840,7 @@ final class KubernetesPageModel: ObservableObject {
 
     /// The Logs tab reads while it shows — the page on screen, in a window
     /// on screen — and closes its stream otherwise.
-    func updateLogsReading() {
+    package func updateLogsReading() {
         updateYAMLReading()
         guard let detail, detail.ref.hasLogs else { return }
         if visible && windowVisible && detailTab == .logs { detail.showLogs(since: logSince) } else { detail.hideLogs() }
@@ -849,7 +849,7 @@ final class KubernetesPageModel: ObservableObject {
     /// Lines picked out of a pod's log (⌘L, its right-click menu): scrubbed
     /// of what looks secret — the pod's own env values, tokens, keys — then
     /// to the Ask Agent sheet with the pod they come from.
-    func askAboutLogLines(_ picked: String) {
+    package func askAboutLogLines(_ picked: String) {
         if let merged = detail?.merged { return askAboutMergedLines(picked, merged) }
         guard let detail, let logs = detail.logs else { return }
         let ref = detail.ref
@@ -878,7 +878,7 @@ final class KubernetesPageModel: ObservableObject {
 
     /// Save As… for a pod's log, or a workload's merged one: the lines
     /// shown, under a timestamped name.
-    func saveLogs(_ text: String) {
+    package func saveLogs(_ text: String) {
         if let merged = detail?.merged {
             actions?.save(merged.fileName, text)
             return
@@ -888,13 +888,13 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// A plain click on a row: its detail.
-    func pressed(_ id: String) {
+    package func pressed(_ id: String) {
         guard let ref = ref(for: id) else { return }
         open(ref, from: .list)
     }
 
     /// The detail on `ref`: a visit in the history, one GET.
-    func open(_ ref: KubeObjectRef, from origin: KubeHistory.Origin) {
+    package func open(_ ref: KubeObjectRef, from origin: KubeHistory.Origin) {
         history.visit(ref, from: origin)
         show(ref)
     }
@@ -902,7 +902,7 @@ final class KubernetesPageModel: ObservableObject {
     /// A link in a detail (an owner, a node, a selected pod): its object,
     /// as the context serves its kind.
     @discardableResult
-    func follow(_ link: KubeLink) -> Bool {
+    package func follow(_ link: KubeLink) -> Bool {
         guard let context = detail?.ref.context ?? model.selectedName else { return false }
         guard let discovery = model.knownDiscovery(of: context), let ref = link.resolve(in: discovery, context: context) else {
             linkProblem = "\(context) serves no \(link.kind) (\(link.apiVersion))."
@@ -913,14 +913,14 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// A pod of a detail's selected pods.
-    func openPod(_ row: KubeListRow) {
+    package func openPod(_ row: KubeListRow) {
         guard let context = detail?.ref.context ?? model.selectedName else { return }
         let kind = model.knownDiscovery(of: context)?.kind(apiVersion: "v1", kind: "Pod") ?? .pods
         open(KubeObjectRef(context: context, kind: kind, namespace: row.row.id.namespace, name: row.row.id.name), from: .link)
     }
 
     /// `[` or ⌘[: the object shown before.
-    func goBack() {
+    package func goBack() {
         // Opened from the Overview (metrics.md 3.7): the Overview again.
         if history.backToOverview() {
             // An object opened from an app's detail (gitops.md 14.2.3): that
@@ -939,7 +939,7 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// `]` or ⌘]: the one after.
-    func goForward() {
+    package func goForward() {
         guard let ref = history.goForward() else { return }
         show(ref)
     }
@@ -947,7 +947,7 @@ final class KubernetesPageModel: ObservableObject {
     /// ⌘[ and ⌘] while the page shows: the detail's, when it has somewhere
     /// to go — else the menus' (the panes). ⌘F with a pod's Logs tab
     /// showing: its filter (`/` is the list's).
-    func commandPress(_ characters: String) -> Bool {
+    package func commandPress(_ characters: String) -> Bool {
         switch characters {
         case "r" where section == .gitops:
             // ⌘R: GitOps' summaries read again.
@@ -968,7 +968,7 @@ final class KubernetesPageModel: ObservableObject {
 
     /// Esc, or its ×: the detail goes — what it read with it — and the list
     /// has the keyboard. Back (`[`) shows it again.
-    func closeDetail() {
+    package func closeDetail() {
         guard detail != nil else { return }
         markedOrigin = nil
         sayKeptEdits()
@@ -992,7 +992,7 @@ final class KubernetesPageModel: ObservableObject {
         writeStatus = .done(Self.keptEdits(detail.ref))
     }
 
-    static func keptEdits(_ ref: KubeObjectRef) -> String {
+    package static func keptEdits(_ ref: KubeObjectRef) -> String {
         "Your edits to \(KubeWriteOutcome.spoken(ref))'s YAML are kept, not applied: open it again to apply or revert them."
     }
 
@@ -1051,20 +1051,20 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// Show, for the Secret the detail shows (its Overview's button, its YAML's).
-    func showSecret() -> Bool {
+    package func showSecret() -> Bool {
         guard let secret = detail?.secret else { return false }
         secret.show()
         return true
     }
 
     /// Copy, for one value of the Secret shown: asked for by the user.
-    func copySecretValue(_ key: String) {
+    package func copySecretValue(_ key: String) {
         guard let text = detail?.secret?.copyValue(key) else { return }
         actions?.copySecret(text)
     }
 
     /// The detail's tab shown: what it reads is asked for then.
-    func showTab(_ tab: KubeDetailTab) {
+    package func showTab(_ tab: KubeDetailTab) {
         detailTab = tab
         if tab == .events { detail?.loadEvents() }
         if tab == .history { detail?.showHistory() }
@@ -1075,21 +1075,21 @@ final class KubernetesPageModel: ObservableObject {
     // MARK: The command bar
 
     /// `:`: the bar, over the page, with what it completes from.
-    func openCommand() {
+    package func openCommand() {
         cheatSheet = false
         picker = nil
         command = KubeCommandBar(kinds: model.catalog.all, namespaces: model.namespaces, contexts: model.contexts.contexts.map(\.name))
     }
 
     /// Esc: closed, the list has the keyboard again.
-    func closeCommand() {
+    package func closeCommand() {
         command = nil
         giveListTheKeyboard()
     }
 
     /// ↩: what the bar says, done — or, when it means nothing, why, the
     /// bar left open.
-    func runCommand() {
+    package func runCommand() {
         guard var bar = command else { return }
         guard let parsed = bar.command() else {
             bar.problem = bar.text.trimmingCharacters(in: .whitespaces).isEmpty ? nil : "Not a command: \(bar.text)"
@@ -1111,7 +1111,7 @@ final class KubernetesPageModel: ObservableObject {
     /// is read as the context named serves it, when that is known (read
     /// lately), else as the one shown does.
     @discardableResult
-    func run(_ command: KubeCommand) -> String? {
+    package func run(_ command: KubeCommand) -> String? {
         var target = model.selected
         if let wanted = command.context {
             guard let context = Self.context(wanted, in: model.contexts) else { return "No context called \(wanted)." }
@@ -1191,36 +1191,36 @@ final class KubernetesPageModel: ObservableObject {
         list.contexts.first { $0.name == name || $0.displayName == name }
     }
 
-    func giveListTheKeyboard() { focusList += 1 }
+    package func giveListTheKeyboard() { focusList += 1 }
 
     /// The keyboard to the list, unless something has it (the filter, the palette).
-    func offerListTheKeyboard() { offerList += 1 }
+    package func offerListTheKeyboard() { offerList += 1 }
 
     // MARK: The pickers
 
     /// `n` or `c`: the picker, on what shows now.
-    func openPicker(_ kind: KubePicker.Kind) {
+    package func openPicker(_ kind: KubePicker.Kind) {
         cheatSheet = false
         command = nil
         picker = makePicker(kind)
     }
 
     /// Esc: the list has the keyboard again.
-    func closePicker() {
+    package func closePicker() {
         picker = nil
         giveListTheKeyboard()
     }
 
     /// ⌥↩, or a click on a namespace's box: it ticked or not, shown at
     /// once, the picker left open.
-    func togglePicked() {
+    package func togglePicked() {
         guard picker?.kind == .namespace, let scope = picker?.toggle() else { return }
         // Every listed one ticked is All — or, refused across the cluster, them.
         model.setScope(scope, refusedAcross: picker?.collapsed)
     }
 
     /// ↩: the namespace or context highlighted, or typed.
-    func choosePicked() {
+    package func choosePicked() {
         guard let choice = picker?.chosen else { return }
         picker = nil
         switch choice {
@@ -1256,7 +1256,7 @@ final class KubernetesPageModel: ObservableObject {
 
     /// The picker showing made again from what the model has now, what is
     /// typed and highlighted kept.
-    func refreshPicker() {
+    package func refreshPicker() {
         guard let old = picker, var new = makePicker(old.kind) else { return }
         guard new.items != old.items || new.note != old.note || new.checked != old.checked || new.listedAll != old.listedAll else { return }
         let highlighted = old.selected?.id
@@ -1268,11 +1268,11 @@ final class KubernetesPageModel: ObservableObject {
     // MARK: The selector
 
     /// What the filter's `label:` words say.
-    var labelReading: KubeLabelSelector.Reading { KubeLabelSelector.read(filter) }
+    package var labelReading: KubeLabelSelector.Reading { KubeLabelSelector.read(filter) }
 
     /// What the filter's `label:` and `field:` words ask the server for,
     /// and the words that couldn't be read as either.
-    var selectorReading: KubeListSelectors.Reading { KubeListSelectors.read(filter) }
+    package var selectorReading: KubeListSelectors.Reading { KubeListSelectors.read(filter) }
 
     private func selectorChanged() {
         selecting?.cancel()
@@ -1287,7 +1287,7 @@ final class KubernetesPageModel: ObservableObject {
     /// The list asked for with the filter's selector now — on ↩ in the
     /// field, once the typing stops, or when its window becomes key while it
     /// shows. A page that doesn't show asks for nothing.
-    func applySelector() {
+    package func applySelector() {
         selecting?.cancel()
         selecting = nil
         guard visible else { return }
@@ -1297,28 +1297,28 @@ final class KubernetesPageModel: ObservableObject {
     /// Whether the list is the one this page's filter asks for: false while
     /// another window's page, showing too, asked last with its own `label:`
     /// or `field:`.
-    var listIsOurs: Bool { model.isSelector(selectorReading.selectors, of: self) }
+    package var listIsOurs: Bool { model.isSelector(selectorReading.selectors, of: self) }
 
     // MARK: What the page says
 
     /// The red band over the whole page on a production context; nil elsewhere.
-    var band: String? {
+    package var band: String? {
         guard let context = model.selected, context.isProduction else { return nil }
         guard context.isWritable else { return "PRODUCTION · \(context.displayName) · read-only: Overterm changes nothing here (its writable setting)" }
         return "PRODUCTION · \(context.displayName) · each change asked, a destructive one by its name"
     }
 
     /// The selected context's class and whether Overterm may write there.
-    var classLabel: String? {
+    package var classLabel: String? {
         guard let context = model.selected else { return nil }
         return "\(context.contextClass.title) · \(context.isWritable ? "writable" : "read-only")"
     }
 
     /// The namespace chip's words: `All namespaces`, `shop`, `acme-api +2`.
-    var scopeLabel: String { model.scope.title }
+    package var scopeLabel: String { model.scope.title }
 
     /// Past the cap, said: the namespaces aren't watched one by one.
-    var scopeNote: String? {
+    package var scopeNote: String? {
         guard model.kind.namespaced, model.scope.isFilteredAcross(for: model.kind), let count = model.scope.names?.count else { return nil }
         return "\(count) namespaces — more than \(KubeScope.watchCap): listed across the cluster, kept to them here"
     }
@@ -1327,7 +1327,7 @@ final class KubernetesPageModel: ObservableObject {
     /// them wide), each by its index in the Table; across all namespaces a
     /// namespaced kind's Namespace column first, as `kubectl get -A` adds it
     /// — across several too.
-    var columns: [ResourceColumn] {
+    package var columns: [ResourceColumn] {
         var columns = model.rows.columns.enumerated().filter { wide || $0.element.priority == 0 }.map { index, column in
             ResourceColumn(
                 id: "c\(index)", title: column.name, width: Self.width(of: column.name), minWidth: Self.minWidth(of: column.name),
@@ -1360,11 +1360,11 @@ final class KubernetesPageModel: ObservableObject {
 
     /// Whether the list gets a Status column of the page's own: a
     /// Deployments list whose Table has none (`KubeDeploymentHint`).
-    var hasStatusHint: Bool { KubeDeploymentHint.applies(to: model.kind, columns: model.rows.columns) }
+    package var hasStatusHint: Bool { KubeDeploymentHint.applies(to: model.kind, columns: model.rows.columns) }
 
-    static let namespaceColumn = "namespace"
+    package static let namespaceColumn = "namespace"
 
-    static func width(of column: String) -> CGFloat {
+    package static func width(of column: String) -> CGFloat {
         switch column.lowercased() {
         case "name": 280
         case "ready": 64
@@ -1384,23 +1384,23 @@ final class KubernetesPageModel: ObservableObject {
     /// Status is what a person reads a failing row by — CrashLoopBackOff
     /// beside its Why button, a node's Ready,SchedulingDisabled — so the
     /// table shrinks the others before it cuts that; the rest go to 40.
-    static func minWidth(of column: String) -> CGFloat {
+    package static func minWidth(of column: String) -> CGFloat {
         column.lowercased() == "status" ? 190 : 40
     }
 
     /// The server's column a list column shows; nil for the Namespace one.
-    func column(_ id: String) -> (index: Int, column: KubeColumn)? {
+    package func column(_ id: String) -> (index: Int, column: KubeColumn)? {
         guard id.hasPrefix("c"), let index = Int(id.dropFirst()), model.rows.columns.indices.contains(index) else { return nil }
         return (index, model.rows.columns[index])
     }
 
     /// Whether the list is of pods: their Status read for failures.
-    var isPods: Bool { model.kind.fullName == KubeResourceKind.pods.fullName }
+    package var isPods: Bool { model.kind.fullName == KubeResourceKind.pods.fullName }
 
     /// The rows the filter lets through, in the list's order. `label:` is
     /// the server's: the rows came filtered by it — or by another page's,
     /// which the page says (`listIsOurs`).
-    var rows: [KubeListRow] {
+    package var rows: [KubeListRow] {
         let columns = model.rows.columns
         var filter = ResourceFilter<KubeFilterKey>(self.filter)
         filter.terms.removeAll { $0.key.isServers }
@@ -1417,7 +1417,7 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// Every pod that fails, with why — whatever the filter shows.
-    var failing: [KubePodSummary] {
+    package var failing: [KubePodSummary] {
         guard isPods else { return [] }
         let columns = model.rows.columns
         return model.rows.sorted.compactMap { KubePodSummary(row: $0, columns: columns) }.filter(\.isFailing)
@@ -1426,7 +1426,7 @@ final class KubernetesPageModel: ObservableObject {
     /// Text matches the name, the namespace or the Status (a Deployment's
     /// read off its cells; for a kind with no Status, its Type: a Service's,
     /// a Secret's, an event's).
-    static func matches(_ row: KubeListRow, _ filter: ResourceFilter<KubeFilterKey>, columns: [KubeColumn]) -> Bool {
+    package static func matches(_ row: KubeListRow, _ filter: ResourceFilter<KubeFilterKey>, columns: [KubeColumn]) -> Bool {
         filter.matches { term in
             let namespace = row.row.id.namespace?.lowercased() ?? ""
             let status =
@@ -1442,12 +1442,12 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// What a column sorts a row by: numbers as numbers, ages by age, text as text.
-    enum SortKey: Comparable {
+    package enum SortKey: Comparable {
         case number(Double)
         case text(String)
     }
 
-    func sortKey(_ row: KubeListRow, _ id: String, now: Date) -> SortKey? {
+    package func sortKey(_ row: KubeListRow, _ id: String, now: Date) -> SortKey? {
         if id == Self.namespaceColumn { return row.row.id.namespace.map { .text($0) } }
         if id == KubeDeploymentHint.column { return row.hint.map { .text($0.text.lowercased()) } }
         if let measure = Self.measure(of: id) { return usage(measure, of: row, now: now).sort.map { .number($0) } }
@@ -1468,16 +1468,16 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// A row's age now, counted on from when it came.
-    func age(of id: KubeRowID, at now: Date) -> TimeInterval? { model.anchors[id]?.age(at: now) }
+    package func age(of id: KubeRowID, at now: Date) -> TimeInterval? { model.anchors[id]?.age(at: now) }
 
     /// The selected rows' names, for ⌘C.
-    var selectedNames: [String] {
+    package var selectedNames: [String] {
         rows.filter { selection.contains($0.id) }.map(\.row.id.name)
     }
 
     /// The right-click menu: only what reads or copies — this page changes
     /// nothing — and a terminal pinned to the context (the user's own kubectl).
-    func verbs(for ids: Set<String>) -> [ResourceVerb] {
+    package func verbs(for ids: Set<String>) -> [ResourceVerb] {
         let picked = model.rows.sorted.filter { ids.contains($0.id.description) }
         guard !picked.isEmpty else { return [] }
         let names = picked.map(\.id.name).joined(separator: "\n")
@@ -1527,7 +1527,7 @@ final class KubernetesPageModel: ObservableObject {
     /// The list's command: the kind, the namespace (or `-A`), the
     /// selectors sent to the server, `-o wide` when wide. The filter's text
     /// words have no kubectl twin and are left out. Nil with no context.
-    var listKubectl: String? {
+    package var listKubectl: String? {
         guard let context = model.selectedName else { return nil }
         return KubectlLine.list(
             context: context, kind: model.kind, scope: model.scope, selectors: selectorReading.selectors, wide: wide,
@@ -1535,7 +1535,7 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// Each row's own command, a line each.
-    func kubectl(for ids: Set<String>) -> String {
+    package func kubectl(for ids: Set<String>) -> String {
         let discovery = model.selectedName.flatMap(model.knownDiscovery(of:))
         return rows.filter { ids.contains($0.id) }.compactMap { ref(for: $0.id) }.map { KubectlLine.object($0, discovery: discovery) }
             .joined(separator: "\n")
@@ -1543,7 +1543,7 @@ final class KubernetesPageModel: ObservableObject {
 
     /// What the detail shows, as kubectl: its object, or on the Events tab
     /// its events.
-    var detailKubectl: String? {
+    package var detailKubectl: String? {
         guard let ref = detail?.ref else { return nil }
         let discovery = model.knownDiscovery(of: ref.context)
         if detailTab == .logs, let merged = detail?.merged { return merged.kubectl(timestamps: logOptions.timestamps) }
@@ -1560,21 +1560,21 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// What `k` copies: the selected rows' commands, else the list's.
-    var copyTarget: String? {
+    package var copyTarget: String? {
         let selected = kubectl(for: selection)
         return selected.isEmpty ? listKubectl : selected
     }
 
     /// `k`: `copyTarget`, on the pasteboard.
     @discardableResult
-    func copyKubectl() -> String? {
+    package func copyKubectl() -> String? {
         guard let text = copyTarget else { return nil }
         actions?.copy(text)
         return text
     }
 
     /// The detail's Copy as kubectl.
-    func copyDetailKubectl() {
+    package func copyDetailKubectl() {
         guard let text = detailKubectl else { return }
         actions?.copy(text)
     }
@@ -1583,12 +1583,12 @@ final class KubernetesPageModel: ObservableObject {
 
     /// The list as the page shows it: its columns, the rows its filter lets
     /// through in its order, each cell as drawn — an age as it reads now.
-    func csv(now: Date = Date()) -> String { rowsText(.csv, now: now) }
+    package func csv(now: Date = Date()) -> String { rowsText(.csv, now: now) }
 
     /// The rows as `format`, the shown columns' titles first: those of
     /// `ids` that the filter shows, in the list's order — every shown row
     /// when `ids` is nil.
-    func rowsText(_ format: ResultExport.Format, ids: Set<String>? = nil, now: Date = Date()) -> String {
+    package func rowsText(_ format: ResultExport.Format, ids: Set<String>? = nil, now: Date = Date()) -> String {
         let columns = self.columns
         let picked = ids.map { ids in rows.filter { ids.contains($0.id) } } ?? rows
         let lines = picked.map { row in columns.map { cellText(row, $0, now: now) } }
@@ -1598,7 +1598,7 @@ final class KubernetesPageModel: ObservableObject {
     /// Copy Rows as TSV or CSV: these rows, else the selected ones, else
     /// every row the filter shows.
     @discardableResult
-    func copyRows(_ format: ResultExport.Format, ids: Set<String>? = nil) -> String? {
+    package func copyRows(_ format: ResultExport.Format, ids: Set<String>? = nil) -> String? {
         guard canExport else { return nil }
         let chosen = ids ?? selection
         let shown = rows.contains { chosen.contains($0.id) }
@@ -1608,7 +1608,7 @@ final class KubernetesPageModel: ObservableObject {
     }
 
     /// A cell's text, as the list draws it.
-    func cellText(_ row: KubeListRow, _ column: ResourceColumn, now: Date) -> String {
+    package func cellText(_ row: KubeListRow, _ column: ResourceColumn, now: Date) -> String {
         if column.id == Self.namespaceColumn { return row.row.id.namespace ?? "" }
         if column.id == KubeDeploymentHint.column { return row.hint?.text ?? "" }
         if let measure = Self.measure(of: column.id) { return usage(measure, of: row, now: now).text }
@@ -1623,19 +1623,19 @@ final class KubernetesPageModel: ObservableObject {
         }
     }
 
-    var csvFileName: String {
+    package var csvFileName: String {
         KubeListExport.fileName(context: model.selectedName ?? "kubernetes", kind: model.kind, scope: model.scope)
     }
 
     /// Whether there is a list to export.
-    var canExport: Bool { showsSection && !columns.isEmpty }
+    package var canExport: Bool { showsSection && !columns.isEmpty }
 
     /// Why the last export wrote no file (a read-only folder, a full
     /// disk), nil once one is written; the window says it too.
-    var exportProblem: String?
+    package var exportProblem: String?
 
     /// The list, saved where the user says.
-    func exportCSV() {
+    package func exportCSV() {
         guard canExport else { return }
         actions?.save(csvFileName, csv())
     }
@@ -1644,15 +1644,15 @@ final class KubernetesPageModel: ObservableObject {
 
     /// Why the last shell, attach or followed log didn't open (a refused
     /// `kubectl auth can-i`, the pod unread); nil once one did.
-    @Published var commandProblem: String?
+    @Published package var commandProblem: String?
 
     /// What a pod offers, in this order.
-    static let podCommands: [KubeProcessVerb] = [.shell, .attach, .followLogs]
+    package static let podCommands: [KubeProcessVerb] = [.shell, .attach, .followLogs]
 
     /// A pod's tab verbs — its detail's buttons and its right-click menu:
     /// each greyed with why while `kubectl auth can-i` hasn't said yes, or
     /// where the process check refuses it.
-    func podVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
+    package func podVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         guard ref.isPod, let context = model.contexts.context(named: ref.context), let namespace = ref.namespace else { return [] }
         return Self.podCommands.map { verb in
             let (title, label, symbol, key): (String, String, String, KubernetesKey) =
@@ -1669,7 +1669,7 @@ final class KubernetesPageModel: ObservableObject {
 
     /// Why `verb` can't be used on the context's namespace now; nil when it
     /// can. Asks `kubectl auth can-i` when its answer isn't known.
-    func unavailable(_ verb: KubeProcessVerb, _ context: KubeContext, _ namespace: String) -> String? {
+    package func unavailable(_ verb: KubeProcessVerb, _ context: KubeContext, _ namespace: String) -> String? {
         let rule = KubeProcessCheck.rule(verb, for: context)
         if let refused = rule.refused { return refused }
         guard let access = rule.access else { return nil }
@@ -1695,7 +1695,7 @@ final class KubernetesPageModel: ObservableObject {
     /// where it was — else the list's selected pod. A detail on another
     /// kind has no pod to run it in.
     @discardableResult
-    func runPodCommand(_ verb: KubeProcessVerb) -> Bool {
+    package func runPodCommand(_ verb: KubeProcessVerb) -> Bool {
         if let detail {
             guard detail.ref.isPod else { return false }
             run(verb, on: detail.ref)
@@ -1710,7 +1710,7 @@ final class KubernetesPageModel: ObservableObject {
     /// containers read (one GET) and one chosen when there are several, on
     /// production a shell or attach asked first (once per pod and session),
     /// then the command typed into a tab pinned to the context.
-    func run(_ verb: KubeProcessVerb, on ref: KubeObjectRef) {
+    package func run(_ verb: KubeProcessVerb, on ref: KubeObjectRef) {
         commandProblem = nil
         guard let context = model.contexts.context(named: ref.context), let namespace = ref.namespace else {
             commandProblem = "No context called \(ref.context)."
@@ -1750,7 +1750,7 @@ final class KubernetesPageModel: ObservableObject {
         }
     }
 
-    func choose(
+    package func choose(
         _ pick: KubeContainerPick, _ verb: KubeProcessVerb, context: KubeContext, namespace: String, pod: String,
         then: @escaping (String?) -> Void
     ) {
@@ -1848,31 +1848,31 @@ final class KubernetesPageModel: ObservableObject {
     // MARK: Terminal in this context
 
     /// Why the last Terminal in this context didn't open; nil once one did.
-    var terminalProblem: String?
+    package var terminalProblem: String?
 
     /// The namespace the page shows for the selected context: the tab's,
     /// unless it shows several or all of them (then the context's own) —
     /// a tab's commands carry one `-n`.
-    var shownNamespace: String? {
+    package var shownNamespace: String? {
         if case .namespace(let name) = model.scope { return name }
         return nil
     }
 
     /// A tab pinned to the context shown, in the namespace shown.
-    func openTerminal() {
+    package func openTerminal() {
         guard let context = model.selected else { return }
         openTerminal(in: context)
     }
 
     /// A context card's right-click: the namespace shown for the context
     /// shown, another context's own.
-    func openTerminal(in context: KubeContext) {
+    package func openTerminal(in context: KubeContext) {
         actions?.openTerminal(context, context.name == model.selectedName ? shownNamespace : nil)
     }
 
     /// From a row's menu: a namespace's own row pins that namespace; a
     /// namespaced object's, its namespace; a cluster-wide one's, the one shown.
-    func terminalVerb(for picked: [KubeRow]) -> ResourceVerb? {
+    package func terminalVerb(for picked: [KubeRow]) -> ResourceVerb? {
         guard let context = model.selected, picked.count == 1, let row = picked.first else { return nil }
         let isNamespace = model.kind.fullName == KubeResourceKind.namespaces.fullName
         let namespace = isNamespace ? row.id.name : row.id.namespace ?? shownNamespace

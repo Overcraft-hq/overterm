@@ -19,20 +19,20 @@ import Foundation
 ///
 /// An isolated run (E2E, the layout dump) never asks the user's shell: it
 /// gets the environment it was started with.
-enum ShellEnvironment {
+package enum ShellEnvironment {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var asked: (answer: [String: String]?, at: Date)?
 
     /// How long the shell may take to answer before it is stopped.
-    static let timeout: TimeInterval = 10
+    package static let timeout: TimeInterval = 10
     /// A shell that couldn't be asked is asked again after this long; an
     /// answer is kept for good.
-    static let retryAfter: TimeInterval = 60
+    package static let retryAfter: TimeInterval = 60
 
     /// What the login shell said, asked once; nil in an isolated run or when
     /// the shell couldn't be asked. Blocking (up to `timeout`) the first
     /// time: call off the main thread.
-    static func login() -> [String: String]? {
+    package static func login() -> [String: String]? {
         if AppEnvironment.isIsolated { return nil }
         lock.lock()
         defer { lock.unlock() }
@@ -44,26 +44,26 @@ enum ShellEnvironment {
 
     /// What the login shell said, if it has been asked already: never asks,
     /// never waits (the main thread may call it).
-    static func known() -> [String: String]? {
+    package static func known() -> [String: String]? {
         if AppEnvironment.isIsolated { return nil }
         return lock.withLock { asked?.answer }
     }
 
     /// The environment to hand a command: the login shell's, else the one
     /// Overterm was started with.
-    static func environment() -> [String: String] {
+    package static func environment() -> [String: String] {
         login() ?? ProcessInfo.processInfo.environment
     }
 
     /// `tool` on the login shell's PATH, if the shell said one and it holds
     /// an executable `tool`.
-    static func executable(_ tool: String) -> URL? {
+    package static func executable(_ tool: String) -> URL? {
         guard let login = login() else { return nil }
         return executable(tool, in: login)
     }
 
     /// The first folder of `environment`'s PATH holding an executable `tool`.
-    static func executable(
+    package static func executable(
         _ tool: String, in environment: [String: String], isExecutable: (String) -> Bool = FileManager.default.isExecutableFile
     ) -> URL? {
         guard !tool.isEmpty, !tool.contains("/") else { return nil }
@@ -76,10 +76,10 @@ enum ShellEnvironment {
 
     /// Printed before the environment, so whatever the shell's startup files
     /// print (a greeting, a prompt's instant mode) is told apart from it.
-    static let marker = "__OVERTERM_SHELL_ENVIRONMENT__"
+    package static let marker = "__OVERTERM_SHELL_ENVIRONMENT__"
 
     /// What the shell is told to run: the marker, then every variable.
-    static let script = "printf '%s\\0' \(marker); /usr/bin/env -0"
+    package static let script = "printf '%s\\0' \(marker); /usr/bin/env -0"
 
     /// `$SHELL -lic '…; env -0'`, history off.
     private static func askTheShell() -> [String: String]? {
@@ -94,14 +94,14 @@ enum ShellEnvironment {
 
     /// The environment the shell is started with: Overterm's own, with
     /// history going nowhere, marked as this run's (D-15).
-    static func launchEnvironment(_ inherited: [String: String]) -> [String: String] {
+    package static func launchEnvironment(_ inherited: [String: String]) -> [String: String] {
         OvertermRun.current.marking(inherited.merging(["HISTFILE": "/dev/null"]) { _, ours in ours }, helper: .loginShell)
     }
 
     /// The answer with the user's own HISTFILE back (or none, as Overterm
     /// had), so a command or a tab handed it keeps its history. A HISTFILE
     /// the startup files set themselves is theirs, and kept.
-    static func restoringHistory(_ environment: [String: String], inherited: [String: String]) -> [String: String] {
+    package static func restoringHistory(_ environment: [String: String], inherited: [String: String]) -> [String: String] {
         guard environment["HISTFILE"] == "/dev/null" else { return environment }
         var environment = environment
         environment["HISTFILE"] = inherited["HISTFILE"]
@@ -111,7 +111,7 @@ enum ShellEnvironment {
     /// Runs `shell` and returns what it wrote, or nil if it couldn't start
     /// or didn't finish within `timeout` (it is then stopped). A child it
     /// left behind holding the pipe open is not waited for.
-    static func run(_ shell: URL, _ arguments: [String], environment: [String: String], timeout: TimeInterval) -> Data? {
+    package static func run(_ shell: URL, _ arguments: [String], environment: [String: String], timeout: TimeInterval) -> Data? {
         let process = Process()
         process.executableURL = shell
         process.arguments = arguments
@@ -140,7 +140,7 @@ enum ShellEnvironment {
     /// The `NAME=value` entries after the marker, each ended by a NUL (a
     /// value may hold newlines). Nil when the marker never came or no PATH
     /// did: that is not the shell's environment.
-    static func parse(_ data: Data) -> [String: String]? {
+    package static func parse(_ data: Data) -> [String: String]? {
         let fields = data.split(separator: 0, omittingEmptySubsequences: false).map { String(decoding: $0, as: UTF8.self) }
         // The first field that ends with the marker: anything the startup
         // files printed is glued to its front.

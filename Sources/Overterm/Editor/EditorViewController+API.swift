@@ -6,7 +6,7 @@ import AppKit
 extension EditorViewController {
     /// A `.bru` request gets its model; collection.bru, folder.bru and
     /// environments are shown as text, being settings rather than requests.
-    func attachRequest(_ buffer: EditorBuffer) {
+    package func attachRequest(_ buffer: EditorBuffer) {
         guard let url = buffer.url, url.pathExtension == "bru", buffer.document.unavailable == nil else { return }
         let model = APIRequestModel(url: url, text: buffer.storage.string, workspace: apiWorkspace)
         guard model.file.isRequest else { return }
@@ -21,7 +21,7 @@ extension EditorViewController {
     /// Replaces what changed between the buffer's text and `text` — only
     /// that range, through the text view when the buffer is the one showing,
     /// so undo, the dirty mark and the git gutter see an ordinary edit.
-    func replaceText(of buffer: EditorBuffer, with text: String) {
+    package func replaceText(of buffer: EditorBuffer, with text: String) {
         let old = buffer.storage.string as NSString
         let new = text as NSString
         guard old as String != text else { return }
@@ -47,14 +47,14 @@ extension EditorViewController {
     // MARK: Drafts
 
     /// A request started with New Request and not saved yet.
-    func isDraft(_ buffer: EditorBuffer) -> Bool {
+    package func isDraft(_ buffer: EditorBuffer) -> Bool {
         buffer.url.map { apiWorkspace?.isDraft($0) == true } ?? false
     }
 
     /// Saves a new request: asks its name, then puts it in the folder it was
     /// started from — its tab following it there. `done(false)` when
     /// cancelled.
-    func saveDraft(_ buffer: EditorBuffer, then done: ((Bool) -> Void)? = nil) {
+    package func saveDraft(_ buffer: EditorBuffer, then done: ((Bool) -> Void)? = nil) {
         guard let window = view.window, let draft = buffer.url, let workspace = apiWorkspace else {
             done?(false)
             return
@@ -97,7 +97,7 @@ extension EditorViewController {
 
     /// Files were renamed under open requests: each request's model is made
     /// again for its file's new path.
-    func requestsMoved() {
+    package func requestsMoved() {
         var changed = false
         for buffer in buffers where buffer.request != nil && buffer.request?.url.standardizedFileURL != buffer.url?.standardizedFileURL {
             buffer.request = nil
@@ -108,7 +108,7 @@ extension EditorViewController {
     }
 
     /// The window's API client arrived (or changed): open requests use it.
-    func apiWorkspaceChanged() {
+    package func apiWorkspaceChanged() {
         for buffer in buffers where buffer.request != nil {
             buffer.request = nil
             attachRequest(buffer)

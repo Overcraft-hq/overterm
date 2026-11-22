@@ -3,7 +3,7 @@ import Foundation
 /// Redis as the database client reads it — pure, so it is tested without a
 /// server: RESP's values, a command line as redis-cli splits it, which
 /// commands only read and which destroy, and a reply as the grid's rows.
-enum RedisValue: Equatable, Sendable {
+package enum RedisValue: Equatable, Sendable {
     case simple(String)
     case error(String)
     case integer(Int)
@@ -13,7 +13,7 @@ enum RedisValue: Equatable, Sendable {
     case array([RedisValue]?)
 
     /// What redis-cli would print for it, on one line.
-    var text: String? {
+    package var text: String? {
         switch self {
         case .simple(let s), .error(let s): s
         case .integer(let n): String(n)
@@ -23,7 +23,7 @@ enum RedisValue: Equatable, Sendable {
     }
 
     /// Bytes as text: UTF-8, else redis-cli's escapes ("\xff").
-    static func string(_ data: Data) -> String {
+    package static func string(_ data: Data) -> String {
         if let text = String(data: data, encoding: .utf8) { return text }
         return data.map { byte in
             (0x20...0x7E).contains(byte) && byte != 0x5C ? String(UnicodeScalar(byte)) : String(format: "\\x%02x", byte)
@@ -31,9 +31,9 @@ enum RedisValue: Equatable, Sendable {
     }
 }
 
-enum RedisProtocol {
+package enum RedisProtocol {
     /// A command as RESP sends it: an array of bulk strings.
-    static func encode(_ arguments: [String]) -> Data {
+    package static func encode(_ arguments: [String]) -> Data {
         var out = Data("*\(arguments.count)\r\n".utf8)
         for argument in arguments {
             let bytes = Data(argument.utf8)
@@ -44,11 +44,11 @@ enum RedisProtocol {
         return out
     }
 
-    enum ParseError: Error, Equatable { case malformed(String) }
+    package enum ParseError: Error, Equatable { case malformed(String) }
 
     /// One value from the front of `bytes`, and how many bytes it took —
     /// nil while it hasn't all arrived.
-    static func decode(_ bytes: [UInt8], from start: Int = 0) throws -> (RedisValue, Int)? {
+    package static func decode(_ bytes: [UInt8], from start: Int = 0) throws -> (RedisValue, Int)? {
         guard start < bytes.count else { return nil }
         func line(at index: Int) -> (String, Int)? {
             var i = index
@@ -91,7 +91,7 @@ enum RedisProtocol {
 
     /// A command line as redis-cli splits it: words, "double quotes" with
     /// \n \t \" \\ \xHH, 'single quotes' with \' only.
-    static func words(_ line: String) throws -> [String] {
+    package static func words(_ line: String) throws -> [String] {
         var words: [String] = []
         var current = ""
         var inWord = false
@@ -163,7 +163,7 @@ enum RedisProtocol {
     }
 
     /// A key as a command line writes it: bare when it can be.
-    static func quoted(_ key: String) -> String {
+    package static func quoted(_ key: String) -> String {
         let plain = !key.isEmpty && key.allSatisfy { !$0.isWhitespace && $0 != "\"" && $0 != "'" && $0 != "\\" }
         if plain { return key }
         return "\"" + key.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
@@ -172,9 +172,9 @@ enum RedisProtocol {
 
 /// A Redis console's text, as SQLText is a SQL console's: a command a line,
 /// what each does.
-enum RedisText {
+package enum RedisText {
     /// Each command: a line with something on it, `#` lines skipped.
-    static func statements(in text: String) -> [NSRange] {
+    package static func statements(in text: String) -> [NSRange] {
         let ns = text as NSString
         var found: [NSRange] = []
         ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length), options: [.byLines, .substringNotRequired]) { _, range, _, _ in
@@ -185,7 +185,7 @@ enum RedisText {
     }
 
     /// The command on the caret's line, if it has one.
-    static func statement(at caret: Int, in text: String) -> NSRange? {
+    package static func statement(at caret: Int, in text: String) -> NSRange? {
         let ns = text as NSString
         guard caret <= ns.length else { return nil }
         let line = ns.lineRange(for: NSRange(location: min(caret, max(0, ns.length - 1)), length: 0))
@@ -199,18 +199,18 @@ enum RedisText {
 
     /// The command's name, upper case — with its subcommand for the ones
     /// that have them (CONFIG GET, CLIENT LIST).
-    static func verb(of command: String) -> String {
+    package static func verb(of command: String) -> String {
         let words = (try? RedisProtocol.words(command)) ?? command.split(separator: " ").map(String.init)
         guard let first = words.first?.uppercased() else { return "" }
         if Self.withSubcommand.contains(first), words.count > 1 { return first + " " + words[1].uppercased() }
         return first
     }
 
-    static let withSubcommand: Set<String> = ["CONFIG", "CLIENT", "OBJECT", "MEMORY", "SCRIPT", "FUNCTION", "CLUSTER", "XINFO", "COMMAND", "ACL", "PUBSUB"]
+    package static let withSubcommand: Set<String> = ["CONFIG", "CLIENT", "OBJECT", "MEMORY", "SCRIPT", "FUNCTION", "CLUSTER", "XINFO", "COMMAND", "ACL", "PUBSUB"]
 
     /// Commands that only read: everything else is refused on a read-only
     /// connection.
-    static let reads: Set<String> = [
+    package static let reads: Set<String> = [
         "GET", "MGET", "GETRANGE", "STRLEN", "EXISTS", "TYPE", "TTL", "PTTL", "EXPIRETIME", "KEYS", "SCAN", "RANDOMKEY", "DBSIZE",
         "HGET", "HMGET", "HGETALL", "HKEYS", "HVALS", "HLEN", "HEXISTS", "HSTRLEN", "HSCAN", "HRANDFIELD",
         "LRANGE", "LLEN", "LINDEX", "LPOS",
@@ -227,10 +227,10 @@ enum RedisText {
         "VIEW",
     ]
 
-    static func onlyReads(_ command: String) -> Bool { reads.contains(verb(of: command)) }
+    package static func onlyReads(_ command: String) -> Bool { reads.contains(verb(of: command)) }
 
     /// Why a command should be asked about first; nil when it needn't be.
-    static func danger(of command: String) -> String? {
+    package static func danger(of command: String) -> String? {
         let verb = verb(of: command)
         let words = (try? RedisProtocol.words(command)) ?? []
         switch verb {
@@ -252,11 +252,11 @@ enum RedisText {
 }
 
 /// A reply as the grid shows it.
-enum RedisResult {
+package enum RedisResult {
     /// Replies that are field, value, field, value…
-    static let pairs: Set<String> = ["HGETALL", "CONFIG GET", "HRANDFIELD"]
+    package static let pairs: Set<String> = ["HGETALL", "CONFIG GET", "HRANDFIELD"]
 
-    static func result(of command: [String], reply: RedisValue, limit: Int) throws -> QueryResult {
+    package static func result(of command: [String], reply: RedisValue, limit: Int) throws -> QueryResult {
         let verb = RedisText.verb(of: command.map(RedisProtocol.quoted).joined(separator: " "))
         let upper = command.map { $0.uppercased() }
         func table(_ columns: [String], _ rows: [[String?]]) -> QueryResult {
@@ -301,14 +301,14 @@ enum RedisResult {
     }
 
     /// A stream entry: its id, and its fields as `field=value` pairs.
-    static func streamEntry(_ value: RedisValue) -> [String?] {
+    package static func streamEntry(_ value: RedisValue) -> [String?] {
         guard case .array(let parts?) = value, parts.count == 2, case .array(let fields?) = parts[1] else { return [value.text, nil] }
         let pairs = stride(from: 0, to: fields.count - 1, by: 2).map { "\(fields[$0].text ?? "")=\(fields[$0 + 1].text ?? "")" }
         return [parts[0].text, pairs.joined(separator: ", ")]
     }
 
     /// INFO's `key:value` lines (its `# Section` headers left out).
-    static func info(_ text: String) -> [[String?]] {
+    package static func info(_ text: String) -> [[String?]] {
         text.split(whereSeparator: \.isNewline).compactMap { line in
             let line = line.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty, !line.hasPrefix("#"), let colon = line.firstIndex(of: ":") else { return nil }
@@ -317,7 +317,7 @@ enum RedisResult {
     }
 
     /// INFO keyspace's `db0:keys=3,expires=0,…`: each database's number and keys.
-    static func keyspace(_ text: String) -> [(db: Int, keys: Int)] {
+    package static func keyspace(_ text: String) -> [(db: Int, keys: Int)] {
         info(text).compactMap { row in
             guard let name = row[0], name.hasPrefix("db"), let db = Int(name.dropFirst(2)), let fields = row[1] else { return nil }
             let keys = fields.split(separator: ",").first { $0.hasPrefix("keys=") }.flatMap { Int($0.dropFirst(5)) } ?? 0
@@ -331,13 +331,13 @@ enum RedisResult {
 /// that splits, checks or names a statement asks this, never SQLText
 /// directly.
 extension DatabaseKind {
-    func statements(in text: String) -> [NSRange] {
+    package func statements(in text: String) -> [NSRange] {
         if isSearch { return SearchText.statements(in: text) }
         if isMongo { return MongoText.statements(in: text) }
         if let own = consoleText { return own.statements(in: text) }
         return isRedis ? RedisText.statements(in: text) : isObservability ? ObservabilityText.statements(in: text) : SQLText.statements(in: text)
     }
-    func statement(at caret: Int, in text: String) -> NSRange? {
+    package func statement(at caret: Int, in text: String) -> NSRange? {
         if isSearch { return SearchText.statement(at: caret, in: text) }
         if isMongo { return MongoText.statement(at: caret, in: text) }
         if let own = consoleText { return own.statement(at: caret, in: text) }
@@ -345,27 +345,27 @@ extension DatabaseKind {
             ? RedisText.statement(at: caret, in: text)
             : isObservability ? ObservabilityText.statement(at: caret, in: text) : SQLText.statement(at: caret, in: text)
     }
-    func verb(of statement: String) -> String {
+    package func verb(of statement: String) -> String {
         if isSearch { return (try? SearchRequest.parse(statement))?.verb ?? "the request" }
         if isMongo { return MongoText.verb(of: statement) }
         if let own = consoleText { return own.verb(of: statement) }
         return isRedis ? RedisText.verb(of: statement) : isObservability ? "Query" : SQLText.verb(of: statement)
     }
     /// Prometheus, Loki and Tempo only read.
-    func onlyReads(_ statement: String) -> Bool {
+    package func onlyReads(_ statement: String) -> Bool {
         if isSearch { return (try? SearchRequest.parse(statement))?.onlyReads ?? false }
         if isMongo { return MongoText.onlyReads(statement) }
         if let own = consoleText { return own.onlyReads(statement) }
         return isRedis ? RedisText.onlyReads(statement) : isObservability ? true : SQLText.onlyReads(statement)
     }
     /// What an agent may run without asking.
-    func agentReads(_ statement: String) -> Bool {
+    package func agentReads(_ statement: String) -> Bool {
         if isSearch { return (try? SearchRequest.parse(statement))?.agentReads ?? false }
         if isMongo { return MongoText.onlyReads(statement) }
         if let own = consoleText { return own.agentReads(statement) }
         return isRedis ? RedisText.onlyReads(statement) : isObservability ? true : SQLText.agentReads(statement)
     }
-    func danger(of statement: String) -> String? {
+    package func danger(of statement: String) -> String? {
         if isSearch { return (try? SearchRequest.parse(statement))?.danger }
         if isMongo { return MongoText.danger(of: statement) }
         if let own = consoleText { return own.danger(of: statement) }
@@ -373,7 +373,7 @@ extension DatabaseKind {
     }
     /// What a statement is about, for a tab's name and an export's: its
     /// first table, a Redis command's key, a metric, a stream, a trace, an index.
-    func subject(of statement: String) -> String? {
+    package func subject(of statement: String) -> String? {
         if isSearch { return SearchText.subject(of: statement) }
         if let own = consoleText { return own.subject(of: statement) }
         if isRedis {
@@ -390,9 +390,9 @@ extension DatabaseKind {
 /// What a Redis console completes: a command's name at a line's start —
 /// with how it is written — and a key, from the browser's keys, where the
 /// command takes one.
-enum RedisCompletion {
+package enum RedisCompletion {
     /// Commands, and how each is written.
-    static let commands: [(String, String)] = [
+    package static let commands: [(String, String)] = [
         ("GET", "key"), ("SET", "key value [EX seconds] [NX|XX] [KEEPTTL]"), ("MGET", "key [key …]"), ("MSET", "key value [key value …]"),
         ("INCR", "key"), ("INCRBY", "key increment"), ("DECR", "key"), ("APPEND", "key value"), ("GETRANGE", "key start end"),
         ("STRLEN", "key"), ("GETDEL", "key"), ("GETEX", "key [EX seconds|PERSIST]"), ("SETEX", "key seconds value"), ("SETNX", "key value"),
@@ -426,19 +426,19 @@ enum RedisCompletion {
     ]
 
     /// Commands whose first argument isn't a key.
-    static let keyless: Set<String> = [
+    package static let keyless: Set<String> = [
         "SCAN", "KEYS", "SELECT", "INFO", "CONFIG", "CLIENT", "SLOWLOG", "PING", "ECHO", "TIME", "ROLE", "FLUSHDB", "FLUSHALL", "PUBLISH",
         "PUBSUB", "OBJECT", "MEMORY", "EVAL", "XREAD", "XINFO", "XGROUP", "MSET", "DBSIZE", "RANDOMKEY",
     ]
 
-    struct Answer: Equatable {
+    package struct Answer: Equatable {
         /// What was typed of the word being completed.
-        var typed: String
-        var candidates: [SQLCompletion.Candidate]
+        package var typed: String
+        package var candidates: [SQLCompletion.Candidate]
     }
 
     /// The candidates for a line's text up to the caret.
-    static func complete(_ before: String, keys: [String]) -> Answer? {
+    package static func complete(_ before: String, keys: [String]) -> Answer? {
         let line = String(before.split(separator: "\n", omittingEmptySubsequences: false).last ?? "")
         guard !line.trimmingCharacters(in: .whitespaces).hasPrefix("#"), !line.contains("\""), !line.contains("'") else { return nil }
         let words = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)

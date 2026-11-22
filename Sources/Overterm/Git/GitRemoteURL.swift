@@ -22,32 +22,32 @@ import Foundation
 ///    GitLab's subgroups kept whole;
 /// 7. an ssh config alias is compared as written (no `ssh -G`);
 /// 8. `oci://` (and any other scheme) names no git repository: nil.
-struct GitRemoteURL: Hashable, Sendable, CustomStringConvertible {
+package struct GitRemoteURL: Hashable, Sendable, CustomStringConvertible {
     /// Lowercased: `git.acme.example`.
-    let host: String
+    package let host: String
     /// `acme/shop`, `acme/group/sub/shop`, as written.
-    let path: String
+    package let path: String
 
     /// `git.acme.example/acme/shop`: what is shown, credentials never among it.
-    var description: String { "\(host)/\(path)" }
+    package var description: String { "\(host)/\(path)" }
 
     /// The hosts whose paths are case-insensitive.
-    static let caseInsensitiveHosts: Set<String> = ["github.com", "gitlab.com", "bitbucket.org"]
+    package static let caseInsensitiveHosts: Set<String> = ["github.com", "gitlab.com", "bitbucket.org"]
 
     /// What two URLs compare by.
-    var key: String { "\(host)/\(Self.caseInsensitiveHosts.contains(host) ? path.lowercased() : path)" }
+    package var key: String { "\(host)/\(Self.caseInsensitiveHosts.contains(host) ? path.lowercased() : path)" }
 
-    static func == (lhs: GitRemoteURL, rhs: GitRemoteURL) -> Bool { lhs.key == rhs.key }
-    func hash(into hasher: inout Hasher) { hasher.combine(key) }
+    package static func == (lhs: GitRemoteURL, rhs: GitRemoteURL) -> Bool { lhs.key == rhs.key }
+    package func hash(into hasher: inout Hasher) { hasher.combine(key) }
 
-    init(host: String, path: String) {
+    package init(host: String, path: String) {
         self.host = host.lowercased()
         self.path = path
     }
 
     /// The repository `raw` names; nil for what names none (`oci://`, a
     /// local path, an empty one).
-    init?(_ raw: String) {
+    package init?(_ raw: String) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !text.contains("\u{0}") else { return nil }
         var host: String
@@ -122,7 +122,7 @@ struct GitRemoteURL: Hashable, Sendable, CustomStringConvertible {
     /// it is cut at its last `@` — a password with an `@` written raw goes
     /// too. The scp form (`git@host:org/repo`) names a user, never a
     /// secret, and stays as written; so does anything without `://`.
-    static func withoutUserinfo(_ url: String) -> String {
+    package static func withoutUserinfo(_ url: String) -> String {
         guard let separator = url.range(of: "://"), isScheme(url[..<separator.lowerBound]) else { return url }
         let rest = url[separator.upperBound...]
         let authority = rest.prefix { !"/?#".contains($0) }
@@ -133,7 +133,7 @@ struct GitRemoteURL: Hashable, Sendable, CustomStringConvertible {
     /// Every `scheme://userinfo@` in `text` without its userinfo, all of
     /// it: a message can name several URLs, and a token may have no `:`.
     /// A later `@` in a path (`…/users/jane@example.com`) stays.
-    static func stripUserinfo(inText text: String) -> String {
+    package static func stripUserinfo(inText text: String) -> String {
         guard text.contains("://"), text.contains("@") else { return text }
         return text.replacingOccurrences(of: #"([A-Za-z][A-Za-z0-9+.-]*://)[^/?#\s]*@"#, with: "$1", options: .regularExpression)
     }

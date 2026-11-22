@@ -5,14 +5,14 @@ import AppKit
 /// it works in — and the rows' options as the app stands, every window's
 /// tabs together, as the page makes its rows.
 extension TerminalWindowController {
-    func wireActivityMCP() {
+    package func wireActivityMCP() {
         ActivityMCP.scene = { tag in await TerminalWindowController.activityMCPScene(pane: tag) }
     }
 
     /// Pane `tag`'s scene: nil for a pane no window has. Its checkout is
     /// read as `tf_`'s is — its agent's folder read again first while its
     /// window is off screen (`paneCheckout`).
-    static func activityMCPScene(pane tag: String) async -> ActivityMCP.Scene? {
+    package static func activityMCPScene(pane tag: String) async -> ActivityMCP.Scene? {
         guard locate(pane: tag) != nil else { return nil }
         let checkout = await paneCheckout(tag)
         // Read again after the wait: the pane may have closed meanwhile.

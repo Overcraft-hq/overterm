@@ -1,21 +1,21 @@
 import AppKit
 
 /// A row of a picker or the completion list.
-struct EditorListItem {
-    var title: String
-    var detail: String = ""
+package struct EditorListItem {
+    package var title: String
+    package var detail: String = ""
     /// A short badge ("fn", "T", "var") before the title.
-    var badge: String = ""
-    var badgeColor: NSColor = .secondaryLabelColor
+    package var badge: String = ""
+    package var badgeColor: NSColor = .secondaryLabelColor
     /// Characters of `title` the query matched, drawn stronger.
-    var matched: [Int] = []
+    package var matched: [Int] = []
 }
 
 /// Zed's modal pickers, at the top of the editor: Go to Line (⌃G), Go to
 /// Symbol (⇧⌘O), Go to File (⌘P), references (⇧F12). A field and, for all
 /// but Go to Line, a ranked list under it. Esc or a click elsewhere closes.
 @MainActor
-final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
+package final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
     private let field = NSTextField()
     private let table = NSTableView()
     private let scroll = NSScrollView()
@@ -26,12 +26,12 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
     private let provider: (String) -> [EditorListItem]
     private let choose: (Int, String) -> Void
     private let preview: ((Int) -> Void)?
-    var onDismiss: (() -> Void)?
+    package var onDismiss: (() -> Void)?
     private static let rowHeight: CGFloat = 26
 
     /// `provider` ranks rows for the query (nil list: a field only, as Go to
     /// Line); `choose` gets the row (or -1 with the field's text).
-    init(
+    package init(
         placeholder: String, hint: String = "", theme: EditorTheme, showsList: Bool, initial: String = "",
         provider: @escaping (String) -> [EditorListItem], choose: @escaping (Int, String) -> Void, preview: ((Int) -> Void)? = nil
     ) {
@@ -120,16 +120,16 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
         refresh()
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    nonisolated static func blend(_ a: NSColor, _ b: NSColor, _ amount: CGFloat) -> NSColor {
+    package nonisolated static func blend(_ a: NSColor, _ b: NSColor, _ amount: CGFloat) -> NSColor {
         (a.usingColorSpace(.sRGB) ?? a).blended(withFraction: amount, of: b.usingColorSpace(.sRGB) ?? b) ?? a
     }
 
     /// A popup's surface: the editor's background, a step towards the text.
-    nonisolated static func surface(_ theme: EditorTheme) -> NSColor { blend(theme.background, theme.text, theme.isDark ? 0.09 : 0.03) }
+    package nonisolated static func surface(_ theme: EditorTheme) -> NSColor { blend(theme.background, theme.text, theme.isDark ? 0.09 : 0.03) }
 
     // MARK: Clicking away
 
@@ -137,7 +137,7 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
 
     /// A click anywhere outside closes it, as Zed's do — the field losing
     /// the keyboard alone didn't, when the click landed on text.
-    override func viewDidMoveToWindow() {
+    package override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
@@ -152,14 +152,14 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
         }
     }
 
-    func focus() {
+    package func focus() {
         window?.makeFirstResponder(field)
         field.currentEditor()?.selectAll(nil)
     }
 
-    var query: String { field.stringValue }
+    package var query: String { field.stringValue }
 
-    func refresh() {
+    package func refresh() {
         items = scroll.isHidden ? [] : provider(field.stringValue)
         table.reloadData()
         heightConstraint.constant = scroll.isHidden ? 0 : min(CGFloat(max(items.count, 1)), 12) * Self.rowHeight
@@ -170,11 +170,11 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
     }
 
     /// Rows that arrived later (a language server's symbols).
-    func reload() { refresh() }
+    package func reload() { refresh() }
 
-    func controlTextDidChange(_ obj: Notification) { refresh() }
+    package func controlTextDidChange(_ obj: Notification) { refresh() }
 
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+    package func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
         case #selector(NSResponder.moveDown(_:)): move(1)
         case #selector(NSResponder.moveUp(_:)): move(-1)
@@ -185,7 +185,7 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
         return true
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) {
+    package func controlTextDidEndEditing(_ obj: Notification) {
         // Clicked away: gone, as Zed's are.
         if (obj.userInfo?["NSTextMovement"] as? Int) == NSTextMovement.other.rawValue, window?.firstResponder !== field.currentEditor() {
             DispatchQueue.main.async { [weak self] in
@@ -207,45 +207,45 @@ final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSource, NS
 
     @objc private func chooseClicked() { chooseSelected() }
 
-    func chooseSelected() {
+    package func chooseSelected() {
         let row = items.isEmpty ? -1 : max(0, table.selectedRow)
         let text = field.stringValue
         dismiss()
         choose(row, text)
     }
 
-    func dismiss() {
+    package func dismiss() {
         guard superview != nil else { return }
         removeFromSuperview()
         onDismiss?()
     }
 
-    func numberOfRows(in tableView: NSTableView) -> Int { items.count }
+    package func numberOfRows(in tableView: NSTableView) -> Int { items.count }
 
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+    package func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         EditorListRow(item: items[row], theme: theme)
     }
 
-    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { EditorListRowView(theme: theme) }
+    package func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { EditorListRowView(theme: theme) }
 }
 
 /// A list row's selection in the theme's colour, its text as it is — the
 /// system's highlight turned it white with grey text on it.
-final class EditorListRowView: NSTableRowView {
+package final class EditorListRowView: NSTableRowView {
     private let theme: EditorTheme
 
-    init(theme: EditorTheme) {
+    package init(theme: EditorTheme) {
         self.theme = theme
         super.init(frame: .zero)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
+    package override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
 
-    override func drawSelection(in dirtyRect: NSRect) {
+    package override func drawSelection(in dirtyRect: NSRect) {
         theme.selection.setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 2, dy: 1), xRadius: 5, yRadius: 5).fill()
     }
@@ -253,8 +253,8 @@ final class EditorListRowView: NSTableRowView {
 
 /// One row: badge, title with its matched letters, detail on the right.
 @MainActor
-final class EditorListRow: NSView {
-    init(item: EditorListItem, theme: EditorTheme, font: NSFont = .systemFont(ofSize: 12.5)) {
+package final class EditorListRow: NSView {
+    package init(item: EditorListItem, theme: EditorTheme, font: NSFont = .systemFont(ofSize: 12.5)) {
         super.init(frame: .zero)
         let title = NSTextField(labelWithString: "")
         let attributed = NSMutableAttributedString(string: item.title, attributes: [.font: font, .foregroundColor: theme.text.withAlphaComponent(0.85)])
@@ -292,7 +292,7 @@ final class EditorListRow: NSView {
         ])
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 }
@@ -301,7 +301,7 @@ final class EditorListRow: NSView {
 /// can hang past the pane's edge. The text view keeps the keyboard; the
 /// pane routes ↑ ↓ ⏎ ⇥ ⎋ here while it shows.
 @MainActor
-final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+package final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     private let panel: NSPanel
     private let table = NSTableView()
     private let scroll = NSScrollView()
@@ -309,11 +309,11 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private var items: [EditorListItem] = []
     private var details: [String] = []
     private let theme: EditorTheme
-    var onChoose: ((Int) -> Void)?
+    package var onChoose: ((Int) -> Void)?
     private static let rowHeight: CGFloat = 22
     private static let width: CGFloat = 440
 
-    init(theme: EditorTheme) {
+    package init(theme: EditorTheme) {
         self.theme = theme
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 200), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         super.init()
@@ -361,13 +361,13 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
         panel.contentView = content
     }
 
-    var isVisible: Bool { panel.isVisible }
-    var selectedIndex: Int { max(0, table.selectedRow) }
-    var count: Int { items.count }
+    package var isVisible: Bool { panel.isVisible }
+    package var selectedIndex: Int { max(0, table.selectedRow) }
+    package var count: Int { items.count }
 
     /// Shows `items` with their top-left at the caret's bottom-left (above
     /// it when there is no room below).
-    func show(_ items: [EditorListItem], details: [String], at caret: NSRect, in parent: NSWindow) {
+    package func show(_ items: [EditorListItem], details: [String], at caret: NSRect, in parent: NSWindow) {
         guard !items.isEmpty else { return hide() }
         self.items = items
         self.details = details
@@ -387,13 +387,13 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
         panel.orderFront(nil)
     }
 
-    func hide() {
+    package func hide() {
         guard panel.isVisible || panel.parent != nil else { return }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
     }
 
-    func move(_ delta: Int) {
+    package func move(_ delta: Int) {
         guard !items.isEmpty else { return }
         var row = table.selectedRow + delta
         if row < 0 { row = items.count - 1 }
@@ -410,20 +410,20 @@ final class CompletionPopup: NSObject, NSTableViewDataSource, NSTableViewDelegat
 
     @objc private func clicked() { onChoose?(selectedIndex) }
 
-    func numberOfRows(in tableView: NSTableView) -> Int { items.count }
+    package func numberOfRows(in tableView: NSTableView) -> Int { items.count }
 
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+    package func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         EditorListRow(item: items[row], theme: theme, font: .monospacedSystemFont(ofSize: 12, weight: .regular))
     }
 
-    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { EditorListRowView(theme: theme) }
+    package func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { EditorListRowView(theme: theme) }
 }
 
 /// What a language server says about the symbol under the mouse (and any
 /// problem there), in a popover over it.
 @MainActor
-enum EditorHover {
-    static func popover(text: String, problems: [EditorDiagnostic], theme: EditorTheme, font: NSFont) -> NSPopover {
+package enum EditorHover {
+    package static func popover(text: String, problems: [EditorDiagnostic], theme: EditorTheme, font: NSFont) -> NSPopover {
         let body = NSMutableAttributedString()
         let plain: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: theme.text]
         let code: [NSAttributedString.Key: Any] = [

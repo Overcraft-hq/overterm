@@ -5,44 +5,44 @@ import Foundation
 /// context — its pods failing, its workloads and nodes not ready — on the
 /// Overview, beside the one context the page shows. Made from Table rows,
 /// as the lists are. Pure.
-struct KubePinnedHealth: Equatable, Sendable {
+package struct KubePinnedHealth: Equatable, Sendable {
     /// What one context's rows say.
-    struct Summary: Equatable, Sendable {
-        var pods = 0
+    package struct Summary: Equatable, Sendable {
+        package var pods = 0
         /// Failing pods, `namespace/name` and why, the first `shown`.
-        var failing: [String] = []
-        var failingCount = 0
-        var workloads = 0
-        var notReady: [String] = []
-        var notReadyCount = 0
-        var nodes = 0
-        var notReadyNodes: [String] = []
+        package var failing: [String] = []
+        package var failingCount = 0
+        package var workloads = 0
+        package var notReady: [String] = []
+        package var notReadyCount = 0
+        package var nodes = 0
+        package var notReadyNodes: [String] = []
         /// The lists the server cut, said.
-        var cut: [String] = []
+        package var cut: [String] = []
         /// The lists that couldn't be read, and why.
-        var unread: [String] = []
+        package var unread: [String] = []
 
-        var problems: Int { failingCount + notReadyCount + notReadyNodes.count }
-        var isFine: Bool { problems == 0 }
+        package var problems: Int { failingCount + notReadyCount + notReadyNodes.count }
+        package var isFine: Bool { problems == 0 }
     }
 
-    enum State: Equatable, Sendable {
+    package enum State: Equatable, Sendable {
         case waiting
         case read(Summary, at: Date)
         /// Not read: why (the context gone, a credential, no slot).
         case notRead(String)
     }
 
-    struct Card: Equatable, Sendable, Identifiable {
-        var context: String
-        var displayName: String
-        var production: Bool
+    package struct Card: Equatable, Sendable, Identifiable {
+        package var context: String
+        package var displayName: String
+        package var production: Bool
         /// Where its rows come from: its namespace, or every one.
-        var scope: KubeScope
-        var state: State
+        package var scope: KubeScope
+        package var state: State
 
-        var id: String { context }
-        var place: String {
+        package var id: String { context }
+        package var place: String {
             switch scope {
             case .all: "all namespaces"
             case .namespace(let name): name
@@ -51,14 +51,14 @@ struct KubePinnedHealth: Equatable, Sendable {
         }
     }
 
-    static let shown = 5
+    package static let shown = 5
     /// Each list's bound: one page, never more.
-    static let limit = 500
+    package static let limit = 500
 
     /// The rows of one context: pods (`KubePodSummary`: failing, or a
     /// Failed or Unknown phase's Status), Deployments, StatefulSets and
     /// DaemonSets (`KubeWorkloadState`), nodes (Ready first in Status).
-    static func summary(pods: KubeTable?, workloads: [(kind: KubeResourceKind, table: KubeTable)], nodes: KubeTable?) -> Summary {
+    package static func summary(pods: KubeTable?, workloads: [(kind: KubeResourceKind, table: KubeTable)], nodes: KubeTable?) -> Summary {
         var summary = Summary()
         if let pods {
             summary.pods = pods.rows.count
@@ -93,7 +93,7 @@ struct KubePinnedHealth: Equatable, Sendable {
 
     /// The kinds a card reads: as the context is known to serve them, else
     /// their stable versions.
-    static func kinds(_ discovery: KubeDiscovery?) -> (workloads: [KubeResourceKind], nodes: KubeResourceKind) {
+    package static func kinds(_ discovery: KubeDiscovery?) -> (workloads: [KubeResourceKind], nodes: KubeResourceKind) {
         func kind(_ group: String, _ resource: String, _ name: String, namespaced: Bool) -> KubeResourceKind {
             discovery?.kinds.first { $0.group == group && $0.resource == resource }
                 ?? KubeResourceKind(
@@ -110,7 +110,7 @@ struct KubePinnedHealth: Equatable, Sendable {
 
     /// One list's GET: one page of Table rows — the metadata across every
     /// namespace, where a row's namespace is.
-    static func path(_ kind: KubeResourceKind, scope: KubeScope) -> String {
+    package static func path(_ kind: KubeResourceKind, scope: KubeScope) -> String {
         KubePath.query(
             kind.path(namespace: scope.namespace(for: kind)),
             [("limit", String(limit)), ("includeObject", KubeClient.includeObject(kind, scope))])
@@ -126,27 +126,27 @@ struct KubePinnedHealth: Equatable, Sendable {
 /// that finds none says so), one context after another, again every
 /// `interval`. Hidden everywhere, nothing is read and nothing kept.
 @MainActor
-final class KubePinnedHealthSession: ObservableObject {
-    @Published private(set) var cards: [KubePinnedHealth.Card] = []
+package final class KubePinnedHealthSession: ObservableObject {
+    @Published package private(set) var cards: [KubePinnedHealth.Card] = []
 
     /// How often the cards are read again while shown.
-    var interval: Duration = .seconds(30)
+    package var interval: Duration = .seconds(30)
 
     private var task: Task<Void, Never>?
     private var shown: [String] = []
     /// Who shows the cards (each window's page): read while anyone does.
     private var viewers: Set<ObjectIdentifier> = []
 
-    var isReading: Bool { task != nil }
+    package var isReading: Bool { task != nil }
 
-    static let noSlot = "Not read: no free connection — a pinned context is read only in a slot nothing else needs (Settings ▸ Kubernetes ▸ Contexts connected at once)."
-    static let off = "Not read: Kubernetes is off."
-    static let gone = "Not in the kubeconfig."
+    package static let noSlot = "Not read: no free connection — a pinned context is read only in a slot nothing else needs (Settings ▸ Kubernetes ▸ Contexts connected at once)."
+    package static let off = "Not read: Kubernetes is off."
+    package static let gone = "Not in the kubeconfig."
 
     /// Shown by `viewer`: the pinned contexts' cards, read now and every
     /// `interval`. `target` gives each its client and scope; nil while
     /// Kubernetes is off.
-    func show(
+    package func show(
         by viewer: AnyObject? = nil, pinned: [String], contexts: KubeContextList, discovery: @escaping @MainActor (String) -> KubeDiscovery?,
         target: @escaping @MainActor (KubeContext) -> (client: KubeClient, scope: KubeScope)?
     ) {
@@ -189,7 +189,7 @@ final class KubePinnedHealthSession: ObservableObject {
 
     /// Off `viewer`'s screen; once nobody shows them, nothing read, nothing
     /// kept. No viewer: hidden everywhere.
-    func hide(by viewer: AnyObject? = nil) {
+    package func hide(by viewer: AnyObject? = nil) {
         if let viewer {
             viewers.remove(ObjectIdentifier(viewer))
             guard viewers.isEmpty else { return }

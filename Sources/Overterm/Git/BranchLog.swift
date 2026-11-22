@@ -1,29 +1,29 @@
 import Foundation
 
 /// One commit of a branch: what the Commits list shows.
-struct BranchCommit: Identifiable, Equatable {
-    let sha: String
-    let shortSHA: String
+package struct BranchCommit: Identifiable, Equatable {
+    package let sha: String
+    package let shortSHA: String
     /// git's relative date ("2 hours ago").
-    let date: String
-    let subject: String
+    package let date: String
+    package let subject: String
     /// The message after the subject; empty when there is none.
-    let body: String
+    package let body: String
     /// The paths it touched (a rename's new path). None for a merge.
-    let files: [String]
+    package let files: [String]
 
-    var id: String { sha }
+    package var id: String { sha }
 }
 
 /// A branch's commits since it left its base, from `git log`.
-enum BranchLog {
+package enum BranchLog {
     /// The branch's commits after `mergeBase`, newest first, at most `limit`.
     ///
     /// The fields are NUL-separated, as git's own -z output is: a message can
     /// hold newlines and tabs, never a NUL. Each commit is led by an empty
     /// field, and no path is empty, so a commit's file list ends where the
     /// next commit starts — even at a path that looks like a hash.
-    static func arguments(since mergeBase: String, limit: Int) -> [String] {
+    package static func arguments(since mergeBase: String, limit: Int) -> [String] {
         [
             "log", "-z", "--name-only", "--no-show-signature", "--max-count=\(limit)",
             "--format=%x00%H%x00%h%x00%ar%x00%s%x00%b", "\(mergeBase)..HEAD",
@@ -33,7 +33,7 @@ enum BranchLog {
     /// Parses what `arguments` prints: per commit an empty field, the hash,
     /// the short hash, the date, the subject, the body; then (-z ends the
     /// format with a NUL) the files, the first after a newline.
-    static func parse(_ output: String) -> [BranchCommit] {
+    package static func parse(_ output: String) -> [BranchCommit] {
         let fields = output.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)
         var commits: [BranchCommit] = []
         var i = 0
@@ -59,7 +59,7 @@ enum BranchLog {
     }
 
     /// The commits that touched each path, in `commits`' order (newest first).
-    static func byFile(_ commits: [BranchCommit]) -> [String: [BranchCommit]] {
+    package static func byFile(_ commits: [BranchCommit]) -> [String: [BranchCommit]] {
         var byFile: [String: [BranchCommit]] = [:]
         for commit in commits {
             for path in Set(commit.files) { byFile[path, default: []].append(commit) }

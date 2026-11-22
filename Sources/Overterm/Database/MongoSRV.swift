@@ -5,22 +5,22 @@ import dnssd
 /// hosts, its TXT record the options it may set (authSource, replicaSet) —
 /// asked of the system's resolver through dnssd, no shelling out. Read
 /// again at every connect: a cluster's members change.
-enum MongoSRV {
-    struct Found: Equatable {
-        var hosts: [(host: String, port: Int)]
-        var options: [String: String]
+package enum MongoSRV {
+    package struct Found: Equatable {
+        package var hosts: [(host: String, port: Int)]
+        package var options: [String: String]
 
-        static func == (a: Found, b: Found) -> Bool {
+        package static func == (a: Found, b: Found) -> Bool {
             a.options == b.options && a.hosts.map { "\($0.host):\($0.port)" } == b.hosts.map { "\($0.host):\($0.port)" }
         }
     }
 
-    struct Failure: LocalizedError {
-        let message: String
-        var errorDescription: String? { message }
+    package struct Failure: LocalizedError {
+        package let message: String
+        package var errorDescription: String? { message }
     }
 
-    static func resolve(_ name: String) async throws -> Found {
+    package static func resolve(_ name: String) async throws -> Found {
         let name = name.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
         guard name.split(separator: ".").count >= 3 else {
             throw Failure(message: "An srv name has at least three parts — cluster0.example.mongodb.net; “\(name)” hasn't.")
@@ -51,13 +51,13 @@ enum MongoSRV {
     }
 
     /// A host the record names must be in the srv name's parent domain.
-    static func sharesDomain(_ host: String, with name: String) -> Bool {
+    package static func sharesDomain(_ host: String, with name: String) -> Bool {
         let parent = name.split(separator: ".").dropFirst().joined(separator: ".").lowercased()
         return host.lowercased().hasSuffix("." + parent)
     }
 
     /// SRV's rdata: priority, weight, port, then the target as DNS labels.
-    static func target(_ rdata: Data) -> (host: String, port: Int)? {
+    package static func target(_ rdata: Data) -> (host: String, port: Int)? {
         let bytes = [UInt8](rdata)
         guard bytes.count > 7 else { return nil }
         let port = Int(bytes[4]) << 8 | Int(bytes[5])
@@ -75,7 +75,7 @@ enum MongoSRV {
     }
 
     /// TXT's rdata: strings, each its length first.
-    static func strings(_ rdata: Data) -> [String] {
+    package static func strings(_ rdata: Data) -> [String] {
         let bytes = [UInt8](rdata)
         var out: [String] = []
         var at = 0

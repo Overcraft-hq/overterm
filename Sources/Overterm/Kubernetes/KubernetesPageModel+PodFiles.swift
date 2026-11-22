@@ -22,7 +22,7 @@ extension KubernetesPageModel {
     /// A pod's Copy Out and Copy In — its detail's More and its right-click
     /// menu: each greyed with why where the class check refuses it, or
     /// until `kubectl auth can-i create pods/exec` says yes.
-    func podFileVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
+    package func podFileVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         guard ref.isPod, let context = model.contexts.context(named: ref.context), let namespace = ref.namespace else { return [] }
         return KubePodCopy.verbs.map { verb in
             ResourceVerb(
@@ -33,13 +33,13 @@ extension KubernetesPageModel {
     }
 
     /// The one pod picked in the pod list: its copies.
-    func podFileVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+    package func podFileVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
         guard isPods, picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
         return podFileVerbs(for: ref)
     }
 
     /// `verb` (`.copyOut`, `.copyIn`) on the pod, by the path above.
-    func copyFiles(_ verb: KubeProcessVerb, on ref: KubeObjectRef) {
+    package func copyFiles(_ verb: KubeProcessVerb, on ref: KubeObjectRef) {
         guard writeChecking == nil else { return }
         writeStatus = nil
         guard let direction = KubePodCopy.direction(of: verb), ref.isPod, let namespace = ref.namespace else {
@@ -128,7 +128,7 @@ extension KubernetesPageModel {
 
 extension KubePodCopy {
     /// Each container's `workingDir`, where one is set: a copy out's path starts there.
-    static func workingDirectories(_ pod: [String: Any]) -> [String: String] {
+    package static func workingDirectories(_ pod: [String: Any]) -> [String: String] {
         var found: [String: String] = [:]
         for container in KubeAgentText.list(KubeAgentText.map(pod["spec"])["containers"]) {
             if let name = container["name"] as? String, let directory = container["workingDir"] as? String, directory.hasPrefix("/") {

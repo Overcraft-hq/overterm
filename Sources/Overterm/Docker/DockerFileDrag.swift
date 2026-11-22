@@ -4,14 +4,14 @@ import UniformTypeIdentifiers
 
 /// A Files row's drag out, AppKit's: SwiftUI's drags can't promise a file,
 /// and Finder writes nothing a drag doesn't promise. It lies over the row.
-struct DockerFileDrag: NSViewRepresentable {
-    let item: DockerFileItem
+package struct DockerFileDrag: NSViewRepresentable {
+    package let item: DockerFileItem
     /// The row's own click: a click on it opens the row as its button would.
-    let open: () -> Void
+    package let open: () -> Void
 
-    func makeNSView(context: Context) -> DockerFileDragSourceView { DockerFileDragSourceView(item: item, open: open) }
+    package func makeNSView(context: Context) -> DockerFileDragSourceView { DockerFileDragSourceView(item: item, open: open) }
 
-    func updateNSView(_ view: DockerFileDragSourceView, context: Context) {
+    package func updateNSView(_ view: DockerFileDragSourceView, context: Context) {
         view.item = item
         view.open = open
     }
@@ -21,36 +21,36 @@ struct DockerFileDrag: NSViewRepresentable {
 /// promises it to wherever it is dropped (`DockerFilePromise`). Anything
 /// else — a right-click, a ⌃-click, the pointer moving, the scroll wheel —
 /// goes through it to the row and its menu.
-final class DockerFileDragSourceView: NSView, NSDraggingSource {
-    var item: DockerFileItem
-    var open: () -> Void
+package final class DockerFileDragSourceView: NSView, NSDraggingSource {
+    package var item: DockerFileItem
+    package var open: () -> Void
     private var down: NSEvent?
     private var promise: DockerFilePromise?
 
-    init(item: DockerFileItem, open: @escaping () -> Void) {
+    package init(item: DockerFileItem, open: @escaping () -> Void) {
         self.item = item
         self.open = open
         super.init(frame: .zero)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    package required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
     /// Whether an event is this view's: a left press without ⌃. Pure.
-    nonisolated static func takes(_ type: NSEvent.EventType, _ flags: NSEvent.ModifierFlags) -> Bool {
+    package nonisolated static func takes(_ type: NSEvent.EventType, _ flags: NSEvent.ModifierFlags) -> Bool {
         type == .leftMouseDown && !flags.contains(.control)
     }
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
+    package override func hitTest(_ point: NSPoint) -> NSView? {
         guard let event = NSApp.currentEvent, Self.takes(event.type, event.modifierFlags) else { return nil }
         return super.hitTest(point)
     }
 
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    package override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    override func mouseDown(with event: NSEvent) { down = event }
+    package override func mouseDown(with event: NSEvent) { down = event }
 
-    override func mouseDragged(with event: NSEvent) {
+    package override func mouseDragged(with event: NSEvent) {
         guard let down, promise == nil else { return }
         let from = convert(down.locationInWindow, from: nil)
         let to = convert(event.locationInWindow, from: nil)
@@ -64,15 +64,15 @@ final class DockerFileDragSourceView: NSView, NSDraggingSource {
         beginDraggingSession(with: [dragged], event: down, source: self)
     }
 
-    override func mouseUp(with event: NSEvent) {
+    package override func mouseUp(with event: NSEvent) {
         defer { down = nil }
         guard down != nil, promise == nil, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
         open()
     }
 
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
+    package func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
 
-    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+    package func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         // Taken: kept until it has written. Not: nobody will ask.
         if operation == [], let promise { DockerFilePromise.release(promise) }
         promise = nil
@@ -81,7 +81,7 @@ final class DockerFileDragSourceView: NSView, NSDraggingSource {
 
     /// A row's promise, kept until it is written (the provider holds its
     /// delegate weakly). The scenario writes one through this too.
-    static func provider(for item: DockerFileItem, transfers: DockerFileTransfers = .shared) -> (NSFilePromiseProvider, DockerFilePromise) {
+    package static func provider(for item: DockerFileItem, transfers: DockerFileTransfers = .shared) -> (NSFilePromiseProvider, DockerFilePromise) {
         let promise = DockerFilePromise(item: item, transfers: transfers)
         DockerFilePromise.keep(promise)
         return (NSFilePromiseProvider(fileType: item.fileType, delegate: promise), promise)
@@ -91,7 +91,7 @@ final class DockerFileDragSourceView: NSView, NSDraggingSource {
 extension View {
     /// Files and folders from Finder dropped here: their URLs, and
     /// `targeted` while a drag is over it.
-    func dockerFileDrop(targeted: Binding<Bool>, perform: @escaping @MainActor ([URL]) -> Void) -> some View {
+    package func dockerFileDrop(targeted: Binding<Bool>, perform: @escaping @MainActor ([URL]) -> Void) -> some View {
         onDrop(of: [.fileURL], isTargeted: targeted) { providers in
             FileTreeDrag.urls(providers, done: perform)
             return true
@@ -103,12 +103,12 @@ extension View {
 /// goes where, its bar (the bytes so far when a folder's size isn't
 /// known), a ✕ to stop it. A finished one goes by itself; a failed one
 /// stays, in the engine's own words, until OK.
-struct DockerTransfersStrip: View {
-    @ObservedObject var transfers: DockerFileTransfers
-    let source: DockerFileSource
-    @ObservedObject var theme: ChromeTheme
+package struct DockerTransfersStrip: View {
+    @ObservedObject package var transfers: DockerFileTransfers
+    package let source: DockerFileSource
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         let rows = transfers.transfers(for: source)
         if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -161,7 +161,7 @@ struct DockerTransfersStrip: View {
         }
     }
 
-    static func symbol(_ transfer: DockerFileTransfers.Transfer) -> String {
+    package static func symbol(_ transfer: DockerFileTransfers.Transfer) -> String {
         if transfer.error != nil { return "exclamationmark.triangle.fill" }
         if transfer.finished { return "checkmark.circle.fill" }
         return transfer.direction == .into ? "arrow.up.circle" : "arrow.down.circle"
@@ -173,7 +173,7 @@ struct DockerTransfersStrip: View {
     }
 
     /// What didn't go, and why. Pure.
-    nonisolated static func leftOut(_ transfer: DockerFileTransfers.Transfer) -> String {
+    package nonisolated static func leftOut(_ transfer: DockerFileTransfers.Transfer) -> String {
         let names = transfer.skipped.joined(separator: ", ")
         return transfer.direction == .into
             ? "Left on the Mac: \(names) — a link that points above the drop, a socket or a device."

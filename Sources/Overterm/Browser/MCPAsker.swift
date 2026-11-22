@@ -7,15 +7,15 @@ import AppKit
 /// agent's request from another's — another of the user's processes could
 /// still read a pane's token out of its environment, and then the sheet
 /// names the pane it pretends to be, in that pane's own window.
-enum MCPAsker {
+package enum MCPAsker {
     /// The pane whose MCP call is running: set by `BrowserMCP.handle` for
     /// the length of the call, so every confirmation the call asks knows it.
-    @TaskLocal static var pane: String?
+    @TaskLocal package static var pane: String?
 
     /// What a confirmation says of who asks (pure). `tab`: its title, nil
     /// when the pane has closed since; `checkout`: the folder it works in,
     /// when it says more than the title.
-    @MainActor static func line(tab: String?, checkout: String? = nil, agent: String?) -> String {
+    @MainActor package static func line(tab: String?, checkout: String? = nil, agent: String?) -> String {
         guard let tab else { return "Asked through MCP by a pane that is no longer open" }
         // A shell sets its own title: one line, every character visible,
         // so a title can't draw a second asker under the first.
@@ -27,7 +27,7 @@ enum MCPAsker {
     }
 
     /// The line for the call running now; nil when this isn't an agent's call.
-    @MainActor static func current() async -> String? {
+    @MainActor package static func current() async -> String? {
         guard let pane else { return nil }
         guard let (tab, terminal) = locate(pane) else { return line(tab: nil, agent: nil) }
         var agent = tab.agent?.name
@@ -42,7 +42,7 @@ enum MCPAsker {
 
     /// The window the pane is in, else the main one, else any terminal
     /// window on screen.
-    @MainActor static func window(forPane pane: String?) -> NSWindow? {
+    @MainActor package static func window(forPane pane: String?) -> NSWindow? {
         let terminals = controllers()
         if let pane, let own = terminals.first(where: { $0.store.tabs.contains { $0.terminals.contains { $0.processTag == pane } } }) {
             return own.window
@@ -76,7 +76,7 @@ enum MCPAsker {
     /// again, ≈21 ms a confirmation: a pane not paired yet is paired from
     /// the lookup's own snapshot (`PaneAgent.pairing`), and the census
     /// reads an environment once per process, for its markers alone.
-    @MainActor static func agent(
+    @MainActor package static func agent(
         tab: UUID, pane: String, census: ActivitySampler = .app, surfaces: SurfaceProcesses = .shared, monitor: ActivityMonitor = .shared
     ) async -> String? {
         await PaneAgent.read([(id: tab, tags: [pane])], census: census, folders: false, surfaces: surfaces, monitor: monitor)[tab]?.kind.name

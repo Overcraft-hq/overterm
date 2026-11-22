@@ -32,8 +32,8 @@ import Foundation
 /// out — `disable-filter: true` there would turn every filter off. So
 /// `--disable-filter=false` is always given, and kubectl is started with
 /// kuberc off (`KubeProxyEnvironment`).
-enum KubeProxyFlags {
-    static let rejectedPaths = [
+package enum KubeProxyFlags {
+    package static let rejectedPaths = [
         #"^/api/.*/pods/.*/(exec|attach|portforward|proxy)"#,
         #"^/api/.*/services/.*/proxy"#,
         #"^/api/.*/nodes/.*/proxy"#,
@@ -41,13 +41,13 @@ enum KubeProxyFlags {
     ]
     /// Every method but `GET`, exactly (RE2 has no lookahead): one whose
     /// first letter isn't `G`, or `G`, `GE`, or one that goes on past `GET`.
-    static let rejectedMethods = #"^(?:[^G]|G$|G[^E]|GE$|GE[^T]|GET.)"#
-    static let acceptedHosts = #"^localhost$"#
+    package static let rejectedMethods = #"^(?:[^G]|G$|G[^E]|GE$|GE[^T]|GET.)"#
+    package static let acceptedHosts = #"^localhost$"#
 
     /// kubectl's arguments: the context named explicitly (Overterm never
     /// relies on, or changes, the current one), a cache folder of the run's
     /// own when given, then the proxy on its socket with the filters.
-    static func arguments(context: String, socket: String, readOnly: Bool, cacheDirectory: String? = nil) -> [String] {
+    package static func arguments(context: String, socket: String, readOnly: Bool, cacheDirectory: String? = nil) -> [String] {
         var arguments = ["--context=\(context)"]
         if let cacheDirectory { arguments.append("--cache-dir=\(cacheDirectory)") }
         arguments += [
@@ -62,7 +62,7 @@ enum KubeProxyFlags {
     }
 
     /// What kubectl prints once its socket listens.
-    static func isReady(_ line: String) -> Bool { line.hasPrefix("Starting to serve on ") }
+    package static func isReady(_ line: String) -> Bool { line.hasPrefix("Starting to serve on ") }
 }
 
 /// Where the proxies' sockets are: a private folder under `/tmp`, one for
@@ -76,20 +76,20 @@ enum KubeProxyFlags {
 /// checked: owned by this user, not a symlink), as kubectl's own umask
 /// makes the socket; it is removed at quit, and what a crashed run left is
 /// swept when the next one makes its own.
-struct KubeSocketFolder: Sendable {
+package struct KubeSocketFolder: Sendable {
     /// `sun_path` holds 104 bytes, its NUL among them.
-    static let maxPathBytes = 103
-    static let prefix = "ot-kube-"
+    package static let maxPathBytes = 103
+    package static let prefix = "ot-kube-"
 
-    let base: URL
-    let uid: uid_t
-    let pid: pid_t
+    package let base: URL
+    package let uid: uid_t
+    package let pid: pid_t
     /// The run's start, µs: named in the folder with its pid — an argv sign
     /// (`ArgvSign.kubectl`), so a kubectl a crashed run left is known for
     /// that run's, never for a later Overterm's that got the same pid.
-    let start: UInt64
+    package let start: UInt64
 
-    init(
+    package init(
         base: URL = URL(fileURLWithPath: "/tmp", isDirectory: true), uid: uid_t = getuid(), pid: pid_t = getpid(),
         start: UInt64 = OvertermRun.current.start
     ) {
@@ -100,15 +100,15 @@ struct KubeSocketFolder: Sendable {
     }
 
     /// The app's.
-    static let app = KubeSocketFolder()
+    package static let app = KubeSocketFolder()
 
     /// `<base>/ot-kube-<uid>-<pid>-<start36>`.
-    var path: String {
+    package var path: String {
         base.appendingPathComponent(ArgvSign.kubeFolder(uid: uid, run: ActivityProcessID(pid: pid, start: start)), isDirectory: true).path
     }
 
     /// The socket's file name: the context's SHA-256, its first 12 hex digits.
-    static func name(for context: String) -> String {
+    package static func name(for context: String) -> String {
         SHA256.hash(data: Data(context.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined() + ".sock"
     }
 
@@ -122,7 +122,7 @@ struct KubeSocketFolder: Sendable {
     /// so on one path the later of the two took the socket, the other was
     /// closed with it, and the proxy kept had none: every request to it
     /// failed (No such file or directory) until it was closed as idle.
-    func socket(for context: String, readOnly: Bool = false) throws -> String {
+    package func socket(for context: String, readOnly: Bool = false) throws -> String {
         var name = Self.name(for: context)
         if readOnly { name = String(name.dropLast(".sock".count)) + "-ro.sock" }
         let socket = (path as NSString).appendingPathComponent(name)
@@ -135,7 +135,7 @@ struct KubeSocketFolder: Sendable {
     /// A new proxy's path for `context`: `socket(for:readOnly:)` with the
     /// next number of the run (`socket(_:proxy:)`) — what every planned
     /// proxy listens at.
-    func proxySocket(for context: String, readOnly: Bool) throws -> String {
+    package func proxySocket(for context: String, readOnly: Bool) throws -> String {
         try Self.socket(socket(for: context, readOnly: readOnly), proxy: Self.numbers.next())
     }
 
@@ -162,7 +162,7 @@ struct KubeSocketFolder: Sendable {
     /// binds late, and kubectl replaces whatever is at its path when it
     /// binds — on a shared one it took the new proxy's socket and removed
     /// it when it was ended.
-    static func socket(_ socket: String, proxy number: UInt64) throws -> String {
+    package static func socket(_ socket: String, proxy number: UInt64) throws -> String {
         let stem = socket.hasSuffix(".sock") ? String(socket.dropLast(".sock".count)) : socket
         let path = "\(stem)-\(number).sock"
         guard path.utf8.count <= maxPathBytes else {
@@ -175,7 +175,7 @@ struct KubeSocketFolder: Sendable {
     /// link, owned by this user, nobody else's to open — a folder someone
     /// else made in /tmp first is refused, never used.
     @discardableResult
-    func prepare() throws -> String {
+    package func prepare() throws -> String {
         sweepStale()
         if mkdir(path, 0o700) != 0, errno != EEXIST {
             throw KubeProxyProblem.socket("Overterm couldn't make \(path): \(String(cString: strerror(errno))).")
@@ -193,17 +193,17 @@ struct KubeSocketFolder: Sendable {
 
     /// kubectl's HOME in a guarded run: a folder of the run's own, inside
     /// this one, so no file under the user's home is read.
-    var isolatedHome: String { (path as NSString).appendingPathComponent("home") }
+    package var isolatedHome: String { (path as NSString).appendingPathComponent("home") }
 
     /// Makes `isolatedHome` (0700) once the folder is prepared.
-    func prepareIsolatedHome(_ home: String) throws {
+    package func prepareIsolatedHome(_ home: String) throws {
         if mkdir(home, 0o700) != 0, errno != EEXIST {
             throw KubeProxyProblem.socket("Overterm couldn't make \(home): \(String(cString: strerror(errno))).")
         }
     }
 
     /// Removes the folder and what is in it: at quit, after every proxy closed.
-    func remove() {
+    package func remove() {
         try? FileManager.default.removeItem(atPath: path)
     }
 
@@ -211,7 +211,7 @@ struct KubeSocketFolder: Sendable {
     /// running nothing, or — the folder naming its start too — another
     /// process. A folder of the older form, the pid alone, is kept while
     /// that pid runs anything.
-    func sweepStale() {
+    package func sweepStale() {
         let own = "\(Self.prefix)\(uid)-"
         let names = (try? FileManager.default.contentsOfDirectory(atPath: base.path)) ?? []
         let mine = (path as NSString).lastPathComponent
@@ -247,8 +247,8 @@ struct KubeSocketFolder: Sendable {
 /// Always: kuberc is off (`KUBERC=off`, and `KUBECTL_KUBERC=false` for
 /// the releases where it was a feature gate) — whatever the login shell
 /// exported — so no kuberc of the user's sets a flag of the proxy's.
-enum KubeProxyEnvironment {
-    static func make(
+package enum KubeProxyEnvironment {
+    package static func make(
         base: [String: String], kubeconfigs: [URL], guarded: Bool, home: URL, isolatedHome: String? = nil
     ) -> [String: String]? {
         var environment = base
@@ -269,7 +269,7 @@ enum KubeProxyEnvironment {
 }
 
 /// How a context's user signs in, as far as the proxy's errors are concerned.
-enum KubeSignIn: Hashable, Sendable {
+package enum KubeSignIn: Hashable, Sendable {
     case none
     /// kubelogin: a browser and a listener on 127.0.0.1:8000 — one at a time.
     case oidc
@@ -278,7 +278,7 @@ enum KubeSignIn: Hashable, Sendable {
     /// Another credential plugin, by its name.
     case plugin(String)
 
-    init(_ auth: KubeAuth?) {
+    package init(_ auth: KubeAuth?) {
         guard case .exec(let exec) = auth else {
             self = .none
             return
@@ -293,7 +293,7 @@ enum KubeSignIn: Hashable, Sendable {
     }
 
     /// `--profile p` or `--profile=p`.
-    static func profile(in arguments: [String]) -> String? {
+    package static func profile(in arguments: [String]) -> String? {
         for (index, argument) in arguments.enumerated() {
             if argument == "--profile", index + 1 < arguments.count { return arguments[index + 1] }
             if argument.hasPrefix("--profile=") { return String(argument.dropFirst("--profile=".count)) }
@@ -301,7 +301,7 @@ enum KubeSignIn: Hashable, Sendable {
         return nil
     }
 
-    var pluginName: String? {
+    package var pluginName: String? {
         switch self {
         case .none: nil
         case .oidc: "kubectl oidc-login"
@@ -312,20 +312,20 @@ enum KubeSignIn: Hashable, Sendable {
 }
 
 /// One proxy, as it is to be started: everything `kubectl proxy` is given.
-struct KubeProxySpec: Hashable, Sendable {
-    var context: String
-    var readOnly: Bool
-    var kubectl: URL
-    var socket: String
-    var environment: [String: String]
+package struct KubeProxySpec: Hashable, Sendable {
+    package var context: String
+    package var readOnly: Bool
+    package var kubectl: URL
+    package var socket: String
+    package var environment: [String: String]
     /// A cache folder of the run's own (an isolated run, a test).
-    var cacheDirectory: String?
-    var signIn: KubeSignIn
+    package var cacheDirectory: String?
+    package var signIn: KubeSignIn
     /// The metrics proxy's (stage 4): only this Prometheus Service's query
     /// paths, GETs only (`KubePrometheusFlags`), on a socket of its own.
-    var prometheus: KubePrometheusService? = nil
+    package var prometheus: KubePrometheusService? = nil
 
-    var arguments: [String] {
+    package var arguments: [String] {
         if let prometheus {
             return KubePrometheusFlags.arguments(context: context, socket: socket, service: prometheus, cacheDirectory: cacheDirectory)
         }
@@ -334,7 +334,7 @@ struct KubeProxySpec: Hashable, Sendable {
 
     /// This context's metrics proxy: the same kubectl, environment and
     /// credentials, its own socket beside the context's, read-only.
-    func metrics(_ service: KubePrometheusService) throws -> KubeProxySpec {
+    package func metrics(_ service: KubePrometheusService) throws -> KubeProxySpec {
         var spec = self
         spec.prometheus = service
         spec.readOnly = true
@@ -344,7 +344,7 @@ struct KubeProxySpec: Hashable, Sendable {
 
     /// Ready when kubectl says it serves; its socket removed before (one a
     /// dead proxy left) and when it is closed — kubectl leaves it.
-    var launch: ManagedProcess.Launch {
+    package var launch: ManagedProcess.Launch {
         ManagedProcess.Launch(
             executable: kubectl, arguments: arguments, environment: environment, readiness: .line(KubeProxyFlags.isReady), timeout: 20,
             removing: [socket], helper: .kubectlProxy)
@@ -354,7 +354,7 @@ struct KubeProxySpec: Hashable, Sendable {
 extension UnixHTTPTransport {
     /// A context's proxy: `Host: localhost` or it answers 403, `/version` to
     /// say it's there.
-    static func kubernetes(socket: String, context: String) -> UnixHTTPTransport {
+    package static func kubernetes(socket: String, context: String) -> UnixHTTPTransport {
         UnixHTTPTransport(address: .unix(socket), host: "localhost", readinessPath: "/version", service: "kubectl proxy for \(context)")
     }
 }
@@ -362,18 +362,18 @@ extension UnixHTTPTransport {
 /// A running `kubectl proxy`: the transport to its socket, what kubectl
 /// said on stderr (an exec plugin's own errors land there), closed by its
 /// pid. Tests make one over any transport.
-final class KubeProxy: ManagedResource {
-    let context: String
-    let readOnly: Bool
-    let signIn: KubeSignIn
-    let transport: any HTTPTransport
+package final class KubeProxy: ManagedResource {
+    package let context: String
+    package let readOnly: Bool
+    package let signIn: KubeSignIn
+    package let transport: any HTTPTransport
     /// kubectl's pid; nil for a test's.
-    let pid: pid_t?
+    package let pid: pid_t?
     private let running: @Sendable () -> Bool
     private let said: @Sendable () -> String
     private let ending: @Sendable () -> Void
 
-    init(
+    package init(
         context: String, readOnly: Bool, signIn: KubeSignIn, transport: any HTTPTransport, pid: pid_t? = nil,
         isRunning: @escaping @Sendable () -> Bool, stderr: @escaping @Sendable () -> String = { "" }, close: @escaping @Sendable () -> Void
     ) {
@@ -387,12 +387,12 @@ final class KubeProxy: ManagedResource {
         self.ending = close
     }
 
-    var isOpen: Bool { running() }
-    var stderr: String { said() }
-    func close() { ending() }
+    package var isOpen: Bool { running() }
+    package var stderr: String { said() }
+    package func close() { ending() }
 
     /// Starts kubectl and returns once it serves — or throws why not.
-    static func open(_ spec: KubeProxySpec) async throws -> KubeProxy {
+    package static func open(_ spec: KubeProxySpec) async throws -> KubeProxy {
         do {
             let process = try await ManagedProcess.start(spec.launch)
             return KubeProxy(

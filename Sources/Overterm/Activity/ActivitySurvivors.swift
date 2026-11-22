@@ -10,46 +10,46 @@ import Foundation
 /// holds a process detached on purpose, an app started from the pane or
 /// one on another terminal: those are named on one line, "not affected".
 /// Pure.
-struct ActivitySurvivors: Hashable, Sendable {
-    struct Survivor: Hashable, Sendable {
-        let identity: ActivityProcessID
-        let name: String
-        let path: String?
+package struct ActivitySurvivors: Hashable, Sendable {
+    package struct Survivor: Hashable, Sendable {
+        package let identity: ActivityProcessID
+        package let name: String
+        package let path: String?
         /// Its listening TCP ports.
-        var ports: [Int] = []
+        package var ports: [Int] = []
         /// It ignores SIGHUP.
-        var nohup = false
+        package var nohup = false
 
         /// "acme-server (pid 4242) :3001".
-        var label: String {
+        package var label: String {
             var words = "\(name) (pid \(identity.pid))"
             if !ports.isEmpty { words += " " + ports.prefix(3).map { ":\($0)" }.joined(separator: " ") }
             return words
         }
     }
 
-    var keepRunning: [Survivor] = []
-    var shellDecides: [Survivor] = []
+    package var keepRunning: [Survivor] = []
+    package var shellDecides: [Survivor] = []
     /// Terraform's, tofu's or terragrunt's, which go on: named, never a
     /// checkbox — SIGTERM can leave a state locked and half written; only
     /// Interrupt, from Activity, stops one (6.10).
-    var interruptOnly: [Survivor] = []
+    package var interruptOnly: [Survivor] = []
     /// Names of what started here and isn't affected (tmux, an app).
-    var unaffected: [String] = []
+    package var unaffected: [String] = []
 
-    var isEmpty: Bool { keepRunning.isEmpty && shellDecides.isEmpty && interruptOnly.isEmpty }
+    package var isEmpty: Bool { keepRunning.isEmpty && shellDecides.isEmpty && interruptOnly.isEmpty }
     /// What gets a checkbox.
-    var all: [Survivor] { keepRunning + shellDecides }
+    package var all: [Survivor] { keepRunning + shellDecides }
     /// Whether something will go on running: closing asks then (D-16).
-    var anyKeepRunning: Bool { !keepRunning.isEmpty || !interruptOnly.isEmpty }
+    package var anyKeepRunning: Bool { !keepRunning.isEmpty || !interruptOnly.isEmpty }
 
     /// At most this many are listed, each with its checkbox.
-    static let limit = 20
+    package static let limit = 20
 
     /// `tags`' panes as `snapshot` read them. `terminals`: each pane's pty,
     /// as the context knows it. Only the user's own, never a zombie, the
     /// pane's `login` or its shell — the close path ends those.
-    static func of(
+    package static func of(
         _ tags: [String], in snapshot: ActivitySnapshot, terminals: [String: dev_t] = [:], checkouts: [String] = [],
         kept: Set<ActivityProcessID> = []
     ) -> ActivitySurvivors {
@@ -120,7 +120,7 @@ struct ActivitySurvivors: Hashable, Sendable {
 
     /// The sheet's words (6.9): "Will keep running: …", "Its shell
     /// decides: …", "tmux and Cursor, started here, are not affected."
-    var said: String {
+    package var said: String {
         var lines = listed.isEmpty ? [] : [listed]
         if !all.isEmpty { lines.append("Tick what to stop too; what you leave unticked is kept, and never offered for a bulk Stop.") }
         return lines.joined(separator: "\n")
@@ -128,7 +128,7 @@ struct ActivitySurvivors: Hashable, Sendable {
 
     /// The lists alone, for a sheet without checkboxes (a window's close,
     /// quitting): what goes on running is named, nothing is stopped.
-    var listed: String {
+    package var listed: String {
         var lines: [String] = []
         if !keepRunning.isEmpty { lines.append("Will keep running: \(keepRunning.map(\.label).joined(separator: ", ")).") }
         if !shellDecides.isEmpty {

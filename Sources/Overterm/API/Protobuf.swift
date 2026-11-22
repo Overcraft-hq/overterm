@@ -5,27 +5,27 @@ import Foundation
 /// `protoc --descriptor_set_out` gives; and a message as JSON (proto3's
 /// JSON mapping) to bytes and back, by its descriptor. What a gRPC request's
 /// messages are, typed as JSON the way Bruno and grpcurl take them.
-enum Protobuf {
-    struct Failure: LocalizedError, Equatable {
-        let message: String
-        var errorDescription: String? { message }
+package enum Protobuf {
+    package struct Failure: LocalizedError, Equatable {
+        package let message: String
+        package var errorDescription: String? { message }
     }
 
     // MARK: The wire
 
-    enum WireType: Int {
+    package enum WireType: Int {
         case varint = 0, fixed64 = 1, lengthDelimited = 2, startGroup = 3, endGroup = 4, fixed32 = 5
     }
 
-    struct Reader {
-        let data: [UInt8]
-        var at = 0
+    package struct Reader {
+        package let data: [UInt8]
+        package var at = 0
 
-        init(_ data: Data) { self.data = [UInt8](data) }
+        package init(_ data: Data) { self.data = [UInt8](data) }
 
-        var atEnd: Bool { at >= data.count }
+        package var atEnd: Bool { at >= data.count }
 
-        mutating func varint() throws -> UInt64 {
+        package mutating func varint() throws -> UInt64 {
             var value: UInt64 = 0
             var shift: UInt64 = 0
             while at < data.count {
@@ -39,19 +39,19 @@ enum Protobuf {
             throw Failure(message: "The message ends in the middle of a varint.")
         }
 
-        mutating func fixed32() throws -> UInt32 {
+        package mutating func fixed32() throws -> UInt32 {
             guard at + 4 <= data.count else { throw Failure(message: "The message ends in the middle of a fixed32.") }
             defer { at += 4 }
             return (0..<4).reduce(UInt32(0)) { $0 | UInt32(data[at + $1]) << (8 * UInt32($1)) }
         }
 
-        mutating func fixed64() throws -> UInt64 {
+        package mutating func fixed64() throws -> UInt64 {
             guard at + 8 <= data.count else { throw Failure(message: "The message ends in the middle of a fixed64.") }
             defer { at += 8 }
             return (0..<8).reduce(UInt64(0)) { $0 | UInt64(data[at + $1]) << (8 * UInt64($1)) }
         }
 
-        mutating func bytes() throws -> Data {
+        package mutating func bytes() throws -> Data {
             let length = Int(try varint())
             guard length >= 0, at + length <= data.count else { throw Failure(message: "A field claims more bytes than the message has.") }
             defer { at += length }
@@ -59,14 +59,14 @@ enum Protobuf {
         }
 
         /// The next field's number and wire type; nil at the end.
-        mutating func tag() throws -> (number: Int, wire: WireType)? {
+        package mutating func tag() throws -> (number: Int, wire: WireType)? {
             guard !atEnd else { return nil }
             let key = try varint()
             guard let wire = WireType(rawValue: Int(key & 7)) else { throw Failure(message: "An unknown wire type \(key & 7).") }
             return (Int(key >> 3), wire)
         }
 
-        mutating func skip(_ wire: WireType) throws {
+        package mutating func skip(_ wire: WireType) throws {
             switch wire {
             case .varint: _ = try varint()
             case .fixed64: _ = try fixed64()
@@ -77,10 +77,10 @@ enum Protobuf {
         }
     }
 
-    struct Writer {
-        private(set) var data = Data()
+    package struct Writer {
+        package private(set) var data = Data()
 
-        mutating func varint(_ value: UInt64) {
+        package mutating func varint(_ value: UInt64) {
             var value = value
             while value >= 0x80 {
                 data.append(UInt8(value & 0x7F) | 0x80)
@@ -89,69 +89,69 @@ enum Protobuf {
             data.append(UInt8(value))
         }
 
-        mutating func tag(_ number: Int, _ wire: WireType) { varint(UInt64(number) << 3 | UInt64(wire.rawValue)) }
+        package mutating func tag(_ number: Int, _ wire: WireType) { varint(UInt64(number) << 3 | UInt64(wire.rawValue)) }
 
-        mutating func fixed32(_ value: UInt32) { for i in 0..<4 { data.append(UInt8(truncatingIfNeeded: value >> (8 * UInt32(i)))) } }
-        mutating func fixed64(_ value: UInt64) { for i in 0..<8 { data.append(UInt8(truncatingIfNeeded: value >> (8 * UInt64(i)))) } }
+        package mutating func fixed32(_ value: UInt32) { for i in 0..<4 { data.append(UInt8(truncatingIfNeeded: value >> (8 * UInt32(i)))) } }
+        package mutating func fixed64(_ value: UInt64) { for i in 0..<8 { data.append(UInt8(truncatingIfNeeded: value >> (8 * UInt64(i)))) } }
 
-        mutating func bytes(_ value: Data) {
+        package mutating func bytes(_ value: Data) {
             varint(UInt64(value.count))
             data.append(value)
         }
 
-        mutating func field(_ number: Int, bytes value: Data) {
+        package mutating func field(_ number: Int, bytes value: Data) {
             tag(number, .lengthDelimited)
             bytes(value)
         }
 
-        mutating func field(_ number: Int, string value: String) { field(number, bytes: Data(value.utf8)) }
+        package mutating func field(_ number: Int, string value: String) { field(number, bytes: Data(value.utf8)) }
     }
 
-    static func zigzag(_ value: Int64) -> UInt64 { UInt64(bitPattern: (value << 1) ^ (value >> 63)) }
-    static func unzigzag(_ value: UInt64) -> Int64 { Int64(bitPattern: value >> 1) ^ -Int64(bitPattern: value & 1) }
+    package static func zigzag(_ value: Int64) -> UInt64 { UInt64(bitPattern: (value << 1) ^ (value >> 63)) }
+    package static func unzigzag(_ value: UInt64) -> Int64 { Int64(bitPattern: value >> 1) ^ -Int64(bitPattern: value & 1) }
 
     // MARK: Descriptors
 
-    struct Field: Equatable, Sendable {
-        var name: String
-        var jsonName: String
-        var number: Int
-        var repeated: Bool
-        var type: Int
+    package struct Field: Equatable, Sendable {
+        package var name: String
+        package var jsonName: String
+        package var number: Int
+        package var repeated: Bool
+        package var type: Int
         /// A message's or an enum's full name, `.` first.
-        var typeName: String
-        var oneofIndex: Int?
-        var proto3Optional: Bool
+        package var typeName: String
+        package var oneofIndex: Int?
+        package var proto3Optional: Bool
 
-        var isMessage: Bool { type == 11 }
-        var isEnum: Bool { type == 14 }
+        package var isMessage: Bool { type == 11 }
+        package var isEnum: Bool { type == 14 }
         /// Numbers packed in one length-delimited field when repeated (proto3's default).
-        var isPackable: Bool { ![9, 11, 12, 10].contains(type) }
+        package var isPackable: Bool { ![9, 11, 12, 10].contains(type) }
     }
 
-    struct Message: Equatable, Sendable {
-        var fullName: String
-        var fields: [Field]
-        var isMapEntry: Bool
-        var oneofs: [String]
+    package struct Message: Equatable, Sendable {
+        package var fullName: String
+        package var fields: [Field]
+        package var isMapEntry: Bool
+        package var oneofs: [String]
     }
 
-    struct Enum: Equatable, Sendable {
-        var fullName: String
-        var values: [(name: String, number: Int)]
+    package struct Enum: Equatable, Sendable {
+        package var fullName: String
+        package var values: [(name: String, number: Int)]
 
-        static func == (a: Enum, b: Enum) -> Bool { a.fullName == b.fullName && a.values.map(\.name) == b.values.map(\.name) }
+        package static func == (a: Enum, b: Enum) -> Bool { a.fullName == b.fullName && a.values.map(\.name) == b.values.map(\.name) }
     }
 
-    struct Method: Equatable, Sendable, Hashable {
-        var name: String
-        var input: String
-        var output: String
-        var clientStreaming: Bool
-        var serverStreaming: Bool
+    package struct Method: Equatable, Sendable, Hashable {
+        package var name: String
+        package var input: String
+        package var output: String
+        package var clientStreaming: Bool
+        package var serverStreaming: Bool
 
         /// Bruno's `methodType`.
-        var kind: String {
+        package var kind: String {
             switch (clientStreaming, serverStreaming) {
             case (false, false): "unary"
             case (true, false): "client-streaming"
@@ -161,22 +161,22 @@ enum Protobuf {
         }
     }
 
-    struct Service: Equatable, Sendable {
-        var fullName: String
-        var methods: [Method]
+    package struct Service: Equatable, Sendable {
+        package var fullName: String
+        package var methods: [Method]
     }
 
-    struct File: Equatable, Sendable {
-        var name: String
-        var package: String
-        var dependencies: [String]
-        var messages: [Message]
-        var enums: [Enum]
-        var services: [Service]
+    package struct File: Equatable, Sendable {
+        package var name: String
+        package var package: String
+        package var dependencies: [String]
+        package var messages: [Message]
+        package var enums: [Enum]
+        package var services: [Service]
     }
 
     /// A FileDescriptorProto's bytes, read.
-    static func file(_ data: Data) throws -> File {
+    package static func file(_ data: Data) throws -> File {
         var reader = Reader(data)
         var file = File(name: "", package: "", dependencies: [], messages: [], enums: [], services: [])
         var messageBytes: [Data] = []
@@ -201,7 +201,7 @@ enum Protobuf {
     }
 
     /// A FileDescriptorSet's files — what `protoc --descriptor_set_out` writes.
-    static func fileSet(_ data: Data) throws -> [File] {
+    package static func fileSet(_ data: Data) throws -> [File] {
         var reader = Reader(data)
         var files: [File] = []
         while let (number, wire) = try reader.tag() {
@@ -267,7 +267,7 @@ enum Protobuf {
     }
 
     /// protoc's json_name: `user_id` → `userId`.
-    static func camelCase(_ name: String) -> String {
+    package static func camelCase(_ name: String) -> String {
         var out = ""
         var upper = false
         for c in name {
@@ -337,17 +337,17 @@ enum Protobuf {
     // MARK: A registry
 
     /// Every message, enum and service of a set of files, by full name.
-    struct Registry: Equatable, Sendable {
-        var messages: [String: Message] = [:]
-        var enums: [String: Enum] = [:]
-        var services: [Service] = []
-        var files: [String] = []
+    package struct Registry: Equatable, Sendable {
+        package var messages: [String: Message] = [:]
+        package var enums: [String: Enum] = [:]
+        package var services: [Service] = []
+        package var files: [String] = []
 
-        init(_ files: [File] = []) {
+        package init(_ files: [File] = []) {
             for file in files { add(file) }
         }
 
-        mutating func add(_ file: File) {
+        package mutating func add(_ file: File) {
             guard !files.contains(file.name) else { return }
             files.append(file.name)
             for message in file.messages { messages[message.fullName] = message }
@@ -356,7 +356,7 @@ enum Protobuf {
         }
 
         /// `/package.Service/Method`, as gRPC's path names it.
-        func method(path: String) -> (Service, Method)? {
+        package func method(path: String) -> (Service, Method)? {
             let parts = path.split(separator: "/").map(String.init)
             guard parts.count == 2 else { return nil }
             guard let service = services.first(where: { $0.fullName == parts[0] }), let method = service.methods.first(where: { $0.name == parts[1] })
@@ -365,13 +365,13 @@ enum Protobuf {
         }
 
         /// Every method, as `/package.Service/Method`.
-        var paths: [String] { services.flatMap { service in service.methods.map { "/\(service.fullName)/\($0.name)" } } }
+        package var paths: [String] { services.flatMap { service in service.methods.map { "/\(service.fullName)/\($0.name)" } } }
     }
 
     // MARK: JSON → bytes
 
     /// A message as proto3's JSON writes it, in bytes.
-    static func encode(_ json: JSONValue, as typeName: String, registry: Registry) throws -> Data {
+    package static func encode(_ json: JSONValue, as typeName: String, registry: Registry) throws -> Data {
         if let special = try wellKnownEncode(json, typeName) { return special }
         guard let message = registry.messages[typeName] else { throw Failure(message: "The schema has no message \(typeName.dropFirst()).") }
         guard case .object(let object) = json else {
@@ -497,7 +497,7 @@ enum Protobuf {
 
     /// A message's bytes as proto3's JSON: what is set, numbers of 64 bits as
     /// strings, enums by name, bytes in base64.
-    static func decode(_ data: Data, as typeName: String, registry: Registry) throws -> JSONValue {
+    package static func decode(_ data: Data, as typeName: String, registry: Registry) throws -> JSONValue {
         if let special = try wellKnownDecode(data, typeName, registry: registry) { return special }
         guard let message = registry.messages[typeName] else { throw Failure(message: "The schema has no message \(typeName.dropFirst()).") }
         var reader = Reader(data)
@@ -600,7 +600,7 @@ enum Protobuf {
 
     // MARK: Well-known types
 
-    static let wrappers: [String: Int] = [
+    package static let wrappers: [String: Int] = [
         ".google.protobuf.DoubleValue": 1, ".google.protobuf.FloatValue": 2, ".google.protobuf.Int64Value": 3,
         ".google.protobuf.UInt64Value": 4, ".google.protobuf.Int32Value": 5, ".google.protobuf.UInt32Value": 13,
         ".google.protobuf.BoolValue": 8, ".google.protobuf.StringValue": 9, ".google.protobuf.BytesValue": 12,
@@ -740,7 +740,7 @@ enum Protobuf {
         return value
     }
 
-    static func timestamp(_ text: String) -> Date? {
+    package static func timestamp(_ text: String) -> Date? {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let date = formatter.date(from: text) { return date }
@@ -752,7 +752,7 @@ enum Protobuf {
 
     /// A message's fields with an empty value each, nested messages one
     /// level deep — a body to fill in, as Bruno and grpcurl's describe show.
-    static func skeleton(_ typeName: String, registry: Registry, depth: Int = 0) -> JSONValue {
+    package static func skeleton(_ typeName: String, registry: Registry, depth: Int = 0) -> JSONValue {
         switch typeName {
         case ".google.protobuf.Timestamp": return .string(ISO8601DateFormatter().string(from: Date()))
         case ".google.protobuf.Duration": return "1s"

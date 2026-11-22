@@ -15,8 +15,8 @@ import Foundation
 /// PEEK reads with `ackmode=reject_requeue_true`: the messages stay in
 /// the queue, marked redelivered (on a quorum queue each peek counts as a
 /// delivery). `amq.default` (or `""`) is the default exchange.
-enum RabbitText: KindConsoleText {
-    enum Command: Equatable {
+package enum RabbitText: KindConsoleText {
+    package enum Command: Equatable {
         case use(String)
         case peek(queue: String, count: Int?)
         case publish(exchange: String, routingKey: String, payload: String)
@@ -24,14 +24,14 @@ enum RabbitText: KindConsoleText {
         case api(method: String, path: String, body: String?)
     }
 
-    static let terminator = ""
-    static let completesSQL = false
+    package static let terminator = ""
+    package static let completesSQL = false
 
-    static let commands: Set<String> = ["USE", "PEEK", "PUBLISH", "PURGE"]
-    static let methods: Set<String> = ["GET", "PUT", "POST", "DELETE"]
+    package static let commands: Set<String> = ["USE", "PEEK", "PUBLISH", "PURGE"]
+    package static let methods: Set<String> = ["GET", "PUT", "POST", "DELETE"]
 
     /// What a new console starts with: the language, as comments.
-    static let help = """
+    package static let help = """
         # RabbitMQ — a command a line; # starts a comment. Names with spaces in "double quotes".
         #   USE <vhost>                                the vhost the rest runs in (the connection's, else /)
         #   PEEK <queue> [n]                           n messages (10), put back: they stay, marked redelivered
@@ -44,7 +44,7 @@ enum RabbitText: KindConsoleText {
 
     // MARK: Statements
 
-    static func statements(in text: String) -> [NSRange] {
+    package static func statements(in text: String) -> [NSRange] {
         let ns = text as NSString
         var ranges: [NSRange] = []
         var current: NSRange?
@@ -91,11 +91,11 @@ enum RabbitText: KindConsoleText {
 
     // MARK: Parsing
 
-    struct Problem: Error, Equatable {
-        let message: String
+    package struct Problem: Error, Equatable {
+        package let message: String
     }
 
-    static func parse(_ statement: String) throws -> Command {
+    package static func parse(_ statement: String) throws -> Command {
         let text = statement.trimmingCharacters(in: .whitespacesAndNewlines)
         var rest = Substring(text)
         guard let first = word(&rest) else { throw Problem(message: "No command.") }
@@ -183,11 +183,11 @@ enum RabbitText: KindConsoleText {
 
     // MARK: What a statement does
 
-    static func verb(of statement: String) -> String {
+    package static func verb(of statement: String) -> String {
         statement.trimmingCharacters(in: .whitespacesAndNewlines).prefix { !$0.isWhitespace }.uppercased()
     }
 
-    static func onlyReads(_ statement: String) -> Bool {
+    package static func onlyReads(_ statement: String) -> Bool {
         switch try? parse(statement) {
         case .use, .peek: true
         case .api(let method, _, _): method == "GET"
@@ -199,11 +199,11 @@ enum RabbitText: KindConsoleText {
     /// password hashes, the definitions export (users too), and the
     /// parameters a shovel or federation keeps its upstream's URI — and
     /// password — in.
-    static let privatePaths = ["/api/users", "/api/definitions", "/api/parameters", "/api/global-parameters"]
+    package static let privatePaths = ["/api/users", "/api/definitions", "/api/parameters", "/api/global-parameters"]
 
     /// PEEK isn't among them: its messages go back marked redelivered, and on
     /// a quorum queue each counts toward the delivery limit — an agent asks.
-    static func agentReads(_ statement: String) -> Bool {
+    package static func agentReads(_ statement: String) -> Bool {
         guard onlyReads(statement) else { return false }
         if case .peek = try? parse(statement) { return false }
         if case .api(_, let path, _) = try? parse(statement) {
@@ -213,7 +213,7 @@ enum RabbitText: KindConsoleText {
         return true
     }
 
-    static func danger(of statement: String) -> String? {
+    package static func danger(of statement: String) -> String? {
         switch try? parse(statement) {
         case .purge(let queue):
             "PURGE deletes every ready message in \(queue) — they can't be got back."
@@ -224,7 +224,7 @@ enum RabbitText: KindConsoleText {
         }
     }
 
-    static func subject(of statement: String) -> String? {
+    package static func subject(of statement: String) -> String? {
         switch try? parse(statement) {
         case .use(let vhost): vhost
         case .peek(let queue, _), .purge(let queue): queue
@@ -235,17 +235,17 @@ enum RabbitText: KindConsoleText {
     }
 
     /// `""` is the default exchange, which the API calls `amq.default`.
-    static func exchangeName(_ name: String) -> String { name.isEmpty ? "amq.default" : name }
+    package static func exchangeName(_ name: String) -> String { name.isEmpty ? "amq.default" : name }
 
     /// A name as the console takes it: quoted only when it has to be.
-    static func quoted(_ name: String) -> String {
+    package static func quoted(_ name: String) -> String {
         if !name.isEmpty, !name.contains(where: { $0.isWhitespace || $0 == "\"" || $0 == "\\" }), !name.hasPrefix("#") { return name }
         return "\"" + name.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 
     /// A path segment as the API takes it: everything but unreserved
     /// characters escaped — the vhost `/` is `%2F`.
-    static func segment(_ name: String) -> String {
+    package static func segment(_ name: String) -> String {
         name.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"))
             ?? name
     }
@@ -254,11 +254,11 @@ enum RabbitText: KindConsoleText {
 
     /// An exchange's name in the tree, apart from the queues': a queue and
     /// an exchange are often named alike.
-    static let exchangePrefix = "exchange:"
+    package static let exchangePrefix = "exchange:"
 
     /// What the panel's "Select Top" runs: a queue's first messages, an
     /// exchange's bindings.
-    static func browse(_ table: CatalogTable, limit: Int) -> String {
+    package static func browse(_ table: CatalogTable, limit: Int) -> String {
         if table.name.hasPrefix(exchangePrefix) {
             let name = String(table.name.dropFirst(exchangePrefix.count))
             return "GET /api/exchanges/\(segment(table.schema))/\(segment(name))/bindings/source"
@@ -267,7 +267,7 @@ enum RabbitText: KindConsoleText {
     }
 
     /// A queue's line in the tree: its type, its messages, its consumers.
-    static func queueDetail(_ queue: [String: Any]) -> String {
+    package static func queueDetail(_ queue: [String: Any]) -> String {
         func count(_ key: String) -> Int { (queue[key] as? NSNumber)?.intValue ?? 0 }
         var parts: [String] = []
         if let type = queue["type"] as? String, type != "classic" { parts.append(type) }
@@ -281,7 +281,7 @@ enum RabbitText: KindConsoleText {
     /// The tree's leaves: a queue's bindings from exchanges (the default
     /// exchange's, implied for every queue, left out), an exchange's to
     /// queues and exchanges.
-    static func bindingColumns(_ bindings: [[String: Any]]) -> [CatalogColumn] {
+    package static func bindingColumns(_ bindings: [[String: Any]]) -> [CatalogColumn] {
         var columns: [CatalogColumn] = []
         for binding in bindings {
             guard let source = binding["source"] as? String, !source.isEmpty, let destination = binding["destination"] as? String else { continue }
@@ -299,7 +299,7 @@ enum RabbitText: KindConsoleText {
 
     /// What PEEK read, a message a row: its payload (UTF-8 as text, else
     /// `base64:`), its routing, its properties and headers as JSON.
-    static func messages(_ data: Data, limit: Int) throws -> QueryResult {
+    package static func messages(_ data: Data, limit: Int) throws -> QueryResult {
         guard let list = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw Problem(message: "RabbitMQ's answer wasn't a list of messages.")
         }
@@ -322,12 +322,12 @@ enum RabbitText: KindConsoleText {
     }
 
     /// What a `get`'s last message says was left in the queue behind it.
-    static func readyCount(_ data: Data) -> Int? {
+    package static func readyCount(_ data: Data) -> Int? {
         ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]])?.last.flatMap { ($0["message_count"] as? NSNumber)?.intValue }
     }
 
     /// Columns the management API's objects read best by, first.
-    static let leading = [
+    package static let leading = [
         "name", "vhost", "type", "state", "messages", "messages_ready", "messages_unacknowledged", "consumers", "source", "destination",
         "destination_type", "routing_key", "user", "node",
     ]
@@ -335,7 +335,7 @@ enum RabbitText: KindConsoleText {
     /// Any management API answer as rows: a list of objects a row each (a
     /// paged answer's `items` too), an object as its keys and values, a
     /// list of values a value a row.
-    static func rows(_ data: Data, limit: Int) throws -> QueryResult {
+    package static func rows(_ data: Data, limit: Int) throws -> QueryResult {
         guard !data.isEmpty else { return QueryResult(message: "Done") }
         let value = try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         var message: String?
@@ -374,7 +374,7 @@ enum RabbitText: KindConsoleText {
     }
 
     /// What RabbitMQ said when it refused: `error: reason`, else its text.
-    static func said(_ data: Data, status: Int) -> String {
+    package static func said(_ data: Data, status: Int) -> String {
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             let error = object["error"] as? String ?? ""
             let reason = object["reason"] as? String ?? ""

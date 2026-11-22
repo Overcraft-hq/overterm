@@ -3,13 +3,13 @@ import Foundation
 /// DynamoDB's console: PartiQL, a statement a `;` as SQL splits them
 /// (`SELECT * FROM "orders" WHERE pk = 'a'`). Only SELECT reads; a DELETE or
 /// UPDATE without WHERE is said before it runs. Pure.
-enum DynamoText: KindConsoleText {
-    static func statements(in text: String) -> [NSRange] { SQLText.statements(in: text) }
-    static func verb(of statement: String) -> String { SQLText.verb(of: statement) }
-    static func onlyReads(_ statement: String) -> Bool { verb(of: statement) == "SELECT" }
-    static func agentReads(_ statement: String) -> Bool { onlyReads(statement) }
+package enum DynamoText: KindConsoleText {
+    package static func statements(in text: String) -> [NSRange] { SQLText.statements(in: text) }
+    package static func verb(of statement: String) -> String { SQLText.verb(of: statement) }
+    package static func onlyReads(_ statement: String) -> Bool { verb(of: statement) == "SELECT" }
+    package static func agentReads(_ statement: String) -> Bool { onlyReads(statement) }
 
-    static func danger(of statement: String) -> String? {
+    package static func danger(of statement: String) -> String? {
         let verb = verb(of: statement)
         guard verb == "DELETE" || verb == "UPDATE" else { return nil }
         guard SQLText.stripped(statement).uppercased().range(of: #"\bWHERE\b"#, options: .regularExpression) == nil else { return nil }
@@ -17,7 +17,7 @@ enum DynamoText: KindConsoleText {
     }
 
     /// Its table: `FROM "orders"."byUser"` → orders (the index after the dot).
-    static func subject(of statement: String) -> String? {
+    package static func subject(of statement: String) -> String? {
         let pattern = #"(?i)\b(?:FROM|UPDATE|INTO)\s+(?:"((?:[^"]|"")+)"|([A-Za-z0-9_.\-]+))"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let ns = statement as NSString
@@ -30,18 +30,18 @@ enum DynamoText: KindConsoleText {
     }
 
     /// `"orders"` — PartiQL quotes a name with double quotes.
-    static func quote(_ name: String) -> String { "\"" + name.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
+    package static func quote(_ name: String) -> String { "\"" + name.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
 
     /// The panel's Select Top: PartiQL has no LIMIT — the driver stops at the row limit.
-    static func browse(_ table: String) -> String { "SELECT * FROM \(quote(table))" }
+    package static func browse(_ table: String) -> String { "SELECT * FROM \(quote(table))" }
 }
 
 /// DynamoDB's typed values (`{"S": "a"}`, `{"N": "1"}`, `{"M": {…}}`) as the
 /// grid shows them, and items as rows. Pure.
-enum DynamoItems {
+package enum DynamoItems {
     /// A value as text: S and N as written, B as its base64, BOOL as a word,
     /// NULL as NULL; sets, lists and maps as JSON.
-    static func text(_ value: [String: Any]) -> String? {
+    package static func text(_ value: [String: Any]) -> String? {
         guard let (type, inner) = value.first else { return nil }
         switch type {
         case "S", "N", "B": return inner as? String
@@ -53,7 +53,7 @@ enum DynamoItems {
 
     /// A value as plain JSON: numbers as numbers, binary as its base64,
     /// sets as arrays, maps' keys sorted.
-    static func json(_ value: [String: Any]) -> String {
+    package static func json(_ value: [String: Any]) -> String {
         guard let (type, inner) = value.first else { return "null" }
         switch type {
         case "S", "B": return HTTPDriverTransport.quoted(inner as? String ?? "")
@@ -79,7 +79,7 @@ enum DynamoItems {
     /// Items as rows: the table's keys first (`keys`, partition then sort),
     /// then every other attribute any item has, by name; a column's type the
     /// letter its first value has. An attribute an item lacks is NULL.
-    static func rows(_ items: [[String: Any]], keys: [String]) -> (columns: [String], types: [String], rows: [[String?]]) {
+    package static func rows(_ items: [[String: Any]], keys: [String]) -> (columns: [String], types: [String], rows: [[String?]]) {
         var names = Set<String>()
         for item in items { names.formUnion(item.keys) }
         let columns = keys.filter(names.contains) + names.subtracting(keys).sorted()
@@ -105,14 +105,14 @@ enum DynamoItems {
 
     /// AWS's error type without its namespace:
     /// `com.amazonaws.dynamodb.v20120810#ResourceNotFoundException` → ResourceNotFoundException.
-    static func errorType(_ data: Data) -> (type: String, message: String)? {
+    package static func errorType(_ data: Data) -> (type: String, message: String)? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let raw = object["__type"] as? String else { return nil }
         let type = raw.split(separator: "#").last.map(String.init) ?? raw
         return (type, (object["message"] as? String) ?? (object["Message"] as? String) ?? type)
     }
 
     /// An error in words — the credentials' kinds said as what to do.
-    static func explain(_ type: String, _ message: String) -> String {
+    package static func explain(_ type: String, _ message: String) -> String {
         switch type {
         case "UnrecognizedClientException": "AWS doesn't know this access key (\(message)) — check it, or the profile."
         case "InvalidSignatureException": "The secret key doesn't match the access key — Edit Connection to enter it again."
@@ -124,7 +124,7 @@ enum DynamoItems {
 
     /// A table's description as the tree's columns: its keys (partition,
     /// sort) with their types, then each index with its keys.
-    static func columns(of table: String, description: [String: Any]) -> [CatalogColumn] {
+    package static func columns(of table: String, description: [String: Any]) -> [CatalogColumn] {
         let definitions = Dictionary(
             ((description["AttributeDefinitions"] as? [[String: Any]]) ?? []).compactMap { d -> (String, String)? in
                 guard let name = d["AttributeName"] as? String, let type = d["AttributeType"] as? String else { return nil }
@@ -151,20 +151,20 @@ enum DynamoItems {
     }
 
     /// Partition key, then sort key.
-    static func keyNames(_ description: [String: Any]) -> [String] {
+    package static func keyNames(_ description: [String: Any]) -> [String] {
         ((description["KeySchema"] as? [[String: Any]]) ?? [])
             .sorted { ($0["KeyType"] as? String) == "HASH" && ($1["KeyType"] as? String) != "HASH" }
             .compactMap { $0["AttributeName"] as? String }
     }
 
     /// AWS's own endpoint, not DynamoDB Local or another.
-    static func isAWS(_ host: String) -> Bool {
+    package static func isAWS(_ host: String) -> Bool {
         let host = host.lowercased()
         return host.hasSuffix(".amazonaws.com") || host.hasSuffix(".amazonaws.com.cn") || host.hasSuffix(".api.aws")
     }
 
     /// A region's endpoint.
-    static func endpoint(region: String) -> String {
+    package static func endpoint(region: String) -> String {
         "dynamodb.\(region.isEmpty ? "us-east-1" : region).amazonaws.com" + (region.hasPrefix("cn-") ? ".cn" : "")
     }
 }

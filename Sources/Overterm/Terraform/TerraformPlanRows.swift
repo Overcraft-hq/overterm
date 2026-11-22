@@ -5,32 +5,32 @@ import Foundation
 /// the same change repeats; moves and imports, each a no-op with its
 /// marker; data sources read, folded at the bottom. Filtered by `/` text
 /// over the address and the action chips. Pure, from the masked model.
-struct TerraformPlanRow: Equatable, Sendable, Identifiable {
-    enum Section: String, Sendable, CaseIterable {
+package struct TerraformPlanRow: Equatable, Sendable, Identifiable {
+    package enum Section: String, Sendable, CaseIterable {
         case drift, risky, actions, changes, moved, imported, reads
     }
 
-    var id: String
-    var section: Section
+    package var id: String
+    package var section: Section
     /// `±`, `-`, `⊘`, `+`, `~`, `→`, `⇣`, `⚠`, `⚡`, `≡`.
-    var symbol: String
-    var address: String
+    package var symbol: String
+    package var address: String
     /// What happens, in words: `replace (delete, then create) · can't change in place`.
-    var what: String
+    package var what: String
     /// The changes folded into it: one, or ×N.
-    var members: [TerraformPlan.ResourceChange] = []
-    var action: TerraformPlan.ActionInvocation?
+    package var members: [TerraformPlan.ResourceChange] = []
+    package var action: TerraformPlan.ActionInvocation?
 
-    var count: Int { max(1, members.count) }
-    var first: TerraformPlan.ResourceChange? { members.first }
+    package var count: Int { max(1, members.count) }
+    package var first: TerraformPlan.ResourceChange? { members.first }
 }
 
-enum TerraformPlanRows {
+package enum TerraformPlanRows {
     /// The chips (6.3): which actions show.
-    enum Chip: String, CaseIterable, Sendable {
+    package enum Chip: String, CaseIterable, Sendable {
         case replace, delete, update, create
 
-        func matches(_ action: TerraformPlan.Action) -> Bool {
+        package func matches(_ action: TerraformPlan.Action) -> Bool {
             switch self {
             case .replace: action == .replace
             case .delete: action == .delete || action == .forget
@@ -40,7 +40,7 @@ enum TerraformPlanRows {
         }
     }
 
-    static func build(_ plan: TerraformPlan, filter: String = "", chips: Set<Chip> = []) -> [TerraformPlanRow] {
+    package static func build(_ plan: TerraformPlan, filter: String = "", chips: Set<Chip> = []) -> [TerraformPlanRow] {
         let needle = filter.trimmingCharacters(in: .whitespaces).lowercased()
         func shown(_ change: TerraformPlan.ResourceChange) -> Bool {
             if !needle.isEmpty, !change.address.lowercased().contains(needle), !(change.previousAddress?.lowercased().contains(needle) ?? false) {
@@ -108,7 +108,7 @@ enum TerraformPlanRows {
         return rows
     }
 
-    static func rank(_ change: TerraformPlan.ResourceChange) -> Int {
+    package static func rank(_ change: TerraformPlan.ResourceChange) -> Int {
         switch change.action {
         case .replace: 0
         case .delete: 1
@@ -117,7 +117,7 @@ enum TerraformPlanRows {
         }
     }
 
-    static func symbol(_ action: TerraformPlan.Action) -> String {
+    package static func symbol(_ action: TerraformPlan.Action) -> String {
         switch action {
         case .create: "+"
         case .update: "~"
@@ -130,7 +130,7 @@ enum TerraformPlanRows {
     }
 
     /// `replace (delete, then create) · can't change in place`.
-    static func words(_ change: TerraformPlan.ResourceChange) -> String {
+    package static func words(_ change: TerraformPlan.ResourceChange) -> String {
         var what: String
         switch change.action {
         case .replace: what = change.createsFirst ? "replace (create, then delete)" : "replace (delete, then create)"
@@ -145,7 +145,7 @@ enum TerraformPlanRows {
         return what
     }
 
-    static func driftWords(_ change: TerraformPlan.ResourceChange) -> String {
+    package static func driftWords(_ change: TerraformPlan.ResourceChange) -> String {
         switch change.action {
         case .delete: "deleted outside Terraform"
         case .update: "changed outside Terraform" + (change.changedPaths.isEmpty ? "" : " · " + change.changedPaths.prefix(4).joined(separator: ", "))
@@ -159,24 +159,24 @@ enum TerraformPlanRows {
 /// a value, even on hover); the forcing attributes marked; unchanged ones
 /// counted, folded; a long string — a policy, a script, JSON in a string,
 /// pretty-printed first — diffed by line (`LineDiff`). Pure.
-enum TerraformAttributeDiff {
-    struct Line: Equatable, Sendable, Identifiable {
-        var path: String
-        var before: String?
-        var after: String?
-        var forces: Bool
+package enum TerraformAttributeDiff {
+    package struct Line: Equatable, Sendable, Identifiable {
+        package var path: String
+        package var before: String?
+        package var after: String?
+        package var forces: Bool
         /// A long string's lines, diffed: nil for a short value.
-        var text: [TextLine]? = nil
-        var id: String { path }
+        package var text: [TextLine]? = nil
+        package var id: String { path }
     }
 
     /// One line of a long string's diff.
-    struct TextLine: Equatable, Sendable {
-        enum Kind: Equatable, Sendable { case same, removed, added, gap }
-        var kind: Kind
-        var text: String
+    package struct TextLine: Equatable, Sendable {
+        package enum Kind: Equatable, Sendable { case same, removed, added, gap }
+        package var kind: Kind
+        package var text: String
 
-        var said: String {
+        package var said: String {
             switch kind {
             case .same: "  " + text
             case .removed: "- " + text
@@ -187,14 +187,14 @@ enum TerraformAttributeDiff {
     }
 
     /// A string this long, or of several lines, or JSON, is diffed by line.
-    static let longString = 80
-    static let maxTextLines = 120
-    static let context = 2
+    package static let longString = 80
+    package static let maxTextLines = 120
+    package static let context = 2
 
-    static let masked = "••••••"
+    package static let masked = "••••••"
 
     /// The changed attributes' lines (at most `limit`) and how many are unchanged.
-    static func lines(_ change: TerraformPlan.ResourceChange, limit: Int = 200) -> (lines: [Line], unchanged: Int) {
+    package static func lines(_ change: TerraformPlan.ResourceChange, limit: Int = 200) -> (lines: [Line], unchanged: Int) {
         let forcing = Set(change.replacePaths.map { $0.joined(separator: ".") })
         let before = flatten(change.before)
         let after = flatten(change.after)
@@ -221,7 +221,7 @@ enum TerraformAttributeDiff {
 
     /// A value's leaves by path, said: strings cut, a sensitive one
     /// `masked`, an unknown one "known after apply".
-    static func flatten(_ value: TerraformValue?, path: String = "", depth: Int = 0, into found: inout [String: String]) {
+    package static func flatten(_ value: TerraformValue?, path: String = "", depth: Int = 0, into found: inout [String: String]) {
         guard let value else { return }
         switch value {
         case .object(let fields) where depth < 12 && !fields.isEmpty:
@@ -237,7 +237,7 @@ enum TerraformAttributeDiff {
         }
     }
 
-    static func flatten(_ value: TerraformValue?) -> [String: String] {
+    package static func flatten(_ value: TerraformValue?) -> [String: String] {
         var found: [String: String] = [:]
         flatten(value, into: &found)
         return found
@@ -245,7 +245,7 @@ enum TerraformAttributeDiff {
 
     /// A value's string leaves by path, whole — the masked model's, so a
     /// sensitive one is no string here.
-    static func strings(_ value: TerraformValue?) -> [String: String] {
+    package static func strings(_ value: TerraformValue?) -> [String: String] {
         var found: [String: String] = [:]
         func walk(_ value: TerraformValue, _ path: String, _ depth: Int) {
             switch value {
@@ -263,10 +263,10 @@ enum TerraformAttributeDiff {
         return found
     }
 
-    static func isLong(_ text: String) -> Bool { text.count > longString || text.contains("\n") || pretty(text) != nil }
+    package static func isLong(_ text: String) -> Bool { text.count > longString || text.contains("\n") || pretty(text) != nil }
 
     /// JSON in a string, pretty-printed with its keys sorted; nil when it isn't JSON.
-    static func pretty(_ text: String) -> String? {
+    package static func pretty(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("{") || trimmed.hasPrefix("["), trimmed.utf8.count <= 1 << 20,
             let object = try? JSONSerialization.jsonObject(with: Data(trimmed.utf8)),
@@ -277,7 +277,7 @@ enum TerraformAttributeDiff {
 
     /// `before` against `after` by line, JSON pretty-printed first: the
     /// changed lines with `context` around them, the rest a gap.
-    static func textDiff(_ before: String, _ after: String) -> [TextLine] {
+    package static func textDiff(_ before: String, _ after: String) -> [TextLine] {
         let a = pretty(before) ?? before
         let b = pretty(after) ?? after
         let old = a.components(separatedBy: "\n")
@@ -305,7 +305,7 @@ extension TerraformValue {
     /// The same value with every attribute `secret` names masked too: the
     /// plan a person reads is masked by `TerraformSecretNames`; what an
     /// agent reads also by `Secrets.isSecret`'s broader match (5.6 rule 4).
-    func masked(by secret: (String) -> Bool, name: String? = nil, depth: Int = 0) -> TerraformValue {
+    package func masked(by secret: (String) -> Bool, name: String? = nil, depth: Int = 0) -> TerraformValue {
         if let name, secret(name), self != .null, self != .unknown { return .sensitive }
         guard depth < 32 else { return self }
         switch self {
@@ -322,7 +322,7 @@ extension TerraformValue {
 extension TerraformPlan {
     /// This plan as an agent reads it (5.6 rule 4): every value masked
     /// again by `TerraformSecretNames.forAgents`.
-    func forAgents() -> TerraformPlan {
+    package func forAgents() -> TerraformPlan {
         var plan = self
         func mask(_ change: ResourceChange) -> ResourceChange {
             var change = change
@@ -353,7 +353,7 @@ extension TerraformPlan {
 
 extension TerraformPlanText {
     /// `action_reason` in words (6.3).
-    static let reasonWords: [String: String] = [
+    package static let reasonWords: [String: String] = [
         "replace_because_cannot_update": "can't change in place",
         "replace_because_tainted": "tainted",
         "replace_by_request": "-replace asked for it",
@@ -372,7 +372,7 @@ extension TerraformPlanText {
     /// "Copy summary" (2.2, 5.6 rule 8): the bar, the CLI's sentence, the
     /// risky rows with their causes, drift and actions — from the masked
     /// model, never `terraform show`'s text. For a pull request's comment.
-    static func copySummary(
+    package static func copySummary(
         _ plan: TerraformPlan, root: String, workspace: String, branch: String?, causes: [String: String] = [:], limit: Int = 60
     ) -> String {
         let counts = plan.counts
@@ -403,7 +403,7 @@ extension TerraformPlanText {
     }
 
     /// One resource's masked diff, for an agent (`tf_plan_resource`).
-    static func resource(_ change: TerraformPlan.ResourceChange, plan: TerraformPlan, cause: String? = nil) -> String {
+    package static func resource(_ change: TerraformPlan.ResourceChange, plan: TerraformPlan, cause: String? = nil) -> String {
         var lines = ["\(TerraformPlanRows.symbol(change.action)) \(escaped(change.address))  \(TerraformPlanRows.words(change))"]
         if let previous = change.previousAddress, previous != change.address { lines.append("Moved from \(escaped(previous)).") }
         if let id = change.importingID { lines.append("Imported from \(escaped(cut(id))).") }

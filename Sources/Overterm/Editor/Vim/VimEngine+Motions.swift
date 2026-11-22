@@ -1,23 +1,23 @@
 import Foundation
 
 /// Where a motion lands and how an operator takes the text up to it.
-struct VimMotionTarget {
-    enum Kind { case exclusive, inclusive, linewise }
-    var pos: Int
-    var kind: Kind
+package struct VimMotionTarget {
+    package enum Kind { case exclusive, inclusive, linewise }
+    package var pos: Int
+    package var kind: Kind
     /// G, %, a search, a mark: `` ` `` comes back to where it started.
-    var jump = false
+    package var jump = false
 }
 
 /// What an operator works on.
-enum VimRange: Equatable {
+package enum VimRange: Equatable {
     case chars(NSRange)
     /// Whole lines, from the line holding the first offset to the line holding the last.
     case lines(Int, Int)
 }
 
 extension VimEngine {
-    func move(_ m: VimMotion, count: Int?) -> Bool {
+    package func move(_ m: VimMotion, count: Int?) -> Bool {
         let t = text
         let p = isVisual ? visualCursor : t.clampNormal(buffer.selection.location)
         let goal = desiredColumn ?? t.column(p)
@@ -43,7 +43,7 @@ extension VimEngine {
         return true
     }
 
-    func evaluate(_ m: VimMotion, from p: Int, count: Int?, op: VimOperator?, _ t: VimText) -> VimMotionTarget? {
+    package func evaluate(_ m: VimMotion, from p: Int, count: Int?, op: VimOperator?, _ t: VimText) -> VimMotionTarget? {
         let n = max(1, count ?? 1)
         let len = t.length
         func vertical(_ down: Bool, _ lines: Int) -> VimMotionTarget? {
@@ -239,9 +239,9 @@ extension VimEngine {
         }
     }
 
-    static let bracketUnits: Set<unichar> = [40, 41, 91, 93, 123, 125]
+    package static let bracketUnits: Set<unichar> = [40, 41, 91, 93, 123, 125]
 
-    func find(_ c: String, forward: Bool, till: Bool, count n: Int, from p: Int, isRepeat: Bool, _ t: VimText) -> VimMotionTarget? {
+    package func find(_ c: String, forward: Bool, till: Bool, count n: Int, from p: Int, isRepeat: Bool, _ t: VimText) -> VimMotionTarget? {
         let ls = t.lineStart(p)
         let le = t.lineEnd(p)
         let unit: unichar? = c.utf16.count == 1 ? c.utf16.first : nil
@@ -274,7 +274,7 @@ extension VimEngine {
 
     // MARK: Text objects
 
-    func textObject(_ object: VimTextObject, at p: Int, count: Int?, op: VimOperator?, _ t: VimText) -> VimRange? {
+    package func textObject(_ object: VimTextObject, at p: Int, count: Int?, op: VimOperator?, _ t: VimText) -> VimRange? {
         let n = max(1, count ?? 1)
         switch object {
         case .word(let big, let around):
@@ -288,7 +288,7 @@ extension VimEngine {
         }
     }
 
-    func wordObject(at p: Int, big: Bool, around: Bool, count n: Int, _ t: VimText) -> VimRange {
+    package func wordObject(at p: Int, big: Bool, around: Bool, count n: Int, _ t: VimText) -> VimRange {
         let ls = t.lineStart(p)
         let le = t.lineEnd(p)
         if ls == le { return .chars(NSRange(location: ls, length: 0)) }
@@ -340,7 +340,7 @@ extension VimEngine {
         return .chars(NSRange(location: s, length: e - s))
     }
 
-    func quoteObject(at p: Int, quote q: unichar, around: Bool, _ t: VimText) -> VimRange? {
+    package func quoteObject(at p: Int, quote q: unichar, around: Bool, _ t: VimText) -> VimRange? {
         let ls = t.lineStart(p)
         let le = t.lineEnd(p)
         var quotes: [Int] = []
@@ -390,7 +390,7 @@ extension VimEngine {
         return .chars(NSRange(location: s, length: e - s))
     }
 
-    func pairObject(at p: Int, open: unichar, close: unichar, around: Bool, count n: Int, op: VimOperator?, _ t: VimText) -> VimRange? {
+    package func pairObject(at p: Int, open: unichar, close: unichar, around: Bool, count n: Int, op: VimOperator?, _ t: VimText) -> VimRange? {
         let len = t.length
         var o: Int?
         if p < len && t[p] == open {
@@ -428,7 +428,7 @@ extension VimEngine {
         return .chars(NSRange(location: s, length: max(0, e - s)))
     }
 
-    func paragraphObject(at p: Int, around: Bool, count n: Int, _ t: VimText) -> VimRange {
+    package func paragraphObject(at p: Int, around: Bool, count n: Int, _ t: VimText) -> VimRange {
         let len = t.length
         let ls0 = t.lineStart(p)
         let blank = t.lineIsBlank(ls0)

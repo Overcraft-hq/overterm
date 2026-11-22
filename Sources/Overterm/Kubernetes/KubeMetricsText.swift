@@ -13,29 +13,29 @@ import Foundation
 /// Every name in it is text from the cluster: `k8s_metrics` scrubs the
 /// whole answer (`KubeMCPText.finished`) and cuts each name to 253
 /// characters (`name`); a note from Prometheus is quoted as data.
-enum KubeMetricsText {
+package enum KubeMetricsText {
     /// An answer's size: about 4 KB, as metrics.md 7 says.
-    static let budget = 4096
+    package static let budget = 4096
     /// A chart's usage series said at most; the rest counted.
-    static let maxSeries = 6
+    package static let maxSeries = 6
     /// A chart's markers said at most: the newest.
-    static let maxMarkers = 5
+    package static let maxMarkers = 5
     /// A name is cut here (Kubernetes' own longest).
-    static let maxName = 253
+    package static let maxName = 253
 
     /// One series' figures.
-    struct Figures: Equatable {
-        var min: KubeSeriesPoint
-        var p50: Double
-        var p95: Double
-        var max: KubeSeriesPoint
-        var last: KubeSeriesPoint
-        var count: Int
+    package struct Figures: Equatable {
+        package var min: KubeSeriesPoint
+        package var p50: Double
+        package var p95: Double
+        package var max: KubeSeriesPoint
+        package var last: KubeSeriesPoint
+        package var count: Int
     }
 
     /// `points`' figures, a gap (NaN, ±∞) left out; nil with none.
     /// Percentiles by nearest rank.
-    static func figures(_ points: [KubeSeriesPoint]) -> Figures? {
+    package static func figures(_ points: [KubeSeriesPoint]) -> Figures? {
         let kept = points.filter { $0.value.isFinite }.sorted { $0.time < $1.time }
         guard let last = kept.last else { return nil }
         let values = kept.map(\.value).sorted()
@@ -51,12 +51,12 @@ enum KubeMetricsText {
     }
 
     /// A name from the cluster, cut.
-    static func name(_ text: String) -> String {
+    package static func name(_ text: String) -> String {
         text.count > maxName ? String(text.prefix(maxName - 1)) + "…" : text
     }
 
     /// `14:32`, or `Nov 7 14:32` on another day than `now`'s.
-    static func time(_ date: Date, now: Date, timeZone: TimeZone = .current) -> String {
+    package static func time(_ date: Date, now: Date, timeZone: TimeZone = .current) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let clock = KubeChartTime.clock(date, timeZone: timeZone)
@@ -65,7 +65,7 @@ enum KubeMetricsText {
     }
 
     /// What a chart is over: `last 1h at 30s (13:32–14:32 GMT+3) · Prometheus · raw cAdvisor`.
-    static func window(_ data: KubeChartData, now: Date, timeZone: TimeZone = .current) -> String {
+    package static func window(_ data: KubeChartData, now: Date, timeZone: TimeZone = .current) -> String {
         let span = KubePromQL.duration(Swift.max(0, data.end.timeIntervalSince(data.start)).rounded())
         var parts = [
             "last \(span) at \(KubePromQL.duration(data.step.rounded()))"
@@ -77,7 +77,7 @@ enum KubeMetricsText {
     }
 
     /// One series' figures said, against `references` (the last of each).
-    static func said(_ figures: Figures, unit: KubeChartUnit, references: [KubeChartSeries], now: Date, timeZone: TimeZone = .current) -> String {
+    package static func said(_ figures: Figures, unit: KubeChartUnit, references: [KubeChartSeries], now: Date, timeZone: TimeZone = .current) -> String {
         func at(_ point: KubeSeriesPoint) -> String { "\(unit.format(point.value)) at \(time(point.time, now: now, timeZone: timeZone))" }
         var last = "last " + at(figures.last)
         let shares = references.compactMap { reference -> String? in
@@ -95,7 +95,7 @@ enum KubeMetricsText {
     /// total first, the references against it alone), then its markers.
     /// `label` names it ("app · Memory"); a series that is the chart's one
     /// line is said under the label alone.
-    static func chart(_ data: KubeChartData, label: String, now: Date, timeZone: TimeZone = .current) -> [String] {
+    package static func chart(_ data: KubeChartData, label: String, now: Date, timeZone: TimeZone = .current) -> [String] {
         let references = data.references.filter { [.request, .limit, .allocatable, .capacity, .quota].contains($0.role) }
         let usage = data.usage.filter { !$0.offByDefault }
         var lines: [String] = []
@@ -120,7 +120,7 @@ enum KubeMetricsText {
     }
 
     /// Its markers in its window, the newest `maxMarkers`, oldest first.
-    static func markers(_ data: KubeChartData, now: Date, timeZone: TimeZone = .current) -> String? {
+    package static func markers(_ data: KubeChartData, now: Date, timeZone: TimeZone = .current) -> String? {
         let shown = data.shownMarkers.sorted { $0.time < $1.time }
         guard !shown.isEmpty || data.earlierMarkers > 0 else { return nil }
         let kept = shown.suffix(maxMarkers)
@@ -134,7 +134,7 @@ enum KubeMetricsText {
     /// "Ask Agent About This Chart" (metrics.md 3.9): the chart as
     /// `k8s_metrics` says it — whose it is and where its numbers come from,
     /// its window, its figures and markers, the chips it shows — bounded.
-    static func about(
+    package static func about(
         _ data: KubeChartData, label: String, whose: String, caption: String?, chips: [KubeChartChip], now: Date, timeZone: TimeZone = .current
     ) -> String {
         var lines = [whose + (caption.map { ": " + $0 } ?? "")]
@@ -145,11 +145,11 @@ enum KubeMetricsText {
     }
 
     /// A note from Prometheus or the profile, as data.
-    static func note(_ text: String) -> String { "Note: “\(name(text))”" }
+    package static func note(_ text: String) -> String { "Note: “\(name(text))”" }
 
     /// `lines` within `budget` characters, whole lines kept: past it, how
     /// many were left out and how to ask for less.
-    static func bounded(_ lines: [String], budget: Int = budget) -> String {
+    package static func bounded(_ lines: [String], budget: Int = budget) -> String {
         var kept: [String] = []
         var used = 0
         for (index, line) in lines.enumerated() {

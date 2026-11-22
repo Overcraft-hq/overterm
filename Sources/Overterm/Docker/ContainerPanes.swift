@@ -2,24 +2,24 @@ import AppKit
 import SwiftUI
 
 /// The detail's tabs.
-enum ContainerTab: String, CaseIterable, Identifiable {
+package enum ContainerTab: String, CaseIterable, Identifiable {
     case overview, logs, files, inspect, stats
 
-    var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    package var id: String { rawValue }
+    package var title: String { rawValue.capitalized }
 }
 
 /// The Files tab: a folder at a time, a file to the editor (saved back
 /// into the container), or to the Mac (`DockerFolderList`); or what
 /// changed since it started.
-struct DockerFilesPane: View {
-    let container: ContainerSummary
-    @ObservedObject var session: ContainerSession
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+package struct DockerFilesPane: View {
+    package let container: ContainerSummary
+    @ObservedObject package var session: ContainerSession
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
     @State private var showingChanges = false
 
-    var body: some View {
+    package var body: some View {
         Group {
             if showingChanges {
                 VStack(spacing: 0) {
@@ -86,12 +86,12 @@ struct DockerFilesPane: View {
 }
 
 /// The Inspect tab: the engine's JSON, secrets taken out.
-struct DockerInspectPane: View {
-    @ObservedObject var session: ContainerSession
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+package struct DockerInspectPane: View {
+    @ObservedObject package var session: ContainerSession
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("As the engine says it, secrets hidden").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
@@ -114,7 +114,7 @@ struct DockerInspectPane: View {
     }
 
     /// A key in the text colour, its value dimmer.
-    static func line(_ text: String, theme: ChromeTheme) -> NSAttributedString {
+    package static func line(_ text: String, theme: ChromeTheme) -> NSAttributedString {
         let out = NSMutableAttributedString(string: text, attributes: [.font: LogStyle.font, .foregroundColor: theme.textNS.withAlphaComponent(0.7)])
         if let range = text.range(of: #"^\s*"[^"]+"(?= :)"#, options: .regularExpression) {
             out.addAttribute(.foregroundColor, value: theme.textNS, range: NSRange(range, in: text))
@@ -124,12 +124,12 @@ struct DockerInspectPane: View {
 }
 
 /// The Stats tab: a sample a second while it is open.
-struct DockerStatsPane: View {
-    let container: ContainerSummary
-    @ObservedObject var session: ContainerSession
-    @ObservedObject var theme: ChromeTheme
+package struct DockerStatsPane: View {
+    package let container: ContainerSummary
+    @ObservedObject package var session: ContainerSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         ScrollView {
             if container.state != .running {
                 Text("Stats are read while it runs.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(20)
@@ -158,7 +158,7 @@ struct DockerStatsPane: View {
         .accessibilityIdentifier("docker.stats")
     }
 
-    static func bytes(_ count: Int) -> String { DockerBytes.string(count, memory: true) }
+    package static func bytes(_ count: Int) -> String { DockerBytes.string(count, memory: true) }
 
     /// `top`'s table: its own columns, its command last and widest.
     private func processes(_ top: (titles: [String], rows: [[String]])) -> some View {
@@ -201,11 +201,11 @@ struct DockerStatsPane: View {
 }
 
 /// The last minute as a line, its lowest at the bottom.
-struct DockerSparkline: View {
-    let values: [Double]
-    let color: Color
+package struct DockerSparkline: View {
+    package let values: [Double]
+    package let color: Color
 
-    var body: some View {
+    package var body: some View {
         GeometryReader { geometry in
             let top = max(values.max() ?? 1, 0.0001)
             let step = geometry.size.width / CGFloat(max(values.count - 1, 1))

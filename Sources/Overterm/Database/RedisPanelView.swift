@@ -4,16 +4,16 @@ import SwiftUI
 /// A Redis database in the panel: its keys as folders (`user:1:…`), a
 /// pattern and a type to SCAN by, each key's type as a badge — Redis
 /// Insight's browser, in the sidebar. A key opens its page on the right.
-struct RedisDatabaseTree: View {
-    let treeKey: String
-    let db: Int
-    @ObservedObject var session: DatabaseSession
-    @ObservedObject var browser: RedisBrowser
-    @ObservedObject var model: DatabaseModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DatabaseActions
+package struct RedisDatabaseTree: View {
+    package let treeKey: String
+    package let db: Int
+    @ObservedObject package var session: DatabaseSession
+    @ObservedObject package var browser: RedisBrowser
+    @ObservedObject package var model: DatabaseModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DatabaseActions
 
-    var body: some View {
+    package var body: some View {
         TreeRow(
             depth: 1, open: model.expanded.contains(treeKey), symbol: "square.stack.3d.up", title: "db\(db)",
             detail: browser.total.map { "\($0) keys" }, dot: nil, theme: theme
@@ -164,11 +164,11 @@ private struct RedisKeyRow: View {
 }
 
 /// A key type's badge, in the colours Insight gives them.
-struct RedisTypeBadge: View {
-    let type: String
-    var compact = false
+package struct RedisTypeBadge: View {
+    package let type: String
+    package var compact = false
 
-    static func color(_ type: String) -> Color {
+    package static func color(_ type: String) -> Color {
         switch type {
         case "string": Color(red: 0.36, green: 0.55, blue: 0.95)
         case "hash": Color(red: 0.62, green: 0.42, blue: 0.95)
@@ -181,7 +181,7 @@ struct RedisTypeBadge: View {
         }
     }
 
-    var body: some View {
+    package var body: some View {
         Text(verbatim: RedisKeyType.label(type))
             .font(.system(size: ChromeMetrics.text(compact ? 8 : 9.5), weight: .bold, design: .rounded))
             .foregroundStyle(.white)

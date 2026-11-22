@@ -3,46 +3,46 @@ import Foundation
 /// What a statement gave back: its columns and rows (as text — the client
 /// shows them, and every database can say each of its values as text), or
 /// what it did.
-struct QueryResult: Equatable, Sendable {
-    var columns: [String] = []
+package struct QueryResult: Equatable, Sendable {
+    package var columns: [String] = []
     /// Each column's type as the database names it (int4, VARCHAR, STRING…).
-    var types: [String] = []
+    package var types: [String] = []
     /// nil is NULL.
-    var rows: [[String?]] = []
+    package var rows: [[String?]] = []
     /// The database had more rows than were fetched (Settings' row limit).
-    var truncated = false
+    package var truncated = false
     /// Rows a statement changed, when the database says.
-    var affected: Int?
+    package var affected: Int?
     /// What it said besides: "Done", BigQuery's bytes processed…
-    var message: String?
-    var duration: TimeInterval = 0
+    package var message: String?
+    package var duration: TimeInterval = 0
     /// Prometheus's, Loki's, Tempo's: the series, lines or traces themselves.
-    var payload: ObservabilityPayload?
+    package var payload: ObservabilityPayload?
 
-    var hasRows: Bool { !columns.isEmpty }
+    package var hasRows: Bool { !columns.isEmpty }
 }
 
-struct CatalogTable: Equatable, Hashable, Sendable {
-    var schema: String
-    var name: String
-    var isView = false
+package struct CatalogTable: Equatable, Hashable, Sendable {
+    package var schema: String
+    package var name: String
+    package var isView = false
     /// What the tree says beside it: an index's documents, an alias's index.
-    var detail: String?
+    package var detail: String?
 }
 
-struct CatalogColumn: Equatable, Hashable, Sendable {
-    var table: String
-    var name: String
-    var type: String
-    var nullable = true
+package struct CatalogColumn: Equatable, Hashable, Sendable {
+    package var table: String
+    package var name: String
+    package var type: String
+    package var nullable = true
 }
 
-enum DatabaseError: LocalizedError, Equatable {
+package enum DatabaseError: LocalizedError, Equatable {
     case notConnected
     case readOnly(String)
     case failed(String)
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .notConnected: "Not connected."
         case .readOnly(let verb): "This connection only reads: \(verb.isEmpty ? "the statement" : verb) was not sent."
@@ -53,7 +53,7 @@ enum DatabaseError: LocalizedError, Equatable {
 
 /// One open connection to a database. Each kind has its own (`DatabaseDrivers`);
 /// they are actors — a driver holds a socket, and one statement runs at a time.
-protocol DatabaseDriver: Actor {
+package protocol DatabaseDriver: Actor {
     func connect() async throws
     func close() async
     /// One statement; at most `limit` rows are kept.
@@ -69,14 +69,14 @@ protocol DatabaseDriver: Actor {
 }
 
 extension DatabaseDriver {
-    func execute(_ sql: String, limit: Int, range: TimeRange) async throws -> QueryResult {
+    package func execute(_ sql: String, limit: Int, range: TimeRange) async throws -> QueryResult {
         try await execute(sql, limit: limit)
     }
 }
 
-enum DatabaseDrivers {
+package enum DatabaseDrivers {
     /// The driver for a connection, with its secret from the keychain.
-    static func make(_ connection: DatabaseConnection, password: String?, serviceAccount: String?) -> any DatabaseDriver {
+    package static func make(_ connection: DatabaseConnection, password: String?, serviceAccount: String?) -> any DatabaseDriver {
         switch connection.kind {
         case .sqlite: SQLiteDriver(connection)
         case .postgres, .redshift: PostgresDriver(connection, password: password)
@@ -100,15 +100,15 @@ enum DatabaseDrivers {
     }
 
     /// A name inside SQL — `'it''s'` — for the catalog's queries.
-    static func literal(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "''") + "'" }
+    package static func literal(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "''") + "'" }
 }
 
 /// A connection that isn't a database (a bucket store): it says so.
-actor NoSQLDriver: DatabaseDriver {
-    func connect() async throws { throw DatabaseError.failed("Storage runs no SQL.") }
-    func close() async {}
-    func execute(_ sql: String, limit: Int) async throws -> QueryResult { throw DatabaseError.failed("Storage runs no SQL.") }
-    func schemas() async throws -> [String] { [] }
-    func tables(in schema: String) async throws -> [CatalogTable] { [] }
-    func columns(in schema: String) async throws -> [CatalogColumn] { [] }
+package actor NoSQLDriver: DatabaseDriver {
+    package func connect() async throws { throw DatabaseError.failed("Storage runs no SQL.") }
+    package func close() async {}
+    package func execute(_ sql: String, limit: Int) async throws -> QueryResult { throw DatabaseError.failed("Storage runs no SQL.") }
+    package func schemas() async throws -> [String] { [] }
+    package func tables(in schema: String) async throws -> [CatalogTable] { [] }
+    package func columns(in schema: String) async throws -> [CatalogColumn] { [] }
 }

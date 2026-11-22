@@ -10,24 +10,24 @@ import WebKit
 ///
 /// Like the reading view, it loads only `overterm-note://app/…`; links on
 /// elements are the app's to follow.
-final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+package final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     /// The scene changed: its text as `encoding` has it, and the text elements.
-    var onChange: ((_ scene: String, _ encoding: DrawingFile.Encoding, _ texts: [DrawingFile.Text]) -> Void)?
+    package var onChange: ((_ scene: String, _ encoding: DrawingFile.Encoding, _ texts: [DrawingFile.Text]) -> Void)?
     /// An element's link was clicked: a URL or a note's name, as written.
-    var onOpenLink: ((String) -> Void)?
+    package var onOpenLink: ((String) -> Void)?
     /// The scene couldn't be read: the editor shows the text instead.
-    var onError: ((String) -> Void)?
+    package var onError: ((String) -> Void)?
 
-    let webView: WKWebView
+    package let webView: WKWebView
     private let resources = NoteResources()
-    private(set) var ready = false
+    package private(set) var ready = false
     /// The page's last error, for the log and the E2E run.
-    private(set) var lastLog: String?
+    package private(set) var lastLog: String?
     private static let logger = Logger(subsystem: AppEnvironment.bundleIdentifier, category: "drawing")
     private var pending: String?
     private var lastLoad: String?
 
-    init() {
+    package init() {
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(resources, forURLScheme: NoteReaderView.scheme)
         configuration.websiteDataStore = .nonPersistent()
@@ -47,10 +47,10 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    package required init?(coder: NSCoder) { fatalError() }
 
     /// Shows `file`'s scene; a change is written back as `saveAs`.
-    func load(_ file: DrawingFile, saveAs: DrawingFile.Encoding, dark: Bool) {
+    package func load(_ file: DrawingFile, saveAs: DrawingFile.Encoding, dark: Bool) {
         let call = Self.call(
             "OT.load", ["scene": file.scene, "encoding": file.encoding.rawValue, "saveAs": saveAs.rawValue, "dark": dark])
         lastLoad = call
@@ -61,13 +61,13 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
         webView.evaluateJavaScript(call)
     }
 
-    func setDark(_ dark: Bool) {
+    package func setDark(_ dark: Bool) {
         guard ready else { return }
         webView.evaluateJavaScript("OT.theme(\(dark))")
     }
 
     /// Sends what the page is holding back (it waits a moment after a change).
-    func flush() {
+    package func flush() {
         guard ready else { return }
         webView.evaluateJavaScript("OT.flush()")
     }
@@ -75,7 +75,7 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     /// Runs `OT.<function>(argument)` and hands back its answer — for an
     /// agent's elements and the E2E run.
     /// `spread`: `argument` is the list of arguments, not the one argument.
-    func call(_ function: String, _ argument: Any, spread: Bool = false, done: @escaping @MainActor (Any?) -> Void) {
+    package func call(_ function: String, _ argument: Any, spread: Bool = false, done: @escaping @MainActor (Any?) -> Void) {
         webView.evaluateJavaScript(Self.call("OT." + function, argument, spread: spread)) { [weak self] value, error in
             MainActor.assumeIsolated {
                 if let error { self?.lastLog = "\(function): \(error)" }
@@ -85,17 +85,17 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     }
 
     /// What is on the canvas — for checks.
-    struct State: Sendable {
-        var ready = false
-        var count = 0
-        var texts: [String] = []
+    package struct State: Sendable {
+        package var ready = false
+        package var count = 0
+        package var texts: [String] = []
         /// The page's width, Excalidraw's box in it, and the width Excalidraw thinks it has.
-        var page = 0
-        var width = 0
-        var appWidth = 0
+        package var page = 0
+        package var width = 0
+        package var appWidth = 0
     }
 
-    func state() async -> State {
+    package func state() async -> State {
         await withCheckedContinuation { continuation in
             call("state", NSNull()) { value in
                 let body = value as? [String: Any] ?? [:]
@@ -108,14 +108,14 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
         }
     }
 
-    static func call(_ function: String, _ argument: Any, spread: Bool = false) -> String {
+    package static func call(_ function: String, _ argument: Any, spread: Bool = false) -> String {
         let data = (try? JSONSerialization.data(withJSONObject: spread ? argument : [argument])) ?? Data("[null]".utf8)
         return function + "(" + String(String(decoding: data, as: UTF8.self).dropFirst().dropLast()) + ")"
     }
 
     // MARK: The page's messages
 
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+    package func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
         if body["ready"] != nil {
             ready = true
@@ -143,7 +143,7 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
     }
 
     /// Nothing navigates the page away, and nothing opens a window.
-    func webView(
+    package func webView(
         _ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
         let url = action.request.url
@@ -151,7 +151,7 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
         decisionHandler(allowed ? .allow : .cancel)
     }
 
-    func webView(
+    package func webView(
         _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
@@ -159,7 +159,7 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
         return nil
     }
 
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    package func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         ready = false
         pending = lastLoad
         webView.reload()
@@ -170,14 +170,14 @@ final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKScriptMes
 /// (its `convertToExcalidrawElements` lays out labels and binds arrows) —
 /// on a page no window shows.
 @MainActor
-final class DrawingConverter {
-    static let shared = DrawingConverter()
+package final class DrawingConverter {
+    package static let shared = DrawingConverter()
     /// Opens a drawing an agent made — the front window's editor.
-    static var open: ((URL) -> Void)?
+    package static var open: ((URL) -> Void)?
 
     private var view: DrawingView?
 
-    func convert(_ skeletons: [[String: Any]], saveAs: DrawingFile.Encoding) async throws -> (scene: String, texts: [DrawingFile.Text]) {
+    package func convert(_ skeletons: [[String: Any]], saveAs: DrawingFile.Encoding) async throws -> (scene: String, texts: [DrawingFile.Text]) {
         let view = self.view ?? DrawingView()
         self.view = view
         for _ in 0..<100 where !view.ready { try await Task.sleep(nanoseconds: 100_000_000) }

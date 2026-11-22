@@ -3,7 +3,7 @@ import Foundation
 /// A node's health mark in a dependency tree: green, orange, red — red too
 /// for what is referenced and not there — grey when there is nothing to
 /// say, or it wasn't read.
-enum KubeTreeHealth: String, Equatable, Sendable {
+package enum KubeTreeHealth: String, Equatable, Sendable {
     case good, waiting, bad
     /// Referenced and not found: a missing ConfigMap, a Service gone.
     case missing
@@ -13,13 +13,13 @@ enum KubeTreeHealth: String, Equatable, Sendable {
     case dim
 
     /// Red: what the tree is for.
-    var isProblem: Bool { self == .bad || self == .missing }
+    package var isProblem: Bool { self == .bad || self == .missing }
 }
 
 /// One node of a dependency tree: an object (or a container), how it hangs
 /// off its parent, its health, its children. Pure.
-struct KubeTreeNode: Equatable, Sendable, Identifiable {
-    enum Relation: String, Equatable, Sendable {
+package struct KubeTreeNode: Equatable, Sendable, Identifiable {
+    package enum Relation: String, Equatable, Sendable {
         /// The detail's own object.
         case root
         /// Down the owner chain: a ReplicaSet a Deployment owns, its pods.
@@ -40,25 +40,25 @@ struct KubeTreeNode: Equatable, Sendable, Identifiable {
         case manages
     }
 
-    var id: String
-    var kind: String
-    var name: String
-    var namespace: String?
+    package var id: String
+    package var kind: String
+    package var name: String
+    package var namespace: String?
     /// The reference's `apiVersion`; nil for what can't be opened (a container).
-    var apiVersion: String?
-    var relation: Relation
+    package var apiVersion: String?
+    package var relation: Relation
     /// How: `envFrom`, `volume`, `env DB_PASSWORD`, `/api → 80`.
-    var how: String?
-    var health: KubeTreeHealth
+    package var how: String?
+    package var health: KubeTreeHealth
     /// What it is now: `CrashLoopBackOff`, `3/3 ready`, `not found`, `selects no pod`.
-    var status: String?
-    var children: [KubeTreeNode] = []
+    package var status: String?
+    package var children: [KubeTreeNode] = []
 
     /// The object it is, to open; nil for a container.
-    var link: KubeLink? { apiVersion.map { KubeLink(apiVersion: $0, kind: kind, namespace: namespace, name: name) } }
+    package var link: KubeLink? { apiVersion.map { KubeLink(apiVersion: $0, kind: kind, namespace: namespace, name: name) } }
 
     /// Every node under it, and it, depth first.
-    var all: [KubeTreeNode] { [self] + children.flatMap(\.all) }
+    package var all: [KubeTreeNode] { [self] + children.flatMap(\.all) }
 }
 
 /// A detail's dependency tree (docs/design/kubernetes/analysis.md, 3.7 —
@@ -71,13 +71,13 @@ struct KubeTreeNode: Equatable, Sendable, Identifiable {
 /// HelmReleases are trees too: what they say they manage (`KubeGitOpsTree`).
 /// Built from what was read once (`KubeTreeRead`): the same namespace, no
 /// watches. Pure.
-struct KubeTree: Equatable, Sendable {
-    var root: KubeTreeNode
+package struct KubeTree: Equatable, Sendable {
+    package var root: KubeTreeNode
     /// What couldn't be read, or was left out.
-    var notes: [String] = []
+    package var notes: [String] = []
 
     /// Depth first, with each node's depth: what the Overview draws.
-    var rows: [(depth: Int, node: KubeTreeNode)] {
+    package var rows: [(depth: Int, node: KubeTreeNode)] {
         func walk(_ node: KubeTreeNode, _ depth: Int) -> [(depth: Int, node: KubeTreeNode)] {
             [(depth, node)] + node.children.flatMap { walk($0, depth + 1) }
         }
@@ -85,26 +85,26 @@ struct KubeTree: Equatable, Sendable {
     }
 
     /// The red ones.
-    var problems: [KubeTreeNode] { root.all.filter { $0.health.isProblem } }
+    package var problems: [KubeTreeNode] { root.all.filter { $0.health.isProblem } }
 
-    static func == (lhs: KubeTree, rhs: KubeTree) -> Bool { lhs.root == rhs.root && lhs.notes == rhs.notes }
+    package static func == (lhs: KubeTree, rhs: KubeTree) -> Bool { lhs.root == rhs.root && lhs.notes == rhs.notes }
 
     /// How many pods a list reads, how many objects any other.
-    static let podLimit = 200
-    static let listLimit = 500
+    package static let podLimit = 200
+    package static let listLimit = 500
     /// Pods drawn under one owner; the rest counted.
-    static let podsShown = 50
+    package static let podsShown = 50
     /// A CronJob's newest Jobs followed down to their pods.
-    static let jobsFollowed = 5
+    package static let jobsFollowed = 5
 
     // MARK: Which kinds
 
     /// The kinds whose Overview has a tree.
-    enum Root: String, Equatable, Sendable {
+    package enum Root: String, Equatable, Sendable {
         case pod, deployment, statefulSet, daemonSet, replicaSet, job, cronJob, service, ingress, httpRoute
         case argoApplication, fluxKustomization, fluxHelmRelease
 
-        static func of(_ kind: KubeResourceKind) -> Root? {
+        package static func of(_ kind: KubeResourceKind) -> Root? {
             switch (kind.group, kind.resource) {
             case ("", "pods"): .pod
             case ("apps", "deployments"): .deployment
@@ -124,10 +124,10 @@ struct KubeTree: Equatable, Sendable {
         }
 
         /// Argo's or Flux's: a tree of what it says it manages.
-        var isGitOps: Bool { [.argoApplication, .fluxKustomization, .fluxHelmRelease].contains(self) }
+        package var isGitOps: Bool { [.argoApplication, .fluxKustomization, .fluxHelmRelease].contains(self) }
 
         /// A workload: its pods are what it owns, its pod template what they use.
-        var isWorkload: Bool { [.deployment, .statefulSet, .daemonSet, .replicaSet, .job, .cronJob].contains(self) }
+        package var isWorkload: Bool { [.deployment, .statefulSet, .daemonSet, .replicaSet, .job, .cronJob].contains(self) }
     }
 
     // MARK: What to read
@@ -136,25 +136,25 @@ struct KubeTree: Equatable, Sendable {
     /// says where), in which namespace, by which selector, and whether as
     /// a Table (names only: ConfigMaps, Secrets, PVCs, ServiceAccounts) or
     /// as objects.
-    struct Read: Equatable, Hashable, Sendable {
-        enum What: String, Equatable, Hashable, Sendable {
+    package struct Read: Equatable, Hashable, Sendable {
+        package enum What: String, Equatable, Hashable, Sendable {
             case replicaSets, pods, jobs, services, ingresses, routes, configMaps, secrets, claims, accounts
             /// A Flux HelmRelease's: what Helm made, by its labels.
             case deployments, statefulSets, daemonSets
         }
 
-        var what: What
-        var namespace: String
-        var labelSelector: String?
+        package var what: What
+        package var namespace: String
+        package var labelSelector: String?
 
-        var group: String { Self.place[what]!.group }
-        var resource: String { Self.place[what]!.resource }
-        var kind: String { Self.place[what]!.kind }
-        var limit: Int { what == .pods ? KubeTree.podLimit : KubeTree.listLimit }
+        package var group: String { Self.place[what]!.group }
+        package var resource: String { Self.place[what]!.resource }
+        package var kind: String { Self.place[what]!.kind }
+        package var limit: Int { what == .pods ? KubeTree.podLimit : KubeTree.listLimit }
         /// Names only, from the Table: never a Secret's data, nor a ConfigMap's.
-        var table: Bool { [.configMaps, .secrets, .claims, .accounts].contains(what) }
+        package var table: Bool { [.configMaps, .secrets, .claims, .accounts].contains(what) }
 
-        static let place: [What: (group: String, resource: String, kind: String)] = [
+        package static let place: [What: (group: String, resource: String, kind: String)] = [
             .replicaSets: ("apps", "replicasets", "ReplicaSet"), .pods: ("", "pods", "Pod"), .jobs: ("batch", "jobs", "Job"),
             .services: ("", "services", "Service"), .ingresses: ("networking.k8s.io", "ingresses", "Ingress"),
             .routes: ("gateway.networking.k8s.io", "httproutes", "HTTPRoute"), .configMaps: ("", "configmaps", "ConfigMap"),
@@ -164,7 +164,7 @@ struct KubeTree: Equatable, Sendable {
         ]
 
         /// What a list says of itself in a note: `pods`, `ConfigMaps`.
-        var said: String {
+        package var said: String {
             switch what {
             case .pods: "pods"
             case .claims: "PersistentVolumeClaims"
@@ -179,7 +179,7 @@ struct KubeTree: Equatable, Sendable {
     /// could reach its pods. Only what it can use: a pod that references no
     /// ConfigMap reads no ConfigMap list. Argo's and Flux's need none, but a
     /// HelmRelease's objects by Helm's labels.
-    static func reads(_ root: Root, object: [String: Any]) -> [Read] {
+    package static func reads(_ root: Root, object: [String: Any]) -> [Read] {
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         guard let namespace = metadata["namespace"] as? String else { return [] }
         let spec = object["spec"] as? [String: Any] ?? [:]
@@ -232,7 +232,7 @@ struct KubeTree: Equatable, Sendable {
     /// The lists the first ones lead to: a CronJob's newest Jobs' pods (each
     /// Job's selector), the pods of the Services an Ingress or a route sends
     /// to (each Service's selector).
-    static func followUps(_ root: Root, object: [String: Any], read: KubeTreeRead) -> [Read] {
+    package static func followUps(_ root: Root, object: [String: Any], read: KubeTreeRead) -> [Read] {
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         guard let namespace = metadata["namespace"] as? String else { return [] }
         switch root {
@@ -258,7 +258,7 @@ struct KubeTree: Equatable, Sendable {
     // MARK: Building
 
     /// The tree of `read`'s root, from what was read.
-    static func build(_ root: Root, read: KubeTreeRead) -> KubeTree {
+    package static func build(_ root: Root, read: KubeTreeRead) -> KubeTree {
         let object = read.rootObject
         if root.isGitOps { return KubeGitOpsTree.build(root, object: object, read: read) }
         let metadata = object["metadata"] as? [String: Any] ?? [:]
@@ -374,7 +374,7 @@ struct KubeTree: Equatable, Sendable {
     /// Why a workload with no pod has none to be selected — nil when it
     /// should have some: scaled to 0, a DaemonSet scheduling none, a Job
     /// done, a CronJob with no Job running a pod now.
-    static func idleReason(_ root: Root, object: [String: Any], jobs: Int, podsRead: Bool) -> String? {
+    package static func idleReason(_ root: Root, object: [String: Any], jobs: Int, podsRead: Bool) -> String? {
         let spec = object["spec"] as? [String: Any] ?? [:]
         let status = object["status"] as? [String: Any] ?? [:]
         switch root {
@@ -503,7 +503,7 @@ struct KubeTree: Equatable, Sendable {
         }
     }
 
-    static func health(_ tone: KubeOverview.Tone) -> KubeTreeHealth {
+    package static func health(_ tone: KubeOverview.Tone) -> KubeTreeHealth {
         switch tone {
         case .good: .good
         case .waiting: .waiting
@@ -596,7 +596,7 @@ struct KubeTree: Equatable, Sendable {
     /// What an object's own state says: a pod's phase and containers, a
     /// workload's replicas and rollout, a Job's outcome, a claim's phase,
     /// else its `Ready` condition. Grey when nothing says.
-    static func health(kind: String, object: [String: Any]) -> (KubeTreeHealth, String?) {
+    package static func health(kind: String, object: [String: Any]) -> (KubeTreeHealth, String?) {
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         let spec = object["spec"] as? [String: Any] ?? [:]
         let status = object["status"] as? [String: Any] ?? [:]
@@ -647,7 +647,7 @@ struct KubeTree: Equatable, Sendable {
 
     /// A pod: its first container that is failing or waiting says why;
     /// else its phase and readiness.
-    static func podHealth(_ pod: [String: Any]) -> (KubeTreeHealth, String?) {
+    package static func podHealth(_ pod: [String: Any]) -> (KubeTreeHealth, String?) {
         let status = pod["status"] as? [String: Any] ?? [:]
         let phase = status["phase"] as? String ?? "Unknown"
         let containers = (status["initContainerStatuses"] as? [[String: Any]] ?? []) + (status["containerStatuses"] as? [[String: Any]] ?? [])
@@ -673,7 +673,7 @@ struct KubeTree: Equatable, Sendable {
 
     /// An object's `Ready` condition, as Flux, cert-manager and Gateway
     /// API write it: True green, False red with its reason, Unknown orange.
-    static func readyHealth(_ object: [String: Any]) -> (KubeTreeHealth, String?) {
+    package static func readyHealth(_ object: [String: Any]) -> (KubeTreeHealth, String?) {
         let spec = object["spec"] as? [String: Any] ?? [:]
         if spec["suspend"] as? Bool == true { return (.dim, "suspended") }
         let conditions = (object["status"] as? [String: Any])?["conditions"] as? [[String: Any]] ?? []
@@ -689,20 +689,20 @@ struct KubeTree: Equatable, Sendable {
     // MARK: References
 
     /// A name a pod spec uses, and how.
-    struct Reference: Equatable, Sendable {
-        var kind: String
-        var name: String
-        var how: [String]
+    package struct Reference: Equatable, Sendable {
+        package var kind: String
+        package var name: String
+        package var how: [String]
         /// `optional: true`: the pod starts without it.
-        var optional: Bool
+        package var optional: Bool
     }
 
     /// The pod spec its pods run: a pod's own, a workload's template's, a CronJob's Job's.
-    static func podSpec(_ root: Root, _ object: [String: Any]) -> [String: Any] {
+    package static func podSpec(_ root: Root, _ object: [String: Any]) -> [String: Any] {
         root == .pod ? object["spec"] as? [String: Any] ?? [:] : podTemplate(root, object)["spec"] as? [String: Any] ?? [:]
     }
 
-    static func podTemplate(_ root: Root, _ object: [String: Any]) -> [String: Any] {
+    package static func podTemplate(_ root: Root, _ object: [String: Any]) -> [String: Any] {
         let spec = object["spec"] as? [String: Any] ?? [:]
         if root == .cronJob {
             return ((spec["jobTemplate"] as? [String: Any])?["spec"] as? [String: Any])?["template"] as? [String: Any] ?? [:]
@@ -714,7 +714,7 @@ struct KubeTree: Equatable, Sendable {
     /// from its volumes (projected ones too), its containers' `env` and
     /// `envFrom`, its image pull secrets — each once, with every way it is
     /// used. A Secret is a name: its data is never read.
-    static func references(_ spec: [String: Any]) -> [Reference] {
+    package static func references(_ spec: [String: Any]) -> [Reference] {
         var found: [Reference] = []
         func add(_ kind: String, _ name: String?, _ how: String, optional: Bool = false) {
             guard let name, !name.isEmpty else { return }
@@ -762,7 +762,7 @@ struct KubeTree: Equatable, Sendable {
     }
 
     /// A StatefulSet's `volumeClaimTemplates`' names.
-    static func claimTemplates(_ root: Root, _ object: [String: Any]) -> [String] {
+    package static func claimTemplates(_ root: Root, _ object: [String: Any]) -> [String] {
         guard root == .statefulSet else { return [] }
         return ((object["spec"] as? [String: Any])?["volumeClaimTemplates"] as? [[String: Any]] ?? []).compactMap {
             ($0["metadata"] as? [String: Any])?["name"] as? String
@@ -770,14 +770,14 @@ struct KubeTree: Equatable, Sendable {
     }
 
     /// Where a rule sends: a Service, by name, and a port (a number or a name).
-    struct Backend: Equatable, Sendable {
-        var service: String
-        var port: String?
+    package struct Backend: Equatable, Sendable {
+        package var service: String
+        package var port: String?
         /// `shop.example/api → 8080`.
-        var said: String
+        package var said: String
     }
 
-    static func ingressBackends(_ ingress: [String: Any]) -> [Backend] {
+    package static func ingressBackends(_ ingress: [String: Any]) -> [Backend] {
         let spec = ingress["spec"] as? [String: Any] ?? [:]
         func backend(_ value: Any?, _ place: String) -> Backend? {
             guard let service = (value as? [String: Any])?["service"] as? [String: Any], let name = service["name"] as? String else { return nil }
@@ -797,7 +797,7 @@ struct KubeTree: Equatable, Sendable {
         return backends
     }
 
-    static func ingressTLSSecrets(_ ingress: [String: Any]) -> [String] {
+    package static func ingressTLSSecrets(_ ingress: [String: Any]) -> [String] {
         var names: [String] = []
         for tls in (ingress["spec"] as? [String: Any])?["tls"] as? [[String: Any]] ?? [] {
             if let name = tls["secretName"] as? String, !name.isEmpty, !names.contains(name) { names.append(name) }
@@ -807,7 +807,7 @@ struct KubeTree: Equatable, Sendable {
 
     /// An HTTPRoute's Service backends (`backendRefs` of the core group's
     /// Service kind, the default), each rule's matches said.
-    static func routeBackends(_ route: [String: Any]) -> [Backend] {
+    package static func routeBackends(_ route: [String: Any]) -> [Backend] {
         var backends: [Backend] = []
         for rule in (route["spec"] as? [String: Any])?["rules"] as? [[String: Any]] ?? [] {
             let paths = (rule["matches"] as? [[String: Any]] ?? []).compactMap { (($0["path"] as? [String: Any])?["value"] as? String) }
@@ -821,15 +821,15 @@ struct KubeTree: Equatable, Sendable {
         return backends
     }
 
-    struct Parent: Equatable, Sendable {
-        var group: String
-        var kind: String
-        var namespace: String?
-        var name: String
-        var section: String?
+    package struct Parent: Equatable, Sendable {
+        package var group: String
+        package var kind: String
+        package var namespace: String?
+        package var name: String
+        package var section: String?
     }
 
-    static func routeParents(_ route: [String: Any]) -> [Parent] {
+    package static func routeParents(_ route: [String: Any]) -> [Parent] {
         ((route["spec"] as? [String: Any])?["parentRefs"] as? [[String: Any]] ?? []).compactMap { ref in
             guard let name = ref["name"] as? String else { return nil }
             return Parent(
@@ -840,7 +840,7 @@ struct KubeTree: Equatable, Sendable {
 
     /// What a route's status says of a parent (or any): `Accepted` or
     /// `ResolvedRefs` False is red, with its reason.
-    static func routeCondition(_ route: [String: Any], parent: String?) -> (KubeTreeHealth, String?)? {
+    package static func routeCondition(_ route: [String: Any], parent: String?) -> (KubeTreeHealth, String?)? {
         let parents = ((route["status"] as? [String: Any])?["parents"] as? [[String: Any]] ?? []).filter { entry in
             parent == nil || (entry["parentRef"] as? [String: Any])?["name"] as? String == parent
         }
@@ -857,9 +857,9 @@ struct KubeTree: Equatable, Sendable {
 
     // MARK: Helpers
 
-    static func name(of object: [String: Any]) -> String { (object["metadata"] as? [String: Any])?["name"] as? String ?? "" }
+    package static func name(of object: [String: Any]) -> String { (object["metadata"] as? [String: Any])?["name"] as? String ?? "" }
 
-    static func owners(of object: [String: Any]) -> [String] {
+    package static func owners(of object: [String: Any]) -> [String] {
         ((object["metadata"] as? [String: Any])?["ownerReferences"] as? [[String: Any]] ?? []).compactMap { $0["uid"] as? String }
     }
 
@@ -868,18 +868,18 @@ struct KubeTree: Equatable, Sendable {
     }
 
     /// A container waiting for one of these is broken, not on its way.
-    static let failingReasons: Set<String> = [
+    package static let failingReasons: Set<String> = [
         "CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "CreateContainerConfigError", "InvalidImageName", "RunContainerError", "OOMKilled",
     ]
 
     /// A CronJob's Jobs, newest first.
-    static func ownedJobs(_ jobs: [[String: Any]], owner: String) -> [[String: Any]] {
+    package static func ownedJobs(_ jobs: [[String: Any]], owner: String) -> [[String: Any]] {
         jobs.filter { owners(of: $0).contains(owner) }.sorted {
             (($0["metadata"] as? [String: Any])?["creationTimestamp"] as? String ?? "") > (($1["metadata"] as? [String: Any])?["creationTimestamp"] as? String ?? "")
         }
     }
 
-    static func matches(_ selector: [String: String], _ pod: [String: Any]) -> Bool {
+    package static func matches(_ selector: [String: String], _ pod: [String: Any]) -> Bool {
         guard !selector.isEmpty else { return false }
         let labels = (pod["metadata"] as? [String: Any])?["labels"] as? [String: String] ?? [:]
         return selector.allSatisfy { labels[$0.key] == $0.value }
@@ -894,47 +894,47 @@ struct KubeTree: Equatable, Sendable {
     }
 
     /// Whether a Service has a port, by number or by name.
-    static func hasPort(_ service: [String: Any], _ port: String) -> Bool {
+    package static func hasPort(_ service: [String: Any], _ port: String) -> Bool {
         ((service["spec"] as? [String: Any])?["ports"] as? [[String: Any]] ?? []).contains { declared in
             KubeRollout.int(declared["port"]).map(String.init) == port || declared["name"] as? String == port
         }
     }
 
     /// Flux's Helm controller's labels on what it made.
-    static let fluxHelmName = "helm.toolkit.fluxcd.io/name"
-    static let fluxHelmNamespace = "helm.toolkit.fluxcd.io/namespace"
+    package static let fluxHelmName = "helm.toolkit.fluxcd.io/name"
+    package static let fluxHelmNamespace = "helm.toolkit.fluxcd.io/namespace"
 }
 
 /// What a tree read, once, as the server answered: the root's object, then
 /// each list's answer — a list of objects, or of a Table's names — or why
 /// it couldn't be read. Pure.
-struct KubeTreeRead: Sendable {
+package struct KubeTreeRead: Sendable {
     /// The names a Table listed, each with what its row says (a Secret's
     /// Type, a PVC's Status) — and whether that was all of them.
-    struct Names: Equatable, Sendable {
-        var status: [String: String]
-        var complete: Bool
+    package struct Names: Equatable, Sendable {
+        package var status: [String: String]
+        package var complete: Bool
     }
 
     /// One list read: its objects, in its kind (a list's items carry no
     /// `kind`), and whether that was all of them.
-    struct Objects: @unchecked Sendable {
-        var items: [[String: Any]]
-        var complete: Bool
+    package struct Objects: @unchecked Sendable {
+        package var items: [[String: Any]]
+        package var complete: Bool
     }
 
-    var root: Data
-    private(set) var objects: [KubeTree.Read.What: Objects] = [:]
-    private(set) var tables: [KubeTree.Read.What: Names] = [:]
-    var notes: [String] = []
+    package var root: Data
+    package private(set) var objects: [KubeTree.Read.What: Objects] = [:]
+    package private(set) var tables: [KubeTree.Read.What: Names] = [:]
+    package var notes: [String] = []
 
-    init(root: Data) { self.root = root }
+    package init(root: Data) { self.root = root }
 
-    var rootObject: [String: Any] { (try? JSONSerialization.jsonObject(with: root) as? [String: Any]) ?? [:] }
+    package var rootObject: [String: Any] { (try? JSONSerialization.jsonObject(with: root) as? [String: Any]) ?? [:] }
 
     /// A list's answer added: its objects or its names; several lists of
     /// pods are one.
-    mutating func add(_ read: KubeTree.Read, body: Data) {
+    package mutating func add(_ read: KubeTree.Read, body: Data) {
         guard let list = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
             notes.append("The \(read.said) list couldn't be read: the answer isn't JSON.")
             return
@@ -964,11 +964,11 @@ struct KubeTreeRead: Sendable {
     }
 
     /// A list that couldn't be read: said, and its kind not checked.
-    mutating func failed(_ read: KubeTree.Read, _ reason: String) {
+    package mutating func failed(_ read: KubeTree.Read, _ reason: String) {
         notes.append("The \(read.said) in \(read.namespace) couldn't be listed: \(reason)")
     }
 
-    func list(_ what: KubeTree.Read.What) -> Objects? { objects[what] }
-    func items(_ what: KubeTree.Read.What) -> [[String: Any]] { objects[what]?.items ?? [] }
-    func names(_ what: KubeTree.Read.What) -> Names? { tables[what] }
+    package func list(_ what: KubeTree.Read.What) -> Objects? { objects[what] }
+    package func items(_ what: KubeTree.Read.What) -> [[String: Any]] { objects[what]?.items ?? [] }
+    package func names(_ what: KubeTree.Read.What) -> Names? { tables[what] }
 }

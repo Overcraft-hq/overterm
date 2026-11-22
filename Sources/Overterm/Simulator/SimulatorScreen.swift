@@ -9,14 +9,14 @@ import IOSurface
 /// CoreSimulator says when it has drawn (its damage rectangles), and that
 /// is what makes the layer pick the surface up again.
 @MainActor
-final class SimulatorScreen {
+package final class SimulatorScreen {
     /// The surface the device draws into; it is replaced on a rotation or
     /// a resize, which the surface callback reports.
-    private(set) var surface: IOSurface?
+    package private(set) var surface: IOSurface?
     /// Drawn: the layer should show the surface again.
-    var onDamage: (() -> Void)?
+    package var onDamage: (() -> Void)?
     /// A new surface (rotation, resize).
-    var onSurface: ((IOSurface?) -> Void)?
+    package var onSurface: ((IOSurface?) -> Void)?
 
     private let descriptor: NSObject
     private let uuid = UUID()
@@ -28,7 +28,7 @@ final class SimulatorScreen {
 
     /// The display port of a booted device, or nil when this Xcode's
     /// CoreSimulator doesn't offer one.
-    init?(device: NSObject) {
+    package init?(device: NSObject) {
         guard let renderable = NSProtocolFromString("SimDisplayIOSurfaceRenderable"),
             let io = device.perform(Selector(("io")))?.takeUnretainedValue() as? NSObject,
             let ports = io.perform(Selector(("ioPorts")))?.takeUnretainedValue() as? [NSObject]
@@ -50,12 +50,12 @@ final class SimulatorScreen {
     }
 
     /// The size the device draws at, in pixels.
-    var size: CGSize {
+    package var size: CGSize {
         guard let surface else { return .zero }
         return CGSize(width: IOSurfaceGetWidth(surface), height: IOSurfaceGetHeight(surface))
     }
 
-    func stop() { unregister() }
+    package func stop() { unregister() }
 
     private func register() {
         guard !registered else { return }

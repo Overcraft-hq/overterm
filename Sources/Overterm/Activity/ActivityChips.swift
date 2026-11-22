@@ -3,7 +3,7 @@ import Foundation
 /// What changed, on the row it concerns (docs/design/activity/analysis.md,
 /// 6.11's evidence chips — there is no Changes log): a level that lasted, a
 /// server not where it asked to be.
-enum ActivityRowChip: Hashable, Sendable {
+package enum ActivityRowChip: Hashable, Sendable {
     /// One of the user's processes held a core — 90% or more in every
     /// sample — for `ActivityChips.lasting`, since then.
     case heldCore(since: Date)
@@ -15,7 +15,7 @@ enum ActivityRowChip: Hashable, Sendable {
     case moved(asked: Int, got: Int, holder: String?)
 
     /// What the chip says at `now`: "held a core for 5 min, since 14:02".
-    func text(now: Date) -> String {
+    package func text(now: Date) -> String {
         switch self {
         case .heldCore(let since):
             return "held a core for \(ActivityChips.minutes(now.timeIntervalSince(since))), since \(ActivityRows.clock(since))"
@@ -27,7 +27,7 @@ enum ActivityRowChip: Hashable, Sendable {
     }
 
     /// Its tooltip: why it says so.
-    var help: String {
+    package var help: String {
         switch self {
         case .heldCore: return "Every sample at 90% or more of a core for 5 minutes or longer"
         case .idleBurning:
@@ -39,7 +39,7 @@ enum ActivityRowChip: Hashable, Sendable {
     }
 
     /// Drawn as a warning.
-    var warns: Bool {
+    package var warns: Bool {
         switch self {
         case .idleBurning, .heldCore: true
         case .moved: false
@@ -48,22 +48,22 @@ enum ActivityRowChip: Hashable, Sendable {
 }
 
 /// The chips of the rows of one census (6.11). Pure.
-enum ActivityChips {
+package enum ActivityChips {
     /// How long a level must last before it is an event (glances' rule): 5 min.
-    static let lasting: TimeInterval = 300
+    package static let lasting: TimeInterval = 300
     /// A core held: every sample at this or more.
-    static let core = 90.0
+    package static let core = 90.0
     /// An idle agent burning: its subtree at this or more.
-    static let burning = 50.0
+    package static let burning = 50.0
 
     /// Whether `key` has stayed at `threshold` for `lasting`: since when.
-    static func lasted(_ key: ActivityRingKey, atLeast threshold: Double, in snapshot: ActivitySnapshot) -> Date? {
+    package static func lasted(_ key: ActivityRingKey, atLeast threshold: Double, in snapshot: ActivitySnapshot) -> Date? {
         guard let since = sustained(key, atLeast: threshold, in: snapshot), snapshot.date.timeIntervalSince(since) >= lasting else { return nil }
         return since
     }
 
     /// Since when `key` has stayed at `threshold`, however briefly.
-    static func sustained(_ key: ActivityRingKey, atLeast threshold: Double, in snapshot: ActivitySnapshot) -> Date? {
+    package static func sustained(_ key: ActivityRingKey, atLeast threshold: Double, in snapshot: ActivitySnapshot) -> Date? {
         guard let start = snapshot.history.sustained(key, atLeast: threshold, now: snapshot.historyNow), snapshot.historyNow >= start else { return nil }
         return snapshot.date(of: start)
     }
@@ -73,7 +73,7 @@ enum ActivityChips {
     /// began to wait for the person, nil while it doesn't — the burn
     /// counts only from then: an agent that worked hard and asked its
     /// question a moment ago isn't idle (6.11).
-    static func of(_ identity: ActivityProcessID, agentWaitingSince: Date?, isAgent: Bool, in snapshot: ActivitySnapshot) -> [ActivityRowChip] {
+    package static func of(_ identity: ActivityProcessID, agentWaitingSince: Date?, isAgent: Bool, in snapshot: ActivitySnapshot) -> [ActivityRowChip] {
         if isAgent, let waiting = agentWaitingSince, let burning = sustained(.agent(identity), atLeast: burning, in: snapshot) {
             // Both at once: from the later of the two, for `lasting`.
             let since = max(waiting, burning)
@@ -86,7 +86,7 @@ enum ActivityChips {
     }
 
     /// "12 min", "1 h 5 min".
-    static func minutes(_ seconds: TimeInterval) -> String {
+    package static func minutes(_ seconds: TimeInterval) -> String {
         let minutes = max(Int(seconds / 60), 0)
         return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(minutes) min"
     }
@@ -94,16 +94,16 @@ enum ActivityChips {
 
 /// A server that is not where it asked to be (6.8's moved server,
 /// *probably*). Pure.
-enum ActivityMovedServers {
+package enum ActivityMovedServers {
     /// How far a server moves looking for a free port: P+1…P+10.
-    static let reach = 10
+    package static let reach = 10
     /// Programs whose `-p` names a port they reach, not one they serve.
-    static let clients: Set<String> = ["ssh", "scp", "sftp", "mosh", "psql", "mysql", "redis-cli", "nc", "telnet", "kubectl"]
+    package static let clients: Set<String> = ["ssh", "scp", "sftp", "mosh", "psql", "mysql", "redis-cli", "nc", "telnet", "kubectl"]
 
     /// The port a masked command line asks for: `--port 3000`,
     /// `--port=3000`, `-p 3000`, `-p3000` (`next dev -p`, vite, serve,
     /// http-server). Nil when it asks for none.
-    static func asked(_ command: String?) -> Int? {
+    package static func asked(_ command: String?) -> Int? {
         guard let command else { return nil }
         let words = command.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
         // A client's -p is the port it connects to.
@@ -125,7 +125,7 @@ enum ActivityMovedServers {
     /// The note a moved server's port carries (6.8, 8.5): "moved: :3000 is
     /// web's (probably)" — on Listening's row and in `proc_mine`'s servers.
     /// Nil for a port no moved chip names. Pure.
-    static func note(_ chips: [ActivityRowChip], port: Int) -> String? {
+    package static func note(_ chips: [ActivityRowChip], port: Int) -> String? {
         for chip in chips {
             guard case .moved(let asked, let got, let holder) = chip, got == port else { continue }
             return holder.map { "moved: :\(asked) is \($0)'s (probably)" } ?? "moved: it asked for :\(asked) (probably)"
@@ -135,12 +135,12 @@ enum ActivityMovedServers {
 
     /// What a server is, to tell two checkouts' copies of it apart from
     /// other servers: its label or name.
-    static func kind(_ row: ActivityProcessRow) -> String { (row.label ?? row.name).lowercased() }
+    package static func kind(_ row: ActivityProcessRow) -> String { (row.label ?? row.name).lowercased() }
 
     /// Each moved server's chip, by row id: one that asked for a port and
     /// listens a little above it; or, of two checkouts of one repository
     /// running the same server, the later one on P+1…P+10 of the other's P.
-    static func find(_ rows: [ActivityProcessRow], tabs: [UUID: ActivityTabFacts]) -> [String: ActivityRowChip] {
+    package static func find(_ rows: [ActivityProcessRow], tabs: [UUID: ActivityTabFacts]) -> [String: ActivityRowChip] {
         var found: [String: ActivityRowChip] = [:]
         let servers = rows.filter { $0.isOwn && !$0.listening.isEmpty }
         var byPort: [Int: ActivityProcessRow] = [:]

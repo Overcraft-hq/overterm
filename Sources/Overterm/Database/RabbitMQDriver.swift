@@ -6,14 +6,14 @@ import Foundation
 /// consumers) and `exchange:`s, their bindings below them. A read-only
 /// connection refuses PUBLISH, PURGE and any method but GET before sending.
 /// AMQP itself is never spoken: PEEK and PUBLISH are the API's own.
-actor RabbitMQDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor RabbitMQDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let password: String?
     private let http: HTTPDriverTransport
     /// Where queue and exchange names are looked up: the connection's vhost (else `/`), until a `USE`.
-    private(set) var vhost: String
+    package private(set) var vhost: String
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
         http = HTTPDriverTransport(connection, timeout: 60)
@@ -21,14 +21,14 @@ actor RabbitMQDriver: DatabaseDriver {
     }
 
     /// How many messages a PEEK reads unless told.
-    static let defaultPeek = 10
+    package static let defaultPeek = 10
     /// A payload longer than this is cut by the server.
-    static let payloadCut = 50_000
+    package static let payloadCut = 50_000
 
     // MARK: HTTP
 
     /// `path` is already percent-encoded (the vhost `/` is `%2F`).
-    func request(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
+    package func request(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
         guard let base = http.url(""), let url = URL(string: base.absoluteString + path) else {
             throw DatabaseError.failed("\(path) isn't a valid address — percent-encode what isn't (a vhost's / is %2F).")
         }
@@ -78,7 +78,7 @@ actor RabbitMQDriver: DatabaseDriver {
         var errorDescription: String? { said }
     }
 
-    func json(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Any {
+    package func json(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Any {
         let data = try await request(method, path, body: try body.map { try JSONSerialization.data(withJSONObject: $0) })
         guard !data.isEmpty else { return [String: Any]() }
         do {
@@ -94,13 +94,13 @@ actor RabbitMQDriver: DatabaseDriver {
 
     // MARK: DatabaseDriver
 
-    func connect() async throws {
+    package func connect() async throws {
         _ = try await json("GET", "/api/overview")
     }
 
-    func close() async { http.close() }
+    package func close() async { http.close() }
 
-    func execute(_ text: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ text: String, limit: Int) async throws -> QueryResult {
         let statement = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !statement.isEmpty else { throw DatabaseError.failed("No statement.") }
         let command: RabbitText.Command
@@ -206,7 +206,7 @@ actor RabbitMQDriver: DatabaseDriver {
     // MARK: The catalog
 
     /// The vhosts this user may see, the current one first.
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         let list = try await json("GET", "/api/vhosts?columns=name") as? [[String: Any]] ?? []
         var names = list.compactMap { $0["name"] as? String }
         if !names.contains(vhost) { names.append(vhost) }
@@ -214,7 +214,7 @@ actor RabbitMQDriver: DatabaseDriver {
     }
 
     /// Queues, then exchanges as `exchange:<name>` (the default one as `amq.default`).
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         let v = RabbitText.segment(schema)
         let queues =
             try await json("GET", "/api/queues/\(v)?columns=name,type,messages_ready,messages_unacknowledged,consumers,state") as? [[String: Any]] ?? []
@@ -234,7 +234,7 @@ actor RabbitMQDriver: DatabaseDriver {
     }
 
     /// Bindings: a queue's sources, an exchange's destinations, each with its key.
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         let bindings = try await json("GET", "/api/bindings/\(RabbitText.segment(schema))") as? [[String: Any]] ?? []
         return RabbitText.bindingColumns(bindings)
     }

@@ -2,19 +2,19 @@ import SwiftUI
 
 /// The comparison in the right-hand pane: the two sides, the commits on
 /// each, and every file `head` changed since they parted.
-struct CompareView: View {
-    @ObservedObject var model: CompareModel
-    @ObservedObject var theme: ChromeTheme
-    let onClose: () -> Void
-    let onCommit: (Commit) -> Void
-    let onOpen: (String) -> Void
+package struct CompareView: View {
+    @ObservedObject package var model: CompareModel
+    @ObservedObject package var theme: ChromeTheme
+    package let onClose: () -> Void
+    package let onCommit: (Commit) -> Void
+    package let onOpen: (String) -> Void
     /// The comparison in a review tab.
-    var onReview: (_ base: String, _ head: String) -> Void = { _, _ in }
+    package var onReview: (_ base: String, _ head: String) -> Void = { _, _ in }
     @State private var behindOpen = false
 
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.3)
@@ -165,12 +165,12 @@ struct CompareView: View {
 
 /// "Compare" in a branch's, tag's or commit's menu: with the checkout's
 /// branch, or — one picked first — with that one.
-struct CompareMenuItems: View {
-    let ref: String
-    @ObservedObject var model: OvergitModel
-    let actions: OvergitActions
+package struct CompareMenuItems: View {
+    package let ref: String
+    @ObservedObject package var model: OvergitModel
+    package let actions: OvergitActions
 
-    var body: some View {
+    package var body: some View {
         Divider()
         Button("Compare with Current Branch") { actions.compare("HEAD", ref) }
         if let picked = model.compareBase, picked != ref {
@@ -185,12 +185,12 @@ struct CompareMenuItems: View {
 
 /// A commit's review items: it alone, or the run from a commit picked
 /// before to it.
-struct ReviewMenuItems: View {
-    let commit: Commit
-    @ObservedObject var model: OvergitModel
-    let actions: OvergitActions
+package struct ReviewMenuItems: View {
+    package let commit: Commit
+    @ObservedObject package var model: OvergitModel
+    package let actions: OvergitActions
 
-    var body: some View {
+    package var body: some View {
         Divider()
         Button("Review Commit") { actions.reviewCommits(commit.sha, commit.sha) }
         if let start = model.reviewStart, start.sha != commit.sha {

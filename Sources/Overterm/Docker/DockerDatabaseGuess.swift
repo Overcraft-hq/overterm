@@ -10,17 +10,17 @@ import Foundation
 /// is reached at its host — through ssh to it, for `ssh://`, as the
 /// engine is: the Database client's own tunnel, which reaches a port bound
 /// to the host's loopback too.
-enum DockerDatabaseGuess {
-    struct Guess: Equatable {
-        var connection: DatabaseConnection
+package enum DockerDatabaseGuess {
+    package struct Guess: Equatable {
+        package var connection: DatabaseConnection
         /// From the container's env — goes to the form, then the keychain.
-        var password: String?
+        package var password: String?
     }
 
     /// The kind an image is, and the port it serves on inside: the same
     /// table as its own client's (`DockerClient`), so a tool named after a
     /// database — PostgREST, an exporter, a keeper — is none.
-    static func kind(of image: String) -> (DatabaseKind, port: Int)? {
+    package static func kind(of image: String) -> (DatabaseKind, port: Int)? {
         if let client = DockerClient.kind(of: image) { return client.database }
         let words = DockerClient.words(of: image)
         return searchKind(words: words) ?? panelOnly(words: words)
@@ -30,7 +30,7 @@ enum DockerDatabaseGuess {
     /// `DockerClient.Kind`: their images by name — Elastic's and the
     /// library's `elasticsearch`, `opensearchproject/opensearch`, Bitnami's
     /// — never Dashboards, Kibana or an exporter.
-    static func searchKind(words: [String]) -> (DatabaseKind, port: Int)? {
+    package static func searchKind(words: [String]) -> (DatabaseKind, port: Int)? {
         let words = Set(words)
         guard words.isDisjoint(with: DockerClient.toolWords), words.isDisjoint(with: ["dashboards", "kibana", "logstash", "beat"]) else { return nil }
         if words.contains("opensearch") { return (.opensearch, 9200) }
@@ -42,7 +42,7 @@ enum DockerDatabaseGuess {
     /// in the container (`DockerClient`): InfluxDB, DynamoDB Local,
     /// RabbitMQ — its management API, published only by an image that has
     /// it (`rabbitmq:3-management`, Bitnami's).
-    static let panelOnlyWords: [(DatabaseKind, port: Int, Set<String>)] = [
+    package static let panelOnlyWords: [(DatabaseKind, port: Int, Set<String>)] = [
         (.influxdb, 8086, ["influxdb", "influxdb3"]),
         (.dynamodb, 8000, ["dynamodb"]),
         (.rabbitmq, 15672, ["rabbitmq"]),
@@ -60,7 +60,7 @@ enum DockerDatabaseGuess {
     /// `database/enterprise` — the registry is dropped from the words) and
     /// the GitHub build's (`oracle/database`). "oracle" alone is no
     /// database: Oracle Linux, GraalVM.
-    static func isOracle(_ words: Set<String>) -> Bool {
+    package static func isOracle(_ words: Set<String>) -> Bool {
         let editions: Set<String> = ["free", "xe", "express", "enterprise", "ee", "se", "se2"]
         if words.contains("oracle") { return !words.isDisjoint(with: editions.union(["database"])) }
         return words.contains("database") && !words.isDisjoint(with: ["free", "express", "enterprise"])
@@ -69,12 +69,12 @@ enum DockerDatabaseGuess {
     /// A container's, by the same rule as its client's: a compose
     /// project's name in its image says nothing, and an image listed by
     /// its ID is known by `reference` (inspect's `Config.Image`).
-    static func kind(of container: ContainerSummary, reference: String? = nil) -> (DatabaseKind, port: Int)? {
+    package static func kind(of container: ContainerSummary, reference: String? = nil) -> (DatabaseKind, port: Int)? {
         if let client = DockerClient.kind(of: container, reference: reference) { return client.database }
         return DockerClient.imageWords(of: container, reference: reference).flatMap { searchKind(words: $0) ?? panelOnly(words: $0) }
     }
 
-    static func guess(
+    package static func guess(
         _ container: ContainerSummary, env: [(key: String, value: String)], endpoint: DockerEndpoint? = nil, reference: String? = nil
     ) -> Guess? {
         guard let (kind, inside) = kind(of: container, reference: reference),
@@ -240,7 +240,7 @@ enum DockerDatabaseGuess {
 extension DockerDatabaseGuess {
     /// An image's tag's major version (`elasticsearch:7.17.10` → 7); a
     /// tag that isn't a version (`latest`) the newest, so Int.max.
-    static func majorTag(_ image: String) -> Int {
+    package static func majorTag(_ image: String) -> Int {
         let name = image.split(separator: "@").first.map(String.init) ?? image
         guard let last = name.split(separator: "/").last, let colon = last.lastIndex(of: ":") else { return .max }
         let tag = last[last.index(after: colon)...]

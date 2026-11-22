@@ -11,7 +11,7 @@ import Foundation
 /// (`KubeScopeMerge`), up to `watchCap`; beyond it, as one list across
 /// the cluster, kept to the picked ones here — where that is allowed
 /// (`KubeScopeRefused` where it isn't).
-enum KubeScope: Hashable, Sendable {
+package enum KubeScope: Hashable, Sendable {
     case all
     case namespace(String)
     /// Two or more; made by `of`.
@@ -19,10 +19,10 @@ enum KubeScope: Hashable, Sendable {
 
     /// The most namespaces watched one by one: past it, one watch across
     /// the cluster, filtered here.
-    static let watchCap = 10
+    package static let watchCap = 10
 
     /// The scope of `names`: all of them for none, the one, or the set.
-    static func of(_ names: some Sequence<String>) -> KubeScope {
+    package static func of(_ names: some Sequence<String>) -> KubeScope {
         let set = Set(names.filter { !$0.isEmpty })
         switch set.count {
         case 0: return .all
@@ -32,7 +32,7 @@ enum KubeScope: Hashable, Sendable {
     }
 
     /// The namespaces picked, sorted; nil for all of them.
-    var names: [String]? {
+    package var names: [String]? {
         switch self {
         case .all: nil
         case .namespace(let name): [name]
@@ -42,16 +42,16 @@ enum KubeScope: Hashable, Sendable {
 
     /// Whether a list in it spans more than one namespace: its rows want a
     /// Namespace column.
-    var spansNamespaces: Bool { names?.count != 1 }
+    package var spansNamespaces: Bool { names?.count != 1 }
 
     /// The namespace in `kind`'s paths and its rows' — only when it is one.
-    func namespace(for kind: KubeResourceKind) -> String? {
+    package func namespace(for kind: KubeResourceKind) -> String? {
         guard kind.namespaced, case .namespace(let name) = self else { return nil }
         return name
     }
 
     /// Whether a row in `namespace` belongs (a cluster-scoped one's, nil, always).
-    func includes(_ namespace: String?) -> Bool {
+    package func includes(_ namespace: String?) -> Bool {
         guard let namespace else { return true }
         switch self {
         case .all: return true
@@ -63,13 +63,13 @@ enum KubeScope: Hashable, Sendable {
     /// The requests a list of `kind` takes: a namespace each — or one
     /// across every namespace (nil) for all of them, a cluster-scoped kind,
     /// or more than `cap` (its rows then kept to the scope's, `includes`).
-    func reads(for kind: KubeResourceKind, cap: Int = watchCap) -> [String?] {
+    package func reads(for kind: KubeResourceKind, cap: Int = watchCap) -> [String?] {
         guard kind.namespaced, let names else { return [nil] }
         return names.count > cap ? [nil] : names
     }
 
     /// Past the cap: listed across the cluster and filtered.
-    func isFilteredAcross(for kind: KubeResourceKind, cap: Int = watchCap) -> Bool {
+    package func isFilteredAcross(for kind: KubeResourceKind, cap: Int = watchCap) -> Bool {
         guard kind.namespaced, let names else { return false }
         return names.count > cap
     }
@@ -77,40 +77,40 @@ enum KubeScope: Hashable, Sendable {
     /// The one namespace a single-namespace thing (a template, a manifest,
     /// a tab) goes to: the one picked; of several, `preferred` when it is
     /// one of them, else the first; nil for all.
-    func one(preferring preferred: String? = nil) -> String? {
+    package func one(preferring preferred: String? = nil) -> String? {
         guard let names else { return nil }
         if let preferred, names.contains(preferred) { return preferred }
         return names.first
     }
 
     /// As the page says it: `All namespaces`, `shop`, `acme-api +2`.
-    var title: String {
+    package var title: String {
         guard let names else { return "All namespaces" }
         return names.count == 1 ? names[0] : "\(names[0]) +\(names.count - 1)"
     }
 
     /// In a sentence: `all namespaces`, `namespace shop`, `namespaces a, b`.
-    var said: String {
+    package var said: String {
         guard let names else { return "all namespaces" }
         return names.count == 1 ? "namespace \(names[0])" : "namespaces \(names.joined(separator: ", "))"
     }
 
     /// As it is kept (the defaults): the names, none for all.
-    var persisted: [String] { names ?? [] }
+    package var persisted: [String] { names ?? [] }
 
-    init(persisted names: [String]) { self = Self.of(names) }
+    package init(persisted names: [String]) { self = Self.of(names) }
 }
 
 /// Several namespaces past the cap, where listing across the cluster isn't
 /// allowed: said, with what to do.
-struct KubeScopeRefused: Error, Equatable, LocalizedError {
-    var count: Int
-    var reason: String
+package struct KubeScopeRefused: Error, Equatable, LocalizedError {
+    package var count: Int
+    package var reason: String
     /// How many may be watched one by one (the Overview's is less: it
     /// follows several lists in each).
-    var cap = KubeScope.watchCap
+    package var cap = KubeScope.watchCap
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         let pick = cap == 1 ? "Pick one namespace" : "Pick \(cap) or fewer"
         return "\(count) namespaces are more than \(cap) watched one by one, so they are listed across the cluster and kept to the "
             + "picked ones here — and that isn't allowed on this context (\(reason)). \(pick)."
@@ -126,29 +126,29 @@ struct KubeScopeRefused: Error, Equatable, LocalizedError {
 /// after anything else — until it lists, and then something is always
 /// said, so the list is live again. Bookmarks stay each namespace's own —
 /// the merged rows have no one resourceVersion. Pure.
-struct KubeScopeMerge: Sendable {
-    let namespaces: [String]
+package struct KubeScopeMerge: Sendable {
+    package let namespaces: [String]
     private var rows: [String: KubeRows] = [:]
     /// Not heard from yet: neither listed, retrying nor refused.
     private var waiting: Set<String>
     /// Waiting for the server again, and why.
     private var retrying: [String: KubeAPIError] = [:]
     /// The namespaces that may not be listed, and why: left out.
-    private(set) var refused: [String: KubeAPIError] = [:]
+    package private(set) var refused: [String: KubeAPIError] = [:]
     /// Whether the merged `.listed` has been given.
-    private(set) var listed = false
+    package private(set) var listed = false
 
-    init(namespaces: [String]) {
+    package init(namespaces: [String]) {
         self.namespaces = namespaces
         waiting = Set(namespaces)
     }
 
     /// Whether every namespace refused: nothing to show.
-    var allRefused: Bool { !namespaces.isEmpty && Set(refused.keys) == Set(namespaces) }
+    package var allRefused: Bool { !namespaces.isEmpty && Set(refused.keys) == Set(namespaces) }
 
     /// What `update` of `namespace`'s follow means for the merged rows, in
     /// order; empty when nothing to say yet.
-    mutating func take(_ update: KubeFollowUpdate, from namespace: String) -> [KubeFollowUpdate] {
+    package mutating func take(_ update: KubeFollowUpdate, from namespace: String) -> [KubeFollowUpdate] {
         var out: [KubeFollowUpdate] = []
         let wasRetrying = !retrying.isEmpty
         switch update {
@@ -199,14 +199,14 @@ struct KubeScopeMerge: Sendable {
     }
 
     /// Every namespace's rows as one table, the first's columns.
-    var merged: KubeTable {
+    package var merged: KubeTable {
         let tables = namespaces.compactMap { rows[$0] }
         let columns = tables.first { !$0.columns.isEmpty }?.columns ?? []
         return KubeTable(columns: columns, rows: tables.flatMap(\.sorted), resourceVersion: nil)
     }
 
     /// A follow across the cluster kept to `scope`'s rows (past the cap). Pure.
-    static func filtered(_ update: KubeFollowUpdate, to scope: KubeScope) -> KubeFollowUpdate? {
+    package static func filtered(_ update: KubeFollowUpdate, to scope: KubeScope) -> KubeFollowUpdate? {
         switch update {
         case .listed(var table):
             table.rows = table.rows.filter { scope.includes($0.id.namespace) }
@@ -222,7 +222,7 @@ struct KubeScopeMerge: Sendable {
 
 extension KubeFollowUpdate {
     /// A list or rows that changed: what a page applies, and is live after.
-    var isRows: Bool {
+    package var isRows: Bool {
         switch self {
         case .listed, .changed: true
         case .bookmark, .retrying, .unlisted: false

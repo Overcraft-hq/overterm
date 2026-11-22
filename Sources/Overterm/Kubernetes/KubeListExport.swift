@@ -8,17 +8,17 @@ import Foundation
 /// would run as a formula (`=`, `+`, `@`, a tab or a carriage return in
 /// front; `-` too, unless it is a number or `-` alone) is prefixed with `'`,
 /// as OWASP's advice has it. Pure.
-enum KubeListExport {
-    static func csv(columns: [String], rows: [[String]]) -> String { text(.csv, columns: columns, rows: rows) }
+package enum KubeListExport {
+    package static func csv(columns: [String], rows: [[String]]) -> String { text(.csv, columns: columns, rows: rows) }
 
     /// The same as `format` (`.csv`, or `.tsv` for a spreadsheet's paste):
     /// every cell inert either way.
-    static func text(_ format: ResultExport.Format, columns: [String], rows: [[String]]) -> String {
+    package static func text(_ format: ResultExport.Format, columns: [String], rows: [[String]]) -> String {
         ResultExport.text(format, columns: columns.map(inert), rows: rows.map { $0.map { inert($0) } })
     }
 
     /// A cell that a spreadsheet opens as text.
-    static func inert(_ cell: String) -> String {
+    package static func inert(_ cell: String) -> String {
         guard let first = cell.first else { return cell }
         switch first {
         case "=", "+", "@", "\t", "\r": return "'" + cell
@@ -28,7 +28,7 @@ enum KubeListExport {
     }
 
     /// `fake-dev-shop-deployments.csv`: what a file of the list is called.
-    static func fileName(context: String, kind: KubeResourceKind, scope: KubeScope) -> String {
+    package static func fileName(context: String, kind: KubeResourceKind, scope: KubeScope) -> String {
         let place: String? =
             switch scope {
             case _ where !kind.namespaced: nil
@@ -47,7 +47,7 @@ enum KubeListExport {
 /// doesn't have (kubectl's Deployments have none): the list is rows only,
 /// so the conditions aren't there; the detail's Rollout reads them
 /// (`KubeRollout`), a stuck one's deadline with them. Pure.
-enum KubeDeploymentHint: Equatable, Sendable {
+package enum KubeDeploymentHint: Equatable, Sendable {
     case available
     case scaledToZero
     /// Fewer replicas than wanted run the newest template.
@@ -56,9 +56,9 @@ enum KubeDeploymentHint: Equatable, Sendable {
     case notReady(ready: Int, desired: Int)
 
     /// The Status column's id among the page's columns.
-    static let column = "hint.status"
+    package static let column = "hint.status"
 
-    init?(row: KubeRow, columns: [KubeColumn]) {
+    package init?(row: KubeRow, columns: [KubeColumn]) {
         guard let ready = row.cell("Ready", in: columns)?.text, case let parts = ready.split(separator: "/"), parts.count == 2,
             let readyCount = Int(parts[0]), let desired = Int(parts[1])
         else { return nil }
@@ -79,12 +79,12 @@ enum KubeDeploymentHint: Equatable, Sendable {
 
     /// Whether a list of `kind` with these columns gets the column: a
     /// Deployments list whose Table has no Status of its own.
-    static func applies(to kind: KubeResourceKind, columns: [KubeColumn]) -> Bool {
+    package static func applies(to kind: KubeResourceKind, columns: [KubeColumn]) -> Bool {
         kind.fullName == "deployments.apps" && !columns.isEmpty && KubeColumn.index(of: "Status", in: columns) == nil
             && KubeColumn.index(of: "Ready", in: columns) != nil
     }
 
-    var text: String {
+    package var text: String {
         switch self {
         case .available: "Available"
         case .scaledToZero: "Scaled to 0"
@@ -94,6 +94,6 @@ enum KubeDeploymentHint: Equatable, Sendable {
         }
     }
 
-    var isBad: Bool { if case .unavailable = self { true } else { false } }
-    var isDone: Bool { self == .available || self == .scaledToZero }
+    package var isBad: Bool { if case .unavailable = self { true } else { false } }
+    package var isDone: Bool { self == .available || self == .scaledToZero }
 }

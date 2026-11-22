@@ -6,38 +6,38 @@ import Foundation
 /// When none can be found — not installed, or it keeps dying — `server(for:)`
 /// is nil and the editor goes on without one (buffer-word completion).
 @MainActor
-final class LanguageServers {
-    static let shared = LanguageServers()
+package final class LanguageServers {
+    package static let shared = LanguageServers()
 
     /// One kind of server: the files it takes, how to find its root, and
     /// where its executable may be.
-    struct Spec: Sendable, Hashable {
+    package struct Spec: Sendable, Hashable {
         /// "go", "typescript", "c"… — also its key here.
-        var id: String
+        package var id: String
         /// Lowercased extension → LSP language id.
-        var extensions: [String: String]
+        package var extensions: [String: String]
         /// Whole file names (no extension to go by) → LSP language id.
-        var fileNames: [String: String] = [:]
+        package var fileNames: [String: String] = [:]
         /// Files whose directory is the project root, nearest first.
-        var rootMarkers: [String] = []
+        package var rootMarkers: [String] = []
         /// Tried in order; the first found is used.
-        var launch: [ServerDiscovery.Candidate]
+        package var launch: [ServerDiscovery.Candidate]
         /// Sent as `initialize`'s `initializationOptions` (terraform-ls takes
         /// its settings there). A JSON value, Hashable: Spec is a key.
-        var initializationOptions: JSONValue? = nil
+        package var initializationOptions: JSONValue? = nil
         /// Set in its environment, and so in what it runs (terraform-ls:
         /// `CHECKPOINT_DISABLE=1`, `HOME` a scratch folder, so the providers
         /// `terraform validate` starts find no credential files). Over the
         /// app's and the command's; a removed name still wins.
-        var environmentAdded: [String: String] = [:]
+        package var environmentAdded: [String: String] = [:]
         /// Names never in its environment, nor in what it runs: a server
         /// that starts tools (terraform-ls runs `terraform validate`) gets
         /// no credentials. `AWS_*` takes every name it begins, `*_TOKEN`
         /// every name it ends, `*_SECRET*` every name it is in.
-        var environmentRemoved: [String] = []
+        package var environmentRemoved: [String] = []
     }
 
-    nonisolated static let specs: [Spec] = [
+    package nonisolated static let specs: [Spec] = [
         Spec(
             id: "go", extensions: ["go": "go"], fileNames: ["go.mod": "go.mod"], rootMarkers: ["go.work", "go.mod"],
             launch: [.executable("gopls"), .zedGopls]),
@@ -115,7 +115,7 @@ final class LanguageServers {
     ]
 
     /// The spec whose files these are.
-    nonisolated static func spec(for url: URL) -> Spec? {
+    package nonisolated static func spec(for url: URL) -> Spec? {
         let name = url.lastPathComponent
         let ext = url.pathExtension.lowercased()
         // A file name first: tsconfig.json is JSON with comments.
@@ -127,14 +127,14 @@ final class LanguageServers {
     /// The LSP language id for didOpen: go, typescript, typescriptreact,
     /// javascript, javascriptreact, python, rust, swift, c, cpp, objective-c,
     /// objective-cpp, json, jsonc, yaml, shellscript. go.mod is "go.mod".
-    nonisolated static func languageID(for url: URL) -> String? {
+    package nonisolated static func languageID(for url: URL) -> String? {
         guard let spec = spec(for: url) else { return nil }
         return spec.fileNames[url.lastPathComponent] ?? spec.extensions[url.pathExtension.lowercased()]
     }
 
     /// The workspace a file belongs to: the nearest directory holding one of
     /// the language's markers, else the git checkout's top, else its folder.
-    nonisolated static func root(for url: URL, markers: [String], fileManager: FileManager = .default) -> URL {
+    package nonisolated static func root(for url: URL, markers: [String], fileManager: FileManager = .default) -> URL {
         let folder = url.standardizedFileURL.deletingLastPathComponent()
         func nearest(_ names: [String]) -> URL? {
             var directory = folder
@@ -154,13 +154,13 @@ final class LanguageServers {
     /// Replaces discovery entirely — the end-to-end tests hand in a fake
     /// server. An isolated run or a unit test without one finds nothing: it
     /// must never launch the user's real servers.
-    var discoveryOverride: ((Spec) -> LanguageServer.Command?)?
+    package var discoveryOverride: ((Spec) -> LanguageServer.Command?)?
     /// Every server's diagnostics, on the main actor.
-    var onDiagnostics: ((URL, [LSP.Diagnostic]) -> Void)?
+    package var onDiagnostics: ((URL, [LSP.Diagnostic]) -> Void)?
 
     /// Deaths (or failed starts) per spec before it is left alone for the
     /// rest of the run: the first restart is free, the next isn't made.
-    static let maxFailures = 2
+    package static let maxFailures = 2
 
     private let discovery: ServerDiscovery
     private let launchesRealServers: Bool
@@ -168,24 +168,24 @@ final class LanguageServers {
     private var commands: [String: LanguageServer.Command?] = [:]
     private var failures: [String: Int] = [:]
 
-    init(discovery: ServerDiscovery = ServerDiscovery(), launchesRealServers: Bool = LanguageServers.mayLaunchRealServers) {
+    package init(discovery: ServerDiscovery = ServerDiscovery(), launchesRealServers: Bool = LanguageServers.mayLaunchRealServers) {
         self.discovery = discovery
         self.launchesRealServers = launchesRealServers
     }
 
     /// Not in an isolated run, nor inside a test process.
-    nonisolated static var mayLaunchRealServers: Bool {
+    package nonisolated static var mayLaunchRealServers: Bool {
         !AppEnvironment.isIsolated && NSClassFromString("XCTestCase") == nil
     }
 
     /// The running servers, for diagnostics (Tab Info) and tests.
-    var running: [LanguageServer] { Array(servers.values) }
+    package var running: [LanguageServer] { Array(servers.values) }
 
     /// The server for this file, launched if it isn't yet — it may still be
     /// initializing; requests wait for that. nil when the language has none
     /// on this machine, or its server has failed for good. A server that
     /// died is restarted here, once per spec per run.
-    func server(for url: URL) -> LanguageServer? {
+    package func server(for url: URL) -> LanguageServer? {
         guard let spec = Self.spec(for: url), failures[spec.id, default: 0] < Self.maxFailures else { return nil }
         let root = Self.root(for: url, markers: spec.rootMarkers)
         let key = "\(spec.id)\u{0}\(root.path)"
@@ -231,7 +231,7 @@ final class LanguageServers {
     /// and the terraform it runs would start with a HOME and a
     /// `TF_CLI_CONFIG_FILE` that don't exist. A folder and a small file,
     /// once a launch.
-    static func prepareLaunch(_ spec: Spec) {
+    package static func prepareLaunch(_ spec: Spec) {
         guard spec.id == "terraform" else { return }
         _ = try? TerraformGuards.prepareScratch(at: AppEnvironment.terraformScratchDirectory)
     }
@@ -239,7 +239,7 @@ final class LanguageServers {
     /// The terraform terraform-ls runs (analysis 4.14, 4.2): the one
     /// Overterm's own runs use, as far as it is known without waiting —
     /// `TerraformCLI.knownBinary`, warmed when a Terraform file opens.
-    static func terraformPath(_ spec: Spec) -> String? {
+    package static func terraformPath(_ spec: Spec) -> String? {
         guard spec.id == "terraform" else { return nil }
         return TerraformCLI.knownBinary()?.path
     }
@@ -247,7 +247,7 @@ final class LanguageServers {
     /// The spec's `initializationOptions`, with `terraform.path` for
     /// terraform-ls when there is one: without it, the server finds
     /// terraform on its own PATH, which needn't be the one Overterm chose.
-    nonisolated static func launchOptions(_ spec: Spec, terraformPath: String?) -> JSONValue? {
+    package nonisolated static func launchOptions(_ spec: Spec, terraformPath: String?) -> JSONValue? {
         guard spec.id == "terraform", let terraformPath, case .object(var options)? = spec.initializationOptions else {
             return spec.initializationOptions
         }
@@ -256,7 +256,7 @@ final class LanguageServers {
     }
 
     /// The server already running for this file, if any — never starts one.
-    func existingServer(for url: URL) -> LanguageServer? {
+    package func existingServer(for url: URL) -> LanguageServer? {
         guard let spec = Self.spec(for: url) else { return nil }
         return servers["\(spec.id)\u{0}\(Self.root(for: url, markers: spec.rootMarkers).path)"]
     }
@@ -268,7 +268,7 @@ final class LanguageServers {
     }
 
     /// How this spec's server is launched on this machine, looked up once.
-    func command(for spec: Spec) -> LanguageServer.Command? {
+    package func command(for spec: Spec) -> LanguageServer.Command? {
         if let discoveryOverride { return discoveryOverride(spec) }
         guard launchesRealServers else { return nil }
         if let known = commands[spec.id] { return known }
@@ -279,7 +279,7 @@ final class LanguageServers {
 
     /// Ends every server (shutdown, exit, killed after 2 s), all at once.
     /// Blocks until they're gone or ~4.5 s have passed: for app termination.
-    func stopAll() {
+    package func stopAll() {
         let all = Array(servers.values)
         servers = [:]
         let group = DispatchGroup()
@@ -294,8 +294,8 @@ final class LanguageServers {
 /// usual install places are searched by hand; then Xcode's toolchain; then
 /// what Zed downloaded for itself (`~/Library/Application Support/Zed`),
 /// run with whatever node there is.
-struct ServerDiscovery: Sendable {
-    enum Candidate: Sendable, Hashable {
+package struct ServerDiscovery: Sendable {
+    package enum Candidate: Sendable, Hashable {
         /// A binary in one of `searchDirectories`.
         case executable(String, [String] = [])
         /// A binary in the Xcode toolchain (sourcekit-lsp, clangd).
@@ -310,16 +310,16 @@ struct ServerDiscovery: Sendable {
         case zedNode(String, [String])
     }
 
-    var home: URL
+    package var home: URL
     /// Absolute executables by spec id, ahead of everything else — for a
     /// setting naming one.
-    var overrides: [String: LanguageServer.Command]
-    var searchDirectories: [URL]
+    package var overrides: [String: LanguageServer.Command]
+    package var searchDirectories: [URL]
     /// Xcode's toolchains, looked in before asking xcrun.
-    var toolchainDirectories: [URL]
-    var runsXcrun: Bool
+    package var toolchainDirectories: [URL]
+    package var runsXcrun: Bool
 
-    init(
+    package init(
         home: URL = FileManager.default.homeDirectoryForCurrentUser, overrides: [String: LanguageServer.Command] = [:],
         searchDirectories: [URL]? = nil, toolchainDirectories: [URL]? = nil, runsXcrun: Bool = true
     ) {
@@ -339,9 +339,9 @@ struct ServerDiscovery: Sendable {
         self.runsXcrun = runsXcrun
     }
 
-    var zedDirectory: URL { home.appendingPathComponent("Library/Application Support/Zed") }
+    package var zedDirectory: URL { home.appendingPathComponent("Library/Application Support/Zed") }
 
-    func command(for spec: LanguageServers.Spec) -> LanguageServer.Command? {
+    package func command(for spec: LanguageServers.Spec) -> LanguageServer.Command? {
         if let command = overrides[spec.id] { return command }
         for candidate in spec.launch {
             if let command = command(for: candidate) { return command }
@@ -351,12 +351,12 @@ struct ServerDiscovery: Sendable {
 
     /// The search directories on the server's PATH as well: gopls runs `go`,
     /// rust-analyzer `cargo`, and a node script `#!/usr/bin/env node`.
-    var environment: [String: String] {
+    package var environment: [String: String] {
         let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
         return ["PATH": (searchDirectories.map(\.path) + [path]).joined(separator: ":")]
     }
 
-    func command(for candidate: Candidate) -> LanguageServer.Command? {
+    package func command(for candidate: Candidate) -> LanguageServer.Command? {
         switch candidate {
         case .executable(let name, let arguments):
             guard let executable = find(name) else { return nil }
@@ -380,7 +380,7 @@ struct ServerDiscovery: Sendable {
     /// The first executable of that name in the search directories. A rustup
     /// proxy for a component that isn't installed only prints an error, so
     /// rust-analyzer in ~/.cargo/bin counts only if a toolchain has it.
-    func find(_ name: String) -> URL? {
+    package func find(_ name: String) -> URL? {
         for directory in searchDirectories {
             let url = directory.appendingPathComponent(name)
             guard FileManager.default.isExecutableFile(atPath: url.path) else { continue }
@@ -399,7 +399,7 @@ struct ServerDiscovery: Sendable {
     /// In Xcode's (or the Command Line Tools') toolchain, else `xcrun --find`
     /// for another selected Xcode. xcrun only runs when developer tools are
     /// there at all — without them it offers to install them, in a dialog.
-    func toolchain(_ name: String) -> URL? {
+    package func toolchain(_ name: String) -> URL? {
         for directory in toolchainDirectories {
             let url = directory.appendingPathComponent(name)
             if FileManager.default.isExecutableFile(atPath: url.path) { return url }
@@ -416,7 +416,7 @@ struct ServerDiscovery: Sendable {
 
     /// Zed keeps gopls as `languages/gopls/gopls_<gopls>_go_<go>` — the
     /// binary itself (a directory holding `gopls` is taken too). The newest.
-    func zedGopls() -> URL? {
+    package func zedGopls() -> URL? {
         let directory = zedDirectory.appendingPathComponent("languages/gopls")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         for name in names.filter({ $0.hasPrefix("gopls_") }).sorted(by: { $0.compare($1, options: .numeric) == .orderedDescending }) {
@@ -432,7 +432,7 @@ struct ServerDiscovery: Sendable {
 
     /// The newest terraform-ls Zed's Terraform extension keeps
     /// (`terraform-ls-0.36.4`, or the release tag's `terraform-ls-v0.36.4`).
-    func zedTerraformLS() -> URL? {
+    package func zedTerraformLS() -> URL? {
         let directory = zedDirectory.appendingPathComponent("extensions/work/terraform")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         func version(_ name: String) -> String {
@@ -450,7 +450,7 @@ struct ServerDiscovery: Sendable {
 
     /// node from the search directories, else the one Zed downloaded
     /// (`node/node-v<version>-darwin-<arch>/bin/node`).
-    func node() -> URL? {
+    package func node() -> URL? {
         if let node = find("node") { return node }
         let directory = zedDirectory.appendingPathComponent("node")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []

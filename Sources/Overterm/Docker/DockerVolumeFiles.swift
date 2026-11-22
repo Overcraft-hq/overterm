@@ -8,20 +8,20 @@ import Foundation
 /// come spread among its subfolders' until the end, so a database's volume
 /// would be gigabytes a click. Files themselves go through `archive`, on
 /// a helper that never starts. Pure.
-enum DockerVolumeFiles {
+package enum DockerVolumeFiles {
     /// Where a helper has the volume.
-    static let mount = "/volume"
+    package static let mount = "/volume"
     /// How long a browsing helper lives, in seconds: removed when its tab
     /// stops showing, and by its own end (AutoRemove) after a crash.
-    static let lifetime = 1800
+    package static let lifetime = 1800
     /// What the tab offers to pull when no image here has a shell: a few
     /// MB, and only when asked.
-    static let fallbackImage = "busybox:latest"
+    package static let fallbackImage = "busybox:latest"
 
     /// A volume's path as the helper has it: `/conf/app.conf` →
     /// `/volume/conf/app.conf`. `.` and `..` are left out, as a local
     /// copy's are, so a typed `/../../etc` stays in the volume.
-    static func helperPath(_ path: String) -> String {
+    package static func helperPath(_ path: String) -> String {
         let parts = path.split(separator: "/").filter { $0 != "." && $0 != ".." }
         return parts.isEmpty ? mount : mount + "/" + parts.joined(separator: "/")
     }
@@ -29,28 +29,28 @@ enum DockerVolumeFiles {
     /// The helper's paths in what the engine or the script says, as the
     /// volume's: `No such folder: /volume/x` → `No such folder: /x`, the
     /// mount itself `/`.
-    static func said(_ message: String) -> String {
+    package static func said(_ message: String) -> String {
         let start = #"(^|[\s"'(:=])"#
         let under = message.replacingOccurrences(of: start + "/volume(?=/)", with: "$1", options: .regularExpression)
         return under.replacingOccurrences(of: start + #"/volume(?![\w/-]|\.\w)"#, with: "$1/", options: .regularExpression)
     }
 
     /// `docker.io/library/busybox:1.36` → `busybox`; `nicolaka/netshoot` as it is.
-    static func repository(_ reference: String) -> String {
+    package static func repository(_ reference: String) -> String {
         var name = DockerEngine.split(reference).0
         for prefix in ["docker.io/", "index.docker.io/", "library/"] where name.hasPrefix(prefix) { name.removeFirst(prefix.count) }
         return name
     }
 
     /// Small images that have a shell, the likeliest first.
-    static let shells = ["busybox", "alpine", "debian", "ubuntu"]
+    package static let shells = ["busybox", "alpine", "debian", "ubuntu"]
 
     /// The images to try for a helper that runs `sh`, by id, at most
     /// `limit`: the one that `worked` last; busybox, alpine, debian,
     /// ubuntu; the debug shell's image; what mounts the volume; then the
     /// rest by size, smallest first. Never an untagged image, nor a
     /// distroless one (no shell, by design).
-    static func shellImages(
+    package static func shellImages(
         _ images: [ImageSummary], debugImage: String, mountedBy users: [ContainerSummary], worked: String? = nil, limit: Int = 3
     ) -> [String] {
         let usable = images.filter { image in !image.isDangling && !image.tags.contains { $0.contains("distroless") } }
@@ -68,9 +68,9 @@ enum DockerVolumeFiles {
 
     /// A helper's start refused for want of `sh` in its image, as runc
     /// says it: another image may have one.
-    static func hasNoShell(_ error: Error) -> Bool { error.localizedDescription.contains("executable file not found") }
+    package static func hasNoShell(_ error: Error) -> Bool { error.localizedDescription.contains("executable file not found") }
 
     /// What the tab says when no image here could list the volume.
-    static let noShell = DockerError(
+    package static let noShell = DockerError(
         status: 0, message: "No image here has a shell to list the volume with. Pull busybox (a few MB) and Overterm uses it.")
 }

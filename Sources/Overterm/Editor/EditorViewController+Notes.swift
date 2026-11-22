@@ -5,10 +5,10 @@ import Combine
 /// reading view, Obsidian's — links followed, tasks ticked in the text,
 /// embeds and diagrams drawn.
 extension EditorViewController {
-    var notes: NotesModel { NotesModel.shared }
+    package var notes: NotesModel { NotesModel.shared }
 
     /// A Markdown file inside the vault is a note.
-    func attachNote(_ buffer: EditorBuffer) {
+    package func attachNote(_ buffer: EditorBuffer) {
         guard Settings.shared.notesEnabled, let url = buffer.url, url.pathExtension.lowercased() == "md",
             buffer.document.unavailable == nil, notes.vault.contains(url)
         else { return }
@@ -19,7 +19,7 @@ extension EditorViewController {
     }
 
     /// Shows the reading view over the text, or the text, as the buffer asks.
-    func showNote(_ buffer: EditorBuffer) {
+    package func showNote(_ buffer: EditorBuffer) {
         guard buffer.showsPreview else {
             noteReader?.isHidden = true
             scrollView.isHidden = false
@@ -62,13 +62,13 @@ extension EditorViewController {
     /// A link out of a note: the web, mail, Obsidian's own — the schemes a
     /// note has reason to name. Anything else (an app's private scheme in a
     /// note an agent or a shared vault planted) is not opened.
-    static func openExternal(_ url: URL) {
+    package static func openExternal(_ url: URL) {
         guard ["http", "https", "mailto", "obsidian"].contains(url.scheme?.lowercased() ?? "") else { return NSSound.beep() }
         NSWorkspace.shared.open(url)
     }
 
     /// Draws the note — once the index can say what its links mean.
-    func renderNote(_ buffer: EditorBuffer, scrollTo anchor: String? = nil) {
+    package func renderNote(_ buffer: EditorBuffer, scrollTo anchor: String? = nil) {
         guard let url = buffer.url, let reader = noteReader else { return }
         let notes = self.notes
         notes.whenLoaded { [weak self, weak buffer] in
@@ -100,7 +100,7 @@ extension EditorViewController {
     /// A link in the reading view: the note it names, opened at its
     /// heading or block — or, for a note not written yet, written (as
     /// Obsidian does on a click) where new notes go.
-    func followNoteLink(_ target: String, anchor: String?, markdown: Bool) {
+    package func followNoteLink(_ target: String, anchor: String?, markdown: Bool) {
         guard let current = active?.url else { return }
         // The index first: a link it hasn't read yet is not a note to write.
         notes.whenLoaded { [weak self] in self?.followLoadedNoteLink(target, anchor: anchor, markdown: markdown, from: current) }
@@ -160,7 +160,7 @@ extension EditorViewController {
 
     /// A checkbox clicked in the reading view: the task's `[ ]` in the
     /// text ticked — an ordinary edit, saved and undone like one.
-    func toggleNoteTask(line: Int) {
+    package func toggleNoteTask(line: Int) {
         guard let buffer = active, buffer.isNote else { return }
         let text = buffer.storage.string
         guard let edit = NoteEdits.toggleTask(in: text, line: line) else { return }
@@ -174,7 +174,7 @@ extension EditorViewController {
 extension EditorViewController {
     /// `[[` lists the vault's notes, `[[Note#` its headings, `#` the tags —
     /// shown, or the list kept up to date. False when the caret is in none.
-    func updateNoteCompletion() -> Bool {
+    package func updateNoteCompletion() -> Bool {
         guard let buffer = active, buffer.isNote, let url = buffer.url, textView.selectedRanges.count == 1,
             textView.selectedRange().length == 0, let window = view.window
         else { return false }
@@ -218,7 +218,7 @@ extension EditorViewController {
 
     /// The name (or heading, or tag) in place of what was typed — a link
     /// closed with `]]`, past the pair the editor already typed if it did.
-    func acceptNoteCompletion(_ candidate: CompletionState.Candidate, anchor: Int) {
+    package func acceptNoteCompletion(_ candidate: CompletionState.Candidate, anchor: Int) {
         let text = textView.string as NSString
         let caret = textView.selectedRange().location
         guard anchor <= caret else { return }
@@ -240,7 +240,7 @@ extension EditorViewController {
     /// An image on the pasteboard — a screenshot, or image files copied in
     /// Finder — saved where the vault keeps attachments and embedded at the
     /// caret. False for anything else, which pastes as text.
-    func pasteIntoNote(from pasteboard: NSPasteboard) -> Bool {
+    package func pasteIntoNote(from pasteboard: NSPasteboard) -> Bool {
         guard let buffer = active, let url = buffer.url else { return false }
         let notes = self.notes
         let folder = notes.vault.folderForAttachment(of: url)
@@ -288,7 +288,7 @@ extension EditorViewController {
 extension EditorViewController {
     /// Obsidian's Insert template: the template's text at the caret, its
     /// `{{title}}`, `{{date}}` and `{{time}}` filled for this note.
-    func insertTemplate(_ template: URL) {
+    package func insertTemplate(_ template: URL) {
         guard let buffer = active, buffer.isNote, let url = buffer.url, let body = try? NoteFiles.read(template) else { return }
         let text = NoteTemplate.apply(
             body, title: url.deletingPathExtension().lastPathComponent, date: Date(), settings: notes.vault.settings)
@@ -301,7 +301,7 @@ extension EditorViewController {
     }
 
     /// The templates, in a note's right-click menu.
-    func addTemplateItems(to menu: NSMenu) {
+    package func addTemplateItems(to menu: NSMenu) {
         guard active?.isNote == true else { return }
         let templates = notes.vault.templates
         guard !templates.isEmpty else { return }
@@ -328,7 +328,7 @@ extension EditorViewController {
 extension EditorViewController {
     /// The layout as Live Preview needs it — lines as tall as their fonts,
     /// markup laid out as nothing — or the code editor's.
-    func setLiveLayout(_ live: Bool) {
+    package func setLiveLayout(_ live: Bool) {
         // No line numbers in Live Preview, as Obsidian: lines of every
         // height, a heading's and a wrapped paragraph's, numbered as code.
         if scrollView.rulersVisible == live { scrollView.rulersVisible = !live }
@@ -342,7 +342,7 @@ extension EditorViewController {
 
     /// What a character typed into a note in Live Preview starts as: the
     /// note's body text (the restyle then makes it a heading's, a link's).
-    var liveTypingAttributes: [NSAttributedString.Key: Any] {
+    package var liveTypingAttributes: [NSAttributedString.Key: Any] {
         let style = liveStyle
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byWordWrapping
@@ -364,7 +364,7 @@ extension EditorViewController {
     }
 
     /// Styles the lines in `range` (attributes only — the text is the file's).
-    func applyLivePreview(over range: NSRange, in buffer: EditorBuffer) {
+    package func applyLivePreview(over range: NSRange, in buffer: EditorBuffer) {
         let storage = buffer.storage
         let text = storage.string as NSString
         guard range.length > 0, NSMaxRange(range) <= text.length else { return }
@@ -378,7 +378,7 @@ extension EditorViewController {
 
     /// Live Preview's attributes over `target` — the note's whole lines from
     /// `location` on, coloured as code.
-    func styleLive(_ target: NSMutableAttributedString, at location: Int, in buffer: EditorBuffer) {
+    package func styleLive(_ target: NSMutableAttributedString, at location: Int, in buffer: EditorBuffer) {
         let text = buffer.storage.string as NSString
         let lines = NSRange(location: location, length: target.length)
         guard lines.length > 0, NSMaxRange(lines) <= text.length else { return }
@@ -404,7 +404,7 @@ extension EditorViewController {
     /// again, and with lines of every height (headings, markup laid out as
     /// nothing) the lines above the screen were estimated anew on every
     /// keystroke: a long note jumped while its last lines were typed.
-    static func write(_ styled: NSAttributedString, at location: Int, into storage: NSTextStorage) {
+    package static func write(_ styled: NSAttributedString, at location: Int, into storage: NSTextStorage) {
         var refont: NSRange?
         styled.enumerateAttributes(in: NSRange(location: 0, length: styled.length)) { attributes, run, _ in
             let target = NSRange(location: run.location + location, length: run.length)
@@ -441,7 +441,7 @@ extension EditorViewController {
         }
     }
 
-    static func sameAttributes(_ a: [NSAttributedString.Key: Any], _ b: [NSAttributedString.Key: Any]) -> Bool {
+    package static func sameAttributes(_ a: [NSAttributedString.Key: Any], _ b: [NSAttributedString.Key: Any]) -> Bool {
         guard a.count == b.count else { return false }
         for (key, value) in a {
             guard let other = b[key] else { return false }
@@ -457,7 +457,7 @@ extension EditorViewController {
 
     /// The caret moved to other lines: those it left hide their markup,
     /// the ones it is on show theirs.
-    func updateLivePreviewEditing() {
+    package func updateLivePreviewEditing() {
         guard let buffer = active, buffer.livePreview, !textView.hasMarkedText() else { return }
         let text = buffer.storage.string as NSString
         let now = textView.selectedRanges.map { text.lineRange(for: $0.rangeValue) }
@@ -470,7 +470,7 @@ extension EditorViewController {
     }
 
     /// ⌘E in Obsidian: Live Preview or the Markdown as written, for this note.
-    func toggleLivePreview() {
+    package func toggleLivePreview() {
         guard let buffer = active, buffer.isNote else { return }
         buffer.livePreview.toggle()
         buffer.painted = IndexSet()
@@ -484,7 +484,7 @@ extension EditorViewController {
 
     /// A click in Live Preview: a box ticks its task, a link opens — on
     /// lines not being edited (there the click places the caret, as typed).
-    func liveClick(at index: Int) -> Bool {
+    package func liveClick(at index: Int) -> Bool {
         guard let buffer = active, buffer.livePreview, index < buffer.storage.length else { return false }
         let storage = buffer.storage
         let text = storage.string as NSString

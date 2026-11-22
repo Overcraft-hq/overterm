@@ -7,23 +7,23 @@ import Foundation
 // Pure: what is read is the caller's (KubeAPIDocs), bounded here.
 
 /// A kind as the documents name it (`x-kubernetes-group-version-kind`).
-struct KubeGVK: Hashable, Sendable, CustomStringConvertible {
+package struct KubeGVK: Hashable, Sendable, CustomStringConvertible {
     /// "" for the core group.
-    var group: String
-    var version: String
-    var kind: String
+    package var group: String
+    package var version: String
+    package var kind: String
 
-    var apiVersion: String { group.isEmpty ? version : "\(group)/\(version)" }
-    var description: String { "\(kind) \(apiVersion)" }
+    package var apiVersion: String { group.isEmpty ? version : "\(group)/\(version)" }
+    package var description: String { "\(kind) \(apiVersion)" }
 
-    init(group: String, version: String, kind: String) {
+    package init(group: String, version: String, kind: String) {
         self.group = group
         self.version = version
         self.kind = kind
     }
 
     /// `apps/v1` and `Deployment`; nil when the apiVersion is empty or odd.
-    init?(apiVersion: String, kind: String) {
+    package init?(apiVersion: String, kind: String) {
         let parts = apiVersion.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         guard !kind.isEmpty, (1...2).contains(parts.count), parts.allSatisfy({ !$0.isEmpty }) else { return nil }
         group = parts.count == 2 ? parts[0] : ""
@@ -33,27 +33,27 @@ struct KubeGVK: Hashable, Sendable, CustomStringConvertible {
 }
 
 /// Why the docs couldn't be read or said — in plain words.
-struct KubeOpenAPIProblem: Error, Equatable, LocalizedError {
-    let message: String
-    init(_ message: String) { self.message = message }
-    var errorDescription: String? { message }
+package struct KubeOpenAPIProblem: Error, Equatable, LocalizedError {
+    package let message: String
+    package init(_ message: String) { self.message = message }
+    package var errorDescription: String? { message }
 }
 
 /// `/openapi/v3`: each group version's document, by the path the server
 /// names it with (`api/v1`, `apis/apps/v1`) and the URL it serves it at,
 /// a hash in its query that changes with the document.
-struct KubeOpenAPIIndex: Sendable, Equatable {
-    var paths: [String: String]
+package struct KubeOpenAPIIndex: Sendable, Equatable {
+    package var paths: [String: String]
 
     /// The index is a few hundred entries; one that isn't is refused.
-    static let maxBytes = 4 << 20
-    static let maxPaths = 4000
+    package static let maxBytes = 4 << 20
+    package static let maxPaths = 4000
 
-    static func key(group: String, version: String) -> String { group.isEmpty ? "api/\(version)" : "apis/\(group)/\(version)" }
+    package static func key(group: String, version: String) -> String { group.isEmpty ? "api/\(version)" : "apis/\(group)/\(version)" }
 
-    func url(for gvk: KubeGVK) -> String? { paths[Self.key(group: gvk.group, version: gvk.version)] }
+    package func url(for gvk: KubeGVK) -> String? { paths[Self.key(group: gvk.group, version: gvk.version)] }
 
-    static func read(_ data: Data) throws -> KubeOpenAPIIndex {
+    package static func read(_ data: Data) throws -> KubeOpenAPIIndex {
         guard data.count <= maxBytes else { throw KubeOpenAPIProblem("The cluster's OpenAPI index is over \(maxBytes >> 20) MB: too much to read here.") }
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let paths = root["paths"] as? [String: Any] else {
             throw KubeOpenAPIProblem("The cluster's /openapi/v3 isn't the index Kubernetes serves.")
@@ -69,7 +69,7 @@ struct KubeOpenAPIIndex: Sendable, Equatable {
     /// Only a path under the server's own `/openapi/v3/` — the URL is the
     /// server's word, and it goes through Overterm's proxy: never another
     /// host, another path or a way out of it.
-    static func safe(_ url: String) -> String? {
+    package static func safe(_ url: String) -> String? {
         guard url.hasPrefix("/openapi/v3/"), url.count <= 1024, !url.contains("//"), !url.contains("\\"), !url.contains("#") else { return nil }
         let path = url.split(separator: "?", maxSplits: 1).first.map(String.init) ?? url
         let decoded = path.removingPercentEncoding ?? path
@@ -83,61 +83,61 @@ struct KubeOpenAPIIndex: Sendable, Equatable {
 
 /// One schema of a document, as much of it as the docs say: its words,
 /// its type, the schemas it is made of (`$ref`, `allOf`), its fields.
-struct KubeSchema: Sendable, Equatable {
-    var description: String?
-    var type: String?
-    var format: String?
+package struct KubeSchema: Sendable, Equatable {
+    package var description: String?
+    package var type: String?
+    package var format: String?
     /// Component schemas this one is (`$ref`, each `allOf`'s).
-    var refs: [String] = []
-    var properties: [String: KubeSchema] = [:]
-    var required: [String] = []
+    package var refs: [String] = []
+    package var properties: [String: KubeSchema] = [:]
+    package var required: [String] = []
     /// An array's item, a map's value: none or one each.
-    var itemsOf: [KubeSchema] = []
-    var valuesOf: [KubeSchema] = []
+    package var itemsOf: [KubeSchema] = []
+    package var valuesOf: [KubeSchema] = []
     /// `additionalProperties: true`: any key.
-    var anyKeys = false
-    var enumValues: [String] = []
+    package var anyKeys = false
+    package var enumValues: [String] = []
     /// `x-kubernetes-preserve-unknown-fields`: whatever is under it, unchecked.
-    var preservesUnknown = false
-    var intOrString = false
-    var embedded = false
-    var gvks: [KubeGVK] = []
+    package var preservesUnknown = false
+    package var intOrString = false
+    package var embedded = false
+    package var gvks: [KubeGVK] = []
 
-    var items: KubeSchema? { itemsOf.first }
-    var values: KubeSchema? { valuesOf.first }
+    package var items: KubeSchema? { itemsOf.first }
+    package var values: KubeSchema? { valuesOf.first }
 }
 
 /// A field's docs: `kubectl explain`'s FIELD part.
-struct KubeFieldSummary: Equatable, Sendable, Identifiable {
-    var name: String
-    var type: String
-    var required: Bool
-    var description: String
+package struct KubeFieldSummary: Equatable, Sendable, Identifiable {
+    package var name: String
+    package var type: String
+    package var required: Bool
+    package var description: String
 
-    var id: String { name }
+    package var id: String { name }
     /// The description's first sentence, for a list's row.
-    var summary: String { KubeExplain.firstSentence(description) }
+    package var summary: String { KubeExplain.firstSentence(description) }
 }
 
 /// What the docs say of one field (or of the kind, for an empty path).
-struct KubeFieldDoc: Equatable, Sendable {
-    var gvk: KubeGVK
-    var path: [String]
-    var type: String
-    var description: String
-    var required: Bool
-    var enumValues: [String]
-    var fields: [KubeFieldSummary]
+package struct KubeFieldDoc: Equatable, Sendable {
+    package var gvk: KubeGVK
+    package var path: [String]
+    package var type: String
+    package var description: String
+    package var required: Bool
+    package var enumValues: [String]
+    package var fields: [KubeFieldSummary]
     /// Under it is anything: no field there is unknown.
-    var opaque: Bool
+    package var opaque: Bool
 
-    var name: String { path.last ?? gvk.kind }
+    package var name: String { path.last ?? gvk.kind }
     /// `Deployment.spec.replicas`.
-    var spokenPath: String { ([gvk.kind] + path).joined(separator: ".") }
+    package var spokenPath: String { ([gvk.kind] + path).joined(separator: ".") }
 }
 
 /// What a path through a kind's schema comes to.
-enum KubeFieldLookup: Equatable {
+package enum KubeFieldLookup: Equatable {
     case found(KubeFieldDoc)
     /// The segment at `index` isn't a field of what holds it (`parent`, spoken).
     case unknown(index: Int, parent: String)
@@ -149,23 +149,23 @@ enum KubeFieldLookup: Equatable {
 
 /// A group version's document, read: its component schemas and which of
 /// them is which kind. Bounded as it is read.
-struct KubeOpenAPIDocument: Sendable {
-    var schemas: [String: KubeSchema]
-    var kinds: [KubeGVK: String]
+package struct KubeOpenAPIDocument: Sendable {
+    package var schemas: [String: KubeSchema]
+    package var kinds: [KubeGVK: String]
     /// Its size as read: what the cache counts.
-    var bytes: Int
+    package var bytes: Int
 
-    static let maxBytes = 32 << 20
-    static let maxSchemas = 20_000
+    package static let maxBytes = 32 << 20
+    package static let maxSchemas = 20_000
     /// Every schema node read, inline ones too (a CRD's are all inline).
-    static let maxNodes = 500_000
-    static let maxDepth = 64
+    package static let maxNodes = 500_000
+    package static let maxDepth = 64
     /// How deep `$ref`s are followed: a schema that refers to itself
     /// (JSONSchemaProps) stops here.
-    static let maxRefDepth = 32
-    static let maxPath = 32
+    package static let maxRefDepth = 32
+    package static let maxPath = 32
 
-    static func read(_ data: Data) throws -> KubeOpenAPIDocument {
+    package static func read(_ data: Data) throws -> KubeOpenAPIDocument {
         guard data.count <= maxBytes else { throw KubeOpenAPIProblem("The cluster's document is over \(maxBytes >> 20) MB: too much to read here.") }
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw KubeOpenAPIProblem("The cluster's OpenAPI document isn't JSON Overterm can read.")
@@ -184,7 +184,7 @@ struct KubeOpenAPIDocument: Sendable {
         return KubeOpenAPIDocument(schemas: schemas, kinds: kinds, bytes: data.count)
     }
 
-    static func parse(_ map: [String: Any], depth: Int, budget: inout Int) throws -> KubeSchema {
+    package static func parse(_ map: [String: Any], depth: Int, budget: inout Int) throws -> KubeSchema {
         budget -= 1
         guard budget >= 0 else { throw KubeOpenAPIProblem("The document is larger than Overterm reads (\(maxNodes) schema nodes).") }
         var schema = KubeSchema()
@@ -229,7 +229,7 @@ struct KubeOpenAPIDocument: Sendable {
 
     /// An `allOf` part folded into the schema holding it: its refs and
     /// fields added, its words only where the holder has none.
-    static func merge(_ part: KubeSchema, into schema: inout KubeSchema) {
+    package static func merge(_ part: KubeSchema, into schema: inout KubeSchema) {
         schema.refs += part.refs
         schema.properties.merge(part.properties) { mine, _ in mine }
         schema.required += part.required.filter { !schema.required.contains($0) }
@@ -246,7 +246,7 @@ struct KubeOpenAPIDocument: Sendable {
 
     /// `#/components/schemas/io.k8s.api.apps.v1.Deployment` → its name; a
     /// ref to anywhere else is not followed.
-    static func refName(_ ref: String) -> String? {
+    package static func refName(_ ref: String) -> String? {
         let prefix = "#/components/schemas/"
         guard ref.hasPrefix(prefix), ref.count > prefix.count else { return nil }
         return String(ref.dropFirst(prefix.count)).replacingOccurrences(of: "~1", with: "/").replacingOccurrences(of: "~0", with: "~")
@@ -255,13 +255,13 @@ struct KubeOpenAPIDocument: Sendable {
     // MARK: Reading
 
     /// The kind's schema: the one naming it; nil when the document has none.
-    func root(for gvk: KubeGVK) -> KubeSchema? { kinds[gvk].flatMap { schemas[$0] } }
+    package func root(for gvk: KubeGVK) -> KubeSchema? { kinds[gvk].flatMap { schemas[$0] } }
 
     /// The kinds the document has, by name.
-    var kindNames: [String] { Array(Set(kinds.keys.map(\.kind))).sorted() }
+    package var kindNames: [String] { Array(Set(kinds.keys.map(\.kind))).sorted() }
 
     /// A schema with what its refs say folded in, refs followed to `maxRefDepth`.
-    func resolved(_ schema: KubeSchema, depth: Int = 0) -> KubeSchema {
+    package func resolved(_ schema: KubeSchema, depth: Int = 0) -> KubeSchema {
         guard !schema.refs.isEmpty, depth < Self.maxRefDepth else { return schema }
         var whole = schema
         whole.refs = []
@@ -274,7 +274,7 @@ struct KubeOpenAPIDocument: Sendable {
     }
 
     /// Whether a schema says nothing of what is under it: any field passes.
-    func isOpaque(_ schema: KubeSchema) -> Bool {
+    package func isOpaque(_ schema: KubeSchema) -> Bool {
         if schema.preservesUnknown || schema.anyKeys || schema.embedded { return true }
         if !schema.properties.isEmpty || schema.values != nil || schema.items != nil { return false }
         return schema.type == nil || schema.type == "object"
@@ -284,7 +284,7 @@ struct KubeOpenAPIDocument: Sendable {
     /// `image`) comes to in the kind: its docs, or where it stops. An array
     /// is stepped into by `[]` or by the next field's name (kubectl's
     /// `pod.spec.containers.image`); a map's key is any name.
-    func lookup(_ gvk: KubeGVK, _ path: [String]) -> KubeFieldLookup {
+    package func lookup(_ gvk: KubeGVK, _ path: [String]) -> KubeFieldLookup {
         guard let root = root(for: gvk) else { return .noKind }
         guard path.count <= Self.maxPath else { return .opaque }
         var node = resolved(root)
@@ -334,7 +334,7 @@ struct KubeOpenAPIDocument: Sendable {
     }
 
     /// An object's fields, by name, as `kubectl explain` lists them.
-    func fields(of schema: KubeSchema, limit: Int = 500) -> [KubeFieldSummary] {
+    package func fields(of schema: KubeSchema, limit: Int = 500) -> [KubeFieldSummary] {
         schema.properties.keys.sorted().prefix(limit).map { name in
             let property = schema.properties[name] ?? KubeSchema()
             return KubeFieldSummary(
@@ -345,7 +345,7 @@ struct KubeOpenAPIDocument: Sendable {
 
     /// kubectl's names for types: `integer`, `[]Container`,
     /// `map[string]string`, `PodTemplateSpec`, `IntOrString`, `Object`.
-    func typeName(_ schema: KubeSchema, depth: Int = 0) -> String {
+    package func typeName(_ schema: KubeSchema, depth: Int = 0) -> String {
         if schema.intOrString { return "IntOrString" }
         if let ref = schema.refs.first, let target = schemas[ref] {
             let short = ref.split(separator: ".").last.map(String.init) ?? ref
@@ -368,14 +368,14 @@ struct KubeOpenAPIDocument: Sendable {
 }
 
 /// `kubectl explain`: its query read, its answer said.
-enum KubeExplain {
+package enum KubeExplain {
     /// `deployment.spec.replicas` → `deployment` and `spec`, `replicas`.
-    struct Query: Equatable {
-        var resource: String
-        var path: [String]
+    package struct Query: Equatable {
+        package var resource: String
+        package var path: [String]
     }
 
-    static func parse(_ text: String) throws -> Query {
+    package static func parse(_ text: String) throws -> Query {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw KubeOpenAPIProblem("Type a kind, and a field path if you like: deployment.spec.replicas") }
         let parts = trimmed.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
@@ -387,7 +387,7 @@ enum KubeExplain {
     }
 
     /// What `kubectl explain` prints, its layout kept (v1.27's plain text).
-    static func text(_ doc: KubeFieldDoc) -> String {
+    package static func text(_ doc: KubeFieldDoc) -> String {
         var lines = ["GROUP:      \(doc.gvk.group)", "KIND:       \(doc.gvk.kind)", "VERSION:    \(doc.gvk.version)", ""]
         if !doc.path.isEmpty {
             lines.append("FIELD: \(doc.name) <\(doc.type)>\(doc.required ? " -required-" : "")")
@@ -413,7 +413,7 @@ enum KubeExplain {
     }
 
     /// A hover's words: the field, its type and where it is, its docs.
-    static func hover(_ doc: KubeFieldDoc, source: String) -> String {
+    package static func hover(_ doc: KubeFieldDoc, source: String) -> String {
         var text = "**\(doc.name)** `<\(doc.type)>`\(doc.required ? " — required" : "")\n\(doc.spokenPath) · \(doc.gvk.apiVersion) · \(source)\n\n"
         text += String(doc.description.prefix(4000))
         if !doc.enumValues.isEmpty { text += "\n\nOne of: " + doc.enumValues.prefix(30).joined(separator: ", ") }
@@ -425,20 +425,20 @@ enum KubeExplain {
     }
 
     /// `kubectl explain deployment.spec.replicas --context fake-dev`.
-    static func kubectl(_ query: String, context: String, apiVersion: String?) -> String {
+    package static func kubectl(_ query: String, context: String, apiVersion: String?) -> String {
         var words = ["kubectl", "explain", KubectlLine.quoted(query), "--context", KubectlLine.quoted(context)]
         if let apiVersion, !apiVersion.isEmpty { words += ["--api-version", KubectlLine.quoted(apiVersion)] }
         return words.joined(separator: " ")
     }
 
-    static func firstSentence(_ text: String) -> String {
+    package static func firstSentence(_ text: String) -> String {
         let flat = text.replacingOccurrences(of: "\n", with: " ")
         if let end = flat.range(of: ". ") { return String(flat[..<end.lowerBound]) + "." }
         return flat.count > 160 ? String(flat.prefix(160)) + "…" : flat
     }
 
     /// Words wrapped at 76 columns under `indent`, as kubectl wraps them.
-    static func wrapped(_ text: String, indent: String, width: Int = 76) -> [String] {
+    package static func wrapped(_ text: String, indent: String, width: Int = 76) -> [String] {
         var lines: [String] = []
         for paragraph in text.components(separatedBy: "\n") {
             var line = ""

@@ -7,39 +7,39 @@ import Foundation
 /// In insert mode it only takes Esc (and ⌃[ ⌃c): typing is the text view's,
 /// which the engine watches to repeat it with `.`.
 @MainActor
-final class VimEngine {
-    unowned let buffer: VimBuffer
+package final class VimEngine {
+    package unowned let buffer: VimBuffer
 
     /// Set by the engine only (internal for its extensions).
-    var mode: VimMode = .normal {
+    package var mode: VimMode = .normal {
         didSet { if mode != oldValue { onModeChange?(mode) } }
     }
-    var onModeChange: ((VimMode) -> Void)?
+    package var onModeChange: ((VimMode) -> Void)?
     /// `statusText` whenever it changes.
-    var onStatusChange: ((String) -> Void)?
+    package var onStatusChange: ((String) -> Void)?
     /// An ex command the engine doesn't run itself (`w`, `q`, `wq`, `x`, …),
     /// as typed after the `:`. Returns an error to show, or nil.
-    var exCommand: ((String) -> String?)?
+    package var exCommand: ((String) -> String?)?
 
     /// What is being typed after `:` `/` `?`, the prefix included.
-    var commandLine: String?
+    package var commandLine: String?
     /// The last error (`Pattern not found: foo`), until the next key.
-    var message: String?
+    package var message: String?
     /// Keys typed toward a command not yet complete (`2d`, `"a`).
-    var pendingKeys: String { pending.joined() }
+    package var pendingKeys: String { pending.joined() }
     /// True while the engine itself sets `buffer.selection`: the adapter's
     /// selection-change notice should not call `selectionDidChange` then.
-    private(set) var isSettingSelection = false
+    package private(set) var isSettingSelection = false
 
-    var isVisual: Bool { mode == .visual || mode == .visualLine }
+    package var isVisual: Bool { mode == .visual || mode == .visualLine }
 
     /// The cursor's offset: the block cursor's character in normal and
     /// visual modes.
-    var cursor: Int {
+    package var cursor: Int {
         isVisual ? visualCursor : buffer.selection.location
     }
 
-    var statusText: String {
+    package var statusText: String {
         if let commandLine { return commandLine }
         if let message { return message }
         var parts: [String] = []
@@ -56,67 +56,67 @@ final class VimEngine {
 
     // MARK: State
 
-    var pending: [String] = []
+    package var pending: [String] = []
     /// The column j/k aim for; `Int.max` after `$`.
-    var desiredColumn: Int?
-    var visualAnchor = 0
-    var visualCursor = 0
-    var lastVisual: (anchor: Int, cursor: Int, linewise: Bool)?
-    var lastFind: (char: String, forward: Bool, till: Bool)?
-    var lastSearch: (pattern: String, forward: Bool, caseSensitive: Bool?)?
-    var regexCache: (key: String, regex: NSRegularExpression)?
-    var registers: [Character: (text: String, linewise: Bool)] = [:]
+    package var desiredColumn: Int?
+    package var visualAnchor = 0
+    package var visualCursor = 0
+    package var lastVisual: (anchor: Int, cursor: Int, linewise: Bool)?
+    package var lastFind: (char: String, forward: Bool, till: Bool)?
+    package var lastSearch: (pattern: String, forward: Bool, caseSensitive: Bool?)?
+    package var regexCache: (key: String, regex: NSRegularExpression)?
+    package var registers: [Character: (text: String, linewise: Bool)] = [:]
     /// The last thing put on the clipboard, to know a line yank when it comes back.
-    var lastYank: (text: String, linewise: Bool)?
-    var marks: [Character: Int] = [:]
-    var lastJump: Int?
-    var lastChange: Change?
+    package var lastYank: (text: String, linewise: Bool)?
+    package var marks: [Character: Int] = [:]
+    package var lastJump: Int?
+    package var lastChange: Change?
     /// The change that entered insert mode, completed with the typing at Esc.
-    var pendingChange: Change?
-    var isReplaying = false
-    var openGroups = 0
-    var commandLineReturn: VimMode = .normal
-    var commandLineCount: Int?
+    package var pendingChange: Change?
+    package var isReplaying = false
+    package var openGroups = 0
+    package var commandLineReturn: VimMode = .normal
+    package var commandLineCount: Int?
     private var lastStatus = ""
 
     // Insert mode: what was typed, two ways. The text between where insert
     // began and the caret catches autoindent; the keys are the fallback
     // once the caret moved or deleted past the start.
-    var insertStart = 0
-    var insertLength = 0
-    var insertKeys = ""
-    var insertDeletedBefore = 0
-    var insertMoved = false
-    var insertCount = 1
-    var insertRepeatPrefix = ""
-    var insertAutoIndent = false
+    package var insertStart = 0
+    package var insertLength = 0
+    package var insertKeys = ""
+    package var insertDeletedBefore = 0
+    package var insertMoved = false
+    package var insertCount = 1
+    package var insertRepeatPrefix = ""
+    package var insertAutoIndent = false
     // Replace mode: what each typed character overwrote, for backspace.
-    var replaceStack: [(position: Int, original: String, length: Int)] = []
-    var replaceTyped = ""
+    package var replaceStack: [(position: Int, original: String, length: Int)] = []
+    package var replaceTyped = ""
 
-    struct Change {
-        var command: VimCommand
-        var extent: VisualExtent?
-        var inserted = ""
-        var deletedBefore = 0
+    package struct Change {
+        package var command: VimCommand
+        package var extent: VisualExtent?
+        package var inserted = ""
+        package var deletedBefore = 0
     }
 
     /// A visual selection's size, for `.` to select the same from the cursor.
-    struct VisualExtent {
-        var linewise: Bool
-        var lines: Int
-        var columns: Int
+    package struct VisualExtent {
+        package var linewise: Bool
+        package var lines: Int
+        package var columns: Int
     }
 
-    init(buffer: VimBuffer) {
+    package init(buffer: VimBuffer) {
         self.buffer = buffer
     }
 
-    var text: VimText { VimText(buffer.text) }
+    package var text: VimText { VimText(buffer.text) }
 
     /// Back to normal mode with the cursor on a character — after a load,
     /// or when vim mode is switched on.
-    func reset() {
+    package func reset() {
         while openGroups > 0 { endGroup() }
         pending = []
         commandLine = nil
@@ -128,7 +128,7 @@ final class VimEngine {
 
     /// The selection changed outside the engine (a click, a drag): a drag
     /// in normal mode is a visual selection, a click in visual ends it.
-    func selectionDidChange() {
+    package func selectionDidChange() {
         guard !isSettingSelection else { return }
         let sel = buffer.selection
         let t = text
@@ -151,7 +151,7 @@ final class VimEngine {
     }
 
     /// Paste into the command line (⌘V while `:` or `/` is open).
-    func appendToCommandLine(_ string: String) {
+    package func appendToCommandLine(_ string: String) {
         guard commandLine != nil else { return }
         commandLine! += string.replacingOccurrences(of: "\n", with: " ")
         publish()
@@ -161,7 +161,7 @@ final class VimEngine {
 
     /// Whether the engine took the key; false leaves it to the text view.
     @discardableResult
-    func handle(_ key: VimKey) -> Bool {
+    package func handle(_ key: VimKey) -> Bool {
         if key.modifiers.contains(.command) { return false }
         switch mode {
         case .insert:
@@ -180,7 +180,7 @@ final class VimEngine {
         return true
     }
 
-    func feed(_ token: String) {
+    package func feed(_ token: String) {
         if (token == "<esc>" || token == "<c-c>") && !pending.isEmpty {
             pending = []
             return
@@ -195,7 +195,7 @@ final class VimEngine {
         }
     }
 
-    func publish() {
+    package func publish() {
         let s = statusText
         if s != lastStatus {
             lastStatus = s
@@ -205,7 +205,7 @@ final class VimEngine {
 
     // MARK: Running commands
 
-    func run(_ command: VimCommand) {
+    package func run(_ command: VimCommand) {
         if case .action(.repeatLast) = command.kind {
             repeatLast(count: command.count)
             return
@@ -224,7 +224,7 @@ final class VimEngine {
     }
 
     @discardableResult
-    func execute(_ command: VimCommand) -> Bool {
+    package func execute(_ command: VimCommand) -> Bool {
         switch command.kind {
         case .move(let m): return move(m, count: command.count)
         case .operate(let op, let target): return operate(op, target, command)
@@ -233,7 +233,7 @@ final class VimEngine {
         }
     }
 
-    func perform(_ action: VimAction, _ command: VimCommand) -> Bool {
+    package func perform(_ action: VimAction, _ command: VimCommand) -> Bool {
         let n = max(1, command.count ?? 1)
         switch action {
         case .insert(let kind): return insert(kind, count: n)
@@ -313,7 +313,7 @@ final class VimEngine {
         }
     }
 
-    func afterUndo() {
+    package func afterUndo() {
         if isVisual { exitVisual() }
         let t = text
         setCursor(t.clampNormal(buffer.selection.location))
@@ -322,7 +322,7 @@ final class VimEngine {
 
     // MARK: Dot
 
-    func repeatLast(count: Int?) {
+    package func repeatLast(count: Int?) {
         guard var change = lastChange else { return }
         if let count { change.command.count = count }
         isReplaying = true
@@ -353,7 +353,7 @@ final class VimEngine {
         endGroup()
     }
 
-    func visualExtent() -> VisualExtent {
+    package func visualExtent() -> VisualExtent {
         let t = text
         let a = min(visualAnchor, visualCursor)
         let b = max(visualAnchor, visualCursor)
@@ -377,7 +377,7 @@ final class VimEngine {
         return VisualExtent(linewise: false, lines: lines, columns: t.column(b))
     }
 
-    func select(_ extent: VisualExtent) {
+    package func select(_ extent: VisualExtent) {
         let t = text
         let p = isVisual ? min(visualAnchor, visualCursor) : t.clampNormal(buffer.selection.location)
         visualAnchor = p
@@ -399,12 +399,12 @@ final class VimEngine {
 
     // MARK: Undo groups
 
-    func beginGroup() {
+    package func beginGroup() {
         buffer.beginUndoGroup()
         openGroups += 1
     }
 
-    func endGroup() {
+    package func endGroup() {
         guard openGroups > 0 else { return }
         openGroups -= 1
         buffer.endUndoGroup()
@@ -412,19 +412,19 @@ final class VimEngine {
 
     // MARK: Cursor and selection
 
-    func setSelection(_ range: NSRange) {
+    package func setSelection(_ range: NSRange) {
         isSettingSelection = true
         buffer.selection = range
         isSettingSelection = false
     }
 
-    func setCursor(_ p: Int) {
+    package func setCursor(_ p: Int) {
         setSelection(NSRange(location: p, length: 0))
     }
 
     /// Where the cursor goes after a move or an edit: visual mode moves its
     /// end of the selection.
-    func place(_ p: Int, _ t: VimText, allowLineEnd: Bool = false) {
+    package func place(_ p: Int, _ t: VimText, allowLineEnd: Bool = false) {
         if isVisual {
             visualCursor = allowLineEnd ? t.clampVisual(p) : t.clampNormal(p)
             updateVisualSelection()
@@ -433,7 +433,7 @@ final class VimEngine {
         }
     }
 
-    func updateVisualSelection() {
+    package func updateVisualSelection() {
         let t = text
         let a = min(visualAnchor, visualCursor)
         let b = max(visualAnchor, visualCursor)
@@ -446,14 +446,14 @@ final class VimEngine {
         }
     }
 
-    func exitVisual() {
+    package func exitVisual() {
         lastVisual = (visualAnchor, visualCursor, mode == .visualLine)
         mode = .normal
         let t = text
         setCursor(t.clampNormal(visualCursor))
     }
 
-    func selectObject(_ object: VimTextObject, count: Int?) -> Bool {
+    package func selectObject(_ object: VimTextObject, count: Int?) -> Bool {
         let t = text
         let current = buffer.selection
         guard var range = textObject(object, at: visualCursor, count: count, op: nil, t) else { return false }
@@ -493,7 +493,7 @@ final class VimEngine {
 
     /// Yanks and deletes go to the clipboard unless a register is named;
     /// `_` swallows them.
-    func store(_ string: String, linewise: Bool, register: Character?) {
+    package func store(_ string: String, linewise: Bool, register: Character?) {
         switch register {
         case "_":
             return
@@ -513,7 +513,7 @@ final class VimEngine {
         }
     }
 
-    func read(register: Character?) -> (text: String, linewise: Bool)? {
+    package func read(register: Character?) -> (text: String, linewise: Bool)? {
         switch register {
         case "_":
             return nil
@@ -528,7 +528,7 @@ final class VimEngine {
 
     // MARK: Insert mode
 
-    func insert(_ kind: VimInsert, count: Int) -> Bool {
+    package func insert(_ kind: VimInsert, count: Int) -> Bool {
         let t = text
         let p = t.clampNormal(buffer.selection.location)
         insertRepeatPrefix = ""
@@ -565,7 +565,7 @@ final class VimEngine {
         return true
     }
 
-    func enterInsert(at p: Int, count: Int = 1) {
+    package func enterInsert(at p: Int, count: Int = 1) {
         setCursor(p)
         insertStart = p
         insertLength = buffer.text.length
@@ -578,7 +578,7 @@ final class VimEngine {
         mode = .insert
     }
 
-    func handleInsert(_ key: VimKey) -> Bool {
+    package func handleInsert(_ key: VimKey) -> Bool {
         let tokens = key.tokens
         if tokens == ["<esc>"] || tokens == ["<c-c>"] {
             exitInsert()
@@ -604,7 +604,7 @@ final class VimEngine {
         return false
     }
 
-    func exitInsert() {
+    package func exitInsert() {
         var t = text
         var sel = min(buffer.selection.location, t.length)
         let typed: String
@@ -640,14 +640,14 @@ final class VimEngine {
 
     // MARK: Replace mode
 
-    func enterReplace() {
+    package func enterReplace() {
         replaceStack = []
         replaceTyped = ""
         desiredColumn = nil
         mode = .replace
     }
 
-    func handleReplace(_ key: VimKey) {
+    package func handleReplace(_ key: VimKey) {
         let tokens = key.tokens
         if tokens == ["<esc>"] || tokens == ["<c-c>"] {
             exitReplace()
@@ -671,7 +671,7 @@ final class VimEngine {
         }
     }
 
-    func typeOver(_ s: String) {
+    package func typeOver(_ s: String) {
         let t = text
         let p = min(buffer.selection.location, t.length)
         var original = ""
@@ -686,7 +686,7 @@ final class VimEngine {
         setCursor(p + s.utf16.count)
     }
 
-    func exitReplace() {
+    package func exitReplace() {
         if var change = pendingChange {
             change.inserted = replaceTyped
             lastChange = change
@@ -702,7 +702,7 @@ final class VimEngine {
 
     // MARK: Scrolling
 
-    func scrollLines(_ delta: Int) {
+    package func scrollLines(_ delta: Int) {
         buffer.scroll(.lines(delta))
         let t = text
         let visible = buffer.visibleCharacterRange
@@ -722,7 +722,7 @@ final class VimEngine {
     }
 
     /// Lines on screen, for the page moves.
-    func visibleLineCount(_ t: VimText) -> Int {
+    package func visibleLineCount(_ t: VimText) -> Int {
         let visible = buffer.visibleCharacterRange
         var lines = 1
         var i = visible.location

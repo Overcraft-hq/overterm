@@ -3,7 +3,7 @@ import AppKit
 /// What the editor pane does for the text view: everything that needs the
 /// document, its language or a language server.
 @MainActor
-protocol CodeTextViewHost: AnyObject {
+package protocol CodeTextViewHost: AnyObject {
     /// A key, before the text view's own handling — the completion list,
     /// vim, and the editor's shortcuts. `equivalent`: asked before the menu
     /// (⌘ keys), where only shortcuts answer. True when taken.
@@ -27,16 +27,16 @@ protocol CodeTextViewHost: AnyObject {
 }
 
 /// A problem a language server reported, as the text view draws it.
-struct EditorDiagnostic: Equatable {
-    enum Severity: Int, Comparable {
+package struct EditorDiagnostic: Equatable {
+    package enum Severity: Int, Comparable {
         case error = 1, warning, info, hint
-        static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
+        package static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
     }
 
-    var range: NSRange
-    let severity: Severity
-    let message: String
-    let source: String?
+    package var range: NSRange
+    package let severity: Severity
+    package let message: String
+    package let source: String?
 }
 
 /// The editor's text: an NSTextView (IME, undo, accessibility, find for
@@ -44,26 +44,26 @@ struct EditorDiagnostic: Equatable {
 /// the caret is on, indent guides, the bracket matching the caret's, a
 /// squiggle under each problem, and vim's block cursor.
 @MainActor
-final class CodeTextView: NSTextView {
-    weak var host: CodeTextViewHost?
+package final class CodeTextView: NSTextView {
+    package weak var host: CodeTextViewHost?
 
-    override func paste(_ sender: Any?) {
+    package override func paste(_ sender: Any?) {
         if host?.codeTextView(self, paste: .general) == true { return }
         super.paste(sender)
     }
-    var theme = EditorTheme(dark: true, background: .black) {
+    package var theme = EditorTheme(dark: true, background: .black) {
         didSet { needsDisplay = true }
     }
-    var showsIndentGuides = true {
+    package var showsIndentGuides = true {
         didSet { needsDisplay = true }
     }
     /// Columns per indent level (a tab's width, or the file's spaces).
-    var indentWidth = 4 {
+    package var indentWidth = 4 {
         didSet { needsDisplay = true }
     }
-    var tabWidth = 4
+    package var tabWidth = 4
     /// Vim's normal and visual modes: a block over the character.
-    var blockCursor = false {
+    package var blockCursor = false {
         didSet {
             guard blockCursor != oldValue else { return }
             updateInsertionPointStateAndRestartTimer(true)
@@ -71,26 +71,26 @@ final class CodeTextView: NSTextView {
         }
     }
     /// The bracket at the caret and its partner, boxed.
-    var bracketPair: [NSRange] = [] {
+    package var bracketPair: [NSRange] = [] {
         didSet { if bracketPair != oldValue { needsDisplay = true } }
     }
-    var diagnostics: [EditorDiagnostic] = [] {
+    package var diagnostics: [EditorDiagnostic] = [] {
         didSet { if diagnostics != oldValue { needsDisplay = true } }
     }
     /// Other occurrences of the word at the caret, as Zed shades them.
-    var wordHighlights: [NSRange] = [] {
+    package var wordHighlights: [NSRange] = [] {
         didSet { if wordHighlights != oldValue { needsDisplay = true } }
     }
 
     /// One character's width: the editor's font is monospaced.
-    var characterWidth: CGFloat {
+    package var characterWidth: CGFloat {
         guard let font else { return 7 }
         return ("m" as NSString).size(withAttributes: [.font: font]).width
     }
 
     // MARK: Drawing
 
-    override func drawBackground(in rect: NSRect) {
+    package override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         guard let layoutManager, let textContainer else { return }
         let origin = textContainerOrigin
@@ -129,7 +129,7 @@ final class CodeTextView: NSTextView {
         }
     }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         drawDiagnostics(in: dirtyRect)
         drawNoteDecorations(in: dirtyRect)
@@ -197,7 +197,7 @@ final class CodeTextView: NSTextView {
     }
 
     /// The rect of the line holding `index` (the empty last line included).
-    func lineRect(at index: Int) -> NSRect {
+    package func lineRect(at index: Int) -> NSRect {
         guard let layoutManager, let textContainer else { return .zero }
         let length = (string as NSString).length
         var rect: NSRect
@@ -269,7 +269,7 @@ final class CodeTextView: NSTextView {
         }
     }
 
-    static func fillBlankLevels(_ levels: [Int?]) -> [Int] {
+    package static func fillBlankLevels(_ levels: [Int?]) -> [Int] {
         var result = [Int](repeating: 0, count: levels.count)
         var previous = 0
         for (i, level) in levels.enumerated() {
@@ -348,7 +348,7 @@ final class CodeTextView: NSTextView {
 
     // MARK: The caret
 
-    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
+    package override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
         if blockCursor {
             guard flag else { return }
             var block = rect
@@ -364,13 +364,13 @@ final class CodeTextView: NSTextView {
 
     /// The text view only redraws a 1 pt caret: a block (or a 2 pt bar)
     /// left pieces of itself behind as it moved.
-    override func setNeedsDisplay(_ rect: NSRect, avoidAdditionalLayout flag: Bool) {
+    package override func setNeedsDisplay(_ rect: NSRect, avoidAdditionalLayout flag: Bool) {
         var rect = rect
         if rect.width <= 2 { rect.size.width = max(rect.width, characterWidth + 2) }
         super.setNeedsDisplay(rect, avoidAdditionalLayout: flag)
     }
 
-    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+    package override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         let before = selectedRange()
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
         // The caret's line moved: its highlight and the guides go with it.
@@ -379,18 +379,18 @@ final class CodeTextView: NSTextView {
 
     // MARK: Keys
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    package override func performKeyEquivalent(with event: NSEvent) -> Bool {
         // Every view in the window is asked; only the focused editor answers.
         if window?.firstResponder === self, host?.codeTextView(self, handleKey: event, equivalent: true) == true { return true }
         return super.performKeyEquivalent(with: event)
     }
 
-    override func keyDown(with event: NSEvent) {
+    package override func keyDown(with event: NSEvent) {
         if host?.codeTextView(self, handleKey: event, equivalent: false) == true { return }
         super.keyDown(with: event)
     }
 
-    override func insertText(_ string: Any, replacementRange: NSRange) {
+    package override func insertText(_ string: Any, replacementRange: NSRange) {
         if !hasMarkedText(), replacementRange.location == NSNotFound, let text = string as? String,
             host?.codeTextView(self, willInsert: text) == true
         {
@@ -399,29 +399,29 @@ final class CodeTextView: NSTextView {
         super.insertText(string, replacementRange: replacementRange)
     }
 
-    override func insertNewline(_ sender: Any?) {
+    package override func insertNewline(_ sender: Any?) {
         if host?.codeTextViewInsertNewline(self) == true { return }
         super.insertNewline(sender)
     }
 
-    override func insertTab(_ sender: Any?) {
+    package override func insertTab(_ sender: Any?) {
         if host?.codeTextView(self, indent: false) == true { return }
         super.insertTab(sender)
     }
 
-    override func insertBacktab(_ sender: Any?) {
+    package override func insertBacktab(_ sender: Any?) {
         if host?.codeTextView(self, indent: true) == true { return }
         super.insertBacktab(sender)
     }
 
-    override func deleteBackward(_ sender: Any?) {
+    package override func deleteBackward(_ sender: Any?) {
         if host?.codeTextViewDeleteBackward(self) == true { return }
         super.deleteBackward(sender)
     }
 
     /// Replaces several ranges as one undoable change, then selects
     /// `selection` — the way every editing command lands.
-    func apply(_ changes: [(range: NSRange, text: String)], selecting selection: [NSRange]?) {
+    package func apply(_ changes: [(range: NSRange, text: String)], selecting selection: [NSRange]?) {
         guard let storage = textStorage else { return }
         let sorted = changes.sorted { $0.range.location < $1.range.location }
         guard !sorted.isEmpty else {
@@ -451,7 +451,7 @@ final class CodeTextView: NSTextView {
     private var showsLinkCursor = false
     private var trackingArea: NSTrackingArea?
 
-    override func updateTrackingAreas() {
+    package override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
         let area = NSTrackingArea(rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
@@ -459,7 +459,7 @@ final class CodeTextView: NSTextView {
         trackingArea = area
     }
 
-    override func mouseMoved(with event: NSEvent) {
+    package override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
         hoverTimer?.invalidate()
         let point = convert(event.locationInWindow, from: nil)
@@ -480,13 +480,13 @@ final class CodeTextView: NSTextView {
         }
     }
 
-    override func mouseExited(with event: NSEvent) {
+    package override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         hoverTimer?.invalidate()
         host?.codeTextView(self, hoverAt: nil)
     }
 
-    override func mouseDown(with event: NSEvent) {
+    package override func mouseDown(with event: NSEvent) {
         if event.clickCount == 1, event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty,
             let index = characterIndex(at: convert(event.locationInWindow, from: nil)),
             host?.codeTextView(self, liveClickAt: index) == true
@@ -506,7 +506,7 @@ final class CodeTextView: NSTextView {
 
     /// The character under `point`, if the point is on one (not past a
     /// line's end or below the text).
-    func characterIndex(at point: NSPoint) -> Int? {
+    package func characterIndex(at point: NSPoint) -> Int? {
         guard let layoutManager, let textContainer else { return nil }
         let inContainer = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
         var fraction: CGFloat = 0
@@ -520,7 +520,7 @@ final class CodeTextView: NSTextView {
     }
 
     /// Where `index` is on screen, for popups.
-    func screenRect(forCharacterAt index: Int) -> NSRect {
+    package func screenRect(forCharacterAt index: Int) -> NSRect {
         guard let layoutManager, let textContainer, let window else { return .zero }
         let length = (string as NSString).length
         var rect: NSRect
@@ -535,7 +535,7 @@ final class CodeTextView: NSTextView {
         return window.convertToScreen(convert(rect, to: nil))
     }
 
-    override func menu(for event: NSEvent) -> NSMenu? {
+    package override func menu(for event: NSEvent) -> NSMenu? {
         // A right-click moves the caret there first, so "Go to Definition"
         // is about what was clicked.
         if let index = characterIndex(at: convert(event.locationInWindow, from: nil)), selectedRange().length == 0 {

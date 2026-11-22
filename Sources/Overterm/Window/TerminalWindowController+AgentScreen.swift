@@ -1,20 +1,20 @@
 import AppKit
 
 /// A pane as the screen check last saw it (`AgentScreenCheck`).
-struct AgentScreenPane {
+package struct AgentScreenPane {
     /// The agent in its foreground, as last read, and when.
-    var agent: Agent?
-    var readAt: Date = .distantPast
+    package var agent: Agent?
+    package var readAt: Date = .distantPast
     /// It sent a notification or progress since its last command began.
-    var signalled = false
+    package var signalled = false
     /// What its screen asked at the last read.
-    var question: String?
+    package var question: String?
 }
 
 // MARK: Waiting for you, read off the screen (AgentScreenCheck)
 
 extension TerminalWindowController {
-    func startAgentScreenCheck() {
+    package func startAgentScreenCheck() {
         guard agentScreenLoop == nil else { return }
         agentScreenLoop = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -27,7 +27,7 @@ extension TerminalWindowController {
     /// A pane's own signal: it says when it wants you, so its screen
     /// isn't read. A command finishing starts it over (another program
     /// may run there next).
-    func noteAttentionSignal(_ event: TerminalEvent, from pane: TerminalView?) {
+    package func noteAttentionSignal(_ event: TerminalEvent, from pane: TerminalView?) {
         guard let pane else { return }
         switch event {
         case .notification, .progress(true, _):
@@ -42,7 +42,7 @@ extension TerminalWindowController {
     /// One round: which panes to look at, their agents read off the main
     /// thread where not known lately, the screens of those with one read
     /// here and parsed off it; the tabs marked, or their marks taken back.
-    func agentScreenRound(now: Date = Date()) async {
+    package func agentScreenRound(now: Date = Date()) async {
         guard !agentScreenInFlight else { return }
         agentScreenInFlight = true
         defer { agentScreenInFlight = false }
@@ -116,7 +116,7 @@ extension TerminalWindowController {
     /// The agent in a pane's foreground process group, if any: a lookup in
     /// the census (`ProcessInspector.slice`, one tick at most), never a
     /// walk of its own. Blocking: call off the main thread.
-    nonisolated static func foregroundAgent(login: pid_t, tag: String? = nil, inspector: ProcessInspector) -> Agent? {
+    package nonisolated static func foregroundAgent(login: pid_t, tag: String? = nil, inspector: ProcessInspector) -> Agent? {
         guard let (slice, snapshot) = inspector.slice(root: login, tag: tag) else { return nil }
         return foregroundAgent(in: slice, snapshot: snapshot)
     }
@@ -125,7 +125,7 @@ extension TerminalWindowController {
     /// foreground group as the census read it (the `login`'s, else its
     /// tree's), and of its running members the first that is an agent
     /// (`Agent.of`). Pure.
-    nonisolated static func foregroundAgent(in slice: ActivityPaneSlice, snapshot: ActivitySnapshot) -> Agent? {
+    package nonisolated static func foregroundAgent(in slice: ActivityPaneSlice, snapshot: ActivitySnapshot) -> Agent? {
         let members = ProcessInspector.running(slice.tree, in: snapshot)
         var foreground: pid_t?
         for identity in [slice.login].compactMap({ $0 }) + members where foreground == nil {
@@ -143,7 +143,7 @@ extension TerminalWindowController {
 
     /// `tab`'s question, or none now: marked waiting while you are
     /// elsewhere (and told), the mark taken back when it goes.
-    func markScreenAsk(_ question: String?, on tab: Tab) {
+    package func markScreenAsk(_ question: String?, on tab: Tab) {
         guard tab.screenAsk != question else { return }
         tab.screenAsk = question
         if let question {

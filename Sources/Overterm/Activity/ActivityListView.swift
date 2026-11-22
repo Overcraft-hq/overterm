@@ -7,19 +7,19 @@ import SwiftUI
 /// subject, "order held", the header's words) re-evaluate the page, never
 /// this: it is equal while its objects are the same, so the table isn't
 /// updated and its cells on screen aren't handed their rows again.
-struct ActivityListView: View, Equatable {
-    @ObservedObject var list: ActivityListState
+package struct ActivityListView: View, Equatable {
+    @ObservedObject package var list: ActivityListState
     /// Read, never observed: its changes come through `list`.
-    let page: ActivityPageModel
-    @ObservedObject var theme: ChromeTheme
+    package let page: ActivityPageModel
+    @ObservedObject package var theme: ChromeTheme
     /// ⌘C: the selection, as the window copies it.
-    let copy: ([String]) -> Void
+    package let copy: ([String]) -> Void
 
     /// The objects' identities, as `==` compares them: an observed object's
     /// property is the main actor's, and `==` is nonisolated (Swift 6.1).
     private let objects: [ObjectIdentifier]
 
-    init(list: ActivityListState, page: ActivityPageModel, theme: ChromeTheme, copy: @escaping ([String]) -> Void) {
+    package init(list: ActivityListState, page: ActivityPageModel, theme: ChromeTheme, copy: @escaping ([String]) -> Void) {
         self.list = list
         self.page = page
         self.theme = theme
@@ -27,7 +27,7 @@ struct ActivityListView: View, Equatable {
         objects = [ObjectIdentifier(list), ObjectIdentifier(page), ObjectIdentifier(theme)]
     }
 
-    nonisolated static func == (a: ActivityListView, b: ActivityListView) -> Bool {
+    package nonisolated static func == (a: ActivityListView, b: ActivityListView) -> Bool {
         a.objects == b.objects
     }
 
@@ -39,7 +39,7 @@ struct ActivityListView: View, Equatable {
         }
     }
 
-    var body: some View {
+    package var body: some View {
         let shown = list.rows
         let page = page
         let section = list.section
@@ -180,7 +180,7 @@ struct ActivityListView: View, Equatable {
     }
 
     /// A plain cell's words as the table draws them: its tint the theme's.
-    static func value(_ cell: ActivityCellText, theme: ChromeTheme) -> ResourceTextCellValue {
+    package static func value(_ cell: ActivityCellText, theme: ChromeTheme) -> ResourceTextCellValue {
         let color: NSColor =
             switch cell.tint {
             case .text: theme.textNS
@@ -199,7 +199,7 @@ struct ActivityListView: View, Equatable {
     // MARK: The AppKit name and strip
 
     /// A process's name or strip cell, drawn by AppKit; nil for every other.
-    static func drawn(_ row: ActivityListRow, _ column: String, theme: ChromeTheme, page: ActivityPageModel?) -> ResourceDrawnCell? {
+    package static func drawn(_ row: ActivityListRow, _ column: String, theme: ChromeTheme, page: ActivityPageModel?) -> ResourceDrawnCell? {
         guard case .process(let process) = row else { return nil }
         switch column {
         case "name":
@@ -220,7 +220,7 @@ struct ActivityListView: View, Equatable {
 
     /// The name cell's value (6.5): indent, fold, the agent's symbol, the
     /// name dimmed for a match's ancestor, a session or a shell, its chips.
-    static func nameValue(_ row: ActivityProcessRow, theme: ChromeTheme, now: Date) -> ActivityNameValue {
+    package static func nameValue(_ row: ActivityProcessRow, theme: ChromeTheme, now: Date) -> ActivityNameValue {
         var chips = ActivityPageView.chips(row).map { ActivityNameValue.Chip(text: $0, color: theme.text3NS, stroke: theme.borderNS) }
         for chip in row.chips {
             chips.append(
@@ -242,7 +242,7 @@ struct ActivityListView: View, Equatable {
 
     /// The strip cell's value (6.11): a cell each 15 s, CPU capped at 100
     /// for the colour, a gap a faint tick.
-    static func stripValue(_ row: ActivityProcessRow, theme: ChromeTheme) -> ActivityStripValue {
+    package static func stripValue(_ row: ActivityProcessRow, theme: ChromeTheme) -> ActivityStripValue {
         ActivityStripValue(
             strip: row.strip, since: row.stripSince, colours: heatColours(dark: theme.isDark), track: theme.text3NS, alpha: row.ended ? 0.45 : 1,
             ground: row.isNew ? newGround : nil)
@@ -261,7 +261,7 @@ struct ActivityListView: View, Equatable {
 
     /// What every cell draws besides its row: the theme's colours, the
     /// text size, the minute a chip's "for 5 min" counts to.
-    static func look(theme: ChromeTheme, now: Date) -> Int {
+    package static func look(theme: ChromeTheme, now: Date) -> Int {
         var hasher = Hasher()
         hasher.combine(theme.revision)
         hasher.combine(ChromeMetrics.text(12))
@@ -272,7 +272,7 @@ struct ActivityListView: View, Equatable {
     /// What a hosted cell draws, as a key (`ResourceTable.cellKey`): a
     /// group's or a container's row, a folded port row, by every value its
     /// SwiftUI cell reads and the theme's colours.
-    static func key(_ row: ActivityListRow, _ column: String?, theme: ChromeTheme) -> Int {
+    package static func key(_ row: ActivityListRow, _ column: String?, theme: ChromeTheme) -> Int {
         var hasher = Hasher()
         hasher.combine(theme.revision)
         hasher.combine(ChromeMetrics.text(12))

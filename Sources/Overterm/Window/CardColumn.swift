@@ -13,8 +13,8 @@ import AppKit
 /// A zero-width divider is still draggable: the controller widens it to a
 /// grab band (`WideDividerSplitViewController`), which is what that class
 /// did before the cards and does again.
-final class GapSplitView: NSSplitView {
-    override init(frame: NSRect) {
+package final class GapSplitView: NSSplitView {
+    package override init(frame: NSRect) {
         super.init(frame: frame)
         // Columns side by side. NSSplitView's own default is horizontal;
         // NSSplitViewController's is not, and substituting the split view
@@ -22,13 +22,13 @@ final class GapSplitView: NSSplitView {
         isVertical = true
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override var dividerThickness: CGFloat { 0 }
-    override var dividerColor: NSColor { .clear }
-    override func drawDivider(in rect: NSRect) {}
+    package override var dividerThickness: CGFloat { 0 }
+    package override var dividerColor: NSColor { .clear }
+    package override func drawDivider(in rect: NSRect) {}
 }
 
 /// One column of the window — the sidebar, the terminal, the editor, the
@@ -40,27 +40,27 @@ final class GapSplitView: NSSplitView {
 /// shadow has to live on a layer that does *not* clip. `layout()` re-applies
 /// everything each pass, so nothing a subview does to its own layer can
 /// undo it.
-final class CardColumn: NSView {
+package final class CardColumn: NSView {
     /// Settings ▸ Appearance ▸ Card corners (ChromeMetrics); 10 by default.
-    static var cornerRadius: CGFloat { ChromeMetrics.cardRadius }
+    package static var cornerRadius: CGFloat { ChromeMetrics.cardRadius }
     /// The window showing through between two cards. Each card keeps half
     /// of it on each side, so the gap is the same whoever its neighbour is
     /// — and a card that isn't on screen costs nothing (`GapSplitView`).
     /// Settings ▸ Appearance ▸ Space between cards; 10 by default.
-    static var gap: CGFloat { ChromeMetrics.cardGap }
+    package static var gap: CGFloat { ChromeMetrics.cardGap }
     /// Half the gap, which is what one card keeps on each side.
-    static var margin: CGFloat { gap / 2 }
+    package static var margin: CGFloat { gap / 2 }
 
     /// Which of the theme's grounds a card is painted in. Held rather than
     /// the colour itself, so a card can be repainted when the terminal
     /// theme changes (`repaint`).
-    enum Fill {
+    package enum Fill {
         /// A panel: the sidebar, the changes pane, the inbox.
         case panel
         /// The terminal's own background: the terminal column, the editor.
         case terminal
 
-        @MainActor func color(_ theme: ChromeTheme) -> NSColor {
+        @MainActor package func color(_ theme: ChromeTheme) -> NSColor {
             switch self {
             case .panel: theme.cardNS
             case .terminal: theme.termNS
@@ -73,7 +73,7 @@ final class CardColumn: NSView {
     private let fill: Fill
     private let theme: ChromeTheme
 
-    init(content: NSView, fill: Fill, theme: ChromeTheme) {
+    package init(content: NSView, fill: Fill, theme: ChromeTheme) {
         self.content = content
         self.fill = fill
         self.theme = theme
@@ -94,13 +94,13 @@ final class CardColumn: NSView {
         ])
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
     /// A card reaches into the title bar's unused lower band, and a view
     /// with no background there drags the window instead of being clicked.
-    override var mouseDownCanMoveWindow: Bool { false }
+    package override var mouseDownCanMoveWindow: Bool { false }
 
     // A wrapper has to be invisible to what it wraps. The columns it holds
     // are `NSHostingView`s, which are flipped and lay out from the top, and
@@ -108,25 +108,25 @@ final class CardColumn: NSView {
     // reaches the card first — so the card reads top-down too, and hands on
     // the context menu it has none of.
 
-    override var isFlipped: Bool { true }
+    package override var isFlipped: Bool { true }
 
     /// A card starts under the tab strip, which is shorter than the title
     /// bar — so its top reaches into it, and AppKit would hand its SwiftUI
     /// content a 14 pt safe-area inset it must not have. The strip zeroes
     /// its own for the same reason (`TabStripHostingView`).
-    override var safeAreaInsets: NSEdgeInsets { NSEdgeInsetsZero }
+    package override var safeAreaInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
-    override func menu(for event: NSEvent) -> NSMenu? {
+    package override func menu(for event: NSEvent) -> NSMenu? {
         super.menu(for: event) ?? content.menu(for: event)
     }
 
     /// What the card is painted in now — the E2E run reads it to check a
     /// theme change reached the layers.
-    var groundColor: NSColor? { ground.backgroundColor.map { NSColor(cgColor: $0) ?? .clear } }
+    package var groundColor: NSColor? { ground.backgroundColor.map { NSColor(cgColor: $0) ?? .clear } }
 
     /// Takes the colours the theme holds now — the terminal's theme can be
     /// changed while the window is open (Settings ▸ Themes).
-    func repaint() {
+    package func repaint() {
         ground.backgroundColor = fill.color(theme).cgColor
         // The hairline alone separates a card from a dark window; on a
         // light one it needs the lift too.
@@ -138,9 +138,9 @@ final class CardColumn: NSView {
     }
 
     /// The card itself, without the half-gaps either side.
-    var cardRect: NSRect { bounds.insetBy(dx: Self.margin, dy: 0) }
+    package var cardRect: NSRect { bounds.insetBy(dx: Self.margin, dy: 0) }
 
-    override func layout() {
+    package override func layout() {
         super.layout()
         ground.frame = cardRect
         window?.groundChanged()
@@ -154,12 +154,12 @@ final class CardColumn: NSView {
 
 /// Hosts a column's view controller inside a `CardColumn`, so the split
 /// view's item measures the card and the controller keeps its own view.
-final class CardColumnController: NSViewController {
+package final class CardColumnController: NSViewController {
     private let child: NSViewController
     private let fill: CardColumn.Fill
     private let theme: ChromeTheme
 
-    init(_ child: NSViewController, fill: CardColumn.Fill, theme: ChromeTheme) {
+    package init(_ child: NSViewController, fill: CardColumn.Fill, theme: ChromeTheme) {
         self.child = child
         self.fill = fill
         self.theme = theme
@@ -167,11 +167,11 @@ final class CardColumnController: NSViewController {
         addChild(child)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override func loadView() {
+    package override func loadView() {
         view = CardColumn(content: child.view, fill: fill, theme: theme)
     }
 }

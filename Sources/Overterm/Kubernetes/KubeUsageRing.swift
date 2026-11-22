@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where a sample is kept in `KubeUsageRing`.
-enum KubeUsageKey: Hashable, Sendable {
+package enum KubeUsageKey: Hashable, Sendable {
     /// Every node's, added up.
     case cluster
     case node(String)
@@ -17,10 +17,10 @@ enum KubeUsageKey: Hashable, Sendable {
     /// workload (`whole` empty, `part` `<Kind>/<name>`).
     case part(namespace: String, whole: String, part: String)
 
-    static func pod(_ id: KubeRowID) -> KubeUsageKey { .pod(namespace: id.namespace ?? "", name: id.name) }
+    package static func pod(_ id: KubeRowID) -> KubeUsageKey { .pod(namespace: id.namespace ?? "", name: id.name) }
 
     /// What its names take on the heap (a name up to 15 bytes is inline).
-    var heapBytes: Int {
+    package var heapBytes: Int {
         func heap(_ text: String) -> Int { text.utf8.count <= 15 ? 0 : 48 + text.utf8.count }
         switch self {
         case .cluster: return 0
@@ -33,7 +33,7 @@ enum KubeUsageKey: Hashable, Sendable {
     }
 
     /// A pod's own, a node's or the cluster's: what a list row is.
-    var isListRow: Bool {
+    package var isListRow: Bool {
         switch self {
         case .cluster, .node, .pod: true
         case .container, .workload, .namespace, .part: false
@@ -42,18 +42,18 @@ enum KubeUsageKey: Hashable, Sendable {
 }
 
 /// One sample's usage, and when metrics-server took it.
-struct KubeUsagePoint: Equatable, Sendable {
-    var time: Date
-    var usage: KubeUsage
+package struct KubeUsagePoint: Equatable, Sendable {
+    package var time: Date
+    package var usage: KubeUsage
 }
 
 /// A minute of samples, folded: the least, the mean and the most.
-struct KubeUsageBucket: Equatable, Sendable {
-    var start: Date
-    var min: KubeUsage
-    var avg: KubeUsage
-    var max: KubeUsage
-    var count: Int
+package struct KubeUsageBucket: Equatable, Sendable {
+    package var start: Date
+    package var min: KubeUsage
+    package var avg: KubeUsage
+    package var max: KubeUsage
+    package var count: Int
 }
 
 /// Overterm's own ring of the samples taken while something is shown
@@ -81,55 +81,55 @@ struct KubeUsageBucket: Equatable, Sendable {
 /// stays under `byteCap` (6 MB), list rows given up first. The monitor
 /// drops it on a context switch and a credential failure; nothing of it is
 /// written anywhere.
-struct KubeUsageRing: Sendable {
-    enum Population: Sendable { case list, detail }
+package struct KubeUsageRing: Sendable {
+    package enum Population: Sendable { case list, detail }
 
-    static let rawSpan: Int32 = 15 * 60
-    static let rawPoints = 60
-    static let listPoints = 40
+    package static let rawSpan: Int32 = 15 * 60
+    package static let rawPoints = 60
+    package static let listPoints = 40
 
     /// How many raw points a key keeps: a detail's key and a node's list
     /// row the 15 minutes' 60 (the row's heat strip draws them all); every
     /// other list row — a pod's, the cluster's — 40, as before.
-    static func rawLimit(_ key: KubeUsageKey, _ population: Population) -> Int {
+    package static func rawLimit(_ key: KubeUsageKey, _ population: Population) -> Int {
         if population == .detail { return rawPoints }
         if case .node = key { return rawPoints }
         return listPoints
     }
-    static let bucketSeconds: Int32 = 60
-    static let foldedSpan: Int32 = 6 * 3600
-    static let foldedBuckets = 360
-    static let detailKeys = 200
-    static let keepDetail: TimeInterval = 3600
-    static let defaultByteCap = 6 * 1_048_576
+    package static let bucketSeconds: Int32 = 60
+    package static let foldedSpan: Int32 = 6 * 3600
+    package static let foldedBuckets = 360
+    package static let detailKeys = 200
+    package static let keepDetail: TimeInterval = 3600
+    package static let defaultByteCap = 6 * 1_048_576
 
     /// How often metrics-server samples: a stretch past 2.5 × it is a break.
-    var interval: TimeInterval
-    var byteCap: Int
+    package var interval: TimeInterval
+    package var byteCap: Int
 
-    init(interval: TimeInterval = 15, byteCap: Int = KubeUsageRing.defaultByteCap) {
+    package init(interval: TimeInterval = 15, byteCap: Int = KubeUsageRing.defaultByteCap) {
         self.interval = interval
         self.byteCap = byteCap
     }
 
     /// A raw point; NaN values mark a break.
-    struct Raw: Equatable, Sendable {
-        var offset: Int32
-        var cpu: Float32
-        var memory: Float32
-        var isBreak: Bool { cpu.isNaN }
+    package struct Raw: Equatable, Sendable {
+        package var offset: Int32
+        package var cpu: Float32
+        package var memory: Float32
+        package var isBreak: Bool { cpu.isNaN }
     }
 
     /// A folded minute.
-    struct Fold: Equatable, Sendable {
-        var offset: Int32
-        var count: UInt16
-        var minCPU: Float32
-        var minMemory: Float32
-        var avgCPU: Float32
-        var avgMemory: Float32
-        var maxCPU: Float32
-        var maxMemory: Float32
+    package struct Fold: Equatable, Sendable {
+        package var offset: Int32
+        package var count: UInt16
+        package var minCPU: Float32
+        package var minMemory: Float32
+        package var avgCPU: Float32
+        package var avgMemory: Float32
+        package var maxCPU: Float32
+        package var maxMemory: Float32
     }
 
     fileprivate struct Series: Sendable {
@@ -185,7 +185,7 @@ struct KubeUsageRing: Sendable {
     /// One key's sample, stamped `time` (metrics-server's). False: dropped,
     /// its stamp not after the last one's.
     @discardableResult
-    mutating func record(_ key: KubeUsageKey, _ usage: KubeUsage, at time: Date, _ population: Population, now: Date) -> Bool {
+    package mutating func record(_ key: KubeUsageKey, _ usage: KubeUsage, at time: Date, _ population: Population, now: Date) -> Bool {
         let t = offset(time)
         switch population {
         case .list:
@@ -202,7 +202,7 @@ struct KubeUsageRing: Sendable {
     /// from the poll ends its part — the sum is what was sampled, never a
     /// guess for what wasn't.
     @discardableResult
-    mutating func recordSum(_ key: KubeUsageKey, _ members: [String: (time: Date, usage: KubeUsage)], _ population: Population, now: Date) -> Bool {
+    package mutating func recordSum(_ key: KubeUsageKey, _ members: [String: (time: Date, usage: KubeUsage)], _ population: Population, now: Date) -> Bool {
         guard !members.isEmpty else { return false }
         var stamps: [String: Int32] = [:]
         for (id, member) in members { stamps[id] = offset(member.time) }
@@ -295,19 +295,19 @@ struct KubeUsageRing: Sendable {
 
     /// The list's rows of one kind (`belongs`) sampled now: every other
     /// such list key is forgotten — a row no longer sampled has no line.
-    mutating func keepListed(_ keys: Set<KubeUsageKey>, of belongs: (KubeUsageKey) -> Bool) {
+    package mutating func keepListed(_ keys: Set<KubeUsageKey>, of belongs: (KubeUsageKey) -> Bool) {
         guard list.contains(where: { belongs($0.key) && !keys.contains($0.key) }) else { return }
         list = list.filter { !belongs($0.key) || keys.contains($0.key) }
     }
 
     /// A list no longer read: its keys go.
-    mutating func forgetListed(_ belongs: (KubeUsageKey) -> Bool) {
+    package mutating func forgetListed(_ belongs: (KubeUsageKey) -> Bool) {
         guard list.keys.contains(where: belongs) else { return }
         list = list.filter { !belongs($0.key) }
     }
 
     /// Detail keys not fed for `keepDetail`: forgotten.
-    mutating func prune(now: Date) {
+    package mutating func prune(now: Date) {
         let cutoff = now.addingTimeInterval(-Self.keepDetail)
         guard detail.values.contains(where: { $0.fed < cutoff }) else { return }
         detail = detail.filter { $0.value.fed >= cutoff }
@@ -318,7 +318,7 @@ struct KubeUsageRing: Sendable {
     /// rather than one holding its history; the cluster's last — then the
     /// least recently fed detail keys. (A table's slots stay until it is
     /// rebuilt, so what a key gives back is its series and its names.)
-    mutating func enforceCap() {
+    package mutating func enforceCap() {
         var total = bytes
         guard total > byteCap else { return }
         let rows = list.map { (key: $0.key, rank: ($0.key == .cluster ? 1 : 0, $0.value.raw.count)) }.sorted { $0.rank < $1.rank }.map(\.key)
@@ -332,7 +332,7 @@ struct KubeUsageRing: Sendable {
         }
     }
 
-    mutating func removeAll() {
+    package mutating func removeAll() {
         list = [:]
         detail = [:]
         epoch = nil
@@ -353,7 +353,7 @@ struct KubeUsageRing: Sendable {
     }
 
     /// The raw tier's segments, oldest first: a break between two.
-    func segments(_ key: KubeUsageKey, _ population: Population? = nil, now: Date = Date()) -> [[KubeUsagePoint]] {
+    package func segments(_ key: KubeUsageKey, _ population: Population? = nil, now: Date = Date()) -> [[KubeUsagePoint]] {
         guard let series = series(key, population, now: now) else { return [] }
         var segments: [[KubeUsagePoint]] = []
         var current: [KubeUsagePoint] = []
@@ -370,12 +370,12 @@ struct KubeUsageRing: Sendable {
     }
 
     /// The raw tier's points, breaks left out (a sparkline's).
-    func points(_ key: KubeUsageKey, _ population: Population? = nil, now: Date = Date()) -> [KubeUsagePoint] {
+    package func points(_ key: KubeUsageKey, _ population: Population? = nil, now: Date = Date()) -> [KubeUsagePoint] {
         segments(key, population, now: now).flatMap { $0 }
     }
 
     /// The folded tier: a detail key's minutes, oldest first.
-    func folded(_ key: KubeUsageKey, now: Date = Date()) -> [KubeUsageBucket] {
+    package func folded(_ key: KubeUsageKey, now: Date = Date()) -> [KubeUsageBucket] {
         guard let series = detail[key], series.fed >= now.addingTimeInterval(-Self.keepDetail) else { return [] }
         return series.folded.map { fold in
             KubeUsageBucket(
@@ -386,21 +386,21 @@ struct KubeUsageRing: Sendable {
     }
 
     /// Whether `key` is kept for `population`.
-    func holds(_ key: KubeUsageKey, _ population: Population) -> Bool {
+    package func holds(_ key: KubeUsageKey, _ population: Population) -> Bool {
         switch population {
         case .list: list[key] != nil
         case .detail: detail[key] != nil
         }
     }
 
-    var listKeys: Int { list.count }
-    var detailKeyCount: Int { detail.count }
-    var isEmpty: Bool { list.isEmpty && detail.isEmpty }
+    package var listKeys: Int { list.count }
+    package var detailKeyCount: Int { detail.count }
+    package var isEmpty: Bool { list.isEmpty && detail.isEmpty }
 
     /// What the ring takes, as near as can be said — the bound `byteCap`
     /// holds to: each key's series (`Series.bytes`), the two tables' slots
     /// (their capacity, a key and a series each) and the keys' own names.
-    var bytes: Int {
+    package var bytes: Int {
         func of(_ table: [KubeUsageKey: Series]) -> Int {
             var total = table.capacity > 0 ? Self.bufferHeader + table.capacity * (MemoryLayout<KubeUsageKey>.stride + MemoryLayout<Series>.stride + 1) : 0
             for (key, series) in table { total += key.heapBytes + series.bytes }
@@ -410,7 +410,7 @@ struct KubeUsageRing: Sendable {
     }
 
     /// What a sparkline's caption says of `points`: over how long.
-    static func span(_ points: [KubeUsagePoint]) -> String? {
+    package static func span(_ points: [KubeUsagePoint]) -> String? {
         guard let first = points.first, let last = points.last, points.count >= 2 else { return nil }
         return "the last \(KubeMetricsFormat.age(last.time.timeIntervalSince(first.time))), sampled while shown"
     }
@@ -422,7 +422,7 @@ extension KubeUsageRing {
     /// (`asList`), as a detail's when one does (`asDetail`), and into each
     /// of `sums` (a workload's, a namespace's). Then the hour's and the
     /// cap's bounds.
-    mutating func record(
+    package mutating func record(
         _ sample: KubeMetricsSample, for target: KubeMetricsTarget, asList: Bool, asDetail: Bool, sums: [KubeUsageKey], parts: [KubeUsageParts] = [],
         owners: [String: String] = [:], now: Date
     ) {
@@ -474,7 +474,7 @@ extension KubeUsageRing {
 
 /// How a pods target's samples are kept beside its sum (metrics.md 2.5,
 /// 2.7, 2.8): what the charts break the sum into.
-enum KubeUsageParts: Hashable, Sendable {
+package enum KubeUsageParts: Hashable, Sendable {
     /// Each pod its own detail key (`.pod`) — a workload's Per pod view and
     /// its top five, a node's top pods: at most `KubeUsageRing.podPartsAtMost`
     /// (past that, the sum alone), or only the pods named.
@@ -491,9 +491,9 @@ enum KubeUsageParts: Hashable, Sendable {
 
 extension KubeUsageRing {
     /// A workload's pods kept each on its own, at most.
-    static let podPartsAtMost = 50
+    package static let podPartsAtMost = 50
     /// A namespace's workloads kept each on its own, at most.
-    static let workloadPartsAtMost = 30
+    package static let workloadPartsAtMost = 30
 
     /// One part's samples: each a sum over its members, per poll, as the whole's.
     fileprivate mutating func record(_ parts: KubeUsageParts, of sample: KubeMetricsSample, owners: [String: String], now: Date) {
@@ -539,7 +539,7 @@ extension KubeUsageRing {
 
     /// The parts of a sum kept now: a namespace's workloads, a workload's
     /// revisions — the names after `whole`'s.
-    func parts(of whole: String, in namespace: String, now: Date = Date()) -> [String] {
+    package func parts(of whole: String, in namespace: String, now: Date = Date()) -> [String] {
         let cutoff = now.addingTimeInterval(-Self.keepDetail)
         return detail.compactMap { key, series in
             guard case .part(let ns, let w, let part) = key, ns == namespace, w == whole, series.fed >= cutoff else { return nil }

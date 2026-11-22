@@ -35,43 +35,43 @@ import Foundation
 /// text is compared as a string in memory, never handed to git, a shell or
 /// a URL. Pure.
 extension KubeGitOpsMatch {
-    typealias AppKey = KubeTrackingID.AppKey
+    package typealias AppKey = KubeTrackingID.AppKey
 
     /// What B, C and D found among a cluster's marked apps, made once as
     /// they were listed (B's rows across the cluster, or the GitOps
     /// section's apps) and kept with the rail's listing; A is set beside it
     /// as the bound workloads come (`marked(bound:listing:)`).
-    struct MarkedListing: Equatable, Sendable {
+    package struct MarkedListing: Equatable, Sendable {
         /// Why the rail reads from marks there.
-        var reason: KubeMarkedAppsMode.Reason
+        package var reason: KubeMarkedAppsMode.Reason
         /// The binding's namespace: the only one B compares a manifest
         /// without a namespace in, and the one whose apps C and D say first.
-        var namespace = ""
+        package var namespace = ""
         /// Each app's members listed: what A's "more elsewhere" counts.
-        var members: [AppKey: [KubeMarkedMember.ID]] = [:]
+        package var members: [AppKey: [KubeMarkedMember.ID]] = [:]
         /// The apps B, C or D matched, as listed: their health from their rows.
-        var apps: [AppKey: KubeMarkedApp] = [:]
+        package var apps: [AppKey: KubeMarkedApp] = [:]
         /// B: of each app, the objects the checkout's manifests name.
-        var described: [AppKey: Set<KubeMarkedMember.ID>] = [:]
+        package var described: [AppKey: Set<KubeMarkedMember.ID>] = [:]
         /// B without a namespace (in the binding's only), C, D: each app's words.
-        var probably: [AppKey: [String]] = [:]
-        var manifests = KubeCheckoutManifests.Read()
+        package var probably: [AppKey: [String]] = [:]
+        package var manifests = KubeCheckoutManifests.Read()
         /// What listing couldn't read: refused, cut — said, its counts kept as numbers.
-        var notes: [KubeCountedText] = []
+        package var notes: [KubeCountedText] = []
         /// Every workload kind's rows read whole across the cluster: an
         /// app's members elsewhere are all counted, not a floor.
-        var whole = true
+        package var whole = true
         /// Whether its Argo Rollouts were read whole (14.12's second
         /// consequence): a Deployment scaled to 0 may be one a Rollout runs.
-        var rollouts = RolloutsRead.notServed
+        package var rollouts = RolloutsRead.notServed
         /// Read from the GitOps section's apps, ranked then: no request.
-        var fromSection: Date?
+        package var fromSection: Date?
     }
 
     /// B, C and D against `apps`, the cluster's marked apps as listed.
     /// `namespace`: the binding's, the only one a manifest without a
     /// namespace is compared in, and the one C and D say first (`marked`).
-    static func markedListing(
+    package static func markedListing(
         _ apps: [KubeMarkedApp], manifests: KubeCheckoutManifests.Read, checkout: Checkout, namespace: String, reason: KubeMarkedAppsMode.Reason,
         notes: [KubeCountedText] = [], whole: Bool = true, rollouts: RolloutsRead = .notServed, fromSection: Date? = nil
     ) -> MarkedListing {
@@ -126,7 +126,7 @@ extension KubeGitOpsMatch {
     /// out where one of its namespaces sits in it with something before,
     /// then a trailing `-service` — `prod-payments-checkout-api-service`,
     /// in payments, is `checkout-api`. Lowercased.
-    static func stem(_ app: KubeMarkedApp) -> String {
+    package static func stem(_ app: KubeMarkedApp) -> String {
         var name = app.appName.lowercased()
         for namespace in app.namespaces.sorted(by: { $0.count > $1.count }) {
             if let range = name.range(of: "-\(namespace.lowercased())-"), range.lowerBound > name.startIndex, range.upperBound < name.endIndex {
@@ -140,13 +140,13 @@ extension KubeGitOpsMatch {
     }
 
     /// The repository names of the checkout's remotes: each path's last part, lowercased.
-    static func repositoryNames(_ checkout: Checkout) -> Set<String> {
+    package static func repositoryNames(_ checkout: Checkout) -> Set<String> {
         Set(checkout.remotes.compactMap { $0.repo.path.split(separator: "/").last.map { $0.lowercased() } })
     }
 
     /// Whether the app's name, as the checkout would call it, is the
     /// repository's, a folder's or a manifest's: the words, else nil.
-    static func byName(_ app: KubeMarkedApp, checkout: Checkout, folders: Set<String>, names: Set<String>) -> String? {
+    package static func byName(_ app: KubeMarkedApp, checkout: Checkout, folders: Set<String>, names: Set<String>) -> String? {
         let stem = stem(app)
         let full = app.appName.lowercased()
         guard stem.count >= 2 else { return nil }
@@ -163,7 +163,7 @@ extension KubeGitOpsMatch {
     /// An image's repository as path parts, lowercased: its registry, tag
     /// and digest left out — `registry.acme.example/acme/api:4.1@sha256:…`
     /// is `acme`, `api`.
-    static func imageParts(_ image: String) -> [String] {
+    package static func imageParts(_ image: String) -> [String] {
         var text = image
         if let at = text.firstIndex(of: "@") { text = String(text[..<at]) }
         var parts = text.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
@@ -174,7 +174,7 @@ extension KubeGitOpsMatch {
     }
 
     /// Whether a member's image names the checkout's repository: the words, else nil.
-    static func byImage(_ app: KubeMarkedApp, checkout: Checkout) -> String? {
+    package static func byImage(_ app: KubeMarkedApp, checkout: Checkout) -> String? {
         let remotes = checkout.remotes.map { $0.repo.path.split(separator: "/").map { $0.lowercased() } }.filter { !$0.isEmpty }
         for image in app.images {
             let parts = imageParts(image)
@@ -190,34 +190,34 @@ extension KubeGitOpsMatch {
     // MARK: A, B, C and D together
 
     /// One app read from marks that deploys the checkout, or probably does.
-    struct MarkedFound: Equatable, Sendable {
-        var app: KubeMarkedApp
-        var whys: [Why]
+    package struct MarkedFound: Equatable, Sendable {
+        package var app: KubeMarkedApp
+        package var whys: [Why]
         /// By name, image or a manifest with no namespace: never found.
-        var probable: Bool
+        package var probable: Bool
         /// Its bound workloads are among its members (A).
-        var bound: Bool
+        package var bound: Bool
     }
 
     /// What the rail says of the apps read from marks.
-    struct MarkedAnswer: Equatable, Sendable {
+    package struct MarkedAnswer: Equatable, Sendable {
         /// A and B.
-        var found: [MarkedFound] = []
+        package var found: [MarkedFound] = []
         /// C, D and B with no namespace, when A and B found nothing: those
         /// in the binding's namespace, else all.
-        var probably: [MarkedFound] = []
+        package var probably: [MarkedFound] = []
         /// More than three of those: none listed.
-        var tooMany: String?
+        package var tooMany: String?
         /// Beside those in the binding's namespace, the others: never
         /// listed, only counted — an agent's answer counts only the failing
         /// ones when it asks for those (`KubeMCPMarksText.checkout`).
-        var others: [MarkedFound] = []
+        package var others: [MarkedFound] = []
         /// `others` counted: "2 more by name or image in other namespaces: …".
-        var elsewhere: String?
+        package var elsewhere: String?
         /// A to D found nothing, B having compared: what was, and what couldn't be.
-        var nothing: String?
+        package var nothing: String?
         /// What B's compare couldn't do, said under what it found.
-        var caveats: [String] = []
+        package var caveats: [String] = []
     }
 
     /// A — `bound`, each app the bound workloads' own marks name, with
@@ -226,7 +226,7 @@ extension KubeGitOpsMatch {
     /// those in the listing's namespace, the binding's, said alone and the
     /// others counted; with none there, all said. `plain`: what was
     /// compared, and the others' count, said with an agent's plain counts.
-    static func marked(bound: [(app: KubeMarkedApp, workloads: [KubeWorkloadRef])], listing: MarkedListing?, plain: Bool = false) -> MarkedAnswer {
+    package static func marked(bound: [(app: KubeMarkedApp, workloads: [KubeWorkloadRef])], listing: MarkedListing?, plain: Bool = false) -> MarkedAnswer {
         var answer = MarkedAnswer()
         var order: [AppKey] = []
         var found: [AppKey: MarkedFound] = [:]
@@ -279,10 +279,10 @@ extension KubeGitOpsMatch {
     }
 
     /// More than this many apps by name or image: too many to tell.
-    static let maxProbable = 3
+    package static let maxProbable = 3
 
     /// At most this many namespaces named where the apps elsewhere are counted.
-    static let maxNamespacesNamed = 5
+    package static let maxNamespacesNamed = 5
 
     /// The apps by name or image outside the binding's namespace, counted:
     /// "2 more by name or image in other namespaces: acme-market,
@@ -291,7 +291,7 @@ extension KubeGitOpsMatch {
     /// ones an agent asked for; `more`: apps were said above them — else
     /// the line stands alone, "1 failing app by name or image in another
     /// namespace: acme-market".
-    static func elsewhere(_ apps: [MarkedFound], plain: Bool = false, failing: Bool = false, more: Bool = true) -> String? {
+    package static func elsewhere(_ apps: [MarkedFound], plain: Bool = false, failing: Bool = false, more: Bool = true) -> String? {
         guard !apps.isEmpty else { return nil }
         let namespaces = Set(apps.flatMap(\.app.namespaces)).sorted()
         let place = namespaces.count == 1 ? "in another namespace" : "in other namespaces"
@@ -306,7 +306,7 @@ extension KubeGitOpsMatch {
     /// "No marked app matched: 412 manifests compared, 37 Helm templates
     /// not rendered, …" — never that nothing deploys it (`plain`: an
     /// agent's counts, never the locale's `1.412`).
-    static func nothingFound(_ listing: MarkedListing, plain: Bool = false) -> String {
+    package static func nothingFound(_ listing: MarkedListing, plain: Bool = false) -> String {
         let manifests = listing.manifests
         var parts: [String] = []
         if let failed = manifests.failed {
@@ -322,7 +322,7 @@ extension KubeGitOpsMatch {
     /// What B's compare couldn't do: templates not rendered, a
     /// kustomization's prefix, folders skipped, links not followed, the
     /// bound, what listing couldn't read.
-    static func caveats(_ listing: MarkedListing, plain: Bool = false) -> [String] {
+    package static func caveats(_ listing: MarkedListing, plain: Bool = false) -> [String] {
         let manifests = listing.manifests
         var said: [String] = []
         func count(_ number: Int, _ one: String, _ many: String) -> String { "\(KubeCountedText.number(number, plain: plain)) \(number == 1 ? one : many)" }
@@ -342,7 +342,7 @@ extension KubeGitOpsMatch {
     /// Where an app read from marks stands against its Application, as the
     /// rail can say it — "another cluster" only where Applications aren't
     /// served and argoproj.io answered discovery.
-    enum MarkedPlace: Equatable, Sendable {
+    package enum MarkedPlace: Equatable, Sendable {
         case reason(KubeMarkedAppsMode.Reason)
         /// Served and read: not at its place.
         case absent
@@ -354,7 +354,7 @@ extension KubeGitOpsMatch {
         /// Couldn't be read: the problem line says why.
         case unread
 
-        func said(context: String) -> String {
+        package func said(context: String) -> String {
             switch self {
             case .reason(.notServed): "Argo CD runs in another cluster — not in your kubeconfig"
             case .reason(.undiscovered): "where Argo CD runs can't be told: argoproj.io didn't answer discovery"
@@ -368,7 +368,7 @@ extension KubeGitOpsMatch {
         /// Where what only the Application knows is, in the place's words
         /// (`KubeMarkedAppDetail.whereTheApplicationIs`): "Argo CD's cluster"
         /// only where Applications aren't served and argoproj.io answered.
-        func whereApplication(probable: Bool = false) -> String {
+        package func whereApplication(probable: Bool = false) -> String {
             switch self {
             case .reason(let reason): KubeMarkedAppDetail.whereTheApplicationIs(.only(reason), probable: probable)
             case .absent: KubeMarkedAppDetail.whereTheApplicationIs(.only(.noApplications), probable: probable)
@@ -383,7 +383,7 @@ extension KubeGitOpsMatch {
     /// answered discovery —, couldn't tell, none here, or refused; read
     /// from the marks on the bound namespace's workloads (`namespace`), or
     /// — only option B's, C's or D's — on the cluster's.
-    static func marksLine(_ reason: KubeMarkedAppsMode.Reason, context: String, namespace: String?) -> String {
+    package static func marksLine(_ reason: KubeMarkedAppsMode.Reason, context: String, namespace: String?) -> String {
         let read = "read from the marks on \(namespace.map { "\($0)'s" } ?? "the cluster's") workloads"
         switch reason {
         case .notServed: return "Argo CD isn't in \(context); \(read)"
@@ -394,7 +394,7 @@ extension KubeGitOpsMatch {
     }
 
     /// Whose health the rail says of an app read from marks.
-    enum MarkedScope: Equatable, Sendable {
+    package enum MarkedScope: Equatable, Sendable {
         /// The bound workloads, with `rollouts` of their app's Argo
         /// Rollouts in the binding's namespace (each the workload of a
         /// Deployment it scales to 0); `elsewhere`, its other members as
@@ -406,7 +406,7 @@ extension KubeGitOpsMatch {
         /// The GitOps section's verdict, as it ranked it then.
         case section(Date)
 
-        func said(now: Date) -> String {
+        package func said(now: Date) -> String {
             switch self {
             case .bound(let count, let rollouts, let elsewhere, let whole):
                 var objects = "health of the \(count) \(count == 1 ? "object" : "objects") bound here"
@@ -431,7 +431,7 @@ extension KubeGitOpsMatch {
     /// (14.12's second consequence): a Deployment scaled to 0 may be the one
     /// a Rollout runs by `workloadRef` — the Rollout then the app's
     /// workload, the Deployment "scaled by its Rollout".
-    enum RolloutsRead: Equatable, Sendable {
+    package enum RolloutsRead: Equatable, Sendable {
         /// Argo Rollouts aren't served: a Deployment's 0 is its own.
         case notServed
         /// Read whole where they would be: an app's Rollout is among its members.
@@ -449,7 +449,7 @@ extension KubeGitOpsMatch {
     /// it, and its 0 says nothing of the app —, ranked with the others by
     /// `app`: a Degraded sibling still ranks the app with Failed and is
     /// named first (decision D-7), never hidden behind it.
-    static func health(_ app: KubeMarkedApp, rollouts: RolloutsRead) -> KubeMarkedHealth.AppVerdict {
+    package static func health(_ app: KubeMarkedApp, rollouts: RolloutsRead) -> KubeMarkedHealth.AppVerdict {
         guard case .unread(let why) = rollouts, !app.members.contains(where: { $0.id.kind == .rollout }) else { return app.health }
         var unknown = app
         var changed = false

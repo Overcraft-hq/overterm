@@ -2,22 +2,22 @@ import Foundation
 
 /// One command a pane ran: what it was, which rows of the scrollback it
 /// occupies, and how it went.
-struct CommandBlock: Identifiable, Equatable {
-    let id: Int
-    let command: String
+package struct CommandBlock: Identifiable, Equatable {
+    package let id: Int
+    package let command: String
     /// The first row of its output, counted from the oldest row libghostty
     /// still holds. Rows shift when the scrollback is trimmed; the ledger
     /// shifts them with it.
-    var startRow: UInt64
+    package var startRow: UInt64
     /// Its last row, while it is running the newest row there is.
-    var endRow: UInt64
+    package var endRow: UInt64
     /// Nil while it runs.
-    var exit: Int?
-    var seconds: Double?
+    package var exit: Int?
+    package var seconds: Double?
 
-    var isRunning: Bool { exit == nil && seconds == nil }
-    var failed: Bool { (exit ?? 0) != 0 }
-    var rows: UInt64 { endRow > startRow ? endRow - startRow + 1 : 0 }
+    package var isRunning: Bool { exit == nil && seconds == nil }
+    package var failed: Bool { (exit ?? 0) != 0 }
+    package var rows: UInt64 { endRow > startRow ? endRow - startRow + 1 : 0 }
 
     /// Whether its rows are real — whether anything it printed scrolled.
     ///
@@ -32,11 +32,11 @@ struct CommandBlock: Identifiable, Equatable {
     /// One row off at the boundary — a command that scrolled exactly one
     /// line reads as unlocated — which is a row nobody could see on a map
     /// anyway.
-    var isLocated: Bool { endRow > startRow }
+    package var isLocated: Bool { endRow > startRow }
 
     /// "exit 2 · 8.1 s", "4.2 s", "running" — what the block's row says
     /// about it after the command itself.
-    var detail: String {
+    package var detail: String {
         guard let seconds else { return "running" }
         let time = seconds < 10 ? String(format: "%.1f s", seconds) : "\(Int(seconds.rounded())) s"
         guard let exit, exit != 0 else { return time }
@@ -61,32 +61,32 @@ struct CommandBlock: Identifiable, Equatable {
 /// inside a command, a trimmed scrollback, a screen cleared) is a row
 /// arithmetic bug waiting to be written, and none of them need a terminal
 /// to reproduce.
-struct CommandLedger: Equatable {
+package struct CommandLedger: Equatable {
     /// Beyond this the oldest blocks go. Ten screens of history is more
     /// than the scroll map can distinguish anyway.
-    static let limit = 200
+    package static let limit = 200
 
-    private(set) var blocks: [CommandBlock] = []
+    package private(set) var blocks: [CommandBlock] = []
     /// Rows libghostty holds, the viewport's top row, and its height.
-    private(set) var total: UInt64 = 0
-    private(set) var offset: UInt64 = 0
-    private(set) var rows: UInt64 = 0
+    package private(set) var total: UInt64 = 0
+    package private(set) var offset: UInt64 = 0
+    package private(set) var rows: UInt64 = 0
     private var nextID = 0
     /// Closed because the prompt came back before its exit arrived; the
     /// exit still belongs to it.
     private var closedByPrompt: Int?
 
-    var running: CommandBlock? { blocks.last.flatMap { $0.isRunning ? $0 : nil } }
+    package var running: CommandBlock? { blocks.last.flatMap { $0.isRunning ? $0 : nil } }
     /// The newest finished block — what "copy the last output" means.
-    var lastFinished: CommandBlock? { blocks.last { !$0.isRunning } }
-    var failures: [CommandBlock] { blocks.filter(\.failed) }
+    package var lastFinished: CommandBlock? { blocks.last { !$0.isRunning } }
+    package var failures: [CommandBlock] { blocks.filter(\.failed) }
     /// The failures anything row-based can actually point at.
-    var locatedFailures: [CommandBlock] { blocks.filter { $0.failed && $0.isLocated } }
+    package var locatedFailures: [CommandBlock] { blocks.filter { $0.failed && $0.isLocated } }
 
     /// Where the viewport is. Also how the ledger learns that rows were
     /// dropped: `total` only ever grows until libghostty trims the
     /// scrollback, and everything recorded then slides down with it.
-    mutating func scrolled(total: UInt64, offset: UInt64, rows: UInt64) {
+    package mutating func scrolled(total: UInt64, offset: UInt64, rows: UInt64) {
         if total < self.total { shift(by: self.total - total) }
         self.total = total
         self.offset = offset
@@ -112,7 +112,7 @@ struct CommandLedger: Equatable {
     ///
     /// `cd` survives this: the shell announces it as `cd …` first, and only
     /// afterwards shows the new directory.
-    static func isPrompt(_ title: String, cwd: String?) -> Bool {
+    package static func isPrompt(_ title: String, cwd: String?) -> Bool {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if title.isEmpty { return true }
         if let cwd {
@@ -154,7 +154,7 @@ struct CommandLedger: Equatable {
     /// When it has not — the two come from different places and nothing
     /// orders them — the block is closed here and `finished` still fills
     /// in its exit code afterwards.
-    mutating func prompted() {
+    package mutating func prompted() {
         guard let last = blocks.indices.last, blocks[last].isRunning else { return }
         blocks[last].seconds = 0
         closedByPrompt = blocks[last].id
@@ -163,7 +163,7 @@ struct CommandLedger: Equatable {
     /// The shell set its title: with shell integration that is the command
     /// it is about to run. A new one while another is still running closes
     /// the first — nested commands are not a thing the title can express.
-    mutating func began(command: String) {
+    package mutating func began(command: String) {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         // The same title twice is the shell re-announcing, not a new run.
@@ -180,7 +180,7 @@ struct CommandLedger: Equatable {
     /// — that happens when shell integration reports the exit of something
     /// it never announced, and inventing a block for it would put an
     /// unnamed frame on screen.
-    mutating func finished(exitCode: Int?, seconds: Double) {
+    package mutating func finished(exitCode: Int?, seconds: Double) {
         guard let last = blocks.indices.last, blocks[last].isRunning || blocks[last].id == closedByPrompt else {
             return
         }
@@ -205,19 +205,19 @@ struct CommandLedger: Equatable {
     // MARK: Navigating
 
     /// The next failed block after the viewport, wrapping — ⌥⌘↓.
-    func nextFailure(after row: UInt64) -> CommandBlock? {
+    package func nextFailure(after row: UInt64) -> CommandBlock? {
         locatedFailures.first { $0.startRow > row } ?? locatedFailures.first
     }
 
     /// How far to scroll to put `row` at the top of the viewport. Positive
     /// is down, which is what `scroll_lines:` wants.
-    func lines(toReach row: UInt64) -> Int {
+    package func lines(toReach row: UInt64) -> Int {
         Int(clamping: Int64(bitPattern: row) - Int64(bitPattern: offset))
     }
 
     /// Where a block sits in the scroll map, as fractions of the whole
     /// scrollback. Nil when there is nothing to map yet.
-    func position(of block: CommandBlock) -> ClosedRange<Double>? {
+    package func position(of block: CommandBlock) -> ClosedRange<Double>? {
         guard total > 0, block.isLocated else { return nil }
         let start = Double(block.startRow) / Double(total)
         let end = Double(min(block.endRow + 1, total)) / Double(total)
@@ -225,7 +225,7 @@ struct CommandLedger: Equatable {
     }
 
     /// The viewport's own place in it, for the map's thumb.
-    var viewport: ClosedRange<Double>? {
+    package var viewport: ClosedRange<Double>? {
         guard total > 0, rows > 0 else { return nil }
         let start = Double(offset) / Double(total)
         let end = Double(min(offset + rows, total)) / Double(total)

@@ -1,7 +1,7 @@
 import Foundation
 
 /// What a folder of Terraform files is (analysis 4.12).
-enum TerraformFolderKind: String, Equatable, Sendable {
+package enum TerraformFolderKind: String, Equatable, Sendable {
     /// A root module: where terraform runs, with a state.
     case root
     /// A child module: another folder's `module` calls it, or it is under `modules/`.
@@ -16,20 +16,20 @@ enum TerraformFolderKind: String, Equatable, Sendable {
 }
 
 /// One folder of a checkout's Terraform, as the guess found it.
-struct TerraformRootFolder: Equatable, Sendable, Identifiable {
+package struct TerraformRootFolder: Equatable, Sendable, Identifiable {
     /// Relative to the repository's top; "" is the top.
-    var path: String
-    var kind: TerraformFolderKind
+    package var path: String
+    package var kind: TerraformFolderKind
     /// Its file names, as `git ls-files` listed them.
-    var files: [String]
-    var id: String { path }
+    package var files: [String]
+    package var id: String { path }
 
-    var hasLockFile: Bool { files.contains(".terraform.lock.hcl") }
-    var hasTests: Bool { files.contains { $0.hasSuffix(".tftest.hcl") } }
+    package var hasLockFile: Bool { files.contains(".terraform.lock.hcl") }
+    package var hasTests: Bool { files.contains { $0.hasSuffix(".tftest.hcl") } }
     /// The `.tfvars` beside it.
-    var varFiles: [String] { files.filter { $0.hasSuffix(".tfvars") || $0.hasSuffix(".tfvars.json") }.sorted() }
+    package var varFiles: [String] { files.filter { $0.hasSuffix(".tfvars") || $0.hasSuffix(".tfvars.json") }.sorted() }
     /// The var files every run loads without being asked: `terraform.tfvars` and `*.auto.tfvars`.
-    var autoVarFiles: [String] {
+    package var autoVarFiles: [String] {
         varFiles.filter { $0 == "terraform.tfvars" || $0 == "terraform.tfvars.json" || $0.hasSuffix(".auto.tfvars") || $0.hasSuffix(".auto.tfvars.json") }
     }
 }
@@ -37,24 +37,24 @@ struct TerraformRootFolder: Equatable, Sendable, Identifiable {
 /// Which folders are roots, modules, examples or Terragrunt's (4.12 step
 /// 2). Pure: the file list from `TerraformRootScan`, each folder's config
 /// facts from its files (`facts`).
-enum TerraformRootGuess {
+package enum TerraformRootGuess {
     /// Bounds on what one folder's guess reads.
-    static let maxFilesPerFolder = 120
-    static let maxBytesPerFile = 256 << 10
+    package static let maxFilesPerFolder = 120
+    package static let maxBytesPerFile = 256 << 10
 
     /// The patterns `git ls-files` is given (2.1).
-    static let patterns = [
+    package static let patterns = [
         "*.tf", "*.tf.json", "*.tofu", "*.tfvars", "*.tfvars.json", "*terragrunt.hcl", "*root.hcl", "*.terraform.lock.hcl", "*.tftest.hcl",
     ]
 
     /// Folders never Terraform's own: what `init` and Terragrunt copy, and vendored trees.
-    static func isSkipped(_ path: String) -> Bool {
+    package static func isSkipped(_ path: String) -> Bool {
         let parts = path.split(separator: "/")
         return parts.contains { $0 == ".terraform" || $0 == ".terragrunt-cache" || $0 == "node_modules" || $0 == ".git" }
     }
 
     /// `paths`, relative to the top, grouped by folder.
-    static func folders(of paths: [String]) -> [String: [String]] {
+    package static func folders(of paths: [String]) -> [String: [String]] {
         var folders: [String: [String]] = [:]
         for path in paths where !isSkipped(path) {
             let folder = (path as NSString).deletingLastPathComponent
@@ -63,14 +63,14 @@ enum TerraformRootGuess {
         return folders
     }
 
-    static func isConfigFile(_ name: String) -> Bool {
+    package static func isConfigFile(_ name: String) -> Bool {
         name.hasSuffix(".tf") || name.hasSuffix(".tf.json") || name.hasSuffix(".tofu")
     }
 
     /// A module source that is a folder of this repository, resolved
     /// against `folder`: `../../modules/net` → `modules/net`. Nil for a
     /// registry, git or http source, or one that climbs out.
-    static func localSource(_ source: String, from folder: String) -> String? {
+    package static func localSource(_ source: String, from folder: String) -> String? {
         guard source.hasPrefix("./") || source.hasPrefix("../") else { return nil }
         var parts = folder.split(separator: "/").map(String.init)
         for part in source.split(separator: "/") {
@@ -86,7 +86,7 @@ enum TerraformRootGuess {
 
     /// Every folder's kind. `facts[folder]` is its config, `terragrunt[folder]`
     /// its `terragrunt.hcl`'s text when it has one.
-    static func classify(
+    package static func classify(
         folders: [String: [String]], facts: [String: TerraformConfigFacts], terragrunt: [String: String] = [:], modulesJSON: [String: [String]] = [:]
     ) -> [TerraformRootFolder] {
         // Who calls whom: local sources, and what init installed.
@@ -130,7 +130,7 @@ enum TerraformRootGuess {
     /// The roots that call each module, through other modules too
     /// ("modules/network: 5 roots"). `calls[folder]` are the folders it
     /// calls (local sources, resolved). Bounded by the folders there are.
-    static func callers(of modules: [String], roots: [String], calls: [String: Set<String>]) -> [String: [String]] {
+    package static func callers(of modules: [String], roots: [String], calls: [String: Set<String>]) -> [String: [String]] {
         var reached: [String: Set<String>] = [:]
         for root in roots {
             var seen: Set<String> = []
@@ -148,7 +148,7 @@ enum TerraformRootGuess {
 
     /// Whether a file's name is one of `patterns`' (what `ls-files` and the
     /// walk list).
-    static func isTerraformName(_ name: String) -> Bool {
+    package static func isTerraformName(_ name: String) -> Bool {
         isConfigFile(name) || name.hasSuffix(".tfvars") || name.hasSuffix(".tfvars.json") || name.hasSuffix("terragrunt.hcl")
             || name.hasSuffix("root.hcl") || name.hasSuffix(".terraform.lock.hcl") || name.hasSuffix(".tftest.hcl")
     }
@@ -156,7 +156,7 @@ enum TerraformRootGuess {
     /// The nearest root at or above `folder` (4.12 step 5): a template or a
     /// policy the root reads with `file("${path.module}/…")` is the
     /// root's. Bounded; "" is the top, and the walk stops there.
-    static func nearestRoot(of folder: String, roots: Set<String>) -> String? {
+    package static func nearestRoot(of folder: String, roots: Set<String>) -> String? {
         var current = folder
         for _ in 0..<64 {
             if roots.contains(current) { return current }
@@ -169,7 +169,7 @@ enum TerraformRootGuess {
     /// The roots a set of changed files touches: a file in the root's
     /// folder or below it (the nearest root above the file), or in a
     /// module it calls, at any depth. `changed` are paths relative to the top.
-    static func touched(roots: [String], changed: [String], moduleCallers: [String: [String]]) -> Set<String> {
+    package static func touched(roots: [String], changed: [String], moduleCallers: [String: [String]]) -> Set<String> {
         var touched: Set<String> = []
         let rootSet = Set(roots)
         for file in changed {
@@ -188,33 +188,33 @@ enum TerraformRootGuess {
 /// (allow-listed), the modules it installed, its lock file's providers, a
 /// local backend's workspaces and whether this workspace's state file is
 /// here, and the version pins. Blocking file reads, bounded: a GCD thread's.
-struct TerraformRootFacts: Equatable, Sendable {
-    var config = TerraformConfigFacts()
+package struct TerraformRootFacts: Equatable, Sendable {
+    package var config = TerraformConfigFacts()
     /// What `.terraform/environment` says, else `default`.
-    var workspace = "default"
+    package var workspace = "default"
     /// `.terraform/environment` names it (not the default by absence).
-    var workspaceFromFile = false
-    var initRecord: TerraformConfigFacts.Backend?
-    var modulesJSON: [String] = []
+    package var workspaceFromFile = false
+    package var initRecord: TerraformConfigFacts.Backend?
+    package var modulesJSON: [String] = []
     /// Nil: no lock file.
-    var lockProviders: [TerraformLockFile.Provider]?
+    package var lockProviders: [TerraformLockFile.Provider]?
     /// A local backend's other workspaces: `terraform.tfstate.d`'s folders.
-    var localWorkspaces: [String] = []
+    package var localWorkspaces: [String] = []
     /// A local backend's state file for `workspace` is here.
-    var localStateExists = false
-    var pins = TerraformVersionPins()
+    package var localStateExists = false
+    package var pins = TerraformVersionPins()
     /// `required_providers` with no lock entry: "needs init" (4.12 step 4) —
     /// only where there is a lock file to miss them.
-    var needsInit: Bool { !unlocked.isEmpty }
+    package var needsInit: Bool { !unlocked.isEmpty }
     /// The required providers its lock file doesn't pin, by their local names.
-    var unlocked: [String] = []
+    package var unlocked: [String] = []
     /// No lock file and no `.terraform` either: never initialised here.
-    var neverInitialised = false
+    package var neverInitialised = false
 
-    var backend: TerraformConfigFacts.Backend { TerraformStateIdentity.effective(config: config.backend, record: initRecord) }
+    package var backend: TerraformConfigFacts.Backend { TerraformStateIdentity.effective(config: config.backend, record: initRecord) }
 
     /// The root's config files' texts, bounded.
-    static func configTexts(in root: URL, names: [String]? = nil) -> [String] {
+    package static func configTexts(in root: URL, names: [String]? = nil) -> [String] {
         let manager = FileManager.default
         let listed = names ?? ((try? manager.contentsOfDirectory(atPath: root.path)) ?? [])
         var texts: [String] = []
@@ -229,7 +229,7 @@ struct TerraformRootFacts: Equatable, Sendable {
     }
 
     /// A small file's text, or nil (never one past 256 KB, never a non-file).
-    static func smallFile(_ url: URL, limit: Int = TerraformRootGuess.maxBytesPerFile) -> Data? {
+    package static func smallFile(_ url: URL, limit: Int = TerraformRootGuess.maxBytesPerFile) -> Data? {
         var info = stat()
         guard stat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG, Int(info.st_size) <= limit else { return nil }
         return try? Data(contentsOf: url)
@@ -237,7 +237,7 @@ struct TerraformRootFacts: Equatable, Sendable {
 
     /// Reads `root`'s facts. `checkout` bounds the walk up for version
     /// files: never above it, and never past `/` (CLAUDE.md).
-    static func read(root: URL, checkout: URL, config: TerraformConfigFacts? = nil) -> TerraformRootFacts {
+    package static func read(root: URL, checkout: URL, config: TerraformConfigFacts? = nil) -> TerraformRootFacts {
         var facts = TerraformRootFacts()
         facts.config = config ?? TerraformConfigFacts.read(configTexts(in: root))
         let data = root.appendingPathComponent(".terraform", isDirectory: true)
@@ -281,7 +281,7 @@ struct TerraformRootFacts: Equatable, Sendable {
     }
 
     /// The nearest version file, from the root up to the checkout.
-    static func pins(from root: URL, checkout: URL, required: String?) -> TerraformVersionPins {
+    package static func pins(from root: URL, checkout: URL, required: String?) -> TerraformVersionPins {
         let unpinned = TerraformVersionPins(required: required)
         let top = checkout.standardizedFileURL.path
         var folder = root.standardizedFileURL
@@ -312,7 +312,7 @@ struct TerraformRootFacts: Equatable, Sendable {
     /// the backend block. Kept by the files' size and modification times,
     /// so a read of the panel stats them rather than reading 120 `.tf`
     /// files a worktree. Blocking.
-    static func readIdentity(root: URL) -> TerraformRootFacts {
+    package static func readIdentity(root: URL) -> TerraformRootFacts {
         let manager = FileManager.default
         let data = root.appendingPathComponent(".terraform", isDirectory: true)
         let names = ((try? manager.contentsOfDirectory(atPath: root.path)) ?? []).filter { $0.hasSuffix(".tf") || $0.hasSuffix(".tofu") }.sorted()
@@ -354,7 +354,7 @@ struct TerraformRootFacts: Equatable, Sendable {
     /// Whether a version manager could pick the version here: a version
     /// file from the root up to the checkout. Then the binary is resolved
     /// and asked its version per root (4.2).
-    var hasVersionFile: Bool { pins.pinFile != nil }
+    package var hasVersionFile: Bool { pins.pinFile != nil }
 }
 
 /// The checkout's Terraform files, by one git call (4.12 step 1):
@@ -364,21 +364,21 @@ struct TerraformRootFacts: Equatable, Sendable {
 /// can't list it, a repository's top folder (`KubeCheckoutScan.isRepositoryRoot`:
 /// a `.git` there, never `~` or `/`) is walked instead, as Kubernetes'
 /// guess walks — bounded; any other folder is not walked.
-enum TerraformRootScan {
-    static let maxMatches = 20_000
-    static let maxFolders = 2_000
+package enum TerraformRootScan {
+    package static let maxMatches = 20_000
+    package static let maxFolders = 2_000
 
-    struct Listing: Equatable, Sendable {
-        var folders: [String: [String]]
-        var capped: Bool
+    package struct Listing: Equatable, Sendable {
+        package var folders: [String: [String]]
+        package var capped: Bool
     }
 
-    static func arguments() -> [String] {
+    package static func arguments() -> [String] {
         ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--"] + TerraformRootGuess.patterns
     }
 
     /// Pure: `ls-files -z`'s output into folders, within the caps.
-    static func listing(_ output: String) -> Listing {
+    package static func listing(_ output: String) -> Listing {
         var paths: [String] = []
         var capped = false
         var seen: Set<String> = []
@@ -402,20 +402,20 @@ enum TerraformRootScan {
         return Listing(folders: folders, capped: capped)
     }
 
-    static func list(_ checkout: URL) async -> Listing? {
+    package static func list(_ checkout: URL) async -> Listing? {
         if let output = try? await Git.run(arguments(), in: checkout, outputLimit: 8 << 20) { return listing(output) }
         return await TerraformPanelModel.blocking { KubeCheckoutScan.isRepositoryRoot(checkout) ? walk(checkout) : nil }
     }
 
     /// Bounds on the walk: Kubernetes' depth, more entries (roots nest deeper than manifests).
-    static let walkDepth = 8
-    static let walkEntries = 20_000
+    package static let walkDepth = 8
+    package static let walkEntries = 20_000
 
     /// The bounded walk of a repository's top folder git couldn't list:
     /// breadth first, hidden folders, symbolic links, `.terraform`,
     /// `.terragrunt-cache` and `KubeCheckoutScan.skipped` passed over; only
     /// names (no file read). Blocking.
-    static func walk(_ root: URL) -> Listing {
+    package static func walk(_ root: URL) -> Listing {
         let manager = FileManager.default
         let base = root.standardizedFileURL
         var paths: [String] = []

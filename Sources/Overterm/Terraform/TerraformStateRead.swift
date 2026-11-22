@@ -17,8 +17,8 @@ import Foundation
 /// local backend only: initialising any other uses what its init record
 /// holds, `-backend-config` credentials in clear (spike 4).
 @MainActor
-final class TerraformStateRead: ObservableObject, Identifiable {
-    enum Phase: Equatable, Sendable {
+package final class TerraformStateRead: ObservableObject, Identifiable {
+    package enum Phase: Equatable, Sendable {
         case preparing
         /// `state list` ran: the addresses are in; `show -json` reads the values.
         case listing
@@ -29,44 +29,44 @@ final class TerraformStateRead: ObservableObject, Identifiable {
         case refused(String)
     }
 
-    enum Reader: Equatable, Sendable {
+    package enum Reader: Equatable, Sendable {
         case person
         case agent
     }
 
-    let id = "tfs-" + UUID().uuidString.prefix(8).lowercased()
-    let checkout: URL
-    let card: TerraformRootCard
-    let reader: Reader
+    package let id = "tfs-" + UUID().uuidString.prefix(8).lowercased()
+    package let checkout: URL
+    package let card: TerraformRootCard
+    package let reader: Reader
     /// `show -json` too; false: `state list` alone (`tf_state_list`, which starts no provider).
-    let values: Bool
-    @Published private(set) var phase: Phase = .preparing
+    package let values: Bool
+    @Published package private(set) var phase: Phase = .preparing
     /// `state list`'s, then the decoded state's.
-    @Published private(set) var addresses: [String] = []
+    @Published package private(set) var addresses: [String] = []
     /// The addresses by module, and each address's object: built off the
     /// main thread when they come, so the view only filters (analysis 10 —
     /// 20,000 addresses grouped, and each row a linear search, on every
     /// keystroke, was the main thread's).
-    @Published private(set) var groups: [TerraformStateRows.Group] = []
-    private(set) var resources: [String: TerraformState.Resource] = [:]
-    @Published private(set) var capped = false
-    @Published private(set) var state: TerraformState?
+    @Published package private(set) var groups: [TerraformStateRows.Group] = []
+    package private(set) var resources: [String: TerraformState.Resource] = [:]
+    @Published package private(set) var capped = false
+    @Published package private(set) var state: TerraformState?
     /// The workspace it read, as checked.
-    @Published private(set) var workspace: String
-    let started = Date()
-    @Published private(set) var finished: Date?
+    @Published package private(set) var workspace: String
+    package let started = Date()
+    @Published package private(set) var finished: Date?
     /// Where each resource's block is in the root's files (and its
     /// modules', through `modules.json`): "Open block", read once the state is.
-    @Published private(set) var blocks: [String: TerraformCauseChain.Location] = [:]
+    @Published package private(set) var blocks: [String: TerraformCauseChain.Location] = [:]
     /// The view's: the resources open on their attributes, the modules folded.
-    @Published var expanded: Set<String> = []
-    @Published var folded: Set<String> = []
+    @Published package var expanded: Set<String> = []
+    @Published package var folded: Set<String> = []
     /// The task `begin` started: cancelled by `stop`.
-    private(set) var task: Task<Void, Never>?
+    package private(set) var task: Task<Void, Never>?
     /// Stopped: whatever is still on its way is dropped.
-    private(set) var stopped = false
+    package private(set) var stopped = false
 
-    init(checkout: URL, card: TerraformRootCard, reader: Reader = .person, values: Bool = true) {
+    package init(checkout: URL, card: TerraformRootCard, reader: Reader = .person, values: Bool = true) {
         self.checkout = checkout
         self.card = card
         self.reader = reader
@@ -74,7 +74,7 @@ final class TerraformStateRead: ObservableObject, Identifiable {
         self.workspace = card.workspace
     }
 
-    var isGoing: Bool {
+    package var isGoing: Bool {
         switch phase {
         case .preparing, .listing, .reading: true
         default: false
@@ -82,9 +82,9 @@ final class TerraformStateRead: ObservableObject, Identifiable {
     }
 
     /// The workspace has no state yet: nothing to list.
-    var isEmpty: Bool { phase == .read && addresses.isEmpty && (state?.outputs.isEmpty ?? true) }
+    package var isEmpty: Bool { phase == .read && addresses.isEmpty && (state?.outputs.isEmpty ?? true) }
 
-    func age(now: Date = Date()) -> String {
+    package func age(now: Date = Date()) -> String {
         let seconds = Int(max(0, now.timeIntervalSince(finished ?? started)))
         if seconds < 60 { return "just now" }
         if seconds < 3_600 { return "\(seconds / 60) min ago" }
@@ -93,14 +93,14 @@ final class TerraformStateRead: ObservableObject, Identifiable {
 
     /// Starts it in a task of its own, kept so `stop` can end it.
     /// `registry`, `binary`: a test's.
-    func begin(settingPath: String, registry: TerraformRunRegistry = .shared, binary: URL? = nil) {
+    package func begin(settingPath: String, registry: TerraformRunRegistry = .shared, binary: URL? = nil) {
         task = Task { @MainActor [weak self] in await self?.start(registry: registry, settingPath: settingPath, binary: binary) }
     }
 
     /// Stops it, when it is still going: the slot closed, or another read
     /// took it. The terraform it runs is interrupted (`TerraformRun.short`),
     /// the decode and the blocks' scan never start, nothing lands after.
-    func stop() {
+    package func stop() {
         guard isGoing else { return }
         stopped = true
         task?.cancel()
@@ -108,7 +108,7 @@ final class TerraformStateRead: ObservableObject, Identifiable {
         finished = Date()
     }
 
-    func refuse(_ why: String) {
+    package func refuse(_ why: String) {
         guard !stopped else { return }
         phase = .refused(why)
         finished = Date()
@@ -120,17 +120,17 @@ final class TerraformStateRead: ObservableObject, Identifiable {
         finished = Date()
     }
 
-    struct Prepared: Sendable {
-        var facts: TerraformRootFacts
-        var binary: URL?
-        var base: [String: String]?
-        var scratch: TerraformGuards.Scratch?
+    package struct Prepared: Sendable {
+        package var facts: TerraformRootFacts
+        package var binary: URL?
+        package var base: [String: String]?
+        package var scratch: TerraformGuards.Scratch?
     }
 
     /// Runs it: checks, `state list`, `show -json`, decoded. `binary`: a
     /// test's terraform, in place of the one the setting resolves; `setup`
     /// New Task's, whose init in the root refuses it.
-    func start(registry: TerraformRunRegistry = .shared, setup: TerraformWorktreeSetup = .shared, settingPath: String, binary given: URL? = nil) async {
+    package func start(registry: TerraformRunRegistry = .shared, setup: TerraformWorktreeSetup = .shared, settingPath: String, binary given: URL? = nil) async {
         let root = card.folder
         let checkout = self.checkout
         let hasVersionFile = card.facts.hasVersionFile
@@ -225,7 +225,7 @@ final class TerraformStateRead: ObservableObject, Identifiable {
     }
 
     /// The state read: its own addresses (a deposed object listed once), done at `date`.
-    func landed(_ state: TerraformState, at date: Date = Date(), arranged given: Arranged? = nil) {
+    package func landed(_ state: TerraformState, at date: Date = Date(), arranged given: Arranged? = nil) {
         let arranged = given ?? Self.arrange(state, listed: addresses, listedCapped: capped)
         self.state = state
         addresses = arranged.addresses
@@ -237,10 +237,10 @@ final class TerraformStateRead: ObservableObject, Identifiable {
     }
 
     /// What the view draws from: the addresses, grouped, and each one's object.
-    struct Arranged: Sendable {
-        var addresses: [String]
-        var groups: [TerraformStateRows.Group]
-        var resources: [String: TerraformState.Resource]
+    package struct Arranged: Sendable {
+        package var addresses: [String]
+        package var groups: [TerraformStateRows.Group]
+        package var resources: [String: TerraformState.Resource]
     }
 
     /// The state's own addresses, unless either list was cut short (then
@@ -253,7 +253,7 @@ final class TerraformStateRead: ObservableObject, Identifiable {
     /// (5.10: a tf_ tool stays inside the pane's checkout, realpath, no link
     /// out). An agent can write the backend block and the init record both.
     /// Nil: all inside. Blocking file reads (realpath), bounded.
-    nonisolated static func agentLocalRefusal(backend: TerraformConfigFacts.Backend, workspace: String, root: URL, checkout: URL) -> String? {
+    package nonisolated static func agentLocalRefusal(backend: TerraformConfigFacts.Backend, workspace: String, root: URL, checkout: URL) -> String? {
         guard backend.type == "local" else { return nil }
         let settings = backend.settings
         let named = [settings["path"] ?? "terraform.tfstate", settings["workspace_dir"] ?? "terraform.tfstate.d"]
@@ -274,7 +274,7 @@ final class TerraformStateRead: ObservableObject, Identifiable {
     /// realpath (every link, `..` taken physically), the rest — which
     /// doesn't exist yet — appended as written. Nil past 256 parts, or
     /// through a link whose target isn't there.
-    nonisolated static func physical(_ url: URL) -> String? {
+    package nonisolated static func physical(_ url: URL) -> String? {
         let parts = url.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
         guard parts.count <= 256 else { return nil }
         var count = parts.count
@@ -295,7 +295,7 @@ final class TerraformStateRead: ObservableObject, Identifiable {
         return nil
     }
 
-    nonisolated static func arrange(_ state: TerraformState, listed: [String], listedCapped: Bool) -> Arranged {
+    package nonisolated static func arrange(_ state: TerraformState, listed: [String], listedCapped: Bool) -> Arranged {
         var addresses = listed
         if !state.capped, !listedCapped {
             var seen = Set<String>()
@@ -304,7 +304,7 @@ final class TerraformStateRead: ObservableObject, Identifiable {
         return arrange(addresses, state: state)
     }
 
-    nonisolated static func arrange(_ addresses: [String], state: TerraformState?) -> Arranged {
+    package nonisolated static func arrange(_ addresses: [String], state: TerraformState?) -> Arranged {
         var resources: [String: TerraformState.Resource] = [:]
         for resource in state?.resources ?? [] {
             if let kept = resources[resource.address], kept.deposed == nil || resource.deposed != nil { continue }
@@ -314,10 +314,10 @@ final class TerraformStateRead: ObservableObject, Identifiable {
     }
 
     /// The object at `address`: the current one, else a deposed one.
-    func resource(_ address: String) -> TerraformState.Resource? { resources[address] }
+    package func resource(_ address: String) -> TerraformState.Resource? { resources[address] }
 
     /// The block of `address` in the root's files: "Open block".
-    func block(of address: String) -> TerraformCauseChain.Location? {
+    package func block(of address: String) -> TerraformCauseChain.Location? {
         blocks[address.replacingOccurrences(of: #"\[[^\]]*\]"#, with: "", options: .regularExpression)]
     }
 
@@ -368,25 +368,25 @@ final class TerraformStateRead: ObservableObject, Identifiable {
 /// back and an agent's `tf_` call can be answered from what the person
 /// read (masked again for it) instead of reading once more.
 @MainActor
-final class TerraformStateReads: ObservableObject {
-    static let shared = TerraformStateReads()
-    static let keep = 24
+package final class TerraformStateReads: ObservableObject {
+    package static let shared = TerraformStateReads()
+    package static let keep = 24
     /// How long an agent is answered from the person's read.
-    static let agentMaxAge: TimeInterval = 15 * 60
+    package static let agentMaxAge: TimeInterval = 15 * 60
 
-    @Published private(set) var reads: [TerraformStateRead] = []
+    @Published package private(set) var reads: [TerraformStateRead] = []
     /// What an isolated run would have opened or added from an output
     /// (the scenarios' check): nothing of the user's is reached.
-    var offerRecorder: ((TerraformOutputLinks.Offer) -> Void)?
+    package var offerRecorder: ((TerraformOutputLinks.Offer) -> Void)?
 
-    func add(_ read: TerraformStateRead) {
+    package func add(_ read: TerraformStateRead) {
         reads.removeAll { $0.reader == read.reader && Self.same($0, read) }
         reads.append(read)
         if reads.count > Self.keep { reads.removeFirst(reads.count - Self.keep) }
     }
 
     /// The newest read of `root` in `checkout` by `reader`.
-    func latest(checkout: URL, root: String, reader: TerraformStateRead.Reader? = nil) -> TerraformStateRead? {
+    package func latest(checkout: URL, root: String, reader: TerraformStateRead.Reader? = nil) -> TerraformStateRead? {
         let path = checkout.resolvingSymlinksInPath().standardizedFileURL.path
         return reads.last {
             $0.card.path == root && $0.checkout.resolvingSymlinksInPath().standardizedFileURL.path == path && (reader == nil || $0.reader == reader)
@@ -395,7 +395,7 @@ final class TerraformStateReads: ObservableObject {
 
     /// Forgets `root`'s reads by `reader`: tools then read for themselves
     /// (a scenario's check of the agent's own read).
-    func forget(checkout: URL, root: String, reader: TerraformStateRead.Reader) {
+    package func forget(checkout: URL, root: String, reader: TerraformStateRead.Reader) {
         while let read = latest(checkout: checkout, root: root, reader: reader) { reads.removeAll { $0 === read } }
     }
 

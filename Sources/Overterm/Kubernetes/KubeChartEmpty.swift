@@ -4,7 +4,7 @@ import Foundation
 /// so every chart says the same thing for the same cause, and each cause
 /// has its test (metrics.md, 3.10, 4.7). A footnote is said under a chart
 /// that still draws; the others stand in its place. Pure.
-enum KubeChartEmpty: Equatable, Sendable {
+package enum KubeChartEmpty: Equatable, Sendable {
     /// No metrics.k8s.io, and Prometheus not on.
     case noMetricsServer
     /// No metrics.k8s.io, Prometheus on: the charts are Prometheus', once it is found.
@@ -81,7 +81,7 @@ enum KubeChartEmpty: Equatable, Sendable {
     /// G1 on MIG instances without DCGM's profiling metrics (a footnote).
     case migNeedsProfiling
 
-    var sentence: String {
+    package var sentence: String {
         switch self {
         case .noMetricsServer:
             return "No metrics-server in this cluster: there are no usage numbers without it or Prometheus."
@@ -161,7 +161,7 @@ enum KubeChartEmpty: Equatable, Sendable {
     }
 
     /// Said under a chart that still draws, rather than in its place.
-    var isFootnote: Bool {
+    package var isFootnote: Bool {
         switch self {
         case .ksmOld, .partial, .retention, .youngPod, .migNeedsProfiling: true
         default: false
@@ -169,7 +169,7 @@ enum KubeChartEmpty: Equatable, Sendable {
     }
 
     /// The query is worth reporting: Copy PromQL is offered beside it.
-    var offersCopyPromQL: Bool {
+    package var offersCopyPromQL: Bool {
         switch self {
         case .badData, .filterRefused: true
         default: false
@@ -178,7 +178,7 @@ enum KubeChartEmpty: Equatable, Sendable {
 
     /// A query that failed this way is reported with its PromQL (M9): the
     /// rows of the table that offer Copy PromQL, by the reader's kind.
-    static func offersCopyPromQL(_ kind: KubePrometheusReader.Failure.Kind) -> Bool {
+    package static func offersCopyPromQL(_ kind: KubePrometheusReader.Failure.Kind) -> Bool {
         switch kind {
         case .badData: KubeChartEmpty.badData("").offersCopyPromQL
         case .filterRefused: KubeChartEmpty.filterRefused.offersCopyPromQL
@@ -187,7 +187,7 @@ enum KubeChartEmpty: Equatable, Sendable {
     }
 
     /// `14:02`, in the time zone shown everywhere else (local).
-    static func clock(_ date: Date) -> String {
+    package static func clock(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm"
@@ -195,7 +195,7 @@ enum KubeChartEmpty: Equatable, Sendable {
     }
 
     /// `Oct 28` — month names in English whatever the locale (the page's language).
-    static func day(_ date: Date) -> String {
+    package static func day(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "MMM d"

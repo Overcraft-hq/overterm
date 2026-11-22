@@ -5,19 +5,19 @@ import AppKit
 /// rather than a sixth column, which would cost every window the width and
 /// the saved divider positions (`OvertermColumns`).
 @MainActor
-final class BrowserColumnController: NSViewController {
-    enum Mode: String {
+package final class BrowserColumnController: NSViewController {
+    package enum Mode: String {
         case web, simulator
     }
 
-    let browser: BrowserViewController
-    let simulator: SimulatorViewController
-    private(set) var mode: Mode = .web
+    package let browser: BrowserViewController
+    package let simulator: SimulatorViewController
+    package private(set) var mode: Mode = .web
     /// Whether the column itself is on screen; the simulator is mirrored
     /// only while it is (a stream costs, shut it costs nothing).
-    private(set) var isColumnOpen = false
+    package private(set) var isColumnOpen = false
 
-    init(browser: BrowserViewController, simulator: SimulatorViewController) {
+    package init(browser: BrowserViewController, simulator: SimulatorViewController) {
         self.browser = browser
         self.simulator = simulator
         super.init(nibName: nil, bundle: nil)
@@ -25,11 +25,11 @@ final class BrowserColumnController: NSViewController {
         addChild(simulator)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override func loadView() {
+    package override func loadView() {
         let root = NSView()
         for child in [browser.view, simulator.view] {
             child.translatesAutoresizingMaskIntoConstraints = false
@@ -46,13 +46,13 @@ final class BrowserColumnController: NSViewController {
     }
 
     /// Switches what the column shows; the one going away stops working.
-    func show(_ mode: Mode) {
+    package func show(_ mode: Mode) {
         self.mode = mode
         apply()
     }
 
     /// The column was opened or collapsed.
-    func setColumnOpen(_ open: Bool) {
+    package func setColumnOpen(_ open: Bool) {
         isColumnOpen = open
         apply()
     }

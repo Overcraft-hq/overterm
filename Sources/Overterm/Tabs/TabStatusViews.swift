@@ -6,27 +6,27 @@ import SwiftUI
 /// working breathes, waiting sends a ring out, done and failed sit still —
 /// so five busy tabs stay calm and the one that wants you stands out.
 /// With Reduce Motion on, everything is still and colour carries it.
-enum TabStatusStyle {
+package enum TabStatusStyle {
     /// Signal yellow: the brand's "look here".
-    static let signal = Color(red: 1.0, green: 0.882, blue: 0.29)
-    static let signalNS = NSColor(srgbRed: 1.0, green: 0.882, blue: 0.29, alpha: 1)
+    package static let signal = Color(red: 1.0, green: 0.882, blue: 0.29)
+    package static let signalNS = NSColor(srgbRed: 1.0, green: 0.882, blue: 0.29, alpha: 1)
     /// Warning orange: an agent blocked *on you*. Distinct from `signal`
     /// because "it wants something" and "it is busy" are different news.
-    static let waiting = Color(red: 1.0, green: 0.624, blue: 0.039)
-    static let waitingNS = NSColor(srgbRed: 1.0, green: 0.624, blue: 0.039, alpha: 1)
+    package static let waiting = Color(red: 1.0, green: 0.624, blue: 0.039)
+    package static let waitingNS = NSColor(srgbRed: 1.0, green: 0.624, blue: 0.039, alpha: 1)
     /// Work in progress: the system blue, which never means "act".
-    static let working = Color(red: 0.039, green: 0.518, blue: 1.0)
-    static let done = Color(red: 0.36, green: 0.78, blue: 0.44)
-    static let doneNS = NSColor(srgbRed: 0.36, green: 0.78, blue: 0.44, alpha: 1)
-    static let failed = Color(red: 0.94, green: 0.36, blue: 0.34)
+    package static let working = Color(red: 0.039, green: 0.518, blue: 1.0)
+    package static let done = Color(red: 0.36, green: 0.78, blue: 0.44)
+    package static let doneNS = NSColor(srgbRed: 0.36, green: 0.78, blue: 0.44, alpha: 1)
+    package static let failed = Color(red: 0.94, green: 0.36, blue: 0.34)
     /// GitHub's "merged" purple, so a merged worktree reads like its PR.
-    static let merged = Color(red: 0.64, green: 0.47, blue: 0.96)
+    package static let merged = Color(red: 0.64, green: 0.47, blue: 0.96)
 
     /// One activity as one colour, for the places that show a tab as a dot
     /// or a segment rather than a glyph — a collapsed island's foot, the
     /// "needs you" list. `idle` is the theme's, since nothing is not a
     /// status colour.
-    static func color(for activity: TabActivity, idle: Color) -> Color {
+    package static func color(for activity: TabActivity, idle: Color) -> Color {
         switch activity.mark {
         case .waiting: waiting
         case .failed: failed
@@ -37,12 +37,12 @@ enum TabStatusStyle {
 }
 
 /// The agent's glyph while it works: slowly breathing.
-struct WorkingGlyph: View {
-    let symbol: String
-    var size: CGFloat = 10
+package struct WorkingGlyph: View {
+    package let symbol: String
+    package var size: CGFloat = 10
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
+    package var body: some View {
         LoopingStatus(kind: .breathing(symbol: symbol, size: size), animated: !reduceMotion)
             .fixedSize()
             .help("Working")
@@ -50,22 +50,22 @@ struct WorkingGlyph: View {
 }
 
 /// Waiting for you: a dot sending out a soft ring.
-struct WaitingDot: View {
-    var size: CGFloat = 7
+package struct WaitingDot: View {
+    package var size: CGFloat = 7
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
+    package var body: some View {
         LoopingStatus(kind: .ringing(size: size), animated: !reduceMotion)
             .frame(width: size * 2.4, height: size * 2.4)
     }
 }
 
 /// Done or failed while you were away: still, small, coloured.
-struct ResultMark: View {
-    let failed: Bool
-    var size: CGFloat = 9
+package struct ResultMark: View {
+    package let failed: Bool
+    package var size: CGFloat = 9
 
-    var body: some View {
+    package var body: some View {
         Image(systemName: failed ? "xmark.circle.fill" : "checkmark.circle.fill")
             .font(.system(size: size, weight: .semibold))
             .foregroundStyle(failed ? TabStatusStyle.failed : TabStatusStyle.done)
@@ -74,11 +74,11 @@ struct ResultMark: View {
 
 /// A ring with a quarter of it drawn, turning: the badge a working tab
 /// wears in the corner of its icon, where a breathing glyph would be lost.
-struct WorkingSpinner: View {
-    var size: CGFloat = 12
+package struct WorkingSpinner: View {
+    package var size: CGFloat = 12
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
+    package var body: some View {
         LoopingStatus(kind: .spinning(size: size), animated: !reduceMotion)
             .frame(width: size, height: size)
             .help("Working")
@@ -91,12 +91,12 @@ struct WorkingSpinner: View {
 /// failed, which outranks having finished, which outranks still working.
 /// `ring` is the ground the badge sits on, drawn around it so it reads as
 /// a sticker rather than as part of the glyph underneath.
-struct StatusBadge: View {
-    let activity: TabActivity
-    let ring: Color
-    var size: CGFloat = 12
+package struct StatusBadge: View {
+    package let activity: TabActivity
+    package let ring: Color
+    package var size: CGFloat = 12
 
-    var body: some View {
+    package var body: some View {
         switch activity.mark {
         case .waiting: filled("exclamationmark.circle.fill", TabStatusStyle.waiting)
         case .failed: filled("xmark.circle.fill", TabStatusStyle.failed)
@@ -117,12 +117,12 @@ struct StatusBadge: View {
 }
 
 /// A suspended tab's corner: paused, not done or waiting.
-struct SuspendedBadge: View {
-    let ring: Color
-    let color: Color
-    var size: CGFloat = 12
+package struct SuspendedBadge: View {
+    package let ring: Color
+    package let color: Color
+    package var size: CGFloat = 12
 
-    var body: some View {
+    package var body: some View {
         Image(systemName: "pause.circle.fill")
             .font(.system(size: size, weight: .semibold))
             .foregroundStyle(color)
@@ -132,10 +132,10 @@ struct SuspendedBadge: View {
 
 /// A thin bar sliding along the bottom of a working tab, like a page
 /// loading in Chrome — visible even on a 38 pt pinned tab.
-struct WorkingBar: View {
+package struct WorkingBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
+    package var body: some View {
         LoopingStatus(kind: .sweeping, animated: !reduceMotion).frame(height: 2)
     }
 }

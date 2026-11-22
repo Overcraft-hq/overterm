@@ -11,27 +11,27 @@ import Foundation
 /// context, not that query; a credential failure or a `services/proxy`
 /// 403 stops it — what waits is told why, nothing is retried in a loop,
 /// and a new queue is made when the context's credentials change.
-actor KubePromQueue {
-    enum Priority: Int, Comparable, Sendable {
+package actor KubePromQueue {
+    package enum Priority: Int, Comparable, Sendable {
         case visible = 0, ranking, peak, sizing
 
-        static func < (a: Priority, b: Priority) -> Bool { a.rawValue < b.rawValue }
+        package static func < (a: Priority, b: Priority) -> Bool { a.rawValue < b.rawValue }
     }
 
-    enum Asker: Sendable {
+    package enum Asker: Sendable {
         case page, agent
     }
 
     /// The queue stopped: why, said to whoever asks.
-    struct Stopped: Error, LocalizedError, Equatable {
-        var reason: String
-        var errorDescription: String? { reason }
+    package struct Stopped: Error, LocalizedError, Equatable {
+        package var reason: String
+        package var errorDescription: String? { reason }
     }
 
-    static let maxInFlight = 4
-    static let maxAgent = 2
+    package static let maxInFlight = 4
+    package static let maxAgent = 2
     /// The longest pause a `Retry-After` gets.
-    static let maxPause: TimeInterval = 300
+    package static let maxPause: TimeInterval = 300
 
     private struct Waiter {
         let id: UInt64
@@ -63,28 +63,28 @@ actor KubePromQueue {
     private var wake: Task<Void, Never>?
 
     /// Paused until then (a `Retry-After`).
-    private(set) var pausedUntil: Date?
+    package private(set) var pausedUntil: Date?
     /// Stopped: why.
-    private(set) var stopped: String?
+    package private(set) var stopped: String?
     /// Queries sent, and the most in flight at once (the tests').
-    private(set) var sent = 0
-    private(set) var peak = 0
-    private(set) var peakAgent = 0
+    package private(set) var sent = 0
+    package private(set) var peak = 0
+    package private(set) var peakAgent = 0
     /// The last paths sent, in the order they went (the tests').
-    private(set) var sentPaths: [String] = []
+    package private(set) var sentPaths: [String] = []
     /// The Service its 403 names.
-    let service: KubePrometheusService?
+    package let service: KubePrometheusService?
 
-    init(service: KubePrometheusService? = nil) {
+    package init(service: KubePrometheusService? = nil) {
         self.service = service
     }
 
-    var inFlight: Int { running.count + cancelling.count }
-    var queued: Int { waiting.count }
+    package var inFlight: Int { running.count + cancelling.count }
+    package var queued: Int { waiting.count }
 
     /// One query's answer, when its turn comes: `order` places it among
     /// its priority (a chart's place on screen, top first).
-    func ask(
+    package func ask(
         _ path: String, via transport: any KubePrometheusTransport, priority: Priority = .visible, order: Int = 0, asker: Asker = .page,
         deadline: Duration = KubePromQL.deadline
     ) async throws -> KubePrometheusReader.Answer {
@@ -103,7 +103,7 @@ actor KubePromQueue {
     }
 
     /// Asked again from a clean slate (a test's; a new queue does the same).
-    func resume() {
+    package func resume() {
         stopped = nil
         pausedUntil = nil
         pump()

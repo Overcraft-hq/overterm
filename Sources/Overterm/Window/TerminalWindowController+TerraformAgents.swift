@@ -6,7 +6,7 @@ import Combine
 extension TerminalWindowController {
     /// The panes' Terraform asks onto their tabs (3.3), and the `tf_`
     /// tools told which checkout a pane works in (5.10).
-    func wireTerraformAgents() {
+    package func wireTerraformAgents() {
         // @Published emits before the value lands: the emitted one is used.
         TerraformPaneMonitor.shared.$asks
             .removeDuplicates()
@@ -18,7 +18,7 @@ extension TerminalWindowController {
 
     /// Each tab's ask: the first of its panes' — every pane, not only the
     /// focused one (`tab.terminals`, CLAUDE.md).
-    func applyTerraformAsks(_ asks: [String: TerraformAsk]) {
+    package func applyTerraformAsks(_ asks: [String: TerraformAsk]) {
         for tab in store.tabs {
             var found: TerraformAsk?
             for pane in tab.terminals {
@@ -33,13 +33,13 @@ extension TerminalWindowController {
 
     /// Whether `tab` is at a Terraform ask (3.3): its mark, or any of its
     /// panes' screens read now — nothing automated may type into it.
-    func terraformAsking(_ tab: Tab) -> Bool {
+    package func terraformAsking(_ tab: Tab) -> Bool {
         tab.terraformAsk != nil || tab.terminals.contains { $0.visibleText.map { TerraformPrompt.parse($0) != nil } ?? false }
     }
 
     /// Whether `pane` printed what Terraform keeps secret (5.6 rule 6):
     /// its own record, or its shell's commands'.
-    func terraformSensitive(_ pane: TerminalView) -> Bool {
+    package func terraformSensitive(_ pane: TerminalView) -> Bool {
         pane.terraformSensitive || blocks(of: pane).printedTerraformSecrets
     }
 }
@@ -48,14 +48,14 @@ extension TerminalWindowController {
 
 /// The editor's way to the window's Ask Agent sheet.
 @MainActor
-protocol TerraformEditorHost: AnyObject {
+package protocol TerraformEditorHost: AnyObject {
     func askWhy(validateOf folder: TerraformFolder)
 }
 
 extension TerminalWindowController: TerraformEditorHost {
     /// The folder's last validate as a brief (`TerraformAgentBrief`), in the
     /// Ask Agent sheet — the checkout's agents first.
-    func askWhy(validateOf folder: TerraformFolder) {
+    package func askWhy(validateOf folder: TerraformFolder) {
         let diagnostics = folder.allDiagnostics
         guard !diagnostics.isEmpty else { return NSSound.beep() }
         let url = folder.url
@@ -91,7 +91,7 @@ extension TerminalWindowController: TerraformEditorHost {
         }
     }
 
-    func presentTerraformBrief(_ brief: TerraformAgentBrief) {
+    package func presentTerraformBrief(_ brief: TerraformAgentBrief) {
         guard window?.attachedSheet == nil else { return NSSound.beep() }
         let key = brief.checkout.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path }
         // Never a tab at a Terraform ask (3.3): text typed there would answer it.

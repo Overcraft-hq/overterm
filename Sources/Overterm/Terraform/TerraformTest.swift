@@ -14,75 +14,75 @@ import Foundation
 /// infrastructure with the root's credentials: a write, asked
 /// (`TerraformVerb.testRealProviders`). Pure, but `list` and `read`,
 /// which read the root's folder (bounded).
-enum TerraformTestFiles {
+package enum TerraformTestFiles {
     /// The most test files read, and each file's bound.
-    static let maxFiles = 200
-    static let maxBytes = 256 << 10
+    package static let maxFiles = 200
+    package static let maxBytes = 256 << 10
     /// The most local module folders read, every level together, and how deep they nest.
-    static let maxModules = 16
-    static let maxDepth = 4
+    package static let maxModules = 16
+    package static let maxDepth = 4
     /// Terraform's own provider (`terraform_data`, `terraform_remote_state`):
     /// built in, nothing to mock.
-    static let builtin: Set<String> = ["terraform"]
+    package static let builtin: Set<String> = ["terraform"]
     /// `terraform test`'s default test directory, beside the root's own files.
-    static let directory = "tests"
+    package static let directory = "tests"
     /// What in a configuration runs on this Mac whatever is mocked: a
     /// provisioner (`local-exec` on a `terraform_data`), a data source
     /// that runs a command or fetches, an action (5.1, 5.5).
-    static let riskKinds: Set<TerraformRunRisk.Kind> = [.command, .fetch, .provisioner, .action]
+    package static let riskKinds: Set<TerraformRunRisk.Kind> = [.command, .fetch, .provisioner, .action]
 
-    struct Run: Equatable, Sendable {
-        var name: String
+    package struct Run: Equatable, Sendable {
+        package var name: String
         /// 1-based, the `run` block's first line.
-        var line: Int
+        package var line: Int
     }
 
     /// What one test file says.
-    struct Facts: Equatable, Sendable {
+    package struct Facts: Equatable, Sendable {
         /// Relative to the root: `tests/acme.tftest.hcl`.
-        var path: String
-        var runs: [Run] = []
+        package var path: String
+        package var runs: [Run] = []
         /// `mock_provider "<name>"`'s names, without an `alias`: those mock
         /// the default configuration every run starts.
-        var mocked: Set<String> = []
+        package var mocked: Set<String> = []
         /// `provider "<name>"` blocks: configured for real.
-        var providers: Set<String> = []
+        package var providers: Set<String> = []
         /// What its runs load: `run { module { source = "…" } }`.
-        var moduleSources: [String] = []
+        package var moduleSources: [String] = []
         /// `mock_provider "<name>" { alias = … }`: only runs that map it
         /// (`providers = { aws = aws.fake }`) use it — every other run
         /// starts the real default, so it mocks nothing here.
-        var aliasedMocks: Set<String> = []
+        package var aliasedMocks: Set<String> = []
     }
 
-    enum Mocking: Equatable, Sendable {
+    package enum Mocking: Equatable, Sendable {
         /// Every provider a run would start is mocked, or built in.
         case mocked
         /// Why not: the providers left real, what its code runs, or what can't be told.
         case real(String)
 
-        var isMocked: Bool { self == .mocked }
+        package var isMocked: Bool { self == .mocked }
     }
 
     /// Something that couldn't be read: counted real.
-    struct Unread: Error, Equatable, Sendable {
-        var why: String
+    package struct Unread: Error, Equatable, Sendable {
+        package var why: String
     }
 
     /// What a folder and the local modules it calls say: the providers
     /// they name, what their code runs.
-    struct Reach: Equatable, Sendable {
-        var providers: Set<String> = []
-        var risks: [TerraformRunRisk] = []
+    package struct Reach: Equatable, Sendable {
+        package var providers: Set<String> = []
+        package var risks: [TerraformRunRisk] = []
     }
 
-    static func isTestFileName(_ name: String) -> Bool {
+    package static func isTestFileName(_ name: String) -> Bool {
         name.hasSuffix(".tftest.hcl") || name.hasSuffix(".tftest.json")
     }
 
     /// One file's facts. `.tftest.json` isn't scanned: its blocks aren't
     /// read here, so it counts as not mocked (`mocking`).
-    static func scan(_ text: String, path: String) -> Facts {
+    package static func scan(_ text: String, path: String) -> Facts {
         var facts = Facts(path: path)
         guard path.hasSuffix(".hcl") else {
             facts.providers.insert("(a .tftest.json file Overterm doesn't read)")
@@ -120,7 +120,7 @@ enum TerraformTestFiles {
     }
 
     /// The 1-based line of `offset` in `text`.
-    static func line(of offset: Int, in text: NSString) -> Int {
+    package static func line(of offset: Int, in text: NSString) -> Int {
         var line = 1
         let end = min(max(0, offset), text.length)
         var index = 0
@@ -136,7 +136,7 @@ enum TerraformTestFiles {
     /// Whether every provider `facts`' runs would start is mocked.
     /// `providers`: the root's (and its local modules'), nil when they
     /// can't be told — a module from outside the checkout.
-    static func mocking(_ facts: Facts, providers: Set<String>?) -> Mocking {
+    package static func mocking(_ facts: Facts, providers: Set<String>?) -> Mocking {
         guard let providers else {
             return .real("a module it loads comes from outside the checkout: its providers can't be told")
         }
@@ -146,7 +146,7 @@ enum TerraformTestFiles {
     }
 
     /// Several files at once: mocked only when each is.
-    static func mocking(_ files: [Facts], providers: (Facts) -> Set<String>?) -> Mocking {
+    package static func mocking(_ files: [Facts], providers: (Facts) -> Set<String>?) -> Mocking {
         for file in files {
             if case .real(let why) = mocking(file, providers: providers(file)) { return .real("\(file.path): \(why)") }
         }
@@ -154,13 +154,13 @@ enum TerraformTestFiles {
     }
 
     /// A module source inside the checkout: `./x`, `../x`.
-    static func isLocalSource(_ source: String) -> Bool { source.hasPrefix("./") || source.hasPrefix("../") }
+    package static func isLocalSource(_ source: String) -> Bool { source.hasPrefix("./") || source.hasPrefix("../") }
 
     // MARK: Reading the root's folder
 
     /// The root's test files, relative to it: beside its `.tf` files and
     /// in `tests/`, sorted, at most `limit`. Blocking.
-    static func list(root: URL, limit: Int = maxFiles) -> [String] {
+    package static func list(root: URL, limit: Int = maxFiles) -> [String] {
         let manager = FileManager.default
         var found: [String] = []
         for folder in ["", directory] {
@@ -175,29 +175,29 @@ enum TerraformTestFiles {
 
     /// What the root's tests need known before one runs, read off the main
     /// thread: each file's facts, and the providers its runs would start.
-    struct Read: Sendable {
-        var files: [Facts]
+    package struct Read: Sendable {
+        package var files: [Facts]
         /// Test files that would run but weren't read: too many, too
         /// large, not a file. Any makes the test real.
-        var unread: [String] = []
+        package var unread: [String] = []
         /// Test files (or a file given) that resolve outside the checkout: refused.
-        var outside: [String] = []
+        package var outside: [String] = []
         /// Every provider anything names — the root, every module it or
         /// a run loads, each file's mocks and providers: what starts for
         /// its schema even when mocked.
-        var providerNames: Set<String> = []
+        package var providerNames: Set<String> = []
         /// What its code runs on this Mac whatever is mocked.
-        var risks: [TerraformRunRisk] = []
+        package var risks: [TerraformRunRisk] = []
         /// Everything that would run was read.
-        var complete = true
-        var mocking: Mocking
+        package var complete = true
+        package var mocking: Mocking
     }
 
     /// Reads `files` (relative to `root`; all of them when nil) and the
     /// configuration their runs load — the root's own and each run
     /// module's, every local module followed, inside `checkout`.
     /// Blocking, bounded.
-    static func read(root: URL, checkout: URL, files given: [String]?) -> Read {
+    package static func read(root: URL, checkout: URL, files given: [String]?) -> Read {
         let paths = given ?? list(root: root, limit: maxFiles + 1)
         var read = Read(files: [], mocking: .mocked)
         if paths.count > maxFiles { read.unread.append("more than \(maxFiles) test files") }
@@ -263,7 +263,7 @@ enum TerraformTestFiles {
     /// followed breadth first: at most `maxModules` folders, `maxDepth`
     /// levels. A module from outside the checkout, one past the bounds,
     /// or configuration that couldn't be read: `Unread` — real, never mocked.
-    static func reach(_ folder: URL, checkout: URL) -> Result<Reach, Unread> {
+    package static func reach(_ folder: URL, checkout: URL) -> Result<Reach, Unread> {
         var found = Reach()
         var visited: Set<String> = []
         guard let start = inside(folder, checkout: checkout) else {
@@ -301,7 +301,7 @@ enum TerraformTestFiles {
     /// configuration (`.tf.json`, not read here), a file past the bound
     /// or not UTF-8, more files than the bound — each would leave a
     /// provider unseen. Blocking.
-    static func configuration(in folder: URL) -> Result<TerraformConfigFacts, Unread> {
+    package static func configuration(in folder: URL) -> Result<TerraformConfigFacts, Unread> {
         let place = folder.lastPathComponent
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else {
             return .failure(Unread(why: "\(place) couldn't be listed: what it starts can't be told"))
@@ -322,7 +322,7 @@ enum TerraformTestFiles {
     }
 
     /// `url` with symlinks resolved, when it is inside `checkout`.
-    static func inside(_ url: URL, checkout: URL) -> URL? {
+    package static func inside(_ url: URL, checkout: URL) -> URL? {
         let top = checkout.resolvingSymlinksInPath().standardizedFileURL.path
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL
         return resolved.path == top || resolved.path.hasPrefix(top + "/") ? resolved : nil
@@ -336,7 +336,7 @@ enum TerraformTestFiles {
 /// all — never passed) and anything else are dropped, by type alone. A
 /// diagnostic goes through `TerraformValidation`'s allow-list: never a
 /// snippet's values, nor `test_assertion_expr`'s two sides. Pure.
-enum TerraformTestMessage: Equatable, Sendable {
+package enum TerraformTestMessage: Equatable, Sendable {
     /// `test_abstract`: each file and its runs, before any starts.
     case abstract([String: [String]])
     /// `test_file`: `progress` starting, teardown, complete; `status` once complete.
@@ -350,9 +350,9 @@ enum TerraformTestMessage: Equatable, Sendable {
     /// Any other `test_*` line, by type only.
     case other(String)
 
-    static let maxNames = 2_000
+    package static let maxNames = 2_000
 
-    static func decode(type: String, object: [String: Any], scrub: (String) -> String) -> TerraformTestMessage {
+    package static func decode(type: String, object: [String: Any], scrub: (String) -> String) -> TerraformTestMessage {
         func short(_ value: Any?) -> String? { (value as? String).map { scrub(String($0.prefix(1_024))) } }
         switch type {
         case "test_abstract":
@@ -381,7 +381,7 @@ enum TerraformTestMessage: Equatable, Sendable {
     }
 
     /// The line the raw log shows for it.
-    var logLine: String {
+    package var logLine: String {
         switch self {
         case .abstract(let files):
             let runs = files.values.reduce(0) { $0 + $1.count }
@@ -403,15 +403,15 @@ enum TerraformTestMessage: Equatable, Sendable {
 /// A test run's files and runs as its stream says them (2.9): each run
 /// listed before it starts (from the files read, then `test_abstract`),
 /// then its status; its failures by file and run, at their lines. Pure.
-struct TerraformTestReport: Equatable, Sendable {
-    enum Status: String, Equatable, Sendable {
+package struct TerraformTestReport: Equatable, Sendable {
+    package enum Status: String, Equatable, Sendable {
         case pending, running, pass, fail, error, skip
 
-        init(terraform: String?) {
+        package init(terraform: String?) {
             self = terraform.flatMap(Status.init(rawValue:)) ?? .error
         }
 
-        var symbol: String {
+        package var symbol: String {
             switch self {
             case .pending: "·"
             case .running: "…"
@@ -422,32 +422,32 @@ struct TerraformTestReport: Equatable, Sendable {
             }
         }
 
-        var isFailure: Bool { self == .fail || self == .error }
+        package var isFailure: Bool { self == .fail || self == .error }
     }
 
-    struct RunRow: Equatable, Sendable, Identifiable {
-        var file: String
-        var name: String
-        var line: Int?
-        var status: Status = .pending
-        var diagnostics: [TerraformDiagnostic] = []
-        var id: String { file + "\u{0}" + name }
+    package struct RunRow: Equatable, Sendable, Identifiable {
+        package var file: String
+        package var name: String
+        package var line: Int?
+        package var status: Status = .pending
+        package var diagnostics: [TerraformDiagnostic] = []
+        package var id: String { file + "\u{0}" + name }
     }
 
-    struct FileRow: Equatable, Sendable, Identifiable {
-        var path: String
-        var status: Status = .pending
-        var runs: [RunRow] = []
+    package struct FileRow: Equatable, Sendable, Identifiable {
+        package var path: String
+        package var status: Status = .pending
+        package var runs: [RunRow] = []
         /// A file's own diagnostics: one that doesn't parse, a provider it can't start.
-        var diagnostics: [TerraformDiagnostic] = []
-        var id: String { path }
+        package var diagnostics: [TerraformDiagnostic] = []
+        package var id: String { path }
     }
 
-    struct Summary: Equatable, Sendable {
-        var status: String
-        var passed = 0, failed = 0, errored = 0, skipped = 0
+    package struct Summary: Equatable, Sendable {
+        package var status: String
+        package var passed = 0, failed = 0, errored = 0, skipped = 0
 
-        var said: String {
+        package var said: String {
             var parts = ["\(passed) passed", "\(failed) failed"]
             if errored > 0 { parts.append("\(errored) errored") }
             if skipped > 0 { parts.append("\(skipped) skipped") }
@@ -455,15 +455,15 @@ struct TerraformTestReport: Equatable, Sendable {
         }
     }
 
-    static let maxDiagnostics = 200
+    package static let maxDiagnostics = 200
 
-    var files: [FileRow] = []
-    var summary: Summary?
+    package var files: [FileRow] = []
+    package var summary: Summary?
     /// Diagnostics of no file: a filter that names none, the root's own.
-    var diagnostics: [TerraformDiagnostic] = []
+    package var diagnostics: [TerraformDiagnostic] = []
     private var kept = 0
 
-    init(planned: [TerraformTestFiles.Facts] = []) {
+    package init(planned: [TerraformTestFiles.Facts] = []) {
         files = planned.map { file in
             FileRow(path: file.path, runs: file.runs.map { RunRow(file: file.path, name: $0.name, line: $0.line) })
         }
@@ -481,7 +481,7 @@ struct TerraformTestReport: Equatable, Sendable {
         return files[file].runs.count - 1
     }
 
-    mutating func absorb(_ message: TerraformTestMessage) {
+    package mutating func absorb(_ message: TerraformTestMessage) {
         switch message {
         case .abstract(let found):
             for path in found.keys.sorted() {
@@ -516,10 +516,10 @@ struct TerraformTestReport: Equatable, Sendable {
         }
     }
 
-    var runs: [RunRow] { files.flatMap(\.runs) }
+    package var runs: [RunRow] { files.flatMap(\.runs) }
 
     /// The failed runs (and files that errored), in order.
-    var failures: [(file: String, run: String?, diagnostics: [TerraformDiagnostic])] {
+    package var failures: [(file: String, run: String?, diagnostics: [TerraformDiagnostic])] {
         var found: [(file: String, run: String?, diagnostics: [TerraformDiagnostic])] = []
         for file in files {
             if file.status == .error || !file.diagnostics.isEmpty, file.runs.allSatisfy({ !$0.status.isFailure }) {
@@ -532,7 +532,7 @@ struct TerraformTestReport: Equatable, Sendable {
 
     /// Every diagnostic with a place, by the file it names (relative to
     /// the root): what the editor marks.
-    var placed: [String: [TerraformDiagnostic]] {
+    package var placed: [String: [TerraformDiagnostic]] {
         var found: [String: [TerraformDiagnostic]] = [:]
         for diagnostic in diagnostics + files.flatMap({ $0.diagnostics + $0.runs.flatMap(\.diagnostics) }) {
             guard let file = diagnostic.file, diagnostic.start != nil else { continue }
@@ -544,7 +544,7 @@ struct TerraformTestReport: Equatable, Sendable {
     /// As an agent reads it (`tf_test`): the summary, each run's status,
     /// each failure with its file and line. Masked already (the stream's
     /// decode); strings cut.
-    func text(root: String, mocked: Bool) -> String {
+    package func text(root: String, mocked: Bool) -> String {
         var lines: [String] = []
         let total = runs.count
         lines.append("terraform test in \(root)" + (mocked ? " (every provider mocked)" : " (real providers)") + ": " + (summary?.said ?? "\(total) runs"))
@@ -560,7 +560,7 @@ struct TerraformTestReport: Equatable, Sendable {
         return lines.joined(separator: "\n")
     }
 
-    static func said(_ diagnostic: TerraformDiagnostic) -> String {
+    package static func said(_ diagnostic: TerraformDiagnostic) -> String {
         var line = "\(diagnostic.severity.rawValue): \(diagnostic.summary)"
         if let file = diagnostic.file { line += " — \(file)" + (diagnostic.start.map { ":\($0.line)" } ?? "") }
         if !diagnostic.detail.isEmpty { line += ": " + TerraformPlanText.cut(diagnostic.detail.replacingOccurrences(of: "\n", with: " "), to: 400) }

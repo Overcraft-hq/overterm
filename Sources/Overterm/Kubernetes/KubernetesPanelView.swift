@@ -5,16 +5,16 @@ import SwiftUI
 /// the bound namespace's workloads and pods with their health, the
 /// forwards there, and the deployed commit against the checkout's (3.2).
 /// A pod clicked shows in the right slot.
-struct KubernetesPanelView: View {
-    @ObservedObject var panel: KubernetesPanelModel
-    @ObservedObject var kubernetes: KubernetesModel
-    @ObservedObject var forwards: KubeForwards
-    @ObservedObject var settings: Settings
-    @ObservedObject var theme: ChromeTheme
-    let group: TabGroup?
-    let openPage: () -> Void
+package struct KubernetesPanelView: View {
+    @ObservedObject package var panel: KubernetesPanelModel
+    @ObservedObject package var kubernetes: KubernetesModel
+    @ObservedObject package var forwards: KubeForwards
+    @ObservedObject package var settings: Settings
+    @ObservedObject package var theme: ChromeTheme
+    package let group: TabGroup?
+    package let openPage: () -> Void
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             PanelHeader(title: "Kubernetes", group: group, theme: theme, help: panel.checkout?.path) {
                 if panel.binding != nil, panel.draft == nil {
@@ -237,7 +237,7 @@ struct KubernetesPanelView: View {
     }
 
     /// `ghcr.io/acme/api:v1.4.2` → `:v1.4.2`; a digest → its first 12.
-    static func tag(_ image: String?) -> String? {
+    package static func tag(_ image: String?) -> String? {
         guard let image else { return nil }
         if let at = image.firstIndex(of: "@") { return "@" + image[image.index(after: at)...].replacingOccurrences(of: "sha256:", with: "").prefix(12) }
         let name = image.split(separator: "/").last.map(String.init) ?? image
@@ -302,11 +302,11 @@ struct KubernetesPanelView: View {
 
 /// The binding being made or edited: the context picked, the namespace,
 /// and optionally a release, a label selector and the workloads.
-struct KubeBindingForm: View {
-    @ObservedObject var panel: KubernetesPanelModel
-    @ObservedObject var theme: ChromeTheme
+package struct KubeBindingForm: View {
+    @ObservedObject package var panel: KubernetesPanelModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(panel.binding == nil ? "Bind this checkout" : "This checkout's binding").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                 .foregroundStyle(theme.text)
@@ -361,12 +361,12 @@ struct KubeBindingForm: View {
 
 /// The pod picked in the rail's panel, in the right-hand pane: its log,
 /// followed only while it shows, and its Overview — one GET.
-struct KubeSlotView: View {
-    @ObservedObject var panel: KubernetesPanelModel
-    @ObservedObject var theme: ChromeTheme
-    let runInTerminal: (String) -> Void
+package struct KubeSlotView: View {
+    @ObservedObject package var panel: KubernetesPanelModel
+    @ObservedObject package var theme: ChromeTheme
+    package let runInTerminal: (String) -> Void
 
-    var body: some View {
+    package var body: some View {
         if let session = panel.session {
             KubeSlotPodView(panel: panel, session: session, theme: theme, runInTerminal: runInTerminal).id(session.id)
         } else {
@@ -448,12 +448,12 @@ private struct KubeSlotPodView: View {
 
 /// The rail's pulse: the nodes' readiness on one line, then the last hour's
 /// Warning events, newest first — a reason, what it is about, how often.
-struct KubePulseSection: View {
-    @ObservedObject var pulse: KubePanelPulse
-    @ObservedObject var theme: ChromeTheme
-    let openPage: () -> Void
+package struct KubePulseSection: View {
+    @ObservedObject package var pulse: KubePanelPulse
+    @ObservedObject package var theme: ChromeTheme
+    package let openPage: () -> Void
 
-    var body: some View {
+    package var body: some View {
         if pulse.scope != nil {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {

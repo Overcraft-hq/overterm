@@ -5,25 +5,25 @@ import Foundation
 /// kind's card (its number, its line, its bar), what needs attention as
 /// rows worst first with a reason pill each, a usage's tone. Nothing read
 /// here. Pure.
-enum KubeOverviewCards {
+package enum KubeOverviewCards {
     /// A status as the cards colour it — always said in words beside it.
-    enum Tone: Int, Comparable, Sendable {
+    package enum Tone: Int, Comparable, Sendable {
         case neutral, done, waiting, failed
 
-        static func < (lhs: Tone, rhs: Tone) -> Bool { lhs.rawValue < rhs.rawValue }
+        package static func < (lhs: Tone, rhs: Tone) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
     /// A small rounded capsule: its words and its tone.
-    struct Pill: Equatable, Sendable {
-        var text: String
-        var tone: Tone
+    package struct Pill: Equatable, Sendable {
+        package var text: String
+        package var tone: Tone
     }
 
     // MARK: The header
 
     /// `3 need attention` (failed) while anything fails, and
     /// `N checks pass` (done) once the health checks are read.
-    static func pills(_ overview: KubeClusterOverview, health: KubeHealth.Report?) -> [Pill] {
+    package static func pills(_ overview: KubeClusterOverview, health: KubeHealth.Report?) -> [Pill] {
         var pills: [Pill] = []
         if overview.problems > 0 { pills.append(Pill(text: "\(overview.problems) need\(overview.problems == 1 ? "s" : "") attention", tone: .failed)) }
         if let health {
@@ -36,13 +36,13 @@ enum KubeOverviewCards {
     /// The checks that ran over lists read whole and found nothing — never
     /// one over a list refused, cut at its limit or not served (Argo CD's
     /// only where Argo CD answered): no all-clear for what wasn't checked.
-    static func passingChecks(_ report: KubeHealth.Report) -> Int {
+    package static func passingChecks(_ report: KubeHealth.Report) -> Int {
         let found = Set(report.findings.map(\.check))
         return report.ran.subtracting(found).count
     }
 
     /// The health report's severities as chips: `2 problems`, `5 warnings`.
-    static func severities(_ report: KubeHealth.Report) -> [Pill] {
+    package static func severities(_ report: KubeHealth.Report) -> [Pill] {
         var pills: [Pill] = []
         if report.errors > 0 { pills.append(Pill(text: "\(report.errors) problem\(report.errors == 1 ? "" : "s")", tone: .failed)) }
         if report.warnings > 0 { pills.append(Pill(text: "\(report.warnings) warning\(report.warnings == 1 ? "" : "s")", tone: .waiting)) }
@@ -60,18 +60,18 @@ enum KubeOverviewCards {
     /// in the scope, and says so — the section (`g`) counts what lives in
     /// or deploys into it, so the two can differ. Nil when there is
     /// nothing to say.
-    struct GitOpsLine: Equatable, Sendable {
+    package struct GitOpsLine: Equatable, Sendable {
         /// `GitOps living in shop`.
-        var title: String
+        package var title: String
         /// `2 failing`, `1 drifted or stuck`: a pill each.
-        var counts: [Pill]
-        var tone: Tone
+        package var counts: [Pill]
+        package var tone: Tone
 
         /// The line in words: `GitOps living in shop: 2 failing — press g for what deploys here`.
-        var text: String { "\(title): \(counts.map(\.text).joined(separator: ", ")) — press \(KubeSection.gitops.key) for what deploys here" }
+        package var text: String { "\(title): \(counts.map(\.text).joined(separator: ", ")) — press \(KubeSection.gitops.key) for what deploys here" }
     }
 
-    static func gitOps(_ report: KubeHealth.Report, scope: KubeScope?) -> GitOpsLine? {
+    package static func gitOps(_ report: KubeHealth.Report, scope: KubeScope?) -> GitOpsLine? {
         let failing = report.findings.count { $0.check == .argoDegraded || ($0.check == .notReady && $0.fluxFailing) }
         let behind = report.findings.count { $0.check == .argoOutOfSync }
         guard failing + behind > 0 else { return nil }
@@ -86,24 +86,24 @@ enum KubeOverviewCards {
 
     /// One kind's card: its count, its line (the counts the bar draws,
     /// said), its bar's parts, what its press shows.
-    struct Kind: Equatable, Sendable, Identifiable {
-        var title: String
+    package struct Kind: Equatable, Sendable, Identifiable {
+        package var title: String
         /// The list it opens: a kind's full name (`pods`, `deployments.apps`, `nodes`).
-        var resource: String
-        var total: Int
-        var line: String
-        var bar: [Segment]
+        package var resource: String
+        package var total: Int
+        package var line: String
+        package var bar: [Segment]
 
-        var id: String { resource }
+        package var id: String { resource }
     }
 
-    struct Segment: Equatable, Sendable {
-        var tone: Tone
-        var count: Int
+    package struct Segment: Equatable, Sendable {
+        package var tone: Tone
+        package var count: Int
     }
 
     /// Pods, each workload kind the overview counted, and the nodes.
-    static func kinds(_ overview: KubeClusterOverview) -> [Kind] {
+    package static func kinds(_ overview: KubeClusterOverview) -> [Kind] {
         var kinds: [Kind] = []
         // By phase, as the server says it — a Running pod isn't said
         // ready (its probe may fail), a completed Job's pod isn't green — a
@@ -140,7 +140,7 @@ enum KubeOverviewCards {
 
     /// `12 ready · 1 pending · 2 failing`, the zeros left out; `all 3
     /// ready` (or running) when that is all; `none` for nothing.
-    static func said(_ parts: [(count: Int, word: String)], total: Int) -> String {
+    package static func said(_ parts: [(count: Int, word: String)], total: Int) -> String {
         guard total > 0 else { return "none" }
         let shown = parts.filter { $0.count > 0 }
         if shown.count == 1, let only = shown.first, ["ready", "running"].contains(only.word), only.count == total { return total == 1 ? only.word : "all \(total) \(only.word)" }
@@ -149,7 +149,7 @@ enum KubeOverviewCards {
 
     /// How many cards across: as many as fit at `minimum` or wider, never
     /// more than there are (so the row fills), at least one.
-    static func columns(count: Int, width: CGFloat, minimum: CGFloat, spacing: CGFloat) -> Int {
+    package static func columns(count: Int, width: CGFloat, minimum: CGFloat, spacing: CGFloat) -> Int {
         let fit = Int(((width + spacing) / (minimum + spacing)).rounded(.down))
         return max(1, min(count, fit))
     }
@@ -161,28 +161,28 @@ enum KubeOverviewCards {
     // MARK: What needs attention
 
     /// A row of the Needs-attention card: what it is, where, why, and what its press opens.
-    struct Attention: Equatable, Sendable, Identifiable {
-        enum Subject: Int, Comparable, Sendable {
+    package struct Attention: Equatable, Sendable, Identifiable {
+        package enum Subject: Int, Comparable, Sendable {
             case node, pod, workload
 
-            static func < (lhs: Subject, rhs: Subject) -> Bool { lhs.rawValue < rhs.rawValue }
+            package static func < (lhs: Subject, rhs: Subject) -> Bool { lhs.rawValue < rhs.rawValue }
         }
 
-        var subject: Subject
-        var tone: Tone
+        package var subject: Subject
+        package var tone: Tone
         /// `pod/worker-1`, `deployment/web`, `node/fake-node-2`.
-        var title: String
-        var namespace: String?
-        var pill: String
+        package var title: String
+        package var namespace: String?
+        package var pill: String
         /// What the press opens: the kind's full name and the row.
-        var resource: String
-        var row: KubeRowID
+        package var resource: String
+        package var row: KubeRowID
         /// How bad within its tone: a pod's restarts.
-        var weight: Int
+        package var weight: Int
 
-        var id: String { resource + "\u{0}" + row.description }
+        package var id: String { resource + "\u{0}" + row.description }
 
-        var symbol: String {
+        package var symbol: String {
             switch subject {
             case .node: "server.rack"
             case .pod: tone == .failed ? "exclamationmark.octagon.fill" : "exclamationmark.triangle.fill"
@@ -192,7 +192,7 @@ enum KubeOverviewCards {
 
         /// Worst first: failing before not ready, nodes before pods before
         /// workloads, the most restarted first, then by name.
-        static func ordered(_ a: Attention, _ b: Attention) -> Bool {
+        package static func ordered(_ a: Attention, _ b: Attention) -> Bool {
             if a.tone != b.tone { return a.tone > b.tone }
             if a.subject != b.subject { return a.subject < b.subject }
             if a.weight != b.weight { return a.weight > b.weight }
@@ -201,7 +201,7 @@ enum KubeOverviewCards {
     }
 
     /// Every pod failing, workload not ready and node not ready, worst first.
-    static func attention(_ overview: KubeClusterOverview) -> [Attention] {
+    package static func attention(_ overview: KubeClusterOverview) -> [Attention] {
         var rows: [Attention] = []
         for pod in overview.failingPods {
             rows.append(
@@ -228,14 +228,14 @@ enum KubeOverviewCards {
     }
 
     /// `CrashLoopBackOff · 14×`: why the pod fails, and how often it restarted.
-    static func podPill(_ pod: KubePodSummary) -> String {
+    package static func podPill(_ pod: KubePodSummary) -> String {
         let reason = pod.exitReason ?? pod.status
         guard let restarts = pod.restarts, restarts > 0 else { return reason }
         return "\(reason) · \(restarts)×"
     }
 
     /// `Deployments` → `deployment`.
-    static func workloadWord(_ title: String) -> String {
+    package static func workloadWord(_ title: String) -> String {
         let lower = title.lowercased()
         return lower.hasSuffix("s") ? String(lower.dropLast()) : lower
     }
@@ -243,5 +243,5 @@ enum KubeOverviewCards {
     // MARK: Usage
 
     /// A share of allocatable as its bar is coloured: ≥ 90 failed, ≥ 70 waiting, else done.
-    static func usageTone(_ percent: Int) -> Tone { percent >= 90 ? .failed : percent >= 70 ? .waiting : .done }
+    package static func usageTone(_ percent: Int) -> Tone { percent >= 90 ? .failed : percent >= 70 ? .waiting : .done }
 }

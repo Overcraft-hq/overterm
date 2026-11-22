@@ -6,12 +6,12 @@ import Foundation
 /// JSON, and a console's text as queries.
 
 /// The window a query looks at: the last so long, up to now.
-enum TimeRange: String, CaseIterable, Identifiable, Sendable {
+package enum TimeRange: String, CaseIterable, Identifiable, Sendable {
     case m5 = "5m", m15 = "15m", m30 = "30m", h1 = "1h", h3 = "3h", h6 = "6h", h12 = "12h", d1 = "24h", d2 = "2d", d7 = "7d"
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var seconds: TimeInterval {
+    package var seconds: TimeInterval {
         switch self {
         case .m5: 300
         case .m15: 900
@@ -26,7 +26,7 @@ enum TimeRange: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .m5: "Last 5 minutes"
         case .m15: "Last 15 minutes"
@@ -41,40 +41,40 @@ enum TimeRange: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    func window(now: Date = Date()) -> (start: Date, end: Date) { (now.addingTimeInterval(-seconds), now) }
+    package func window(now: Date = Date()) -> (start: Date, end: Date) { (now.addingTimeInterval(-seconds), now) }
 
     /// A graph's resolution: about 300 points, never under a second.
-    var step: Int { max(1, Int(seconds / 300)) }
+    package var step: Int { max(1, Int(seconds / 300)) }
 }
 
 // MARK: What came back
 
-struct MetricSeries: Equatable, Sendable, Identifiable {
-    struct Point: Equatable, Sendable {
-        var time: Date
-        var value: Double
+package struct MetricSeries: Equatable, Sendable, Identifiable {
+    package struct Point: Equatable, Sendable {
+        package var time: Date
+        package var value: Double
     }
 
-    var labels: [String: String]
-    var points: [Point]
+    package var labels: [String: String]
+    package var points: [Point]
 
-    var id: String { Self.signature(labels) }
-    var name: String? { labels["__name__"] }
+    package var id: String { Self.signature(labels) }
+    package var name: String? { labels["__name__"] }
 
     /// `name{a="b", c="d"}`, as Prometheus prints a series.
-    static func signature(_ labels: [String: String]) -> String {
+    package static func signature(_ labels: [String: String]) -> String {
         let rest = labels.filter { $0.key != "__name__" }.sorted { $0.key < $1.key }.map { "\($0.key)=\"\($0.value)\"" }
         let name = labels["__name__"] ?? ""
         return rest.isEmpty ? (name.isEmpty ? "{}" : name) : name + "{" + rest.joined(separator: ", ") + "}"
     }
 }
 
-enum LogLevel: String, Sendable, CaseIterable {
+package enum LogLevel: String, Sendable, CaseIterable {
     case critical, error, warn, info, debug, trace
 
     /// The level a line says it is: its `level` label, else `level=error`,
     /// `"level":"error"`, or a bare ERROR / WARN… near its start.
-    static func of(_ line: String, labels: [String: String]) -> LogLevel? {
+    package static func of(_ line: String, labels: [String: String]) -> LogLevel? {
         for key in ["level", "detected_level", "severity", "lvl"] {
             if let value = labels[key], let level = named(value) { return level }
         }
@@ -92,7 +92,7 @@ enum LogLevel: String, Sendable, CaseIterable {
         return nil
     }
 
-    static func named(_ text: String) -> LogLevel? {
+    package static func named(_ text: String) -> LogLevel? {
         switch text.lowercased() {
         case "critical", "crit", "fatal", "panic", "emerg", "alert": .critical
         case "error", "err", "eror": .error
@@ -105,21 +105,21 @@ enum LogLevel: String, Sendable, CaseIterable {
     }
 }
 
-struct LokiLine: Equatable, Sendable, Identifiable {
+package struct LokiLine: Equatable, Sendable, Identifiable {
     /// Nanoseconds since 1970, as Loki says it — ordering and the tail's
     /// next start need all of them.
-    var nanos: Int64
-    var labels: [String: String]
-    var line: String
+    package var nanos: Int64
+    package var labels: [String: String]
+    package var line: String
     /// Where it was among lines of the same instant.
-    var index = 0
+    package var index = 0
 
-    var id: String { "\(nanos)-\(index)-\(line.hashValue)" }
-    var time: Date { Date(timeIntervalSince1970: Double(nanos) / 1e9) }
-    var level: LogLevel? { LogLevel.of(line, labels: labels) }
+    package var id: String { "\(nanos)-\(index)-\(line.hashValue)" }
+    package var time: Date { Date(timeIntervalSince1970: Double(nanos) / 1e9) }
+    package var level: LogLevel? { LogLevel.of(line, labels: labels) }
 
     /// A trace id the line or its labels carry (`traceID=…`, `"trace_id":"…"`).
-    var traceID: String? {
+    package var traceID: String? {
         for key in ["traceID", "trace_id", "traceId", "TraceId"] {
             if let value = labels[key], Self.isTraceID(value) { return value }
         }
@@ -132,60 +132,60 @@ struct LokiLine: Equatable, Sendable, Identifiable {
 
     /// 16 to 32 hex digits: Tempo's search gives ids without their leading
     /// zeros (`198686e9…`, 31 of them).
-    static func isTraceID(_ text: String) -> Bool {
+    package static func isTraceID(_ text: String) -> Bool {
         (16...32).contains(text.count) && text.allSatisfy(\.isHexDigit)
     }
 }
 
-struct TraceSummary: Equatable, Sendable, Identifiable {
-    var id: String
-    var service: String
-    var name: String
-    var start: Date
-    var durationMs: Double
+package struct TraceSummary: Equatable, Sendable, Identifiable {
+    package var id: String
+    package var service: String
+    package var name: String
+    package var start: Date
+    package var durationMs: Double
 }
 
-struct TraceSpan: Equatable, Sendable, Identifiable {
-    var id: String
-    var parent: String?
-    var service: String
-    var name: String
-    var kind: String
-    var startNanos: Int64
-    var endNanos: Int64
-    var failed: Bool
-    var attributes: [Attribute]
+package struct TraceSpan: Equatable, Sendable, Identifiable {
+    package var id: String
+    package var parent: String?
+    package var service: String
+    package var name: String
+    package var kind: String
+    package var startNanos: Int64
+    package var endNanos: Int64
+    package var failed: Bool
+    package var attributes: [Attribute]
 
-    struct Attribute: Equatable, Sendable {
-        var key: String
-        var value: String
+    package struct Attribute: Equatable, Sendable {
+        package var key: String
+        package var value: String
     }
 
-    var durationMs: Double { Double(endNanos - startNanos) / 1e6 }
+    package var durationMs: Double { Double(endNanos - startNanos) / 1e6 }
 }
 
 /// A trace's spans, in the order a waterfall draws them: each under its
 /// parent, siblings by start.
-struct TraceDetail: Equatable, Sendable {
-    var id: String
-    var spans: [TraceSpan]
+package struct TraceDetail: Equatable, Sendable {
+    package var id: String
+    package var spans: [TraceSpan]
 
-    struct Row: Equatable, Sendable, Identifiable {
-        var span: TraceSpan
-        var depth: Int
-        var id: String { span.id }
+    package struct Row: Equatable, Sendable, Identifiable {
+        package var span: TraceSpan
+        package var depth: Int
+        package var id: String { span.id }
     }
 
-    var start: Int64 { spans.map(\.startNanos).min() ?? 0 }
-    var end: Int64 { spans.map(\.endNanos).max() ?? 0 }
-    var durationMs: Double { Double(end - start) / 1e6 }
-    var services: [String] {
+    package var start: Int64 { spans.map(\.startNanos).min() ?? 0 }
+    package var end: Int64 { spans.map(\.endNanos).max() ?? 0 }
+    package var durationMs: Double { Double(end - start) / 1e6 }
+    package var services: [String] {
         var seen: [String] = []
         for span in rows.map(\.span) where !seen.contains(span.service) { seen.append(span.service) }
         return seen
     }
 
-    var rows: [Row] {
+    package var rows: [Row] {
         let ids = Set(spans.map(\.id))
         var children: [String: [TraceSpan]] = [:]
         var roots: [TraceSpan] = []
@@ -210,7 +210,7 @@ struct TraceDetail: Equatable, Sendable {
 }
 
 /// What an observability query gave back, beyond the grid's rows.
-enum ObservabilityPayload: Equatable, Sendable {
+package enum ObservabilityPayload: Equatable, Sendable {
     case series([MetricSeries])
     case logs([LokiLine])
     case traces([TraceSummary])
@@ -219,10 +219,10 @@ enum ObservabilityPayload: Equatable, Sendable {
 
 // MARK: Reading the APIs' answers
 
-enum ObservabilityParse {
-    struct Failure: Error, Equatable, LocalizedError {
-        let message: String
-        var errorDescription: String? { message }
+package enum ObservabilityParse {
+    package struct Failure: Error, Equatable, LocalizedError {
+        package let message: String
+        package var errorDescription: String? { message }
     }
 
     private static func json(_ data: Data) throws -> [String: Any] {
@@ -253,13 +253,13 @@ enum ObservabilityParse {
 
     /// Prometheus's (and Loki's metric queries') `data`: a matrix, a
     /// vector, a scalar or a string — all as series.
-    static func prometheus(_ data: Data) throws -> [MetricSeries] {
+    package static func prometheus(_ data: Data) throws -> [MetricSeries] {
         let object = try json(data)
         guard let body = object["data"] as? [String: Any] else { throw Failure(message: "No data in the answer.") }
         return series(body)
     }
 
-    static func series(_ body: [String: Any]) -> [MetricSeries] {
+    package static func series(_ body: [String: Any]) -> [MetricSeries] {
         let type = body["resultType"] as? String ?? ""
         func point(_ pair: Any) -> MetricSeries.Point? {
             guard let pair = pair as? [Any], pair.count == 2, let time = number(pair[0]), let value = number(pair[1]) else { return nil }
@@ -282,7 +282,7 @@ enum ObservabilityParse {
 
     /// Loki's query_range: streams of lines (newest first) — or, for a
     /// metric query, series.
-    static func loki(_ data: Data) throws -> ObservabilityPayload {
+    package static func loki(_ data: Data) throws -> ObservabilityPayload {
         let object = try json(data)
         guard let body = object["data"] as? [String: Any] else { throw Failure(message: "No data in the answer.") }
         guard body["resultType"] as? String == "streams" else { return .series(series(body)) }
@@ -305,7 +305,7 @@ enum ObservabilityParse {
     }
 
     /// Newest first; lines of one instant keep their order.
-    static func ordered(_ lines: [LokiLine]) -> [LokiLine] {
+    package static func ordered(_ lines: [LokiLine]) -> [LokiLine] {
         var seen: [Int64: Int] = [:]
         var numbered = lines
         for index in numbered.indices {
@@ -316,13 +316,13 @@ enum ObservabilityParse {
     }
 
     /// `{"status":"success","data":["a","b"]}` — labels, values, metric names.
-    static func names(_ data: Data) throws -> [String] {
+    package static func names(_ data: Data) throws -> [String] {
         let object = try json(data)
         return (object["data"] as? [String] ?? []).sorted()
     }
 
     /// Tempo's /api/search.
-    static func tempoSearch(_ data: Data) throws -> [TraceSummary] {
+    package static func tempoSearch(_ data: Data) throws -> [TraceSummary] {
         let object = try json(data)
         return (object["traces"] as? [[String: Any]] ?? []).compactMap { trace in
             guard let id = trace["traceID"] as? String else { return nil }
@@ -335,7 +335,7 @@ enum ObservabilityParse {
 
     /// Tempo's tags: v2's scopes (`resource.service.name`, `span.http.route`,
     /// and the intrinsics bare), or v1's names.
-    static func tempoTags(_ data: Data) throws -> [String] {
+    package static func tempoTags(_ data: Data) throws -> [String] {
         let object = try json(data)
         if let scopes = object["scopes"] as? [[String: Any]] {
             var out: [String] = []
@@ -352,7 +352,7 @@ enum ObservabilityParse {
     }
 
     /// Tempo's tag values: v2's `[{type, value}]` or v1's strings.
-    static func tempoValues(_ data: Data) throws -> [String] {
+    package static func tempoValues(_ data: Data) throws -> [String] {
         let object = try json(data)
         let values = object["tagValues"] as? [Any] ?? []
         return values.compactMap { ($0 as? String) ?? (($0 as? [String: Any])?["value"] as? String) }.sorted()
@@ -361,7 +361,7 @@ enum ObservabilityParse {
     /// A trace as Tempo gives it in JSON: OTLP's `batches` (v1) or
     /// `resourceSpans` (v2, under `trace`), the old `instrumentationLibrarySpans`
     /// as well as `scopeSpans`; ids base64 (protobuf's JSON) or hex.
-    static func tempoTrace(_ data: Data, id: String) throws -> TraceDetail {
+    package static func tempoTrace(_ data: Data, id: String) throws -> TraceDetail {
         var object = try json(data)
         if let inner = object["trace"] as? [String: Any] { object = inner }
         let batches = (object["batches"] as? [[String: Any]]) ?? (object["resourceSpans"] as? [[String: Any]]) ?? []
@@ -394,13 +394,13 @@ enum ObservabilityParse {
     }
 
     /// An id as hex: kept when it is, else base64 decoded.
-    static func hexID(_ text: String) -> String {
+    package static func hexID(_ text: String) -> String {
         if (text.count == 16 || text.count == 32), text.allSatisfy(\.isHexDigit) { return text.lowercased() }
         guard let data = Data(base64Encoded: text) else { return text }
         return data.map { String(format: "%02x", $0) }.joined()
     }
 
-    static func attributes(_ any: Any?) -> [TraceSpan.Attribute] {
+    package static func attributes(_ any: Any?) -> [TraceSpan.Attribute] {
         (any as? [[String: Any]] ?? []).compactMap { item in
             guard let key = item["key"] as? String else { return nil }
             return TraceSpan.Attribute(key: key, value: attributeValue(item["value"]))
@@ -420,7 +420,7 @@ enum ObservabilityParse {
     }
 
     /// Prometheus's /api/v1/targets: each active target, its health.
-    static func targets(_ data: Data) throws -> QueryResult {
+    package static func targets(_ data: Data) throws -> QueryResult {
         let object = try json(data)
         let active = ((object["data"] as? [String: Any])?["activeTargets"] as? [[String: Any]]) ?? []
         let rows: [[String?]] = active.map { target in
@@ -435,7 +435,7 @@ enum ObservabilityParse {
     }
 
     /// Prometheus's /api/v1/alerts: what fires and what is pending.
-    static func alerts(_ data: Data) throws -> QueryResult {
+    package static func alerts(_ data: Data) throws -> QueryResult {
         let object = try json(data)
         let alerts = ((object["data"] as? [String: Any])?["alerts"] as? [[String: Any]]) ?? []
         let rows: [[String?]] = alerts.map { alert in
@@ -453,8 +453,8 @@ enum ObservabilityParse {
 
 // MARK: As the grid shows it
 
-enum ObservabilityRows {
-    static func result(_ payload: ObservabilityPayload, limit: Int) -> QueryResult {
+package enum ObservabilityRows {
+    package static func result(_ payload: ObservabilityPayload, limit: Int) -> QueryResult {
         var result: QueryResult
         switch payload {
         case .series(let series):
@@ -498,14 +498,14 @@ enum ObservabilityRows {
         return result
     }
 
-    static func format(_ value: Double) -> String {
+    package static func format(_ value: Double) -> String {
         if value.isNaN { return "NaN" }
         if value.isInfinite { return value > 0 ? "+Inf" : "-Inf" }
         if value == value.rounded(), abs(value) < 1e15 { return String(Int64(value)) }
         return String(format: "%.6g", value)
     }
 
-    static func milliseconds(_ ms: Double) -> String {
+    package static func milliseconds(_ ms: Double) -> String {
         ms < 1 ? String(format: "%.0f µs", ms * 1000) : ms < 1000 ? String(format: "%.1f ms", ms) : String(format: "%.2f s", ms / 1000)
     }
 
@@ -515,15 +515,15 @@ enum ObservabilityRows {
         return formatter
     }()
 
-    static func timestamp(_ date: Date) -> String { stamp.string(from: date) }
+    package static func timestamp(_ date: Date) -> String { stamp.string(from: date) }
 }
 
 // MARK: A console's text
 
 /// An observability console's text: a query a block — lines up to a blank
 /// one, as PromQL and LogQL run over lines — `#` lines comments.
-enum ObservabilityText {
-    static func statements(in text: String) -> [NSRange] {
+package enum ObservabilityText {
+    package static func statements(in text: String) -> [NSRange] {
         let ns = text as NSString
         var found: [NSRange] = []
         var start: Int?
@@ -542,18 +542,18 @@ enum ObservabilityText {
         return found
     }
 
-    static func statement(at caret: Int, in text: String) -> NSRange? {
+    package static func statement(at caret: Int, in text: String) -> NSRange? {
         statements(in: text).first { caret >= $0.location && caret <= NSMaxRange($0) }
     }
 
     /// The query on one line, its comments out.
-    static func clean(_ query: String) -> String {
+    package static func clean(_ query: String) -> String {
         query.split(whereSeparator: \.isNewline).filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }.joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// A tab's name: the metric, the stream's selector, the trace.
-    static func subject(of query: String, kind: DatabaseKind) -> String? {
+    package static func subject(of query: String, kind: DatabaseKind) -> String? {
         let query = clean(query)
         if query.hasPrefix(".") { return String(query.dropFirst()) }
         switch kind {
@@ -571,31 +571,31 @@ enum ObservabilityText {
 
     // MARK: Completion
 
-    static let promFunctions = [
+    package static let promFunctions = [
         "rate", "irate", "increase", "sum", "avg", "min", "max", "count", "topk", "bottomk", "quantile", "histogram_quantile",
         "sum_by", "avg_over_time", "max_over_time", "min_over_time", "sum_over_time", "count_over_time", "quantile_over_time",
         "delta", "idelta", "deriv", "predict_linear", "abs", "ceil", "floor", "round", "clamp", "clamp_min", "clamp_max", "absent",
         "absent_over_time", "changes", "resets", "label_replace", "label_join", "time", "timestamp", "vector", "scalar", "sort", "sort_desc",
         "by", "without", "on", "ignoring", "group_left", "group_right", "offset", "and", "or", "unless",
     ]
-    static let logqlWords = [
+    package static let logqlWords = [
         "json", "logfmt", "pattern", "regexp", "unpack", "line_format", "label_format", "unwrap", "rate", "count_over_time",
         "bytes_over_time", "bytes_rate", "sum", "avg", "max", "min", "topk", "by", "without", "sum_over_time", "avg_over_time",
         "quantile_over_time", "absent_over_time", "decolorize", "drop", "keep",
     ]
-    static let traceqlWords = [
+    package static let traceqlWords = [
         "resource.service.name", "span.http.method", "span.http.route", "span.http.status_code", "name", "status", "duration", "kind",
         "rootServiceName", "rootName", "traceDuration", "error", "ok", "unset", "server", "client", "select", "count", "avg", "max",
         "min", "sum", "by",
     ]
 
-    struct Answer: Equatable {
-        var typed: String
-        var candidates: [SQLCompletion.Candidate]
+    package struct Answer: Equatable {
+        package var typed: String
+        package var candidates: [SQLCompletion.Candidate]
     }
 
     /// Words of the query's language and the catalog's names (metrics, labels, tags).
-    static func complete(_ before: String, kind: DatabaseKind, names: [String]) -> Answer? {
+    package static func complete(_ before: String, kind: DatabaseKind, names: [String]) -> Answer? {
         let typed = String(before.reversed().prefix { $0.isLetter || $0.isNumber || $0 == "_" || $0 == ":" || $0 == "." }.reversed())
         guard typed.count >= 1 else { return nil }
         let words =

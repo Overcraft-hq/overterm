@@ -2,32 +2,32 @@ import Foundation
 
 /// One kind the cluster serves, as discovery says it: where its objects
 /// are, whether they live in a namespace, what may be done with them.
-struct KubeResourceKind: Hashable, Sendable, CustomStringConvertible {
+package struct KubeResourceKind: Hashable, Sendable, CustomStringConvertible {
     /// "" for the core group.
-    var group: String
-    var version: String
+    package var group: String
+    package var version: String
     /// The plural in paths: `pods`, `deployments`.
-    var resource: String
-    var kind: String
-    var singular: String
-    var namespaced: Bool
-    var verbs: [String]
-    var shortNames: [String] = []
-    var categories: [String] = []
+    package var resource: String
+    package var kind: String
+    package var singular: String
+    package var namespaced: Bool
+    package var verbs: [String]
+    package var shortNames: [String] = []
+    package var categories: [String] = []
     /// `log`, `exec`, `status`, `scale`…
-    var subresources: [String] = []
+    package var subresources: [String] = []
 
-    var groupVersion: String { group.isEmpty ? version : "\(group)/\(version)" }
+    package var groupVersion: String { group.isEmpty ? version : "\(group)/\(version)" }
     /// `deployments.apps`, `pods`: kubectl's full name.
-    var fullName: String { group.isEmpty ? resource : "\(resource).\(group)" }
-    var description: String { fullName }
+    package var fullName: String { group.isEmpty ? resource : "\(resource).\(group)" }
+    package var description: String { fullName }
 
-    var canList: Bool { verbs.contains("list") }
-    var canWatch: Bool { verbs.contains("watch") }
+    package var canList: Bool { verbs.contains("list") }
+    package var canWatch: Bool { verbs.contains("watch") }
 
     /// The collection's path (in `namespace` when the kind lives in one and
     /// one is given), or one object's.
-    func path(namespace: String? = nil, name: String? = nil) -> String {
+    package func path(namespace: String? = nil, name: String? = nil) -> String {
         var path = group.isEmpty ? "/api/\(version)" : "/apis/\(group)/\(version)"
         if namespaced, let namespace { path += "/namespaces/\(KubePath.segment(namespace))" }
         path += "/\(resource)"
@@ -35,11 +35,11 @@ struct KubeResourceKind: Hashable, Sendable, CustomStringConvertible {
         return path
     }
 
-    static let pods = KubeResourceKind(
+    package static let pods = KubeResourceKind(
         group: "", version: "v1", resource: "pods", kind: "Pod", singular: "pod", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"], shortNames: ["po"], categories: ["all"],
         subresources: ["attach", "binding", "ephemeralcontainers", "eviction", "exec", "log", "portforward", "proxy", "resize", "status"])
-    static let namespaces = KubeResourceKind(
+    package static let namespaces = KubeResourceKind(
         group: "", version: "v1", resource: "namespaces", kind: "Namespace", singular: "namespace", namespaced: false,
         verbs: ["create", "delete", "get", "list", "patch", "update", "watch"], shortNames: ["ns"], subresources: ["finalize", "status"])
 }
@@ -47,18 +47,18 @@ struct KubeResourceKind: Hashable, Sendable, CustomStringConvertible {
 /// What the cluster serves: every kind of every group's preferred version,
 /// and the groups that couldn't say (an aggregated API that is down
 /// answers 503; the rest of the cluster still works).
-struct KubeDiscovery: Equatable, Sendable {
-    var kinds: [KubeResourceKind]
+package struct KubeDiscovery: Equatable, Sendable {
+    package var kinds: [KubeResourceKind]
     /// By group version, what it answered.
-    var failedGroups: [String: String] = [:]
+    package var failedGroups: [String: String] = [:]
     /// Read from aggregated discovery (one request each for `/api` and
     /// `/apis`), not the legacy walk.
-    var aggregated = false
+    package var aggregated = false
 
     /// A kind by any of kubectl's names for it: `po`, `pod`, `pods`, `Pod`,
     /// `deployments.apps`, `deploy`. The core group first, then the order
     /// the server listed them in — as kubectl resolves `events`.
-    func kind(_ name: String) -> KubeResourceKind? {
+    package func kind(_ name: String) -> KubeResourceKind? {
         let wanted = name.lowercased()
         if let dot = wanted.firstIndex(of: "."), !kinds.contains(where: { $0.resource == wanted }) {
             let resource = String(wanted[..<dot])
@@ -74,7 +74,7 @@ struct KubeDiscovery: Equatable, Sendable {
 
     /// What a discovery answer is: aggregated (`APIGroupDiscoveryList`),
     /// legacy core (`APIVersions`), a legacy group list (`APIGroupList`).
-    enum Answer: Equatable {
+    package enum Answer: Equatable {
         /// The kinds, and the group versions marked `Stale`.
         case aggregated([KubeResourceKind], stale: [String: String])
         case coreVersions([String])
@@ -82,7 +82,7 @@ struct KubeDiscovery: Equatable, Sendable {
         case groups([String])
     }
 
-    static func answer(_ data: Data) throws -> Answer {
+    package static func answer(_ data: Data) throws -> Answer {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw KubeTableReader.Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self))
         }
@@ -103,14 +103,14 @@ struct KubeDiscovery: Equatable, Sendable {
     }
 
     /// What an aggregated list's version that is down says.
-    static let staleMessage = "Stale: the aggregated API isn't answering."
+    package static let staleMessage = "Stale: the aggregated API isn't answering."
 
     /// An aggregated list's kinds: each group's first version that isn't
     /// `Stale` (the server lists them by preference), subresources folded
     /// into their kind; and the versions that are. The apiserver marks an
     /// aggregated API that is down (metrics.k8s.io's, often) `Stale` rather
     /// than leaving it out, as client-go reads it.
-    static func aggregatedKinds(_ object: [String: Any]) -> (kinds: [KubeResourceKind], stale: [String: String]) {
+    package static func aggregatedKinds(_ object: [String: Any]) -> (kinds: [KubeResourceKind], stale: [String: String]) {
         var kinds: [KubeResourceKind] = []
         var stale: [String: String] = [:]
         for item in object["items"] as? [[String: Any]] ?? [] {
@@ -143,7 +143,7 @@ struct KubeDiscovery: Equatable, Sendable {
 
     /// A legacy `APIResourceList`: `pods/log` and the like are its kinds'
     /// subresources, not kinds.
-    static func resourceList(_ data: Data) throws -> [KubeResourceKind] {
+    package static func resourceList(_ data: Data) throws -> [KubeResourceKind] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["kind"] as? String == "APIResourceList",
             let groupVersion = object["groupVersion"] as? String
         else { throw KubeTableReader.Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self)) }
@@ -175,17 +175,17 @@ struct KubeDiscovery: Equatable, Sendable {
 }
 
 /// Paths and queries as the API server reads them. Pure.
-enum KubePath {
+package enum KubePath {
     /// What may stand unescaped: RFC 3986's unreserved characters.
     private static let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
 
     /// One path segment: a `/` in a name can't make it another path.
-    static func segment(_ text: String) -> String {
+    package static func segment(_ text: String) -> String {
         text.addingPercentEncoding(withAllowedCharacters: unreserved) ?? text
     }
 
     /// `path?name=value&…`, every value escaped (a selector's `=` and `,` too).
-    static func query(_ path: String, _ items: [(String, String?)]) -> String {
+    package static func query(_ path: String, _ items: [(String, String?)]) -> String {
         let pairs = items.compactMap { name, value in value.map { "\(segment(name))=\(segment($0))" } }
         return pairs.isEmpty ? path : path + "?" + pairs.joined(separator: "&")
     }

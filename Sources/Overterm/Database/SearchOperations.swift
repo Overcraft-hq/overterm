@@ -7,10 +7,10 @@ import Foundation
 
 extension SearchDriver: DatabaseMonitoring {
     /// No locks to wait on: a search engine has none a client takes.
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .slowQueries, .sizes] }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .slowQueries, .sizes] }
 
     /// A task is cancelled where it is cancellable; the node ends it.
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
         [
             SessionStop(
                 terminate: false, menu: "Cancel Task…", title: "Cancel task \(session.id)?", command: "POST /_tasks/\(session.id)/_cancel",
@@ -18,7 +18,7 @@ extension SearchDriver: DatabaseMonitoring {
         ]
     }
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         if product == nil { try await connect() }
         var notes: [String] = []
         let health = (try? await json("/_cluster/health")) as? [String: Any]
@@ -33,7 +33,7 @@ extension SearchDriver: DatabaseMonitoring {
         return overview
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         do {
             return .value(SearchOps.tasks(try await json("/_tasks?detailed=true&group_by=none")))
         } catch let error as DatabaseError {
@@ -41,7 +41,7 @@ extension SearchDriver: DatabaseMonitoring {
         }
     }
 
-    func slowQueries() async throws -> Monitored<[SlowQuery]> {
+    package func slowQueries() async throws -> Monitored<[SlowQuery]> {
         if kind == .opensearch {
             // OpenSearch's Query Insights plugin keeps the slowest searches.
             let (data, status) = try await send(SearchRequest(method: "GET", path: "/_insights/top_queries?type=latency", body: nil))
@@ -65,7 +65,7 @@ extension SearchDriver: DatabaseMonitoring {
         return .unavailable(SearchOps.slowlogGap(thresholds, kind: kind))
     }
 
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         do {
             let rows = try await json("/_cat/indices?format=json&bytes=b&h=index,docs.count,store.size,pri,rep,health,status&s=store.size:desc")
             return .value(SearchOps.sizes(rows as? [[String: Any]] ?? []))
@@ -74,7 +74,7 @@ extension SearchDriver: DatabaseMonitoring {
         }
     }
 
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("POST _tasks/_cancel") }
         guard !terminate else { throw DatabaseError.failed("A task is cancelled; there is no session to end.") }
         guard SearchOps.isTaskID(session) else { throw DatabaseError.failed("“\(session)” isn't a task's id (node:number).") }
@@ -87,12 +87,12 @@ extension SearchDriver: DatabaseMonitoring {
 // MARK: Editing hits
 
 extension SearchDriver: DatabaseTableEditing {
-    func editDialect() async -> SQLDialect { .postgres }
+    package func editDialect() async -> SQLDialect { .postgres }
 
     /// Not SQL: a search's hits are found by `editableResult`.
-    func key(of table: TableName) async throws -> TableKey? { nil }
+    package func key(of table: TableName) async throws -> TableKey? { nil }
 
-    func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
+    package func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
         let request: SearchRequest
         do {
             request = try SearchRequest.parse(statement)
@@ -102,15 +102,15 @@ extension SearchDriver: DatabaseTableEditing {
         return SearchEdits.editable(request, result: result)
     }
 
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
+    package func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
         try SearchEdits.statements(edits, rows: rows, result: result)
     }
 
-    func editSaveNote() async -> String {
+    package func editSaveNote() async -> String {
         "One by one — \(kind.title) has no transactions: a failure (a document changed since it was read, or gone) stops the rest, and those before it are kept. Each waits for the index to refresh, so the hits read again show it."
     }
 
-    func apply(_ statements: [EditStatement]) async throws {
+    package func apply(_ statements: [EditStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("a write") }
         let requests = try statements.map { statement -> SearchRequest in
             let request = try SearchRequest.parse(statement.sql)
@@ -131,11 +131,11 @@ extension SearchDriver: DatabaseTableEditing {
 // MARK: Users and roles
 
 extension SearchDriver: DatabaseUserManagement {
-    func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
+    package func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
 
-    func userStatements() async -> any UserStatementMaking { SearchUserStatements(opensearch: kind == .opensearch) }
+    package func userStatements() async -> any UserStatementMaking { SearchUserStatements(opensearch: kind == .opensearch) }
 
-    func users() async throws -> Monitored<[DatabaseUser]> {
+    package func users() async throws -> Monitored<[DatabaseUser]> {
         if kind == .opensearch {
             do {
                 let users = try await securityRead("/_plugins/_security/api/internalusers").get()
@@ -166,7 +166,7 @@ extension SearchDriver: DatabaseUserManagement {
         return .failure(SearchOps.securityGap(status: status, said: SearchResults.error(data, status: status), kind: kind, user: config.user))
     }
 
-    func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
+    package func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
         let path = kind == .opensearch ? "/_plugins/_security/api/roles" : "/_security/role"
         switch try await securityRead(path) {
         case .success(let roles): return .value(SearchOps.grants(of: user, roles: roles))
@@ -176,7 +176,7 @@ extension SearchDriver: DatabaseUserManagement {
 
     /// Each a request as the console writes it (`SearchUserStatements`),
     /// sent once; the error the server's words, never the request's body.
-    func run(_ statements: [UserStatement]) async throws {
+    package func run(_ statements: [UserStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("a user change") }
         for statement in statements {
             let request: SearchRequest
@@ -192,15 +192,15 @@ extension SearchDriver: DatabaseUserManagement {
 }
 
 /// The search engines' answers read for the Server and Users pages. Pure.
-enum SearchOps {
+package enum SearchOps {
     /// `node:42` — nothing that could be a path of its own.
-    static func isTaskID(_ text: String) -> Bool {
+    package static func isTaskID(_ text: String) -> Bool {
         text.range(of: #"^[A-Za-z0-9_\-]+:[0-9]+$"#, options: .regularExpression) != nil
     }
 
     /// Whether Query Insights' latency record is off, by the cluster's
     /// settings (persistent, transient or the default).
-    static func insightsOff(_ settings: Any?) -> Bool {
+    package static func insightsOff(_ settings: Any?) -> Bool {
         let object = settings as? [String: Any] ?? [:]
         for level in ["transient", "persistent", "defaults"] {
             if let value = (object[level] as? [String: Any])?["search.insights.top_queries.latency.enabled"] { return "\(value)" != "true" && "\(value)" != "1" }
@@ -209,7 +209,7 @@ enum SearchOps {
     }
 
     /// `_cancel`'s answer: the node's or the task's failure, when there is one.
-    static func cancelFailure(_ data: Data) -> String? {
+    package static func cancelFailure(_ data: Data) -> String? {
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         for key in ["node_failures", "task_failures"] {
             guard let first = (object[key] as? [[String: Any]])?.first else { continue }
@@ -219,7 +219,7 @@ enum SearchOps {
         return nil
     }
 
-    static func overview(product: String, health: [String: Any], nodes: [String: Any]) -> ServerOverview {
+    package static func overview(product: String, health: [String: Any], nodes: [String: Any]) -> ServerOverview {
         func int(_ value: Any?) -> Int? { (value as? NSNumber)?.intValue }
         var facts = [ServerFact(title: "Version", value: product, detail: health["cluster_name"] as? String)]
         if let status = health["status"] as? String {
@@ -266,7 +266,7 @@ enum SearchOps {
     }
 
     /// hot_threads' headline: each busy thread's share, on its node.
-    static func hotThreads(_ text: String) -> [String] {
+    package static func hotThreads(_ text: String) -> [String] {
         let lines = text.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
         let busy = lines.filter { $0.contains("cpu usage by thread") }.prefix(5)
         return busy.map { "Hot thread: \($0)" }
@@ -274,7 +274,7 @@ enum SearchOps {
 
     /// `_tasks`' running tasks, whichever way grouped. The listing's own task
     /// is this connection's.
-    static func tasks(_ answer: Any) -> [DatabaseActivity] {
+    package static func tasks(_ answer: Any) -> [DatabaseActivity] {
         var found: [(String, [String: Any])] = []
         let object = answer as? [String: Any] ?? [:]
         if let list = object["tasks"] as? [[String: Any]] {
@@ -304,7 +304,7 @@ enum SearchOps {
     }
 
     /// OpenSearch Query Insights' top queries by latency.
-    static func topQueries(_ data: Data) -> [SlowQuery] {
+    package static func topQueries(_ data: Data) -> [SlowQuery] {
         let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
         let entries = object["top_queries"] as? [[String: Any]] ?? []
         return entries.enumerated().map { index, entry in
@@ -322,7 +322,7 @@ enum SearchOps {
 
     /// Why there is no slow query to list: the slow log is the nodes' files,
     /// and each index's thresholds now — with the line that sets them.
-    static func slowlogGap(_ settings: [String: Any], kind: DatabaseKind) -> MonitorGap {
+    package static func slowlogGap(_ settings: [String: Any], kind: DatabaseKind) -> MonitorGap {
         var set: [String] = []
         for index in settings.keys.sorted() where !SearchCatalog.isHidden(index) {
             let flat = ((settings[index] as? [String: Any])?["settings"] as? [String: Any]) ?? [:]
@@ -339,7 +339,7 @@ enum SearchOps {
             fix: #"PUT /<index>/_settings {"index.search.slowlog.threshold.query.warn": "1s", "index.search.slowlog.threshold.query.info": "500ms"}"#)
     }
 
-    static func sizes(_ rows: [[String: Any]]) -> DatabaseSizes {
+    package static func sizes(_ rows: [[String: Any]]) -> DatabaseSizes {
         var sizes = DatabaseSizes()
         let visible = rows.filter { !SearchCatalog.isHidden($0["index"] as? String ?? ".") }
         func number(_ value: Any?) -> Int64 { Int64(value as? String ?? "") ?? (value as? NSNumber)?.int64Value ?? 0 }
@@ -358,7 +358,7 @@ enum SearchOps {
     }
 
     /// Why users can't be read: security off, or not this user's to manage.
-    static func securityGap(status: Int, said: String, kind: DatabaseKind, user: String) -> MonitorGap {
+    package static func securityGap(status: Int, said: String, kind: DatabaseKind, user: String) -> MonitorGap {
         let who = user.isEmpty ? "This connection's credentials" : user
         let lower = said.lowercased()
         if lower.contains("security must be explicitly enabled") || lower.contains("security is not enabled") || lower.contains("no handler found")
@@ -378,7 +378,7 @@ enum SearchOps {
 
     /// Elasticsearch's users (`_security/user`) and roles (`_security/role`)
     /// — a user's password is never in either answer.
-    static func elasticUsers(_ users: [String: [String: Any]], roles: [String: [String: Any]]) -> [DatabaseUser] {
+    package static func elasticUsers(_ users: [String: [String: Any]], roles: [String: [String: Any]]) -> [DatabaseUser] {
         var out = users.keys.sorted().map { name -> DatabaseUser in
             let entry = users[name] ?? [:]
             let memberOf = (entry["roles"] as? [String] ?? []).sorted()
@@ -402,7 +402,7 @@ enum SearchOps {
     /// OpenSearch's internal users — their `hash` never read — with the
     /// roles they hold: their own (`opendistro_security_roles`) and those
     /// mapped to them by name or backend role (`rolesmapping`, said apart).
-    static func openSearchUsers(_ users: [String: [String: Any]], roles: [String: [String: Any]], mapping: [String: [String: Any]]) -> [DatabaseUser] {
+    package static func openSearchUsers(_ users: [String: [String: Any]], roles: [String: [String: Any]], mapping: [String: [String: Any]]) -> [DatabaseUser] {
         // A role is mapped to a user by name, or by a backend role it has.
         var mapped: [String: [String]] = [:]
         for (name, entry) in users {
@@ -435,7 +435,7 @@ enum SearchOps {
 
     /// A user's roles (each revocable), then what each gives: its cluster
     /// privileges, and per index pattern its privileges.
-    static func grants(of user: DatabaseUser, roles: [String: [String: Any]]) -> [DatabaseGrant] {
+    package static func grants(of user: DatabaseUser, roles: [String: [String: Any]]) -> [DatabaseGrant] {
         var grants: [DatabaseGrant] = []
         var names = user.isRole ? [user.name] : user.memberOf
         if !user.isRole {
@@ -467,10 +467,10 @@ enum SearchOps {
 /// with `doc`, or a script where a field is removed —, a new hit `POST
 /// /<index>/_doc` (`_create` with an `_id`), a deleted one `DELETE`. Each
 /// a request as Dev Tools writes it, and that is what runs. Pure.
-enum SearchEdits {
-    static let metaColumns: Set<String> = ["_index", "_id", "_score", "_seq_no", "_primary_term", "_routing"]
+package enum SearchEdits {
+    package static let metaColumns: Set<String> = ["_index", "_id", "_score", "_seq_no", "_primary_term", "_routing"]
 
-    static func editable(_ request: SearchRequest, result: QueryResult) -> Result<EditableResult, EditRefusal> {
+    package static func editable(_ request: SearchRequest, result: QueryResult) -> Result<EditableResult, EditRefusal> {
         guard request.endpoint == "_search", ["GET", "POST"].contains(request.method) else {
             return .failure(.said("Documents are edited in a _search's hits — not another API's answer."))
         }
@@ -492,7 +492,7 @@ enum SearchEdits {
 
     /// A path segment, every character but the unreserved escaped: an id
     /// may hold `/`, `?` or `%` and stays one segment.
-    static func segment(_ text: String) -> String {
+    package static func segment(_ text: String) -> String {
         text.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")) ?? text
     }
 
@@ -501,7 +501,7 @@ enum SearchEdits {
         return String(decoding: data, as: UTF8.self)
     }
 
-    static func statements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
+    package static func statements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
         func column(_ name: String) -> Int? { result.columns.firstIndex(of: name) }
         func cell(_ row: Int, _ name: String) -> String? { column(name).flatMap { rows[safe: row]?[safe: $0] ?? nil } }
         /// The query that finds a read hit again, on the version it was read at.
@@ -584,7 +584,7 @@ enum SearchEdits {
     /// A cell's text as its field's JSON type: a string as itself, a number,
     /// a boolean, an object or an array as JSON; a field of several types
     /// (or none yet) as JSON when it reads as JSON, else as text.
-    static func value(_ text: String, type: String) throws -> Any {
+    package static func value(_ text: String, type: String) throws -> Any {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         let parsed = try? JSONSerialization.jsonObject(with: Data(trimmed.utf8), options: [.fragmentsAllowed])
         switch type {
@@ -610,19 +610,19 @@ enum SearchEdits {
 /// A grant is a role (a user's own list; OpenSearch's role mappings are said,
 /// not changed). The password goes once, in the request's body; the server
 /// keeps its hash. Pure.
-struct SearchUserStatements: UserStatementMaking {
+package struct SearchUserStatements: UserStatementMaking {
     /// What of an Elasticsearch user its update writes again, as the page
     /// lists it: an update writes the user whole, so they are kept.
-    static let fullName = "name: "
-    static let email = "email: "
-    static let hasMetadata = "has metadata"
+    package static let fullName = "name: "
+    package static let email = "email: "
+    package static let hasMetadata = "has metadata"
 
-    var opensearch = false
+    package var opensearch = false
 
     private var engine: String { opensearch ? "OpenSearch" : "Elasticsearch" }
 
     /// No Grant…: what a user may do is its roles' (Grant Role…).
-    var form: UserForm {
+    package var form: UserForm {
         UserForm(
             superuser: nil,
             passwordNote:
@@ -631,7 +631,7 @@ struct SearchUserStatements: UserStatementMaking {
     }
 
     /// A role has no password and holds privileges, not roles.
-    func offers(_ action: UserAction, on user: DatabaseUser) -> Bool {
+    package func offers(_ action: UserAction, on user: DatabaseUser) -> Bool {
         switch action {
         case .password, .grantRole: !user.isRole
         case .grant: false
@@ -639,11 +639,11 @@ struct SearchUserStatements: UserStatementMaking {
         }
     }
 
-    func target(_ kind: GrantKind, fields: [String]) -> GrantTarget { .named(kind: kind.title, name: fields.first ?? "") }
+    package func target(_ kind: GrantKind, fields: [String]) -> GrantTarget { .named(kind: kind.title, name: fields.first ?? "") }
 
-    func privileges(on target: GrantTarget) -> [String] { [] }
+    package func privileges(on target: GrantTarget) -> [String] { [] }
 
-    func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
+    package func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
         users.filter { $0.isRole && $0.id != user.id && !user.memberOf.contains($0.name) }
     }
 
@@ -663,7 +663,7 @@ struct SearchUserStatements: UserStatementMaking {
         UserStatement(head + "\n" + json(body(password)), shown: head + "\n" + json(body("••••••••")))
     }
 
-    func create(_ user: NewUser) throws -> [UserStatement] {
+    package func create(_ user: NewUser) throws -> [UserStatement] {
         let path = try name(DatabaseUser(name: user.name))
         guard !user.password.isEmpty else { throw Self.refusal("A password, please.") }
         if opensearch {
@@ -672,7 +672,7 @@ struct SearchUserStatements: UserStatementMaking {
         return [Self.secret("POST \(users)/\(path)", { ["password": $0, "roles": [String]()] }, user.password)]
     }
 
-    func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
+    package func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
         let path = try name(user)
         guard !user.isRole else { throw Self.refusal("A role has no password.") }
         guard !password.isEmpty else { throw Self.refusal("A password, please.") }
@@ -682,7 +682,7 @@ struct SearchUserStatements: UserStatementMaking {
         return Self.secret("POST \(users)/\(path)/_password", { ["password": $0] }, password)
     }
 
-    func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
+    package func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
         throw Self.refusal("\(engine) grants through roles: Grant Role….")
     }
 
@@ -708,24 +708,24 @@ struct SearchUserStatements: UserStatementMaking {
         return UserStatement("POST \(users)/\(path)\n" + Self.json(body))
     }
 
-    func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
+    package func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
         _ = try checked(role.name, "A role")
         guard !user.memberOf.contains(role.name) else { throw Self.refusal("\(user.name) has \(role.name) already.") }
         return try roles(of: user, user.memberOf + [role.name])
     }
 
-    func revokeRole(_ role: DatabaseUser, from user: DatabaseUser) throws -> UserStatement {
+    package func revokeRole(_ role: DatabaseUser, from user: DatabaseUser) throws -> UserStatement {
         guard user.memberOf.contains(role.name) else { throw Self.refusal("\(role.name) isn't one of \(user.name)'s own roles.") }
         return try roles(of: user, user.memberOf.filter { $0 != role.name })
     }
 
-    func drop(_ user: DatabaseUser) throws -> UserStatement {
+    package func drop(_ user: DatabaseUser) throws -> UserStatement {
         let path = try name(user)
         return UserStatement("DELETE \(user.isRole ? roles : users)/\(path)")
     }
 
     /// A role of the user's own; one mapped to it is the mapping's to change.
-    func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
+    package func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
         guard grant.kind == "role" else { return nil }
         return try? revokeRole(DatabaseUser(name: grant.object, isRole: true), from: user)
     }

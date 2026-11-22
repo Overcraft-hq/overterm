@@ -13,11 +13,11 @@ import Foundation
 /// holds one is said in ANSI-C quotes (`$'…'`, zsh and bash), every such
 /// character as an escape: no raw control byte is ever on the line, and in
 /// a shell that doesn't read `$'…'` the line breaks, it doesn't run.
-enum ShellWord {
+package enum ShellWord {
     /// Whether `word` holds a character the line would act on.
-    static func hasControl(_ word: String) -> Bool { word.unicodeScalars.contains(where: isControl) }
+    package static func hasControl(_ word: String) -> Bool { word.unicodeScalars.contains(where: isControl) }
 
-    static func isControl(_ scalar: Unicode.Scalar) -> Bool {
+    package static func isControl(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.properties.generalCategory {
         case .control, .format, .lineSeparator, .paragraphSeparator: true
         default: false
@@ -26,7 +26,7 @@ enum ShellWord {
 
     /// `word` in ANSI-C quotes: `\`, `'` and every character the line
     /// would act on escaped, the rest as it is.
-    static func ansiC(_ word: String) -> String {
+    package static func ansiC(_ word: String) -> String {
         var out = "$'"
         for scalar in word.unicodeScalars {
             switch scalar {

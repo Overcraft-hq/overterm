@@ -4,12 +4,12 @@ import SwiftUI
 /// context — where it listens, what it goes to, the pod it is pinned to,
 /// how it stands — with Open, Edit and Stop; one that stopped by itself
 /// says why, with Start Again and Remove.
-struct KubeForwardsSection: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var forwards: KubeForwards
-    @ObservedObject var theme: ChromeTheme
+package struct KubeForwardsSection: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var forwards: KubeForwards
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if forwards.forwards.isEmpty {
                 Text(
@@ -111,11 +111,11 @@ struct KubeForwardsSection: View {
 }
 
 /// How many forwards run, beside the section's name.
-struct KubeForwardsCount: View {
-    @ObservedObject var forwards: KubeForwards
-    @ObservedObject var theme: ChromeTheme
+package struct KubeForwardsCount: View {
+    @ObservedObject package var forwards: KubeForwards
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         let live = forwards.forwards.filter { !$0.state.isStopped }.count
         if live > 0 {
             Text(verbatim: "\(live)").foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
@@ -127,11 +127,11 @@ struct KubeForwardsCount: View {
 /// port — the same where it is free, else one at random — the address
 /// (127.0.0.1 unless changed) and https. Forward stays greyed until
 /// `kubectl auth can-i create pods/portforward` says yes.
-struct KubeForwardSheetView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
+package struct KubeForwardSheetView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if let draft = page.forwardDraft {
             ZStack(alignment: .top) {
                 Color.black.opacity(0.001).onTapGesture { page.closeForwardSheet() }

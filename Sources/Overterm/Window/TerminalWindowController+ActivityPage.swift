@@ -5,7 +5,7 @@ import SwiftUI
 /// as the window wires it: a page over the body like Docker's, read only
 /// while it is the page on screen in a window that shows.
 extension TerminalWindowController {
-    func activityWorkspacePage() -> WorkspacePage {
+    package func activityWorkspacePage() -> WorkspacePage {
         var page = WorkspacePage(.activity)
         // Made the first time it opens.
         page.makeView = { [weak self] in
@@ -34,7 +34,7 @@ extension TerminalWindowController {
     }
 
     /// The page declared; the Where column's titles from every window.
-    func wireActivityPage() {
+    package func wireActivityPage() {
         declarePage(activityWorkspacePage())
         activityPage.tabTitles = { Self.activityTabTitles() }
         activityPage.tabFacts = { Self.activityTabFacts() }
@@ -108,7 +108,7 @@ extension TerminalWindowController {
     }
 
     /// Every window's tabs' titles, by id.
-    static func activityTabTitles() -> [UUID: String] {
+    package static func activityTabTitles() -> [UUID: String] {
         var titles: [UUID: String] = [:]
         for window in (NSApp as NSApplication?)?.windows ?? [] {
             guard let controller = window.windowController as? TerminalWindowController else { continue }
@@ -120,7 +120,7 @@ extension TerminalWindowController {
     /// What every window says of its tabs (6.5): title, the checkout its
     /// sidebar shows, its branch and repository from the window's
     /// worktrees, its place in the strips; and every checkout known.
-    static func activityTabFacts() -> (tabs: [UUID: ActivityTabFacts], checkouts: [String]) {
+    package static func activityTabFacts() -> (tabs: [UUID: ActivityTabFacts], checkouts: [String]) {
         var tabs: [UUID: ActivityTabFacts] = [:]
         var checkouts: Set<String> = []
         var order = 0
@@ -151,7 +151,7 @@ extension TerminalWindowController {
     /// The checkout a tab's sidebar shows, kept by what it is made of: the
     /// lookup asks the disk for `.git` up the folders, and the page's rows
     /// are made every tick.
-    static func activityCheckout(of tab: Tab) -> String? {
+    package static func activityCheckout(of tab: Tab) -> String? {
         let key = [tab.attachedCheckout?.path, tab.agentDirectory, tab.workingDirectory].map { $0 ?? "" }.joined(separator: "\u{0}")
         if let known = activityCheckouts[key] { return known.isEmpty ? nil : known }
         let checkout = tab.checkoutSource?.root.standardizedFileURL.path
@@ -164,7 +164,7 @@ extension TerminalWindowController {
 
     /// The forwards Overterm keeps, what a local engine's running
     /// containers publish, the bridge's port: who holds what (6.5).
-    static func activityContextFacts(_ context: inout ActivityContext) {
+    package static func activityContextFacts(_ context: inout ActivityContext) {
         context.forwards = KubeForwards.shared.forwards.compactMap { forward in
             forward.pid.map {
                 ActivityContext.Forward(
@@ -189,7 +189,7 @@ extension TerminalWindowController {
     }
 
     /// The apps running, their bundles by pid.
-    static func activityRunningApps() -> [pid_t: String] {
+    package static func activityRunningApps() -> [pid_t: String] {
         var apps: [pid_t: String] = [:]
         for app in NSWorkspace.shared.runningApplications {
             if let bundle = app.bundleURL?.path { apps[app.processIdentifier] = bundle }
@@ -202,7 +202,7 @@ extension TerminalWindowController {
     /// this Mac's. A project's folder as Compose wrote it: its checkout's
     /// spelling is found off the main thread, with the rows
     /// (`ActivityFolderSpelling`) — a folder's real path asks the disk.
-    static func activityContainers() -> [ActivityContainer] {
+    package static func activityContainers() -> [ActivityContainer] {
         let docker = DockerModel.shared
         guard docker.endpoint?.remoteHost == nil else { return [] }
         var containers: [ActivityContainer] = []
@@ -221,7 +221,7 @@ extension TerminalWindowController {
 
     /// View ▸ Activity (⌥⌘A): the page, or back to the terminal from it.
     /// With Activity off, its settings.
-    @objc func toggleActivityPage(_ sender: Any?) {
+    @objc package func toggleActivityPage(_ sender: Any?) {
         guard Settings.shared.activityEnabled else { return openSettings(.activity) }
         togglePage(.activity)
     }
@@ -229,7 +229,7 @@ extension TerminalWindowController {
     /// A button at the foot of the sidebar's rail: Activity's opens the
     /// page (shown, never toggled away — the strip's × closes it), the gear
     /// Settings, the last puts the sidebar away.
-    func performRailAction(_ action: SidebarRailAction) {
+    package func performRailAction(_ action: SidebarRailAction) {
         switch action {
         case .activity: showActivityPage()
         case .settings: openSettings()
@@ -238,7 +238,7 @@ extension TerminalWindowController {
     }
 
     /// The page, shown (a link's, the switcher's), on `section`.
-    func showActivityPage(_ section: ActivityPageModel.Section? = nil) {
+    package func showActivityPage(_ section: ActivityPageModel.Section? = nil) {
         guard Settings.shared.activityEnabled else { return openSettings(.activity) }
         if let section { activityPage.section = section }
         if store.showingOverlay != .activity { togglePage(.activity) }
@@ -247,7 +247,7 @@ extension TerminalWindowController {
     /// Show in Activity (6.12): the page in this window at the link's row
     /// — a tab's scope, a process or a port selected and followed. With
     /// Activity off, its settings.
-    func showInActivity(_ link: ActivityLink) {
+    package func showInActivity(_ link: ActivityLink) {
         guard Settings.shared.activityEnabled else { return openSettings(.activity) }
         infoPopover?.close()
         if overviewView?.isHidden == false { hideAgentOverview() }
@@ -259,7 +259,7 @@ extension TerminalWindowController {
     /// isolated run stays in the background, often under the user's own
     /// windows: there the window says nothing about the run, and counts as
     /// shown, as Docker's page does.
-    func updateActivityWindowVisible() {
+    package func updateActivityWindowVisible() {
         guard !AppEnvironment.isIsolated, let window else { return }
         let shown = window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
         if activityPage.windowVisible != shown { activityPage.windowVisible = shown }
@@ -267,7 +267,7 @@ extension TerminalWindowController {
 
     /// An `activity.` setting changed: off closes the page and stops its
     /// reading; the interval and everyone's are the page's want and rows.
-    func activitySettingsChanged() {
+    package func activitySettingsChanged() {
         // Agents' port_/proc_ tools come and go with `activity.enabled`
         // and `activity.agentAccess`: the bridge serves for them alone too.
         BrowserBridge.shared.update()
@@ -284,7 +284,7 @@ extension TerminalWindowController {
     /// It holds the census's full level while it shows, so `:5000` finds
     /// AirPlay's listener with no page showing. With Activity off, its
     /// settings.
-    @objc func showActivitySwitcher(_ sender: Any?) {
+    @objc package func showActivitySwitcher(_ sender: Any?) {
         guard Settings.shared.activityEnabled else { return openSettings(.activity) }
         togglePalette(scope: .activity)
         guard paletteView?.isHidden == false, palette.scope == .activity else { return }
@@ -293,7 +293,7 @@ extension TerminalWindowController {
 
     /// The palette's tab changed to `scope`: the switcher held on
     /// Activity's while the palette shows, given back on any other.
-    func activityScopeChanged(_ scope: PaletteItem.Group?) {
+    package func activityScopeChanged(_ scope: PaletteItem.Group?) {
         if scope == .activity {
             guard Settings.shared.activityEnabled, paletteView?.isHidden == false else { return }
             activitySwitcher.open()
@@ -305,7 +305,7 @@ extension TerminalWindowController {
     /// The palette closed: the switcher's hold goes — after what was picked
     /// has opened the page, so the page's want comes first and the ticks
     /// run on rather than starting again.
-    func releaseActivitySwitcher() {
+    package func releaseActivitySwitcher() {
         guard activitySwitcher.holding else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self, self.paletteView?.isHidden != false else { return }
@@ -315,7 +315,7 @@ extension TerminalWindowController {
 
     /// A switcher row picked: ↩ shows it on the page; ⌥↩ opens a port where
     /// Settings ▸ Browser says, or goes to a process's tab.
-    func pickActivityRow(_ row: ActivitySwitcher.Row, run: Bool) {
+    package func pickActivityRow(_ row: ActivitySwitcher.Row, run: Bool) {
         let section: ActivityPageModel.Section
         if case .port = row.target { section = .listening } else { section = .processes }
         if !run {
@@ -333,7 +333,7 @@ extension TerminalWindowController {
     /// ↩ on a row: its tab, in whichever window holds it, the page put
     /// away in this one, and the pane whose tag placed it given the
     /// keyboard (6.3, "its tab and pane").
-    func activityGoTo(tab id: UUID, pane: String? = nil) {
+    package func activityGoTo(tab id: UUID, pane: String? = nil) {
         guard let (window, tab) = Self.activityWindow(of: id) else { return }
         if store.showingOverlay != nil { hideOverlay(focus: false) }
         window.reveal(tabID: id)
@@ -345,7 +345,7 @@ extension TerminalWindowController {
     /// `o`: a listener's URL in the owner tab's browser column — in the
     /// window that holds the tab, brought forward — where Settings ▸
     /// Browser says; ⌥o, or no tab, the default browser or this window's.
-    func activityOpen(_ url: URL, tab id: UUID?, defaultBrowser: Bool) {
+    package func activityOpen(_ url: URL, tab id: UUID?, defaultBrowser: Bool) {
         if defaultBrowser {
             if let linkRecorder { return linkRecorder(url, false) }
             NSWorkspace.shared.open(url)
@@ -359,13 +359,13 @@ extension TerminalWindowController {
     /// `s`: `sample <pid> 5` in a new tab (6.3) — it only reads, its
     /// report to the tab; the tab goes where `NewTabGroup.placement` puts
     /// it, the page put away (`activityTerminal`).
-    func activitySample(_ pid: pid_t) {
+    package func activitySample(_ pid: pid_t) {
         guard pid > 0 else { return }
         activityTerminal(ActivityTerminalRequest(directory: NSHomeDirectory(), command: ActivityPageModel.sampleCommand(pid)))
     }
 
     /// The window holding tab `id`.
-    static func activityWindow(of id: UUID) -> (TerminalWindowController, Tab)? {
+    package static func activityWindow(of id: UUID) -> (TerminalWindowController, Tab)? {
         for window in (NSApp as NSApplication?)?.windows ?? [] {
             guard let controller = window.windowController as? TerminalWindowController else { continue }
             if let tab = controller.store.tabs.first(where: { $0.id == id }) { return (controller, tab) }
@@ -375,13 +375,13 @@ extension TerminalWindowController {
 
     /// Activity: Listening (`activity.listening`, no key by default): the
     /// page on the listening ports.
-    @objc func showActivityListening(_ sender: Any?) {
+    @objc package func showActivityListening(_ sender: Any?) {
         showActivityPage(.listening)
     }
 
     /// Free a Port… (`activity.freePort`, no key by default; 6.3): ⌘K on
     /// its item, the port typed into its field.
-    @objc func showActivityFreePort(_ sender: Any?) {
+    @objc package func showActivityFreePort(_ sender: Any?) {
         guard Settings.shared.activityEnabled else { return openSettings(.activity) }
         if paletteView?.isHidden != false { showPalette(sender) }
         palette.scope = .action
@@ -391,7 +391,7 @@ extension TerminalWindowController {
 
     /// Free a Port…'s item, run with `typed`: the page on Listening, the
     /// port's row selected, its Free asked.
-    func activityFreePort(typed: String?) {
+    package func activityFreePort(typed: String?) {
         guard let typed, let (port, proto) = ActivityPageModel.typedPort(typed) else {
             return tell("Not freed", "“\(DockerMCP.displayed(typed ?? ""))” isn't a port: type a number from 1 to 65535, or one like 5353/udp.")
         }
@@ -401,7 +401,7 @@ extension TerminalWindowController {
 
     /// What the palette offers of Activity: the page and its Listening, and
     /// while the switcher holds the census, its rows.
-    func activityPaletteItems() -> [PaletteItem] {
+    package func activityPaletteItems() -> [PaletteItem] {
         guard Settings.shared.activityEnabled else { return [] }
         let rows = (activitySwitcher.rows ?? []).map { row in
             PaletteItem(
@@ -436,10 +436,10 @@ extension TerminalWindowController {
 /// Whether a window's Activity page holds Docker's model shown (`show`,
 /// given back by `hide` once, whatever the setting did in between).
 @MainActor
-final class ActivityDockerHold {
-    var shown = false
+package final class ActivityDockerHold {
+    package var shown = false
     /// It holds the usage monitor's want.
-    var usage = false
+    package var usage = false
 }
 
 extension TerminalWindowController {
@@ -449,7 +449,7 @@ extension TerminalWindowController {
     /// a new one opens in its tab's folder; a process in no tab every agent
     /// may be asked about, by `outside` alone — never another checkout's
     /// command (8.4, `ActivityBrief.audience`).
-    func presentActivityBrief(_ brief: ActivityBrief, tab id: UUID?) {
+    package func presentActivityBrief(_ brief: ActivityBrief, tab id: UUID?) {
         guard window?.attachedSheet == nil else { return NSSound.beep() }
         let agents = store.tabs.filter { $0.agent != nil }
         let processTab = id.flatMap { id in Self.activityWindow(of: id)?.1 }

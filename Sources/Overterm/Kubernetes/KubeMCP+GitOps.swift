@@ -36,23 +36,23 @@ import Foundation
 /// GitOps; `k8s_apply` on these kinds has the person type the name (G0d).
 extension KubeMCP {
     /// An agent's read: 200 objects or 16 MB a kind (the section's are 500 and 64 MB).
-    static let gitOpsObjects = 200
-    static let gitOpsBytes = 16 << 20
+    package static let gitOpsObjects = 200
+    package static let gitOpsBytes = 16 << 20
     /// At most this many matches are asked of the checkout's git.
-    static let gitOpsReaches = 10
+    package static let gitOpsReaches = 10
     /// A refused kind is read in at most this many namespaces.
-    static let gitOpsFallbackNamespaces = 6
+    package static let gitOpsFallbackNamespaces = 6
     /// What the rail read (a test's own), and the checkouts' remotes.
-    static var gitOpsCache: KubeGitOpsMatchCache = .shared
-    static var gitOpsCheckouts: KubeGitOpsCheckouts = .shared
+    package static var gitOpsCache: KubeGitOpsMatchCache = .shared
+    package static var gitOpsCheckouts: KubeGitOpsCheckouts = .shared
 
     /// `kind`: which objects. `marks`: Argo CD's apps read from the marks
     /// on their objects (14.2.6) — never `application`'s, which are Argo
     /// CD's own Applications.
-    enum GitOpsFilter: String, CaseIterable, Sendable {
+    package enum GitOpsFilter: String, CaseIterable, Sendable {
         case application, applicationset, kustomization, helmrelease, source, marks, all
 
-        init?(typed: String) {
+        package init?(typed: String) {
             switch typed.lowercased() {
             case "application", "applications", "app", "apps", "applications.argoproj.io": self = .application
             case "applicationset", "applicationsets", "appset", "appsets", "applicationsets.argoproj.io": self = .applicationset
@@ -65,7 +65,7 @@ extension KubeMCP {
             }
         }
 
-        func includes(_ role: KubeGitOpsObject.Role) -> Bool {
+        package func includes(_ role: KubeGitOpsObject.Role) -> Bool {
             switch (self, role) {
             case (.all, _), (.application, .application), (.applicationset, .applicationSet), (.kustomization, .kustomization),
                 (.helmrelease, .helmRelease), (.source, .source), (.marks, .markedApp):
@@ -78,7 +78,7 @@ extension KubeMCP {
         /// Flux object's sources and charts, an ApplicationSet's
         /// Applications); `marks`, Argo CD's Applications — which marked
         /// apps have none here.
-        var reads: Set<KubeGitOpsSummary.Kind> {
+        package var reads: Set<KubeGitOpsSummary.Kind> {
             let sources = Set(KubeGitOpsSummary.summarised.filter { $0.group == "source.toolkit.fluxcd.io" })
             func kind(_ group: String, _ resource: String) -> KubeGitOpsSummary.Kind { .init(group: group, resource: resource) }
             switch self {
@@ -94,7 +94,7 @@ extension KubeMCP {
 
     /// A filter's one kind as `discovery` serves it (`application` →
     /// `applications.argoproj.io`), for `k8s_why`.
-    static func gitOpsKind(_ filter: GitOpsFilter, in discovery: KubeDiscovery) -> KubeResourceKind? {
+    package static func gitOpsKind(_ filter: GitOpsFilter, in discovery: KubeDiscovery) -> KubeResourceKind? {
         let name: String? =
             switch filter {
             case .application: "Application"
@@ -108,7 +108,7 @@ extension KubeMCP {
 
     // MARK: k8s_gitops
 
-    static func gitops(_ call: Call, _ target: Target, kubernetes: KubernetesModel, pane: String?, list: KubeContextList, now: Date) async throws -> String {
+    package static func gitops(_ call: Call, _ target: Target, kubernetes: KubernetesModel, pane: String?, list: KubeContextList, now: Date) async throws -> String {
         let typed = call.string("kind") ?? "all"
         guard let filter = GitOpsFilter(typed: typed) else {
             throw BrowserMCP.ToolError(message: "“kind” is application, applicationset, kustomization, helmrelease, source, marks or all.")
@@ -185,11 +185,11 @@ extension KubeMCP {
     /// namespaces only, refused everywhere; `.notYetListed` when it can't
     /// say (cut, failed), and which (`unlisted`): "were cut at …", or
     /// "couldn't be read — <why>" — never one said for the other.
-    struct GitOpsKindRead {
-        var objects: [KubeGitOpsObject] = []
-        var notes: [String] = []
-        var presence = KubeMarkedAppsMode.ApplicationsRead.notYetListed
-        var unlisted: String?
+    package struct GitOpsKindRead {
+        package var objects: [KubeGitOpsObject] = []
+        package var notes: [String] = []
+        package var presence = KubeMarkedAppsMode.ApplicationsRead.notYetListed
+        package var unlisted: String?
     }
 
     /// The agent's bound, as a cut's cause says it.
@@ -432,7 +432,7 @@ extension KubeMCP {
     /// the groups answered — argoproj.io or Flux's not answering discovery
     /// can't tell (`KubePanelGitOps.mode(of:)`). `marks`: the workloads'
     /// own marks are said all the same (`checkout`'s).
-    static func unservedNote(_ discovery: KubeDiscovery, context: String, marks: Bool) -> String {
+    package static func unservedNote(_ discovery: KubeDiscovery, context: String, marks: Bool) -> String {
         let mode = KubePanelGitOps.mode(of: discovery)
         let argo = mode.contains("argo=undiscovered")
         let flux = mode.contains("flux=undiscovered")
@@ -447,12 +447,12 @@ extension KubeMCP {
 /// What `k8s_gitops` says of each object: one line, every message already
 /// through 5.3 (the summaries'), never `status.resources` (a count), the
 /// history, values, patches or a URL's userinfo. Pure.
-enum KubeMCPGitOpsText {
+package enum KubeMCPGitOpsText {
     /// A line's longest.
-    static let lineLimit = 1200
+    package static let lineLimit = 1200
 
     /// `Kustomization flux-system/acme-cron  Failed  c03f9aa failed; applied main@a77b0d1  source acme/fleet ./apps/cron @main  into shop  last error: BuildFailed: …`
-    static func line(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers, now: Date) -> String {
+    package static func line(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers, now: Date) -> String {
         var parts = ["\(object.kind) \(object.ref.description)", object.state.word]
         let tags = object.tags.map { $0.said(now: now) }
         if !tags.isEmpty { parts[1] += " (\(tags.joined(separator: ", ")))" }
@@ -475,7 +475,7 @@ enum KubeMCPGitOpsText {
     }
 
     /// Flux's failed attempt beside what is applied, else the Revision column's.
-    static func revision(_ object: KubeGitOpsObject) -> String? {
+    package static func revision(_ object: KubeGitOpsObject) -> String? {
         let applied = object.revisions.applied.first { !$0.isEmpty }
         if [.kustomization, .helmRelease].contains(object.role), let attempted = object.revisions.attempted, !attempted.isEmpty,
             object.state == .failed || object.state == .stuck, attempted != applied
@@ -489,7 +489,7 @@ enum KubeMCPGitOpsText {
     }
 
     /// "9 GitOps objects in or deploying into shop: 2 Failed, 1 Blocked, 6 Ready."
-    static func counts(_ objects: [KubeGitOpsObject], filter: KubeMCP.GitOpsFilter, failing: Bool, scope: KubeScope) -> String {
+    package static func counts(_ objects: [KubeGitOpsObject], filter: KubeMCP.GitOpsFilter, failing: Bool, scope: KubeScope) -> String {
         let what: String =
             switch filter {
             case .all: "GitOps objects"

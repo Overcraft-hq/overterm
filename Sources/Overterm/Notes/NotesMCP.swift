@@ -6,8 +6,8 @@ import Foundation
 /// a note; with Settings ▸ Notes' "Agents can add drawings" they may add a
 /// new Excalidraw drawing (`notes_draw`), and nothing else.
 @MainActor
-enum NotesMCP {
-    static func call(_ name: String, _ arguments: [String: Any], notes: NotesModel) async throws -> [String: Any] {
+package enum NotesMCP {
+    package static func call(_ name: String, _ arguments: [String: Any], notes: NotesModel) async throws -> [String: Any] {
         await withCheckedContinuation { continuation in notes.whenLoaded { continuation.resume() } }
         func string(_ key: String) -> String? { (arguments[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         let index = notes.index
@@ -59,7 +59,7 @@ enum NotesMCP {
     /// Writes a new drawing of `elements` (Excalidraw's skeletons), in
     /// `folder` of the vault or Obsidian Excalidraw's folder — never over a
     /// file that is there.
-    static func draw(title: String, elements: [[String: Any]], folder: String?, notes: NotesModel) async throws -> URL {
+    package static func draw(title: String, elements: [[String: Any]], folder: String?, notes: NotesModel) async throws -> URL {
         let vault = notes.vault
         let settings = ExcalidrawSettings.read(from: vault.root)
         let place = vault.root.appendingPathComponent(folder ?? settings.folder, isDirectory: true).standardizedFileURL
@@ -82,7 +82,7 @@ enum NotesMCP {
     }
 
     /// Names, aliases and tags first, then lines that hold every word.
-    static func search(_ query: String, index: NotesIndex, vault: NotesVault, limit: Int) async -> String {
+    package static func search(_ query: String, index: NotesIndex, vault: NotesVault, limit: Int) async -> String {
         var out: [String] = []
         let tag = query.hasPrefix("#") ? String(query.dropFirst()) : nil
         if let tag {
@@ -98,7 +98,7 @@ enum NotesMCP {
         return out.isEmpty ? "Nothing in the vault matches “\(query)”." : out.joined(separator: "\n\n")
     }
 
-    static func read(_ path: String, text: String, index: NotesIndex, limit: Int) -> String {
+    package static func read(_ path: String, text: String, index: NotesIndex, limit: Int) -> String {
         var out = "# \(path)\n\n"
         out += text.count > limit ? String(text.prefix(limit)) + "\n… (\(text.count - limit) more characters; max_chars for more)" : text
         let doc = index.document(path)
@@ -109,9 +109,9 @@ enum NotesMCP {
         return out
     }
 
-    static var tools: [[String: Any]] { readTools + (Settings.shared.notesAgentDrawings ? [drawTool] : []) }
+    package static var tools: [[String: Any]] { readTools + (Settings.shared.notesAgentDrawings ? [drawTool] : []) }
 
-    static let drawTool = tool(
+    package static let drawTool = tool(
         "notes_draw",
         "Draw a diagram for the user: a new Excalidraw drawing in their vault (Obsidian Excalidraw's file), opened beside the terminal. "
             + "Give Excalidraw element skeletons: {type: rectangle|ellipse|diamond, x, y, width, height, label: {text}, id}, "
@@ -125,7 +125,7 @@ enum NotesMCP {
             "open": ["type": "boolean", "description": "Open it in the editor (default true)."],
         ], required: ["title", "elements"])
 
-    static let readTools: [[String: Any]] = [
+    package static let readTools: [[String: Any]] = [
         tool(
             "notes_search",
             "Search the user's notes (an Obsidian vault of Markdown): note names and aliases, then lines holding every word. `#tag` lists the notes with that tag.",

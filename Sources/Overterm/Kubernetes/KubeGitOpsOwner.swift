@@ -19,12 +19,12 @@ import Foundation
 /// Used by the rows that ask (`KubeListOptions.owners`), the apply's
 /// warnings (`KubeFieldOwners.managedBy`), a GitOps object's delete and
 /// its parent — each with the object's identity. Pure.
-struct KubeGitOpsOwner: Equatable, Hashable, Sendable {
-    enum Tool: String, Equatable, Hashable, Sendable {
+package struct KubeGitOpsOwner: Equatable, Hashable, Sendable {
+    package enum Tool: String, Equatable, Hashable, Sendable {
         case argoCD, fluxKustomize, fluxHelm
 
         /// The kind of the object that deploys it.
-        var kind: String {
+        package var kind: String {
             switch self {
             case .argoCD: "Application"
             case .fluxKustomize: "Kustomization"
@@ -34,33 +34,33 @@ struct KubeGitOpsOwner: Equatable, Hashable, Sendable {
     }
 
     /// Which mark said it.
-    enum Mark: String, Equatable, Hashable, Sendable {
+    package enum Mark: String, Equatable, Hashable, Sendable {
         case trackingID, argoInstance, appInstance, fluxLabels
     }
 
-    var tool: Tool
-    var name: String
+    package var tool: Tool
+    package var name: String
     /// The owner's own namespace, when the marks say it (Flux's namespace
     /// label; an Application's from `<namespace>_<app>`); nil means the
     /// tool's default namespace, unknown here.
-    var namespace: String?
-    var mark: Mark
+    package var namespace: String?
+    package var mark: Mark
 
     /// False only for `app.kubernetes.io/instance`: Helm sets it too.
-    var isCertain: Bool { mark != .appInstance }
+    package var isCertain: Bool { mark != .appInstance }
 
-    static let trackingAnnotation = "argocd.argoproj.io/tracking-id"
-    static let argoInstanceLabel = "argocd.argoproj.io/instance"
-    static let appInstanceLabel = "app.kubernetes.io/instance"
-    static let kustomizeName = "kustomize.toolkit.fluxcd.io/name"
-    static let kustomizeNamespace = "kustomize.toolkit.fluxcd.io/namespace"
-    static let helmName = "helm.toolkit.fluxcd.io/name"
-    static let helmNamespace = "helm.toolkit.fluxcd.io/namespace"
+    package static let trackingAnnotation = "argocd.argoproj.io/tracking-id"
+    package static let argoInstanceLabel = "argocd.argoproj.io/instance"
+    package static let appInstanceLabel = "app.kubernetes.io/instance"
+    package static let kustomizeName = "kustomize.toolkit.fluxcd.io/name"
+    package static let kustomizeNamespace = "kustomize.toolkit.fluxcd.io/namespace"
+    package static let helmName = "helm.toolkit.fluxcd.io/name"
+    package static let helmNamespace = "helm.toolkit.fluxcd.io/namespace"
     /// Helm's own install annotates this; Argo CD's rendering of a chart doesn't.
-    static let helmReleaseAnnotation = "meta.helm.sh/release-name"
+    package static let helmReleaseAnnotation = "meta.helm.sh/release-name"
 
     /// `Application argocd/acme-shop`, or `probably Argo CD Application acme-shop`.
-    var said: String {
+    package var said: String {
         let place = namespace.map { "\($0)/\(name)" } ?? name
         return isCertain ? "\(tool.kind) \(place)" : "probably Argo CD \(tool.kind) \(place)"
     }
@@ -77,7 +77,7 @@ struct KubeGitOpsOwner: Equatable, Hashable, Sendable {
     /// the object by none of its marks then (`isSelfReferencedObj`), so no
     /// Argo CD owner is said, from that mark or a label beside it. nil
     /// checks nothing: only a caller that can't know the object.
-    static func parse(labels: [String: String], annotations: [String: String], self object: KubeTrackingID.Identity?) -> [KubeGitOpsOwner] {
+    package static func parse(labels: [String: String], annotations: [String: String], self object: KubeTrackingID.Identity?) -> [KubeGitOpsOwner] {
         var owners: [KubeGitOpsOwner] = []
         var copied = false
         if let value = annotations[trackingAnnotation], let id = KubeTrackingID.parse(value) {
@@ -104,14 +104,14 @@ struct KubeGitOpsOwner: Equatable, Hashable, Sendable {
     }
 
     /// From an object's metadata, labels and annotations as JSON gives them.
-    static func parse(metadata: [String: Any]?, self object: KubeTrackingID.Identity?) -> [KubeGitOpsOwner] {
+    package static func parse(metadata: [String: Any]?, self object: KubeTrackingID.Identity?) -> [KubeGitOpsOwner] {
         parse(labels: strings(metadata?["labels"]), annotations: strings(metadata?["annotations"]), self: object)
     }
 
     /// `argocd.argoproj.io/tracking-id`'s Application, the value checked
     /// by `KubeTrackingID` (which object it names is the caller's to
     /// check: `parse(…self:)`); nil when it isn't one.
-    static func tracking(_ value: String) -> KubeGitOpsOwner? {
+    package static func tracking(_ value: String) -> KubeGitOpsOwner? {
         KubeTrackingID.parse(value).map { KubeGitOpsOwner(tracking: $0) }
     }
 
@@ -128,7 +128,7 @@ struct KubeGitOpsOwner: Equatable, Hashable, Sendable {
 extension KubeGitOpsOwner {
     /// The Application a tracking id names: `<appNamespace>_<app>` when it
     /// lives outside Argo CD's namespace (no Kubernetes name has a `_`).
-    init(tracking id: KubeTrackingID) {
+    package init(tracking id: KubeTrackingID) {
         self.init(tool: .argoCD, name: id.appName, namespace: id.appNamespace, mark: .trackingID)
     }
 }

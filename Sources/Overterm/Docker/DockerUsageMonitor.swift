@@ -13,24 +13,24 @@ import Foundation
 /// process every round, and print for people what is read back here as
 /// numbers.
 @MainActor
-final class DockerUsageMonitor: ObservableObject {
+package final class DockerUsageMonitor: ObservableObject {
     /// By container id, from its second read.
-    @Published private(set) var byContainer: [String: DockerUsage] = [:]
+    @Published package private(set) var byContainer: [String: DockerUsage] = [:]
     /// Between rounds, counted after one ends: a slow engine (a remote
     /// one's ssh) stretches the cadence rather than piling reads up.
-    var interval: Duration = .seconds(3)
+    package var interval: Duration = .seconds(3)
     /// After a round that read a container for the first time: its
     /// columns fill a second after it shows, not a round later.
-    var first: Duration = .seconds(1)
+    package var first: Duration = .seconds(1)
     /// How long a read may take: one that hangs (a container whose shim
     /// stopped answering) fails, and the round still ends — else nothing
     /// is read again, and every cell keeps its last number as if current.
-    var timeout: Duration = .seconds(5)
+    package var timeout: Duration = .seconds(5)
     /// Reads at once.
-    nonisolated static let limit = 4
+    package nonisolated static let limit = 4
     /// Failed rounds a container's last value outlives: one hiccup, not
     /// a number read minutes ago.
-    nonisolated static let keptThrough = 1
+    package nonisolated static let keptThrough = 1
 
     private weak var docker: DockerModel?
     private var wanted = 0
@@ -42,14 +42,14 @@ final class DockerUsageMonitor: ObservableObject {
     /// here.
     private weak var readEngine: DockerEngine?
 
-    init(docker: DockerModel) {
+    package init(docker: DockerModel) {
         self.docker = docker
     }
 
-    var isPolling: Bool { polling != nil }
+    package var isPolling: Bool { polling != nil }
 
     /// A page's Containers section shows.
-    func want() {
+    package func want() {
         wanted += 1
         guard polling == nil else { return }
         polling = Task { [weak self] in await self?.poll() }
@@ -57,7 +57,7 @@ final class DockerUsageMonitor: ObservableObject {
 
     /// It went: at the last one, the reads stop — those on their way
     /// cancelled with the task — and the values go.
-    func unwant() {
+    package func unwant() {
         wanted = max(0, wanted - 1)
         guard wanted == 0 else { return }
         polling?.cancel()
@@ -66,7 +66,7 @@ final class DockerUsageMonitor: ObservableObject {
     }
 
     /// Nothing known: the engine went, or another took its place.
-    func reset() {
+    package func reset() {
         readings = DockerUsageReadings()
         misses = [:]
         readEngine = nil
@@ -83,7 +83,7 @@ final class DockerUsageMonitor: ObservableObject {
     /// Every running or paused container read once; whether one read for
     /// the first time waits for its second. The poll calls it, and the
     /// tests, a round at a time.
-    func round() async -> Bool {
+    package func round() async -> Bool {
         guard let docker, let engine = docker.engine else {
             reset()
             return false
@@ -126,7 +126,7 @@ final class DockerUsageMonitor: ObservableObject {
 
     /// `read` for each of `ids`, at most `limit` at a time, none for longer
     /// than `timeout`; what came back.
-    nonisolated static func read<Value: Sendable>(
+    package nonisolated static func read<Value: Sendable>(
         _ ids: [String], limit: Int, timeout: Duration, _ read: @escaping @Sendable (String) async -> Value?
     ) async -> [String: Value] {
         await withTaskGroup(of: (String, Value?).self) { group in
@@ -148,7 +148,7 @@ final class DockerUsageMonitor: ObservableObject {
     /// What `work` gives within `timeout`, else nil, and `work` cancelled:
     /// a read's connection closes then (`UnixHTTPTransport.send`), so the
     /// group isn't kept waiting for it.
-    nonisolated static func within<Value: Sendable>(_ timeout: Duration, _ work: @escaping @Sendable () async -> Value?) async -> Value? {
+    package nonisolated static func within<Value: Sendable>(_ timeout: Duration, _ work: @escaping @Sendable () async -> Value?) async -> Value? {
         await withTaskGroup(of: Value?.self) { group in
             group.addTask { await work() }
             group.addTask {
@@ -165,7 +165,7 @@ final class DockerUsageMonitor: ObservableObject {
     /// a switched-away engine isn't asked again (its ssh is closing). Made
     /// here, not in a closure of the main actor's: that one would be
     /// isolated to it (CLAUDE.md, a block for a queue).
-    nonisolated static func reader(_ engine: DockerEngine, of docker: DockerModel) -> @Sendable (String) async -> ContainerStatsSample? {
+    package nonisolated static func reader(_ engine: DockerEngine, of docker: DockerModel) -> @Sendable (String) async -> ContainerStatsSample? {
         // Held for one round, as `round` holds it.
         { id in
             guard !Task.isCancelled, await docker.engine === engine else { return nil }

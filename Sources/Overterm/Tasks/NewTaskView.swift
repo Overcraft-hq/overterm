@@ -1,23 +1,23 @@
 import SwiftUI
 
 /// The New Task sheet: branch, base, and what to start in it.
-struct NewTaskView: View {
-    let repo: URL
-    let defaultBase: String
+package struct NewTaskView: View {
+    package let repo: URL
+    package let defaultBase: String
     /// Settings ▸ Agents: what to start, and where the worktree goes.
-    let defaultAgent: Agent?
-    let location: Settings.WorktreeLocation
+    package let defaultAgent: Agent?
+    package let location: Settings.WorktreeLocation
     /// The repository's compose file, when Docker is on and it has one:
     /// the new worktree's stack can be started with it.
-    var composeFile: String?
+    package var composeFile: String?
     /// The contexts the task's tab may be pinned to (Terminal in this
     /// context, 3.11), read as the sheet opens; nil with Kubernetes off.
-    var kubernetes: (() async -> KubeTaskPin.Offer)?
+    package var kubernetes: (() async -> KubeTaskPin.Offer)?
     /// Called with (branch, base, agent, start the stack, the context to
     /// pin the tab to) — agent nil means a plain shell. Returns an error
     /// message to show, or nil when the task was created.
-    let onCreate: (String, String, Agent?, Bool, String?) async -> String?
-    let onCancel: () -> Void
+    package let onCreate: (String, String, Agent?, Bool, String?) async -> String?
+    package let onCancel: () -> Void
 
     @State private var branch = ""
     @State private var base = ""
@@ -28,7 +28,7 @@ struct NewTaskView: View {
     @State private var offer: KubeTaskPin.Offer?
     @State private var pin: String?
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("New Task").font(.headline)
             Text("A worktree on its own branch, with a tab in it.")

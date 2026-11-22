@@ -7,10 +7,10 @@ import Foundation
 /// (discovery says so) it answers that, asking nothing more; a context
 /// whose `metrics` is `none` isn't asked at all.
 extension KubeMCP {
-    static let defaultTop = 20
-    static let maxTop = 200
+    package static let defaultTop = 20
+    package static let maxTop = 200
 
-    static func top(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
+    package static func top(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
         let nodes: Bool
         switch (call.string("kind") ?? "pods").lowercased() {
         case "pods", "pod", "po": nodes = false
@@ -54,7 +54,7 @@ extension KubeMCP {
     }
 
     /// At most this many named pods are read for their specs.
-    static let maxShareReads = 10
+    package static let maxShareReads = 10
 
     /// The pods' requests and limits, for their shares (metrics.md 7): a
     /// named pod's own object, one GET each (at most `maxShareReads`),
@@ -65,7 +65,7 @@ extension KubeMCP {
     /// where that fails, what the Pods list last read whole for those
     /// namespaces. Nothing else is read for them; without either, the raw
     /// usage only, and why.
-    static func shareSpecs(
+    package static func shareSpecs(
         for samples: [KubePodMetrics], named: Bool, _ target: Target, kubernetes: KubernetesModel
     ) async -> (specs: [KubeRowID: KubePodShares.Spec], said: String?) {
         guard !samples.isEmpty else { return ([:], nil) }
@@ -129,7 +129,7 @@ extension KubeMCP {
 
 extension KubeMCPText {
     /// Rows padded into columns, the header first.
-    static func columns(_ header: [String], _ rows: [[String]]) -> String {
+    package static func columns(_ header: [String], _ rows: [[String]]) -> String {
         var widths = header.map(\.count)
         for row in rows { for (index, cell) in row.enumerated() where index < widths.count { widths[index] = max(widths[index], cell.count) } }
         func line(_ cells: [String]) -> String {
@@ -141,12 +141,12 @@ extension KubeMCPText {
     }
 
     /// When metrics-server took the samples, said once.
-    static func sampled(_ stamps: [Date?], window: String?, now: Date) -> String {
+    package static func sampled(_ stamps: [Date?], window: String?, now: Date) -> String {
         guard let oldest = stamps.compactMap({ $0 }).min() else { return "" }
         return "Sampled by metrics-server \(KubeMetricsFormat.age(now.timeIntervalSince(oldest))) ago" + (window.map { " over \($0)" } ?? "") + "."
     }
 
-    static func topPods(
+    package static func topPods(
         _ samples: [KubePodMetrics], allNamespaces: Bool, containers: Bool, sortBy: String, limit: Int, now: Date,
         specs: [KubeRowID: KubePodShares.Spec] = [:]
     ) -> String {
@@ -190,7 +190,7 @@ extension KubeMCPText {
         return said.isEmpty ? text : text + "\n" + said
     }
 
-    static func topNodes(_ samples: [KubeNodeMetrics], allocatable: [String: KubeUsage], sortBy: String, limit: Int, now: Date) -> String {
+    package static func topNodes(_ samples: [KubeNodeMetrics], allocatable: [String: KubeUsage], sortBy: String, limit: Int, now: Date) -> String {
         guard !samples.isEmpty else { return "No node samples." }
         let key: (KubeUsage) -> Double = sortBy == "memory" ? { $0.memory } : { $0.cpu }
         let sorted = samples.sorted { (key($0.usage), $1.name) > (key($1.usage), $0.name) }

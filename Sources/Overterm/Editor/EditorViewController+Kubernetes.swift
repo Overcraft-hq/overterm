@@ -8,7 +8,7 @@ import SwiftUI
 /// folder rendered). Its bar sits where a `.sql` file's console does:
 /// Diff with Cluster, Apply… — the session does both (KubeManifestSession).
 extension EditorViewController {
-    func attachManifest(_ buffer: EditorBuffer) {
+    package func attachManifest(_ buffer: EditorBuffer) {
         guard Settings.shared.kubernetesEnabled, buffer.sqlConsole == nil, let url = buffer.url, buffer.document.unavailable == nil,
             KubeManifest.isYAML(url)
         else { return }
@@ -44,7 +44,7 @@ extension EditorViewController {
     /// The manifest's session asks this editor — where its caret is, which
     /// files are unsaved, the window to ask in: a cluster object's YAML is
     /// shown by two editors, and the one showing it last answers.
-    func bindManifest(_ buffer: EditorBuffer, _ session: KubeManifestSession) {
+    package func bindManifest(_ buffer: EditorBuffer, _ session: KubeManifestSession) {
         session.caret = { [weak self, weak buffer] in
             guard let self, let buffer else { return 0 }
             return buffer === self.active ? self.textView.selectedRange().location : buffer.selection.first?.location ?? 0
@@ -60,7 +60,7 @@ extension EditorViewController {
     }
 
     /// The manifest's bar, under its text.
-    func showManifestBar(_ session: KubeManifestSession) {
+    package func showManifestBar(_ session: KubeManifestSession) {
         session.host = session.host ?? kubernetesHost
         consoleHost.rootView = AnyView(KubeManifestBar(session: session, theme: chrome))
         let banner: AnyPublisher<Bool, Never> = session.resource.map { $0.$clusterChange.map { $0 != nil }.eraseToAnyPublisher() } ?? Just(false).eraseToAnyPublisher()
@@ -71,7 +71,7 @@ extension EditorViewController {
     }
 
     /// The buffer of `url`'s manifest, while it is open.
-    func manifestSession(for url: URL) -> KubeManifestSession? {
+    package func manifestSession(for url: URL) -> KubeManifestSession? {
         let key = url.standardizedFileURL.resolvingSymlinksInPath()
         return buffers.first { $0.url?.standardizedFileURL.resolvingSymlinksInPath() == key }?.kubeManifest
     }
@@ -80,7 +80,7 @@ extension EditorViewController {
 
     /// The fields the docs don't know, marked as warnings — from what is
     /// cached alone: nothing is read for them.
-    func refreshKubeFieldMarks(_ buffer: EditorBuffer) {
+    package func refreshKubeFieldMarks(_ buffer: EditorBuffer) {
         guard let manifest = buffer.kubeManifest else { return }
         let marks = Settings.shared.kubernetesEnabled ? manifest.fieldMarks(in: buffer.storage.string) : []
         let diagnostics = marks.map { EditorDiagnostic(range: $0.range, severity: .warning, message: $0.message, source: "kubernetes") }
@@ -93,7 +93,7 @@ extension EditorViewController {
     }
 
     /// Once typing pauses.
-    func scheduleKubeFieldMarks(_ buffer: EditorBuffer) {
+    package func scheduleKubeFieldMarks(_ buffer: EditorBuffer) {
         pendingKubeMarks?.cancel()
         let work = DispatchWorkItem { [weak self, weak buffer] in
             MainActor.assumeIsolated {
@@ -111,7 +111,7 @@ extension EditorViewController {
     /// OpenAPI v3, a sign-in failing) or offer nothing, the regular
     /// completion instead. False when there is nothing to offer.
     @discardableResult
-    func updateKubeCompletion(manual: Bool) -> Bool {
+    package func updateKubeCompletion(manual: Bool) -> Bool {
         guard Settings.shared.kubernetesEnabled, let buffer = active, let manifest = buffer.kubeManifest, textView.selectedRanges.count == 1,
             textView.selectedRange().length == 0, let window = view.window
         else { return false }

@@ -15,24 +15,24 @@ import Foundation
 ///   `client-certificate-data`, `password`, an auth provider's
 ///   `id-token`, `refresh-token`, `client-secret`…), `password=`-style
 ///   pairs, and base64-looking blobs (`maskBase64Blobs`).
-enum Secrets {
-    static let words = ["PASSWORD", "PASSWD", "SECRET", "TOKEN", "KEY", "CREDENTIAL", "PRIVATE", "AUTH", "SESSION", "SALT", "DSN"]
+package enum Secrets {
+    package static let words = ["PASSWORD", "PASSWD", "SECRET", "TOKEN", "KEY", "CREDENTIAL", "PRIVATE", "AUTH", "SESSION", "SALT", "DSN"]
     /// Words that are secret only as a whole word of the name — `_`, `-`,
     /// `.` or a camelCase hump around them: `RABBITMQ_DEFAULT_PASS`,
     /// `MYSQL_PWD`, `GPG_PASSPHRASE`, Helm's `rootPwd`, a `CERT_PIN` — never
     /// `BYPASS_CACHE`, `COMPASS_URL` or `PASSENGER_COUNT`.
-    static let tokenWords: Set<String> = ["PASS", "PWD", "PASSPHRASE", "PIN"]
+    package static let tokenWords: Set<String> = ["PASS", "PWD", "PASSPHRASE", "PIN"]
     /// Keys that carry those words and aren't secrets: the shell's working
     /// directory is `PWD`.
-    static let harmless: Set<String> = ["KEYBOARD", "PUBLIC_KEY_PATH", "AUTH_ENABLED", "MONKEY", "PWD", "OLDPWD"]
+    package static let harmless: Set<String> = ["KEYBOARD", "PUBLIC_KEY_PATH", "AUTH_ENABLED", "MONKEY", "PWD", "OLDPWD"]
     /// Secret names none of the words find: `sshpass -e` reads the password
     /// from `SSHPASS`.
-    static let secretNames: Set<String> = ["SSHPASS"]
+    package static let secretNames: Set<String> = ["SSHPASS"]
     /// Names that hold a password and nothing else though none of their
     /// words says so (`namesPassword`): `SSHPASS`, redis-cli's `REDISCLI_AUTH`.
-    static let passwordNames: Set<String> = secretNames.union(["REDISCLI_AUTH"])
+    package static let passwordNames: Set<String> = secretNames.union(["REDISCLI_AUTH"])
 
-    static func isSecret(_ key: String) -> Bool {
+    package static func isSecret(_ key: String) -> Bool {
         let upper = key.uppercased()
         guard !harmless.contains(upper) else { return false }
         return secretNames.contains(upper) || words.contains { upper.contains($0) } || !tokenWords.isDisjoint(with: tokens(key))
@@ -40,7 +40,7 @@ enum Secrets {
 
     /// A name's words: split on anything not a letter or digit, and where a
     /// lowercase letter or digit meets an uppercase one; uppercased.
-    static func tokens(_ key: String) -> [String] {
+    package static func tokens(_ key: String) -> [String] {
         var tokens: [String] = []
         var current = ""
         var afterLower = false
@@ -62,13 +62,13 @@ enum Secrets {
         return tokens
     }
 
-    static func mask(_ value: String) -> String { value.isEmpty ? "" : "••••••" }
+    package static func mask(_ value: String) -> String { value.isEmpty ? "" : "••••••" }
 
     /// `postgres://user:pass@host/db` keeps everything but the password.
     /// A URL's userinfo holds no `/`, `?` or `#` (RFC 3986), so a port
     /// and a later `@` (`http://api:8080/users/jane@example.com`) are no
     /// password.
-    static func maskURL(_ value: String) -> String {
+    package static func maskURL(_ value: String) -> String {
         // No user is Redis's way: `redis://:pass@host`.
         guard let range = value.range(of: #"://[^:/?#@\s]*:([^/?#@\s]+)@"#, options: .regularExpression) else { return value }
         let segment = value[range]
@@ -76,7 +76,7 @@ enum Secrets {
         return value.replacingCharacters(in: segment.index(after: colon)..<at, with: "••••••")
     }
 
-    static func masked(_ key: String, _ value: String) -> String {
+    package static func masked(_ key: String, _ value: String) -> String {
         isSecret(key) ? mask(value) : maskURL(value)
     }
 
@@ -85,18 +85,18 @@ enum Secrets {
     /// anyway: a dev stack's password is often its image's name
     /// (`POSTGRES_PASSWORD=postgres`), and taking that out blanks the
     /// container's own name, its paths and its log, not a secret.
-    static func values(in env: [(key: String, value: String)], besides names: Set<String> = []) -> [String] {
+    package static func values(in env: [(key: String, value: String)], besides names: Set<String> = []) -> [String] {
         env.filter { isSecret($0.key) && $0.value.count >= 4 && !names.contains($0.value) }.map(\.value)
     }
 
-    static func redact(_ text: String, values: [String]) -> String {
+    package static func redact(_ text: String, values: [String]) -> String {
         values.sorted { $0.count > $1.count }.reduce(text) { $0.replacingOccurrences(of: $1, with: "••••••") }
     }
 
     /// Every URL's password in `text` masked, not just the first: a log
     /// line can name two databases. No `/`, `?` or `#` in a password, as
     /// in `maskURL`: a request's path with an email in it stays.
-    static func maskURLs(in text: String) -> String {
+    package static func maskURLs(in text: String) -> String {
         guard hasBytes(text, Array("://".utf8)) else { return text }
         return text.replacingOccurrences(of: #"(://[^:/?#@\s]*:)([^/?#@\s]+)(@)"#, with: "$1••••••$3", options: .regularExpression)
     }
@@ -104,13 +104,13 @@ enum Secrets {
     /// What an agent may read of `text`: the env's secret values (but
     /// `names`, see `values`) and every URL's password taken out — it
     /// lands in the agent's transcript.
-    static func scrub(_ text: String, env: [(key: String, value: String)], keeping names: Set<String> = []) -> String {
+    package static func scrub(_ text: String, env: [(key: String, value: String)], keeping names: Set<String> = []) -> String {
         maskURLs(in: redact(text, values: values(in: env, besides: names)))
     }
 
     /// `${VAR}` or `$VAR`, nothing else: a default (`${VAR:-pw}`) may be
     /// the secret itself.
-    static func isReference(_ text: String) -> Bool {
+    package static func isReference(_ text: String) -> Bool {
         text.range(of: #"^\$(\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Za-z_][A-Za-z0-9_]*)$"#, options: .regularExpression) != nil
     }
 
@@ -127,7 +127,7 @@ enum Secrets {
     /// an assignment's (`env PGPASSWORD='a b'`). Compose has put `.env`'s
     /// values into a command already, so the container's env can't name
     /// them all. A `${VAR}` stays as written.
-    static func maskArguments(_ words: [String]) -> [String] { maskArguments(words, among: [], depth: 0) }
+    package static func maskArguments(_ words: [String]) -> [String] { maskArguments(words, among: [], depth: 0) }
 
     /// `outer`: the programs of the command a script's words are a word of
     /// (`maskScript`), whose flags they may be; `depth`: how many scripts
@@ -260,7 +260,7 @@ enum Secrets {
 
     /// A flag's name that says a secret follows: the env's words, and a
     /// pass (`--requirepass`, `--pass`, `--db-pass`).
-    static func isSecretFlag(_ name: String) -> Bool {
+    package static func isSecretFlag(_ name: String) -> Bool {
         let lower = name.lowercased()
         return isSecret(name.replacingOccurrences(of: "-", with: "_")) || lower.hasSuffix("pass") || lower.contains("passphrase")
     }
@@ -272,7 +272,7 @@ enum Secrets {
     /// one generated in 64, so only a `${VAR}` stays as written
     /// (`maskPassword`). A key's, a certificate's or a secret's value may
     /// name a file (`--key /certs/key.pem`): its path stays (`maskValue`).
-    static func namesPassword(_ name: String) -> Bool {
+    package static func namesPassword(_ name: String) -> Bool {
         let words = tokens(name)
         let lower = name.lowercased()
         guard Set(["FILE", "PATH", "DIR"]).isDisjoint(with: words), !["file", "path", "dir"].contains(where: { lower.hasSuffix($0) }) else { return false }
@@ -549,12 +549,12 @@ enum Secrets {
 extension Secrets {
     /// Registry clients whose `login` takes the password as `-p`, Docker's
     /// flags; `helm registry login` and `crane auth login` take it the same.
-    static let registryClients: Set<String> = ["docker", "podman", "nerdctl", "finch", "buildah", "skopeo", "oras", "cosign"]
+    package static let registryClients: Set<String> = ["docker", "podman", "nerdctl", "finch", "buildah", "skopeo", "oras", "cosign"]
     /// The global flags that take a value — the registry clients', helm's,
     /// crane's —: before a subcommand, such a flag's value written apart
     /// (`docker --context login …`) is no subcommand. A flag missing here
     /// is read as a switch.
-    static let globalValuedFlags: Set<String> = [
+    package static let globalValuedFlags: Set<String> = [
         // docker
         "-c", "--context", "-H", "--host", "--config", "-l", "--log-level", "--tlscacert", "--tlscert", "--tlskey",
         // podman
@@ -580,23 +580,23 @@ extension Secrets {
     /// `--creds user:password` — podman's, buildah's, skopeo's — and
     /// skopeo's `--src-creds`, `--dest-creds`: in any subcommand, a pull's,
     /// a push's, a copy's.
-    static let credentialFlags: Set<String> = ["--creds", "--src-creds", "--dest-creds"]
+    package static let credentialFlags: Set<String> = ["--creds", "--src-creds", "--dest-creds"]
     /// The OpenLDAP tools: `-w` is the bind password (ldappasswd's `-a` and
     /// `-s` the old and the new one).
-    static let ldapTools: Set<String> = [
+    package static let ldapTools: Set<String> = [
         "ldapsearch", "ldapmodify", "ldapadd", "ldapdelete", "ldapmodrdn", "ldappasswd", "ldapwhoami", "ldapcompare", "ldapexop", "ldapvc",
     ]
     /// The LDAP tools' short options that take a value wherever they exist —
     /// a letter that is a switch in one tool (ldapmodify's `-a`) isn't
     /// here: taken for a value, the `-w` after it would be skipped.
-    static let ldapValued: Set<Character> = ["d", "D", "e", "E", "f", "h", "H", "o", "O", "p", "P", "R", "U", "X", "y", "Y", "b", "l", "T", "z"]
+    package static let ldapValued: Set<Character> = ["d", "D", "e", "E", "f", "h", "H", "o", "O", "p", "P", "R", "U", "X", "y", "Y", "b", "l", "T", "z"]
     /// Samba's clients: `-U user%password`.
-    static let sambaClients: Set<String> = ["smbclient", "rpcclient", "smbcacls", "smbcquotas", "smbget", "smbtree", "net"]
+    package static let sambaClients: Set<String> = ["smbclient", "rpcclient", "smbcacls", "smbcquotas", "smbget", "smbtree", "net"]
 
     /// What a word that ends a shell command is: what follows is another
     /// command, with its own flags (a `docker run -p 8080:80` after a
     /// `docker login -p …`).
-    static let commandSeparators: Set<String> = ["&&", "||", ";", "|", "&", "|&", ";;", "(", ")", "{", "}"]
+    package static let commandSeparators: Set<String> = ["&&", "||", ";", "|", "&", "|&", ";;", "(", ")", "{", "}"]
 
     /// The passwords programs take in flags and places that say nothing of
     /// a password — a registry login's `-p` (`docker login`, `podman`,
@@ -607,7 +607,7 @@ extension Secrets {
     /// and `enc -k` — each only within its own command, so a port's `-p`
     /// elsewhere, or the `ssh -p 2222` sshpass runs, stays. Only a
     /// `${VAR}` stays as written there (`maskPassword`).
-    static func maskProgramPasswords(_ words: [String]) -> [String] {
+    package static func maskProgramPasswords(_ words: [String]) -> [String] {
         let programs = words.indices.compactMap { index -> (Int, String)? in
             let program = (words[index] as NSString).lastPathComponent
             return passwordPrograms.contains(program) ? (index, program) : nil
@@ -653,13 +653,13 @@ extension Secrets {
     }
 
     /// Every program `maskProgramPasswords` knows a rule for.
-    static let passwordPrograms: Set<String> =
+    package static let passwordPrograms: Set<String> =
         registryClients.union(ldapTools).union(sambaClients).union(["helm", "crane", "sshpass", "htpasswd", "openssl"])
 
     /// For each word, where a command it begins would end: at the next
     /// separator, or after the next word a separator is glued to (`pw;`).
     /// One pass from the end — a linker's argv has thousands of words.
-    static func commandEnds(_ words: [String]) -> [Int] {
+    package static func commandEnds(_ words: [String]) -> [Int] {
         var ends = [Int](repeating: words.count, count: words.count)
         var end = words.count
         for index in words.indices.reversed() {
@@ -841,7 +841,7 @@ extension Secrets {
     /// mount_smbfs's, smbutil's — at a word's start or a value's
     /// (`--url=//…`), whatever the program: `mount` keeps its argv while
     /// mount_smbfs runs. No scheme, so `maskURLs` never sees it.
-    static func maskNetworkPath(_ word: String) -> String {
+    package static func maskNetworkPath(_ word: String) -> String {
         guard hasBytes(word, doubleSlash) else { return word }
         return word.replacingOccurrences(of: #"(^|=)(//[^/:@\s]*:)([^/@\s]+)(@)"#, with: "$1$2••••••$4", options: .regularExpression)
     }
@@ -852,7 +852,7 @@ extension Secrets {
 // MARK: Credentials in text
 
 extension Secrets {
-    static let credentialMask = "••••••"
+    package static let credentialMask = "••••••"
 
     /// What a credential in free text looks like, and what it becomes.
     /// The key-value pattern covers a kubeconfig's fields as YAML or JSON
@@ -864,7 +864,7 @@ extension Secrets {
     /// in YAML a key on its own line (`secret:` over `secretName: …`) is a
     /// block, and the next line's key no value. Tokens by their vendor's
     /// prefix (GitHub's, Slack's, GitLab's, Stripe's) keep the prefix.
-    static let credentialPatterns: [(String, String)] = [
+    package static let credentialPatterns: [(String, String)] = [
         // A PEM block's body, its armour kept.
         (#"(-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----)[\s\S]*?(-----END [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----)"#, "$1 \(credentialMask) $2"),
         (#"(?i)(\bbearer[ \t]+)[A-Za-z0-9\-._~+/]+=*"#, "$1\(credentialMask)"),
@@ -886,7 +886,7 @@ extension Secrets {
 
     /// `text` with every credential `credentialPatterns` finds masked, then
     /// every base64-looking blob.
-    static func scrubCredentials(_ text: String) -> String {
+    package static func scrubCredentials(_ text: String) -> String {
         var out = text
         // ASCII lowercased once: what the patterns' needles are looked for in.
         let lowered = text.utf8.map { $0 >= 0x41 && $0 <= 0x5A ? $0 | 0x20 : $0 }
@@ -918,7 +918,7 @@ extension Secrets {
 
     /// Whether pattern `index` could match the text whose ASCII-lowercased
     /// bytes are `lowered`. A pattern past the needles' list always runs.
-    static func mayMatch(_ index: Int, lowered: [UInt8]) -> Bool {
+    package static func mayMatch(_ index: Int, lowered: [UInt8]) -> Bool {
         guard index < credentialNeedles.count else { return true }
         let found = lowered.withUnsafeBytes { hay in
             credentialNeedles[index].contains { needle in
@@ -931,7 +931,7 @@ extension Secrets {
 
     /// The shortest run taken for a blob: 32 characters of base64 is 24
     /// bytes, a key's or a token's length; shorter runs are words.
-    static let blobLength = 32
+    package static let blobLength = 32
 
     private static let blobPattern = try? NSRegularExpression(pattern: #"(?<![A-Za-z0-9+/=_-])[A-Za-z0-9+/_-]{\#(blobLength),}={0,2}(?![A-Za-z0-9+/=_-])"#)
 
@@ -942,7 +942,7 @@ extension Secrets {
     /// lowercase hex (and a uid has dashes), a Kubernetes name is lowercase,
     /// a word has no digits. A path (`/var/lib/…`, a slash in front, or
     /// `//`) isn't one.
-    static func maskBase64Blobs(in text: String) -> String {
+    package static func maskBase64Blobs(in text: String) -> String {
         guard text.utf8.count >= blobLength, hasBase64Run(text), let blobPattern else { return text }
         let string = text as NSString
         let matches = blobPattern.matches(in: text, range: NSRange(location: 0, length: string.length))
@@ -955,7 +955,7 @@ extension Secrets {
     /// upper- and a lowercase letter and a digit in it — what the pattern
     /// and `looksLikeBlob` both need — checked byte by byte before the
     /// pattern runs.
-    static func hasBase64Run(_ text: String) -> Bool {
+    package static func hasBase64Run(_ text: String) -> Bool {
         var run = 0
         var upper = false
         var lower = false
@@ -980,7 +980,7 @@ extension Secrets {
     }
 
     /// Whether `text`'s UTF-8 holds `needle`.
-    static func hasBytes(_ text: String, _ needle: [UInt8]) -> Bool {
+    package static func hasBytes(_ text: String, _ needle: [UInt8]) -> Bool {
         func search(_ hay: UnsafeBufferPointer<UInt8>) -> Bool {
             needle.withUnsafeBytes { memmem(hay.baseAddress, hay.count, $0.baseAddress, $0.count) != nil }
         }
@@ -988,7 +988,7 @@ extension Secrets {
         return Array(text.utf8).withUnsafeBufferPointer(search)
     }
 
-    static func looksLikeBlob(_ run: String) -> Bool {
+    package static func looksLikeBlob(_ run: String) -> Bool {
         guard run.count >= blobLength, !run.hasPrefix("/"), !run.contains("//") else { return false }
         var upper = false
         var lower = false

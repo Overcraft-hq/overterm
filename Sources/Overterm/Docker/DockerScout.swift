@@ -1,14 +1,14 @@
 import Foundation
 
 /// How bad Docker Scout says a vulnerability is, the worst first. Pure.
-enum DockerScoutSeverity: Int, CaseIterable, Comparable, Identifiable, Sendable {
+package enum DockerScoutSeverity: Int, CaseIterable, Comparable, Identifiable, Sendable {
     case critical, high, medium, low, unspecified
 
-    var id: Int { rawValue }
+    package var id: Int { rawValue }
 
     /// Scout's word (`CRITICAL`, `cvssV3_severity`, a tag), as any case.
     /// GitHub says moderate, Debian negligible; anything else says nothing.
-    init(word: String?) {
+    package init(word: String?) {
         switch (word ?? "").trimmingCharacters(in: .whitespaces).lowercased() {
         case "critical": self = .critical
         case "high": self = .high
@@ -20,7 +20,7 @@ enum DockerScoutSeverity: Int, CaseIterable, Comparable, Identifiable, Sendable 
 
     /// SARIF's level, which Scout sets from the severity: error for
     /// critical and high alike, so it is the last thing asked.
-    init?(level: String?) {
+    package init?(level: String?) {
         switch (level ?? "").lowercased() {
         case "error": self = .high
         case "warning": self = .medium
@@ -30,7 +30,7 @@ enum DockerScoutSeverity: Int, CaseIterable, Comparable, Identifiable, Sendable 
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .critical: "Critical"
         case .high: "High"
@@ -41,7 +41,7 @@ enum DockerScoutSeverity: Int, CaseIterable, Comparable, Identifiable, Sendable 
     }
 
     /// What a short summary says it with: `1C 2H`.
-    var letter: String {
+    package var letter: String {
         switch self {
         case .critical: "C"
         case .high: "H"
@@ -51,25 +51,25 @@ enum DockerScoutSeverity: Int, CaseIterable, Comparable, Identifiable, Sendable 
         }
     }
 
-    static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
+    package static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
 }
 
 /// The package a vulnerability is in, as a package URL says it
 /// (`pkg:deb/debian/curl@7.74.0-1.3%2Bdeb11u1?os_distro=bullseye`) — or,
 /// from an older Scout, `name version`. Pure.
-struct DockerScoutPackage: Hashable, Sendable {
-    var purl: String?
+package struct DockerScoutPackage: Hashable, Sendable {
+    package var purl: String?
     /// deb, apk, rpm, npm, golang, maven, pypi…
-    var type: String?
+    package var type: String?
     /// The path before the name: `debian`, `@babel`, `golang.org/x`.
-    var namespace: String?
-    var name: String
-    var version: String?
+    package var namespace: String?
+    package var name: String
+    package var version: String?
 
     /// `pkg:` then the type, the path and `@version`; the qualifiers (`?`)
     /// and the subpath (`#`) are dropped. Every part percent-decoded:
     /// `1%3A4.8.1-1` is the epoch's `1:4.8.1-1`. Nil for anything else.
-    init?(purl: String) {
+    package init?(purl: String) {
         let text = purl.trimmingCharacters(in: .whitespaces)
         guard text.lowercased().hasPrefix("pkg:") else { return nil }
         var rest = Substring(text.dropFirst(4))
@@ -95,14 +95,14 @@ struct DockerScoutPackage: Hashable, Sendable {
         self.version = version.flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    init(name: String, version: String? = nil) {
+    package init(name: String, version: String? = nil) {
         self.name = name
         self.version = version
     }
 
     /// A result's `Package` line: a package URL, else Scout 0.6's
     /// `net 0.3.1-0.2022…`, split at the last space.
-    static func from(message value: String?) -> DockerScoutPackage? {
+    package static func from(message value: String?) -> DockerScoutPackage? {
         guard let value = value?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
         if value.lowercased().hasPrefix("pkg:") { return DockerScoutPackage(purl: value) }
         guard let space = value.lastIndex(of: " ") else { return DockerScoutPackage(name: value) }
@@ -114,7 +114,7 @@ struct DockerScoutPackage: Hashable, Sendable {
     /// As its ecosystem names it: a distribution's package by its name
     /// (`curl`), Maven's `group:artifact`, the rest by their path
     /// (`@babel/traverse`, `golang.org/x/net`).
-    var displayName: String {
+    package var displayName: String {
         guard let namespace, !namespace.isEmpty else { return name }
         switch type {
         case "deb", "apk", "rpm", "alpm": return name
@@ -124,53 +124,53 @@ struct DockerScoutPackage: Hashable, Sendable {
     }
 
     /// What Copy Package copies: its URL, else `name@version`.
-    var reference: String { purl ?? (version.map { name + "@" + $0 } ?? name) }
+    package var reference: String { purl ?? (version.map { name + "@" + $0 } ?? name) }
 
     private static func decode(_ part: Substring) -> String { String(part).removingPercentEncoding ?? String(part) }
 }
 
 /// One vulnerability in one package. A CVE in two packages is two.
-struct DockerScoutFinding: Identifiable, Hashable, Sendable {
+package struct DockerScoutFinding: Identifiable, Hashable, Sendable {
     /// CVE-…, GHSA-…, GMS-…
-    var vulnerability: String
-    var severity: DockerScoutSeverity
+    package var vulnerability: String
+    package var severity: DockerScoutSeverity
     /// Scout's `security-severity`: the advisory's CVSS where it has one,
     /// else a 3.1 of its own — Scout's score, never said to be CVSS.
-    var score: Double?
-    var package: DockerScoutPackage
+    package var score: Double?
+    package var package: DockerScoutPackage
     /// The versions it is in: `<7.74.0-1.3+deb11u2`, `>=1.18.0-6.1`.
-    var affected: String?
+    package var affected: String?
     /// Nil: no fix yet.
-    var fixedIn: String?
+    package var fixedIn: String?
     /// http or https only.
-    var advisory: URL?
-    var summary: String?
+    package var advisory: URL?
+    package var summary: String?
     /// The chance it is exploited in the next 30 days (FIRST's EPSS).
-    var epss: Double?
+    package var epss: Double?
 
-    var id: String { vulnerability + " " + package.reference }
-    var fixable: Bool { fixedIn != nil }
+    package var id: String { vulnerability + " " + package.reference }
+    package var fixable: Bool { fixedIn != nil }
 }
 
 /// What a scan found: Scout's SARIF, read. Pure.
-struct DockerScoutReport: Equatable, Sendable {
+package struct DockerScoutReport: Equatable, Sendable {
     /// In Scout's order, one per vulnerability and package.
-    var findings: [DockerScoutFinding]
+    package var findings: [DockerScoutFinding]
     /// Past `limit`, left out.
-    var dropped = 0
-    var scoutVersion: String?
+    package var dropped = 0
+    package var scoutVersion: String?
     /// What Scout said it indexed, from its progress.
-    var packagesIndexed: Int?
+    package var packagesIndexed: Int?
 
-    static let limit = 5000
+    package static let limit = 5000
 
-    func count(_ severity: DockerScoutSeverity) -> Int { findings.filter { $0.severity == severity }.count }
-    var fixable: Int { findings.filter(\.fixable).count }
+    package func count(_ severity: DockerScoutSeverity) -> Int { findings.filter { $0.severity == severity }.count }
+    package var fixable: Int { findings.filter(\.fixable).count }
     /// The vulnerable packages, each once.
-    var packages: Int { Set(findings.map(\.package.reference)).count }
+    package var packages: Int { Set(findings.map(\.package.reference)).count }
 
     /// `1C 2H 5M`, the severities with none left out: an image's row.
-    var shortSummary: String {
+    package var shortSummary: String {
         let parts = DockerScoutSeverity.allCases.compactMap { severity -> String? in
             let count = count(severity)
             return count == 0 ? nil : "\(count)\(severity.letter)"
@@ -179,7 +179,7 @@ struct DockerScoutReport: Equatable, Sendable {
     }
 
     /// `1 critical, 2 high, 5 medium (3 fixable)`.
-    var sentence: String {
+    package var sentence: String {
         let parts = DockerScoutSeverity.allCases.compactMap { severity -> String? in
             let count = count(severity)
             return count == 0 ? nil : "\(count) \(severity.title.lowercased())"
@@ -191,7 +191,7 @@ struct DockerScoutReport: Equatable, Sendable {
     /// `- CVE-2021-22945 critical 9.1: curl 7.74.0-1.3+deb11u1 (deb) — fixed in … — https://…`.
     /// `limit` lines at most, `characters` at most with the `… and N more`
     /// that ends them: the first are the worst, so it is the end that goes.
-    func lines(_ findings: [DockerScoutFinding], limit: Int = 300, characters: Int = .max) -> String {
+    package func lines(_ findings: [DockerScoutFinding], limit: Int = 300, characters: Int = .max) -> String {
         // Room kept for the line that says how many more.
         let budget = characters == .max ? .max : characters - 24
         var lines: [String] = []
@@ -213,14 +213,14 @@ struct DockerScoutReport: Equatable, Sendable {
     }
 
     /// `9.1`, `10.0`.
-    static func score(_ value: Double) -> String { String(format: "%.1f", value) }
+    package static func score(_ value: Double) -> String { String(format: "%.1f", value) }
 
     // MARK: Reading
 
     /// Scout's `cves --format sarif`, as defensively as it can be read:
     /// each field on its own, a wrong type ignored. Nil when it isn't a
     /// SARIF report at all.
-    static func parse(_ output: String) -> DockerScoutReport? {
+    package static func parse(_ output: String) -> DockerScoutReport? {
         guard let root = json(output) as? [String: Any], let runs = root["runs"] as? [Any] else { return nil }
         var report = DockerScoutReport(findings: [])
         var seen = Set<String>()
@@ -374,14 +374,14 @@ struct DockerScoutReport: Equatable, Sendable {
 /// What the list shows of a report: the severities ticked, what can be
 /// fixed, words in a finding's id or package. Kept per window, from one
 /// image to the next. Pure.
-struct DockerScoutFilter: Equatable, Sendable {
-    var severities = Set(DockerScoutSeverity.allCases)
-    var fixableOnly = false
-    var text = ""
+package struct DockerScoutFilter: Equatable, Sendable {
+    package var severities = Set(DockerScoutSeverity.allCases)
+    package var fixableOnly = false
+    package var text = ""
 
-    var isEmpty: Bool { severities.count == DockerScoutSeverity.allCases.count && !fixableOnly && text.trimmingCharacters(in: .whitespaces).isEmpty }
+    package var isEmpty: Bool { severities.count == DockerScoutSeverity.allCases.count && !fixableOnly && text.trimmingCharacters(in: .whitespaces).isEmpty }
 
-    func matches(_ finding: DockerScoutFinding) -> Bool {
+    package func matches(_ finding: DockerScoutFinding) -> Bool {
         guard severities.contains(finding.severity), !fixableOnly || finding.fixable else { return false }
         let words = text.lowercased().split(whereSeparator: \.isWhitespace)
         guard !words.isEmpty else { return true }
@@ -392,7 +392,7 @@ struct DockerScoutFilter: Equatable, Sendable {
     /// The findings it leaves, by severity — the worst first, none left
     /// empty; within one, the highest score first (none last), then by id
     /// and package.
-    func groups(_ findings: [DockerScoutFinding]) -> [DockerScoutGroup] {
+    package func groups(_ findings: [DockerScoutFinding]) -> [DockerScoutGroup] {
         let shown = findings.filter(matches)
         return DockerScoutSeverity.allCases.compactMap { severity in
             let these = shown.filter { $0.severity == severity }.sorted { a, b in
@@ -408,14 +408,14 @@ struct DockerScoutFilter: Equatable, Sendable {
     }
 }
 
-struct DockerScoutGroup: Identifiable, Equatable, Sendable {
-    var severity: DockerScoutSeverity
-    var findings: [DockerScoutFinding]
-    var id: Int { severity.rawValue }
+package struct DockerScoutGroup: Identifiable, Equatable, Sendable {
+    package var severity: DockerScoutSeverity
+    package var findings: [DockerScoutFinding]
+    package var id: Int { severity.rawValue }
 }
 
 /// Why a scan has no report, said as a person would want it. Pure.
-enum DockerScoutFailure: Error, Equatable, Sendable {
+package enum DockerScoutFailure: Error, Equatable, Sendable {
     /// An isolated run, or a test: the real Scout is never run there.
     case isolated
     case noDocker
@@ -428,7 +428,7 @@ enum DockerScoutFailure: Error, Equatable, Sendable {
     /// Its own last words.
     case failed(String)
 
-    var message: String {
+    package var message: String {
         switch self {
         case .isolated: "This run doesn't run Docker Scout (an isolated run, or a test)."
         case .noDocker: "docker isn't on this Mac: Scout is its plugin."
@@ -444,7 +444,7 @@ enum DockerScoutFailure: Error, Equatable, Sendable {
 
     /// What its exit and its words mean, in that order: a timeout, no
     /// plugin, signed out, no such image — else its last lines.
-    static func classify(status: Int32, stderr: String, stdout: String, image: String, timeoutMinutes: Int) -> DockerScoutFailure {
+    package static func classify(status: Int32, stderr: String, stdout: String, image: String, timeoutMinutes: Int) -> DockerScoutFailure {
         let text = DockerScout.clean(stderr + "\n" + stdout)
         let lower = text.lowercased()
         if status == -1, lower.contains("timed out") { return .timedOut(minutes: timeoutMinutes) }
@@ -459,26 +459,26 @@ enum DockerScoutFailure: Error, Equatable, Sendable {
 }
 
 /// Docker Scout's `cves`, as the Vulnerabilities tab runs it. Pure.
-enum DockerScout {
+package enum DockerScout {
     /// Ten minutes: a big image's first scan indexes every package.
-    static let timeout: TimeInterval = 600
+    package static let timeout: TimeInterval = 600
 
     /// `docker scout cves --format sarif local://<name>`: the engine's
     /// own copy (`local://`, never a registry), as SARIF on stdout —
     /// nothing written to disk — for its own platform when known.
-    static func arguments(for image: String, platform: String?) -> [String] {
+    package static func arguments(for image: String, platform: String?) -> [String] {
         ["scout", "cves", "--format", "sarif"] + (platform.map { ["--platform", $0] } ?? []) + ["local://" + image]
     }
 
     /// Whether the real Scout may run: never in an isolated run (but for
     /// a scenario's stub) nor inside a test process — a scan sends the
     /// image's packages to Docker's service.
-    nonisolated static var mayRunReal: Bool {
+    package nonisolated static var mayRunReal: Bool {
         DockerCLI.override != nil || (!AppEnvironment.isIsolated && NSClassFromString("XCTestCase") == nil)
     }
 
     /// Without ANSI's colours and cursor moves (CSI) and titles (OSC).
-    static func clean(_ text: String) -> String {
+    package static func clean(_ text: String) -> String {
         text.replacingOccurrences(of: #"\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\u001B\[[0-9;?]*[ -/]*[@-~]"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\u001B[@-_]"#, with: "", options: .regularExpression)
@@ -487,7 +487,7 @@ enum DockerScout {
     /// The text's lines, as a terminal would leave them: split at each
     /// carriage return too (a spinner's frames), the glyphs Scout leads
     /// them with taken off, the empty ones and half a character left out.
-    static func lines(of text: String) -> [String] {
+    package static func lines(of text: String) -> [String] {
         text.split(omittingEmptySubsequences: true) { $0 == "\n" || $0 == "\r" || $0 == "\r\n" }.compactMap { line in
             let kept = line.drop { isGlyph($0) || $0.isWhitespace }
             var trimmed = kept.trimmingCharacters(in: .whitespaces)
@@ -499,13 +499,13 @@ enum DockerScout {
 
     /// Scout's latest line — `SBOM of image already cached, 245 packages
     /// indexed` — 160 characters at most; nil while it said nothing.
-    static func progress(in stderr: String) -> String? {
+    package static func progress(in stderr: String) -> String? {
         guard let last = lines(of: clean(stderr)).last else { return nil }
         return last.count > 160 ? String(last.prefix(159)) + "…" : last
     }
 
     /// How many packages Scout says it indexed.
-    static func indexedPackages(in text: String) -> Int? {
+    package static func indexedPackages(in text: String) -> Int? {
         let pattern = #"(\d+) packages indexed|Indexed (\d+) packages"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)

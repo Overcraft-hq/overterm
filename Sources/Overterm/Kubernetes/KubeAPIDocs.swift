@@ -1,19 +1,19 @@
 import Foundation
 
 /// Where the docs came from, said: `fake-dev's API (v1.31.1)`.
-struct KubeDocsSource: Equatable, Sendable {
-    var context: String
-    var version: String
-    var groupVersion: String
+package struct KubeDocsSource: Equatable, Sendable {
+    package var context: String
+    package var version: String
+    package var groupVersion: String
 
-    var said: String { "\(context)'s API" + (version.isEmpty ? "" : " (\(version))") }
+    package var said: String { "\(context)'s API" + (version.isEmpty ? "" : " (\(version))") }
 }
 
 /// A group version the context's index doesn't list (yet): said, never
 /// kept as a failure — another kind on the context is read as ever.
-struct KubeDocsUnserved: Error, Equatable, LocalizedError {
-    let message: String
-    var errorDescription: String? { message }
+package struct KubeDocsUnserved: Error, Equatable, LocalizedError {
+    package let message: String
+    package var errorDescription: String? { message }
 }
 
 /// The cluster's own API docs (3.15), for the app: each context's
@@ -35,16 +35,16 @@ struct KubeDocsUnserved: Error, Equatable, LocalizedError {
 /// was refused (a sign-in it may not open, no free slot). The explain
 /// view asks anew.
 @MainActor
-final class KubeAPIDocs {
-    static let maxContexts = 4
-    static let maxDocuments = 12
+package final class KubeAPIDocs {
+    package static let maxContexts = 4
+    package static let maxDocuments = 12
     /// How long the server's version is taken as it was: then asked again,
     /// and a new version drops what was read.
-    static let versionAge: TimeInterval = 300
+    package static let versionAge: TimeInterval = 300
     /// A group version the index lacks (a CRD applied since): the index
     /// read again, at most this often.
-    static let indexAge: TimeInterval = 30
-    static let failureAge: TimeInterval = 60
+    package static let indexAge: TimeInterval = 30
+    package static let failureAge: TimeInterval = 60
 
     private final class Entry {
         var context: KubeContext
@@ -72,18 +72,18 @@ final class KubeAPIDocs {
 
     private var entries: [String: Entry] = [:]
     private var reading: [String: Task<KubeOpenAPIDocument, Error>] = [:]
-    var now: () -> Date = Date.init
+    package var now: () -> Date = Date.init
     /// What is kept in all, the documents' sizes as read; a test's smaller.
-    var maxBytes = 96 << 20
+    package var maxBytes = 96 << 20
     /// Where an answer is cut off as it is read; a test's smaller.
-    var maxIndexBytes = KubeOpenAPIIndex.maxBytes
-    var maxDocumentBytes = KubeOpenAPIDocument.maxBytes
+    package var maxIndexBytes = KubeOpenAPIIndex.maxBytes
+    package var maxDocumentBytes = KubeOpenAPIDocument.maxBytes
     /// Documents read from a server, for the tests.
-    private(set) var documentsRead = 0
+    package private(set) var documentsRead = 0
 
     /// What is cached for `gvk` on the context, nothing asked; nil when
     /// nothing is (or the context now names another cluster).
-    func cached(_ gvk: KubeGVK, context: KubeContext) -> (document: KubeOpenAPIDocument, source: KubeDocsSource)? {
+    package func cached(_ gvk: KubeGVK, context: KubeContext) -> (document: KubeOpenAPIDocument, source: KubeDocsSource)? {
         guard let entry = entries[context.name], KubernetesModel.sameCluster(entry.context, context),
             let url = entry.index?.url(for: gvk), let document = entry.documents[KubeOpenAPIIndex.key(group: gvk.group, version: gvk.version)],
             document.url == url
@@ -92,7 +92,7 @@ final class KubeAPIDocs {
     }
 
     /// Whether anything was read for the context: marks are made then only.
-    func hasDocuments(for context: KubeContext) -> Bool {
+    package func hasDocuments(for context: KubeContext) -> Bool {
         guard let entry = entries[context.name], KubernetesModel.sameCluster(entry.context, context) else { return false }
         return !entry.documents.isEmpty
     }
@@ -101,7 +101,7 @@ final class KubeAPIDocs {
     /// version (when not known lately), the index (when not read, or it
     /// lacks the group version and is older than `indexAge`), the document —
     /// each one GET. `retry`: ask again even after a failure a minute old.
-    func document(_ gvk: KubeGVK, context: KubeContext, client: KubeClient, retry: Bool = false) async throws -> (
+    package func document(_ gvk: KubeGVK, context: KubeContext, client: KubeClient, retry: Bool = false) async throws -> (
         document: KubeOpenAPIDocument, source: KubeDocsSource
     ) {
         let entry = entry(for: context)
@@ -189,11 +189,11 @@ final class KubeAPIDocs {
     }
 
     /// Everything read for a context goes (its cluster changed; a test).
-    func forget(_ context: String) { entries[context] = nil }
-    func forgetAll() { entries = [:] }
+    package func forget(_ context: String) { entries[context] = nil }
+    package func forgetAll() { entries = [:] }
 
     /// What is kept now: contexts, documents, bytes — for the tests.
-    var kept: (contexts: Int, documents: Int, bytes: Int) {
+    package var kept: (contexts: Int, documents: Int, bytes: Int) {
         let documents = entries.values.flatMap { $0.documents.values }
         return (entries.count, documents.count, documents.reduce(0) { $0 + $1.document.bytes })
     }
@@ -267,30 +267,30 @@ final class KubeAPIDocs {
 /// when Explain is pressed, not before. A field's fields open with a
 /// press, Up goes back a step; Copy as kubectl gives the line it equals.
 @MainActor
-final class KubeExplainSession: ObservableObject, Identifiable {
-    enum State: Equatable {
+package final class KubeExplainSession: ObservableObject, Identifiable {
+    package enum State: Equatable {
         case idle
         case working(String)
         case failed(String)
     }
 
-    let id = UUID()
-    let model: KubernetesModel
-    @Published var query: String
-    @Published var contextName: String?
+    package let id = UUID()
+    package let model: KubernetesModel
+    @Published package var query: String
+    @Published package var contextName: String?
     /// A manifest's apiVersion: its kind at that version, not the preferred one.
-    @Published var apiVersion: String?
-    @Published private(set) var state: State = .idle
-    @Published private(set) var result: KubeFieldDoc?
-    @Published private(set) var source: KubeDocsSource?
+    @Published package var apiVersion: String?
+    @Published package private(set) var state: State = .idle
+    @Published package private(set) var result: KubeFieldDoc?
+    @Published package private(set) var source: KubeDocsSource?
     /// The contexts, for the picker.
-    @Published private(set) var contexts: [KubeContext] = []
+    @Published package private(set) var contexts: [KubeContext] = []
     /// What a request goes through: the context's proxy in a background slot, or a test's.
-    var client: (KubeContext) -> KubeClient
+    package var client: (KubeContext) -> KubeClient
     /// The docs were read: a manifest's editor marks its unknown fields.
-    var onRead: (() -> Void)?
+    package var onRead: (() -> Void)?
 
-    init(query: String, context: String?, apiVersion: String? = nil, model: KubernetesModel) {
+    package init(query: String, context: String?, apiVersion: String? = nil, model: KubernetesModel) {
         self.query = query
         contextName = context
         self.apiVersion = apiVersion
@@ -298,16 +298,16 @@ final class KubeExplainSession: ObservableObject, Identifiable {
         client = { context in model.agentClient(for: context) }
     }
 
-    var context: KubeContext? { contexts.first { $0.name == contextName } }
+    package var context: KubeContext? { contexts.first { $0.name == contextName } }
 
-    var text: String? { result.map(KubeExplain.text) }
+    package var text: String? { result.map(KubeExplain.text) }
 
-    var kubectl: String? {
+    package var kubectl: String? {
         guard let contextName, !query.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
         return KubeExplain.kubectl(query.trimmingCharacters(in: .whitespaces), context: contextName, apiVersion: apiVersion)
     }
 
-    func refreshContexts() async {
+    package func refreshContexts() async {
         guard let list = await model.contextsForAgents() else {
             contexts = []
             return
@@ -316,16 +316,16 @@ final class KubeExplainSession: ObservableObject, Identifiable {
         if contextName == nil { contextName = model.selectedName }
     }
 
-    func explain() { Task { await run() } }
+    package func explain() { Task { await run() } }
 
     /// One of the result's fields, opened.
-    func open(_ field: String) {
+    package func open(_ field: String) {
         query = query.trimmingCharacters(in: .whitespaces) + "." + field
         explain()
     }
 
     /// A step back up the path.
-    func up() {
+    package func up() {
         let parts = query.trimmingCharacters(in: .whitespaces).split(separator: ".")
         guard parts.count > 1 else { return }
         query = parts.dropLast().joined(separator: ".")
@@ -334,9 +334,9 @@ final class KubeExplainSession: ObservableObject, Identifiable {
 
     /// Runs started: an answer is shown only by the latest, so one that
     /// comes after the query changed (or another run began) is dropped.
-    private(set) var generation = 0
+    package private(set) var generation = 0
 
-    func run() async {
+    package func run() async {
         generation += 1
         let run = generation
         let asked = query
@@ -408,7 +408,7 @@ final class KubeExplainSession: ObservableObject, Identifiable {
 
     /// `deployment` → apps/v1 Deployment, as discovery says (kubectl's
     /// names: plural, singular, short name, kind); at `apiVersion` when given.
-    static func kind(_ resource: String, apiVersion: String?, context: KubeContext, client: KubeClient, model: KubernetesModel) async throws
+    package static func kind(_ resource: String, apiVersion: String?, context: KubeContext, client: KubeClient, model: KubernetesModel) async throws
         -> KubeGVK
     {
         var discovery = try await KubeManifestRun.discovery(context, client: client, model: model)
@@ -426,24 +426,24 @@ final class KubeExplainSession: ObservableObject, Identifiable {
 // MARK: A manifest's fields
 
 /// A hover's answer: the docs, said, and where from.
-struct KubeFieldHover: Equatable {
-    var doc: KubeFieldDoc
-    var source: KubeDocsSource
+package struct KubeFieldHover: Equatable {
+    package var doc: KubeFieldDoc
+    package var source: KubeDocsSource
 
-    var text: String { KubeExplain.hover(doc, source: source.said) }
+    package var text: String { KubeExplain.hover(doc, source: source.said) }
 }
 
 extension KubeManifestSession {
     /// The context the docs are read from: the session's, as last read —
     /// a hover doesn't read the kubeconfig again — else read now.
-    func docsContext() async -> KubeContext? {
+    package func docsContext() async -> KubeContext? {
         guard let name = contextName else { return nil }
         if let known = contexts.first(where: { $0.name == name }) { return known }
         return await contextNow()
     }
 
     /// What is cached for `gvk` on the session's context, nothing asked.
-    func cachedDocs(_ gvk: KubeGVK) -> (document: KubeOpenAPIDocument, source: KubeDocsSource)? {
+    package func cachedDocs(_ gvk: KubeGVK) -> (document: KubeOpenAPIDocument, source: KubeDocsSource)? {
         guard let name = contextName, let context = contexts.first(where: { $0.name == name }) else { return nil }
         return model.apiDocs.cached(gvk, context: context)
     }
@@ -454,7 +454,7 @@ extension KubeManifestSession {
     /// `unasked` — the mouse resting there, nobody asked —: read only as a
     /// watch reads (`unaskedClient`): never a browser sign-in, never a proxy
     /// closed for it; the keyboard's hover reads as asked.
-    func fieldHover(at offset: Int, in text: String, fetch: Bool = true, unasked: Bool = false) async -> KubeFieldHover? {
+    package func fieldHover(at offset: Int, in text: String, fetch: Bool = true, unasked: Bool = false) async -> KubeFieldHover? {
         let ns = text as NSString
         guard let (document, key) = KubeManifestFields.key(at: offset, in: ns), let gvk = document.gvk, let context = await docsContext() else { return nil }
         guard let (doc, source) = await docs(gvk, context: context, fetch: fetch, unasked: unasked) else { return nil }
@@ -463,7 +463,7 @@ extension KubeManifestSession {
     }
 
     /// The fields a key typed at `caret` could be, and the word they replace.
-    func fieldCompletions(at caret: Int, in text: String, fetch: Bool = true) async -> (slot: KubeManifestFields.Slot, fields: [KubeFieldSummary])? {
+    package func fieldCompletions(at caret: Int, in text: String, fetch: Bool = true) async -> (slot: KubeManifestFields.Slot, fields: [KubeFieldSummary])? {
         guard let slot = KubeManifestFields.slot(at: caret, in: text as NSString), let gvk = slot.document.gvk, let context = await docsContext(),
             let (doc, _) = await docs(gvk, context: context, fetch: fetch)
         else { return nil }
@@ -474,7 +474,7 @@ extension KubeManifestSession {
     /// The keys the context's docs don't know, from what is cached alone:
     /// nothing is read for them. Empty until a hover, completion or
     /// explain read the docs.
-    func fieldMarks(in text: String) -> [KubeManifestFields.Mark] {
+    package func fieldMarks(in text: String) -> [KubeManifestFields.Mark] {
         guard let name = contextName, let context = contexts.first(where: { $0.name == name }), model.apiDocs.hasDocuments(for: context) else { return [] }
         let documents = KubeManifestFields.documents(text as NSString)
         let docs = model.apiDocs
@@ -483,7 +483,7 @@ extension KubeManifestSession {
 
     /// The explain view for the field at `offset` (else the document's
     /// kind), on the session's context and at the document's apiVersion.
-    func explainSession(at offset: Int, in text: String) -> KubeExplainSession {
+    package func explainSession(at offset: Int, in text: String) -> KubeExplainSession {
         let ns = text as NSString
         let found = KubeManifestFields.key(at: offset, in: ns)
         let document = found?.document ?? KubeManifestFields.documents(ns).first
@@ -499,7 +499,7 @@ extension KubeManifestSession {
     /// Explain, from the bar: the field at the caret in the right-hand
     /// pane, read now. The session made, for the tests.
     @discardableResult
-    func explainAtCaret() -> KubeExplainSession {
+    package func explainAtCaret() -> KubeExplainSession {
         let session = explainSession(at: caret(), in: text())
         session.onRead = { [weak self] in self?.onDocsRead?() }
         host?.showExplain(session)

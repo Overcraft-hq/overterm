@@ -6,7 +6,7 @@ extension KubernetesPageModel {
     /// `h`: the selected Deployment's, StatefulSet's or DaemonSet's History
     /// tab; nothing for another kind.
     @discardableResult
-    func openHistory() -> Bool {
+    package func openHistory() -> Bool {
         guard let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id), ref.hasHistory else { return false }
         detailTab = .history
         open(ref, from: .list)
@@ -18,7 +18,7 @@ extension KubernetesPageModel {
     /// A change's diff in the changes pane (the page steps aside). Two Helm
     /// revisions are two of the release's records read — Secrets, so on
     /// production the session's first asks, naming the context, as Show does.
-    func openChange(_ change: KubeTimelineChange) {
+    package func openChange(_ change: KubeTimelineChange) {
         guard let timeline = detail?.timeline else { return }
         let context = timeline.ref.context
         let production = model.contexts.context(named: context)?.isProduction ?? true

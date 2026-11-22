@@ -3,11 +3,11 @@ import SQLite3
 
 /// A SQLite file, through the system's libsqlite3 — read-only when the
 /// connection says so, at the file's own level.
-actor SQLiteDriver: DatabaseDriver {
-    let connection: DatabaseConnection
-    nonisolated(unsafe) private(set) var db: OpaquePointer?
+package actor SQLiteDriver: DatabaseDriver {
+    package let connection: DatabaseConnection
+    package nonisolated(unsafe) private(set) var db: OpaquePointer?
 
-    init(_ connection: DatabaseConnection) {
+    package init(_ connection: DatabaseConnection) {
         self.connection = connection
     }
 
@@ -15,7 +15,7 @@ actor SQLiteDriver: DatabaseDriver {
         if let db { sqlite3_close_v2(db) }
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         guard db == nil else { return }
         let path = (connection.filePath as NSString).expandingTildeInPath
         guard FileManager.default.fileExists(atPath: path) || !connection.readOnly else {
@@ -33,12 +33,12 @@ actor SQLiteDriver: DatabaseDriver {
         db = handle
     }
 
-    func close() async {
+    package func close() async {
         if let db { sqlite3_close_v2(db) }
         db = nil
     }
 
-    func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ sql: String, limit: Int) async throws -> QueryResult {
         guard let db else { throw DatabaseError.notConnected }
         let started = Date()
         var statement: OpaquePointer?
@@ -79,12 +79,12 @@ actor SQLiteDriver: DatabaseDriver {
         return result
     }
 
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         let attached = try await execute("PRAGMA database_list", limit: 100)
         return attached.rows.compactMap { $0.count > 1 ? $0[1] : nil }
     }
 
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         let quoted = "\"" + schema.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         let rows = try await execute(
             "SELECT name, type FROM \(quoted).sqlite_master WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY name",
@@ -93,7 +93,7 @@ actor SQLiteDriver: DatabaseDriver {
         return rows.map { CatalogTable(schema: schema, name: $0[0] ?? "", isView: $0[1] == "view") }
     }
 
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         var columns: [CatalogColumn] = []
         for table in try await tables(in: schema) {
             let quoted = "\"" + table.name.replacingOccurrences(of: "\"", with: "\"\"") + "\""

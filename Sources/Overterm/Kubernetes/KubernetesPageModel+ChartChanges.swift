@@ -2,13 +2,13 @@ import Foundation
 
 /// The pods' states read for a Metrics tab's markers: whose, where from,
 /// what was seen, and why it couldn't be read.
-struct KubePodStatesReading: Equatable {
-    var ref: KubeObjectRef
-    var path: String
-    var log = KubeRestartLog()
-    var problem: String?
+package struct KubePodStatesReading: Equatable {
+    package var ref: KubeObjectRef
+    package var path: String
+    package var log = KubeRestartLog()
+    package var problem: String?
     /// Refused (403) or the sign-in failed: not read again for this detail.
-    var stopped = false
+    package var stopped = false
 }
 
 /// What the Metrics tab's markers are joined from (docs/design/kubernetes/
@@ -29,7 +29,7 @@ struct KubePodStatesReading: Equatable {
 /// minute of the apiserver's, stopped and said by the same rules.
 extension KubernetesPageModel {
     /// The tab's markers' sources, as they stand.
-    func chartChanges(of session: KubeDetailSession) -> KubeChartChanges {
+    package func chartChanges(of session: KubeDetailSession) -> KubeChartChanges {
         var changes = KubeChartChanges()
         if let timeline = session.timeline {
             changes.timeline = timeline.entries
@@ -50,7 +50,7 @@ extension KubernetesPageModel {
     /// Where the pods' states are read for `session`'s tab: the pod
     /// itself, or a workload's pods by its selector — nil for another kind,
     /// or a workload whose selector isn't known yet.
-    func podStatesPath(of session: KubeDetailSession) -> String? {
+    package func podStatesPath(of session: KubeDetailSession) -> String? {
         let ref = session.ref
         guard let namespace = ref.namespace else { return nil }
         if ref.isPod { return "/api/v1/namespaces/\(KubePath.segment(namespace))/pods/\(KubePath.segment(ref.name))" }
@@ -61,7 +61,7 @@ extension KubernetesPageModel {
 
     /// The tab shows on a page on screen: its History or its events asked
     /// for (once), its pods' states read; else nothing is.
-    func updateChartChanges() {
+    package func updateChartChanges() {
         guard let session = detail else {
             stopPodStates()
             podStates = nil
@@ -86,7 +86,7 @@ extension KubernetesPageModel {
         startPodStates(ref: session.ref, path: path, waitFirst: podStates?.log.states != nil)
     }
 
-    func stopPodStates() {
+    package func stopPodStates() {
         podStatesTask?.cancel()
         podStatesTask = nil
     }
@@ -133,13 +133,13 @@ extension KubernetesPageModel {
 
     /// ⌥-click, or "Show ±30 min": every chart of the tab narrowed to the
     /// marker's time ± 30 minutes — nothing asked: what was sampled, narrowed.
-    func showAround(_ marker: KubeChartMarker, now: Date = Date()) {
+    package func showAround(_ marker: KubeChartMarker, now: Date = Date()) {
         metricsWindow = KubeChartWindow.around(marker.time, now: now)
     }
 
     /// Reset (or Esc): the window before, else the range again. False when there was no window.
     @discardableResult
-    func resetMetricsWindow() -> Bool {
+    package func resetMetricsWindow() -> Bool {
         guard !metricsZoom.isEmpty, metricsTabShows else { return false }
         // One level off the zoom stack.
         metricsZoom.removeLast()
@@ -152,7 +152,7 @@ extension KubernetesPageModel {
     /// a restart's or an OOMKill's previous log — a workload's pod's on
     /// that pod's Logs tab —, a change's History entry and its diff, an
     /// event in Events.
-    func openMarker(_ marker: KubeChartMarker) {
+    package func openMarker(_ marker: KubeChartMarker) {
         switch marker.opens ?? marker.container.map({ .previousLog(pod: nil, container: $0) }) {
         case .previousLog(let pod, let container)?:
             if let pod, let current = detail?.ref, let namespace = current.namespace {

@@ -6,7 +6,7 @@ import Foundation
 /// This Mac's current context is production: a scenario or a test that
 /// read `~/.kube/config` would reach it. `AppEnvironment.kubeconfigs` is
 /// the one place the list is built, and it goes through `paths` below.
-enum KubeconfigSources {
+package enum KubeconfigSources {
     /// The files, first wins:
     /// - `overterm` (`OVERTERM_KUBECONFIG`, a scenario's fake clusters): its
     ///   files and nothing else. Guarded, never one under `~/.kube`.
@@ -15,7 +15,7 @@ enum KubeconfigSources {
     ///   entries and repeats passed over), or `~/.kube/config` when it names
     ///   none; then the setting's `extra` files, a folder giving every file
     ///   in it.
-    static func paths(
+    package static func paths(
         overterm: String?, guarded: Bool, kubeconfig: String?, extra: [String], home: URL,
         fileManager: FileManager = .default
     ) -> [URL] {
@@ -46,7 +46,7 @@ enum KubeconfigSources {
     }
 
     /// A colon-separated list, as KUBECONFIG has it.
-    static func list(_ value: String, home: URL, relativeTo folder: URL? = nil) -> [URL] {
+    package static func list(_ value: String, home: URL, relativeTo folder: URL? = nil) -> [URL] {
         var seen = Set<String>()
         return value.split(separator: ":").compactMap { expand(String($0).trimmingCharacters(in: .whitespaces), home: home, relativeTo: folder) }
             .filter { seen.insert($0.standardizedFileURL.path).inserted }
@@ -56,7 +56,7 @@ enum KubeconfigSources {
     /// relative path against `folder` — a command's own folder, for a
     /// `--kubeconfig ./prod.yaml` a pane ran — and without one passed over:
     /// an app has nothing to be relative to.
-    static func expand(_ path: String, home: URL, relativeTo folder: URL? = nil) -> URL? {
+    package static func expand(_ path: String, home: URL, relativeTo folder: URL? = nil) -> URL? {
         if path.isEmpty { return nil }
         for prefix in ["~", "$HOME", "${HOME}"] {
             if path == prefix { return home }
@@ -69,7 +69,7 @@ enum KubeconfigSources {
 
     /// Whether `url` is in the user's own `~/.kube` (its config, its other
     /// files), symlinks followed.
-    static func isUsersOwn(_ url: URL, home: URL) -> Bool {
+    package static func isUsersOwn(_ url: URL, home: URL) -> Bool {
         let kube = home.appendingPathComponent(".kube", isDirectory: true).resolvingSymlinksInPath().standardizedFileURL.path
         let path = url.resolvingSymlinksInPath().standardizedFileURL.path
         return path == kube || path.hasPrefix(kube + "/")
@@ -77,43 +77,43 @@ enum KubeconfigSources {
 }
 
 /// A context, its cluster and user resolved, as the pickers and the page show it.
-struct KubeContext: Identifiable, Equatable, Sendable {
-    let name: String
-    let cluster: String
+package struct KubeContext: Identifiable, Equatable, Sendable {
+    package let name: String
+    package let cluster: String
     /// The cluster's server; nil when the kubeconfig has no such cluster.
-    let server: String?
-    let namespace: String?
-    let user: String
+    package let server: String?
+    package let namespace: String?
+    package let user: String
     /// Nil when the kubeconfig has no such user.
-    let auth: KubeAuth?
+    package let auth: KubeAuth?
     /// The file that named it first.
-    let file: URL?
-    let contextClass: KubeContextClass
-    let settings: KubeContextSettings
+    package let file: URL?
+    package let contextClass: KubeContextClass
+    package let settings: KubeContextSettings
 
-    var id: String { name }
-    var displayName: String { settings.displayName ?? name }
-    var isProduction: Bool { contextClass == .production }
+    package var id: String { name }
+    package var displayName: String { settings.displayName ?? name }
+    package var isProduction: Bool { contextClass == .production }
     /// Whether Overterm may change objects here: its `writable` flag, yes
     /// unless it says no, whatever the class. Nothing else decides it.
-    var isWritable: Bool { KubeClassifier.isWritable(contextClass, flag: settings.writable) }
+    package var isWritable: Bool { KubeClassifier.isWritable(contextClass, flag: settings.writable) }
 }
 
 /// Every context of the kubeconfig files, merged in kubectl's order.
-struct KubeContextList: Equatable, Sendable {
-    var contexts: [KubeContext] = []
+package struct KubeContextList: Equatable, Sendable {
+    package var contexts: [KubeContext] = []
     /// kubectl's current context; Overterm never changes it.
-    var current: String?
+    package var current: String?
     /// The files that were read.
-    var files: [URL] = []
+    package var files: [URL] = []
     /// What couldn't be read, by file — never a value from one.
-    var problems: [String] = []
+    package var problems: [String] = []
 
-    func context(named name: String) -> KubeContext? { contexts.first { $0.name == name } }
+    package func context(named name: String) -> KubeContext? { contexts.first { $0.name == name } }
 
     /// The contexts of `configs` (already read, first file first), each
     /// with its class and settings.
-    static func resolve(_ configs: [Kubeconfig], settings: [String: KubeContextSettings]) -> KubeContextList {
+    package static func resolve(_ configs: [Kubeconfig], settings: [String: KubeContextSettings]) -> KubeContextList {
         let merged = Kubeconfig.merged(configs)
         let clusters = Dictionary(merged.clusters.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
         let users = Dictionary(merged.users.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
@@ -133,7 +133,7 @@ struct KubeContextList: Equatable, Sendable {
     /// Reads `files` (missing ones passed over, as kubectl does). Blocking:
     /// off the main thread. `guarded` refuses any file under `~/.kube` a
     /// second time, whoever built the list.
-    static func load(
+    package static func load(
         files: [URL], settings: [String: KubeContextSettings], guarded: Bool,
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> KubeContextList {
@@ -167,10 +167,10 @@ struct KubeContextList: Equatable, Sendable {
 
     /// The contexts this run may see: `AppEnvironment.kubeconfigs`' files,
     /// with the setting's extras. Blocking: off the main thread.
-    static func fromEnvironment(extra: [String], settings: [String: KubeContextSettings]) -> KubeContextList {
+    package static func fromEnvironment(extra: [String], settings: [String: KubeContextSettings]) -> KubeContextList {
         load(files: AppEnvironment.kubeconfigs(extra: extra), settings: settings, guarded: AppEnvironment.guardsKubeconfig)
     }
 
     /// Larger than any kubeconfig: a file past it isn't one.
-    static let maxFileSize = 16 << 20
+    package static let maxFileSize = 16 << 20
 }

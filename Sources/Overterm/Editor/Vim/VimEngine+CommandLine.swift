@@ -1,7 +1,7 @@
 import Foundation
 
 extension VimEngine {
-    func handleCommandLine(_ key: VimKey) {
+    package func handleCommandLine(_ key: VimKey) {
         for token in key.tokens {
             guard var line = commandLine else { return }
             switch token {
@@ -30,13 +30,13 @@ extension VimEngine {
         }
     }
 
-    func closeCommandLine() {
+    package func closeCommandLine() {
         commandLine = nil
         mode = commandLineReturn
         if isVisual { updateVisualSelection() }
     }
 
-    func executeCommandLine() {
+    package func executeCommandLine() {
         guard let line = commandLine, let kind = line.first else { return }
         let body = String(line.dropFirst())
         closeCommandLine()
@@ -58,7 +58,7 @@ extension VimEngine {
 
     /// `/` patterns are regular expressions (ICU, close to Zed's), matched
     /// ignoring case unless they have a capital — smartcase.
-    func regex(_ pattern: String, caseSensitive: Bool?) -> NSRegularExpression? {
+    package func regex(_ pattern: String, caseSensitive: Bool?) -> NSRegularExpression? {
         let sensitive = caseSensitive ?? (pattern != pattern.lowercased())
         let key = (sensitive ? "s:" : "i:") + pattern
         if let cached = regexCache, cached.key == key { return cached.regex }
@@ -74,7 +74,7 @@ extension VimEngine {
     }
 
     /// The `count`th match from `p`, wrapping around the end.
-    func search(_ pattern: String, caseSensitive: Bool?, forward: Bool, from p: Int, count: Int, _ t: VimText) -> Int? {
+    package func search(_ pattern: String, caseSensitive: Bool?, forward: Bool, from p: Int, count: Int, _ t: VimText) -> Int? {
         guard let regex = regex(pattern, caseSensitive: caseSensitive) else { return nil }
         var q = p
         for _ in 0..<count {
@@ -89,7 +89,7 @@ extension VimEngine {
 
     private static let matching: NSRegularExpression.MatchingOptions = [.withTransparentBounds, .withoutAnchoringBounds]
 
-    func nextMatch(_ regex: NSRegularExpression, after p: Int, _ t: VimText) -> Int? {
+    package func nextMatch(_ regex: NSRegularExpression, after p: Int, _ t: VimText) -> Int? {
         let s = t.string as String
         let start = min(t.next(p), t.length)
         if let m = regex.firstMatch(in: s, options: Self.matching, range: NSRange(location: start, length: t.length - start)) {
@@ -98,7 +98,7 @@ extension VimEngine {
         return regex.firstMatch(in: s, options: Self.matching, range: NSRange(location: 0, length: t.length))?.range.location
     }
 
-    func previousMatch(_ regex: NSRegularExpression, before p: Int, _ t: VimText) -> Int? {
+    package func previousMatch(_ regex: NSRegularExpression, before p: Int, _ t: VimText) -> Int? {
         lastMatch(regex, before: p, t) ?? lastMatch(regex, before: t.length + 1, t)
     }
 
@@ -122,7 +122,7 @@ extension VimEngine {
     // MARK: Ex
 
     /// `:N`, `:s`, ranges (`%`, `'<,'>`, `N,M`, `.`, `$`); the rest goes to `exCommand`.
-    func ex(_ body: String) {
+    package func ex(_ body: String) {
         var s = Substring(body.trimmingCharacters(in: .whitespaces))
         guard !s.isEmpty else { return }
         let t = text
@@ -191,7 +191,7 @@ extension VimEngine {
     }
 
     /// `:s/pattern/replacement/flags` over the lines, as one undo step.
-    func substitute(_ arg: String, range: (Int, Int)) {
+    package func substitute(_ arg: String, range: (Int, Int)) {
         let delimiter = arg.first!
         var parts: [String] = [""]
         var escaped = false
@@ -256,7 +256,7 @@ extension VimEngine {
     }
 
     /// Vim's replacement (`\1`, `&`, `\n`) as an NSRegularExpression template.
-    static func template(_ replacement: String) -> String {
+    package static func template(_ replacement: String) -> String {
         var out = ""
         let chars = Array(replacement)
         var i = 0

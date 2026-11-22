@@ -14,7 +14,7 @@ import Foundation
 /// any other, production's too: false makes the context read-only.
 extension KubernetesPageModel {
     /// The sheet for `context` (nil: the one selected), as the settings hold it now.
-    func openContextSettings(_ context: KubeContext? = nil) {
+    package func openContextSettings(_ context: KubeContext? = nil) {
         guard let context = context ?? model.selected else { return }
         cheatSheet = false
         picker = nil
@@ -25,7 +25,7 @@ extension KubernetesPageModel {
                 .list ?? [])
     }
 
-    func closeContextSettings() {
+    package func closeContextSettings() {
         contextSettingsDraft = nil
         giveListTheKeyboard()
     }
@@ -40,7 +40,7 @@ extension KubernetesPageModel {
         settingsStore.fileValue(KubeContextSettingsDraft.contextsKey) ?? settingsStore.value(KubeContextSettingsDraft.contextsKey)
     }
 
-    func saveContextSettings() {
+    package func saveContextSettings() {
         guard let draft = contextSettingsDraft else { return }
         let contextsKey = KubeContextSettingsDraft.contextsKey
         let agentWritesKey = KubeContextSettingsDraft.agentWritesKey
@@ -70,7 +70,7 @@ extension KubernetesPageModel {
     }
 
     /// Settings ▸ Kubernetes, for what the sheet doesn't hold.
-    func openKubernetesSettings() {
+    package func openKubernetesSettings() {
         contextSettingsDraft = nil
         actions?.settings()
     }

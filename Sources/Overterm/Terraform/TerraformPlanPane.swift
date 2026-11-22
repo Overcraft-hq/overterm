@@ -12,44 +12,44 @@ import Foundation
 /// that each observed the whole pane, was every visible row drawn again
 /// for a keystroke in the filter.
 @MainActor
-final class TerraformPlanPaneModel: ObservableObject {
-    @Published private(set) var run: TerraformPlanRun?
+package final class TerraformPlanPaneModel: ObservableObject {
+    @Published package private(set) var run: TerraformPlanRun?
     /// The apply shown (6.4): its plan's, in place of the plan — or one
     /// followed again after a crash, with no plan of this session's.
-    @Published private(set) var apply: TerraformApplyRun?
+    @Published package private(set) var apply: TerraformApplyRun?
     /// A root's state shown in the plan's place (2.4, stage 2c): until a
     /// plan or an apply is shown again. One that gives way while still
     /// going is stopped (`TerraformStateRead.stop`): nothing reads on for
     /// a view nobody has.
-    @Published private(set) var state: TerraformStateRead? {
+    @Published package private(set) var state: TerraformStateRead? {
         didSet { if let oldValue, oldValue !== state { oldValue.stop() } }
     }
     /// A root's `terraform test` shown in the plan's place (2.9, stage
     /// 2d): until a plan, an apply or the state is shown again.
-    @Published private(set) var test: TerraformTestRun?
-    @Published var filter = "" { didSet { if filter != oldValue { rebuild() } } }
-    @Published var chips: Set<TerraformPlanRows.Chip> = [] { didSet { if chips != oldValue { rebuild() } } }
-    @Published var expanded: Set<String> = []
+    @Published package private(set) var test: TerraformTestRun?
+    @Published package var filter = "" { didSet { if filter != oldValue { rebuild() } } }
+    @Published package var chips: Set<TerraformPlanRows.Chip> = [] { didSet { if chips != oldValue { rebuild() } } }
+    @Published package var expanded: Set<String> = []
     /// The row the keys act on (Section 7), by id.
-    @Published var selected: String?
+    @Published package var selected: String?
     /// The changes pane's added lines by file, relative to the checkout:
     /// what is uncommitted and untracked, beside the run's own reading of
     /// the branch (`TerraformPlanRun.changedLines`).
-    @Published var changedLines: [String: Set<Int>] = [:] { didSet { if changedLines != oldValue { recause() } } }
+    @Published package var changedLines: [String: Set<Int>] = [:] { didSet { if changedLines != oldValue { recause() } } }
     /// Where the root's variables and locals come from, read once a plan lands.
-    @Published private(set) var sources = TerraformCauseChain.Sources()
+    @Published package private(set) var sources = TerraformCauseChain.Sources()
     /// The rows as the filter and chips leave them.
-    @Published private(set) var rows: [TerraformPlanRow] = []
+    @Published package private(set) var rows: [TerraformPlanRow] = []
     /// Each risky row's chain, by row id.
-    @Published private(set) var chains: [String: [TerraformCauseChain.Link]] = [:]
+    @Published package private(set) var chains: [String: [TerraformCauseChain.Link]] = [:]
     /// Asks the view for the filter field's focus (`/`).
-    @Published private(set) var filterFocus = 0
+    @Published package private(set) var filterFocus = 0
     /// Asks the list's key view for the keyboard: a row was pressed.
-    @Published private(set) var keyboard = 0
+    @Published package private(set) var keyboard = 0
     private var watching: AnyCancellable?
     private var reading: Task<Void, Never>?
 
-    func show(_ run: TerraformPlanRun) {
+    package func show(_ run: TerraformPlanRun) {
         if state != nil { state = nil }
         if test != nil { test = nil }
         if apply !== run.apply { apply = run.apply }
@@ -75,7 +75,7 @@ final class TerraformPlanPaneModel: ObservableObject {
     }
 
     /// An apply in the slot: its plan's view becomes its progress.
-    func showApply(_ apply: TerraformApplyRun) {
+    package func showApply(_ apply: TerraformApplyRun) {
         state = nil
         test = nil
         self.apply = apply
@@ -83,22 +83,22 @@ final class TerraformPlanPaneModel: ObservableObject {
     }
 
     /// A root's state in the slot, over whatever plan it had.
-    func showState(_ read: TerraformStateRead) {
+    package func showState(_ read: TerraformStateRead) {
         test = nil
         state = read
     }
 
     /// A test run in the slot, over whatever it had (2d).
-    func showTest(_ run: TerraformTestRun) {
+    package func showTest(_ run: TerraformTestRun) {
         state = nil
         test = run
     }
 
     /// The slot closed: the state read shown stops if it is still going
     /// (it stays shown, to be read again).
-    func stopState() { state?.stop() }
+    package func stopState() { state?.stop() }
 
-    func clear() {
+    package func clear() {
         state = nil
         test = nil
         run = nil
@@ -112,38 +112,38 @@ final class TerraformPlanPaneModel: ObservableObject {
 
     /// What "changed in this branch" reads: the branch's lines since the
     /// merge base, and what the changes pane has uncommitted.
-    var effectiveChangedLines: [String: Set<Int>] { TerraformChangedLines.merged(run?.changedLines ?? [:], changedLines) }
+    package var effectiveChangedLines: [String: Set<Int>] { TerraformChangedLines.merged(run?.changedLines ?? [:], changedLines) }
 
     /// A row's cause chain (3.1): replace and delete rows.
-    func causes(_ row: TerraformPlanRow) -> [TerraformCauseChain.Link] { chains[row.id] ?? [] }
+    package func causes(_ row: TerraformPlanRow) -> [TerraformCauseChain.Link] { chains[row.id] ?? [] }
 
     /// The causes by address, said: Copy summary's, over the whole plan.
-    func causeTexts() -> [String: String] {
+    package func causeTexts() -> [String: String] {
         guard let plan = run?.plan else { return [:] }
         return TerraformCauseChain.texts(plan: plan, sources: sources, changed: effectiveChangedLines)
     }
 
     /// The block of `address` in the root's files: "Open block" (`o`).
-    func block(of address: String) -> TerraformCauseChain.Location? {
+    package func block(of address: String) -> TerraformCauseChain.Location? {
         let bare = address.replacingOccurrences(of: #"\[[^\]]*\]"#, with: "", options: .regularExpression)
         return sources.blocks[bare]
     }
 
-    func toggle(_ row: TerraformPlanRow) {
+    package func toggle(_ row: TerraformPlanRow) {
         selected = row.id
         if expanded.contains(row.id) { expanded.remove(row.id) } else { expanded.insert(row.id) }
     }
 
-    func toggle(_ chip: TerraformPlanRows.Chip) {
+    package func toggle(_ chip: TerraformPlanRows.Chip) {
         if chips.contains(chip) { chips.remove(chip) } else { chips.insert(chip) }
     }
 
-    func takeKeyboard() { keyboard += 1 }
+    package func takeKeyboard() { keyboard += 1 }
 
-    var selectedRow: TerraformPlanRow? { selected.flatMap { id in rows.first { $0.id == id } } }
+    package var selectedRow: TerraformPlanRow? { selected.flatMap { id in rows.first { $0.id == id } } }
 
     /// The selection moved by `step` rows, kept inside the list.
-    func move(_ step: Int) {
+    package func move(_ step: Int) {
         guard !rows.isEmpty else { return }
         let index = selected.flatMap { id in rows.firstIndex { $0.id == id } }
         let next = index.map { min(max($0 + step, 0), rows.count - 1) } ?? (step > 0 ? 0 : rows.count - 1)
@@ -155,13 +155,13 @@ final class TerraformPlanPaneModel: ObservableObject {
     /// A key on the plan's list (Section 7): ↑ ↓ move, ↩ the detail, `o`
     /// open the block, `a` Ask Why, `/` the filter, ⌫ discard the plan;
     /// ⌘C copies the address (`copyAddress`). False: not the plan's.
-    enum Key: Equatable, Sendable {
+    package enum Key: Equatable, Sendable {
         case up, down, detail, open, askWhy, filter, discard, escape, apply, stop
     }
 
     /// A key down as the list reads it: arrows, Return and Delete by
     /// their codes, letters by what is typed. Pure.
-    nonisolated static func key(keyCode: UInt16, characters: String?) -> Key? {
+    package nonisolated static func key(keyCode: UInt16, characters: String?) -> Key? {
         switch keyCode {
         case 126: return .up
         case 125: return .down
@@ -182,7 +182,7 @@ final class TerraformPlanPaneModel: ObservableObject {
         }
     }
 
-    func press(_ key: Key, actions: TerraformPlanActions) -> Bool {
+    package func press(_ key: Key, actions: TerraformPlanActions) -> Bool {
         if key == .stop, let apply, apply.isGoing {
             actions.stopApply(apply)
             return true
@@ -224,7 +224,7 @@ final class TerraformPlanPaneModel: ObservableObject {
     }
 
     /// ⌘C on the list: the selected row's address.
-    func copyAddress() -> String? { selectedRow?.address }
+    package func copyAddress() -> String? { selectedRow?.address }
 
     // MARK: Rows and chains
 
@@ -269,9 +269,9 @@ final class TerraformPlanPaneModel: ObservableObject {
     }
 
     /// The most module calls whose blocks are read for "Open block".
-    nonisolated static let maxModules = 64
+    package nonisolated static let maxModules = 64
 
-    nonisolated static func sources(folder: URL, prefix: String, varFiles: [String]) -> TerraformCauseChain.Sources {
+    package nonisolated static func sources(folder: URL, prefix: String, varFiles: [String]) -> TerraformCauseChain.Sources {
         var budget = TerraformConfigIndex.byteLimit
         let config = moduleFiles(folder, prefix: prefix, budget: &budget)
         var vars: [(path: String, text: String)] = []
@@ -316,7 +316,7 @@ final class TerraformPlanPaneModel: ObservableObject {
     }
 
     /// The added lines of the diff's files: what "changed in this branch" reads.
-    static func addedLines(_ diffs: [String: DiffModel.FileDiff]) -> [String: Set<Int>] {
+    package static func addedLines(_ diffs: [String: DiffModel.FileDiff]) -> [String: Set<Int>] {
         var lines: [String: Set<Int>] = [:]
         for (path, diff) in diffs where TerraformRootGuess.isTerraformName((path as NSString).lastPathComponent) {
             let added = diff.lines.compactMap { $0.kind == .added ? $0.newNumber : nil }

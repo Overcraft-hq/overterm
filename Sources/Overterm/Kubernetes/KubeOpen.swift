@@ -6,8 +6,8 @@ import Foundation
 /// a TLS entry names it, at the rule's first plain path — else the
 /// address the controller gave it. `o` opens the first in the default
 /// browser: it is the cluster's own front door, not a forward. Pure.
-enum KubeIngressLinks {
-    static func urls(of ingress: [String: Any]) -> [URL] {
+package enum KubeIngressLinks {
+    package static func urls(of ingress: [String: Any]) -> [URL] {
         let spec = ingress["spec"] as? [String: Any] ?? [:]
         let tls = spec["tls"] as? [[String: Any]] ?? []
         let secured = Set(tls.flatMap { $0["hosts"] as? [String] ?? [] }.map { $0.lowercased() })
@@ -34,7 +34,7 @@ enum KubeIngressLinks {
 
     /// A rule's path as a page's: one written as a pattern (nginx's regex
     /// paths) is no page, so the root instead.
-    static func plainPath(_ path: String?) -> String {
+    package static func plainPath(_ path: String?) -> String {
         guard let path, path.hasPrefix("/"), path.rangeOfCharacter(from: CharacterSet(charactersIn: "()*$^[]\\?+|{} ")) == nil else { return "/" }
         return path
     }
@@ -43,7 +43,7 @@ enum KubeIngressLinks {
 /// What a value of a pod's env is, as its spec says: written there, or a
 /// Secret's key it refers to — which is never read unless the user asks,
 /// and then only that key is kept (rule 9). Pure.
-enum KubeEnvValue: Equatable, Sendable {
+package enum KubeEnvValue: Equatable, Sendable {
     case literal(String)
     case secret(name: String, key: String)
     /// A key an `envFrom` Secret gives only if it holds it, which isn't
@@ -53,7 +53,7 @@ enum KubeEnvValue: Equatable, Sendable {
     /// A ConfigMap's key, a field of the pod: not read.
     case elsewhere
 
-    var secretName: String? {
+    package var secretName: String? {
         switch self {
         case .secret(let name, _), .secretIfHeld(let name, _): name
         case .literal, .elsewhere: nil
@@ -63,17 +63,17 @@ enum KubeEnvValue: Equatable, Sendable {
 
 /// What a Secret is asked for: the keys the env names from it, and those
 /// an `envFrom` takes from it only if it holds them. Pure.
-struct KubeSecretWant: Equatable, Sendable {
-    var secret: String
-    var keys: [String] = []
-    var ifHeld: [String] = []
+package struct KubeSecretWant: Equatable, Sendable {
+    package var secret: String
+    package var keys: [String] = []
+    package var ifHeld: [String] = []
 
     /// Every key kept from the one GET.
-    var all: [String] { keys + ifHeld.filter { !keys.contains($0) } }
+    package var all: [String] { keys + ifHeld.filter { !keys.contains($0) } }
 
     /// As the question names it: `db-auth (password)`, `pg-env (whichever
     /// of POSTGRES_PASSWORD, POSTGRESQL_PASSWORD it holds)`.
-    var said: String {
+    package var said: String {
         var parts: [String] = []
         if !keys.isEmpty { parts.append(keys.joined(separator: ", ")) }
         let maybe = ifHeld.filter { !keys.contains($0) }
@@ -85,37 +85,37 @@ struct KubeSecretWant: Equatable, Sendable {
 /// What was read of the Secrets the user agreed to: each value kept by
 /// `secret/key`, and which Secrets the GET answered — a key one of those
 /// doesn't hold is then known not to be there. Pure.
-struct KubeSecretValues: Equatable, Sendable {
-    var values: [String: String] = [:]
-    var read: Set<String> = []
+package struct KubeSecretValues: Equatable, Sendable {
+    package var values: [String: String] = [:]
+    package var read: Set<String> = []
 }
 
 /// A database pod, as `d` sees it: which kind its image is (the same table
 /// as Docker's own client, `DockerClient`), its container and the port it
 /// serves on, and where its user, database and password come from. Pure.
-struct KubeDatabaseTarget: Equatable, Sendable {
-    var kind: DatabaseKind
-    var container: String
-    var image: String
+package struct KubeDatabaseTarget: Equatable, Sendable {
+    package var kind: DatabaseKind
+    package var container: String
+    package var image: String
     /// The container's port the database serves on: the forward's remote end.
-    var port: Int
+    package var port: Int
     /// Each field's sources, in the order the image reads its names: the
     /// first given wins — an `envFrom` Secret's key giving way to the next
     /// once the Secret, read, turns out not to hold it.
-    var user: [KubeEnvValue] = []
-    var database: [KubeEnvValue] = []
-    var password: [KubeEnvValue] = []
+    package var user: [KubeEnvValue] = []
+    package var database: [KubeEnvValue] = []
+    package var password: [KubeEnvValue] = []
     /// MySQL's root password: the image makes the app's user only given
     /// its password too, else the user is root — decided once what was
     /// read is known. Empty when the app's user is sure.
-    var rootPassword: [KubeEnvValue] = []
+    package var rootPassword: [KubeEnvValue] = []
     /// The user and database the image starts with when its env says none.
-    var defaultUser: String
-    var defaultDatabase: String?
+    package var defaultUser: String
+    package var defaultDatabase: String?
 
     /// The Secrets its env refers to, each with the keys wanted from it:
     /// what one GET each, on the user's ask, would read.
-    var secretKeys: [KubeSecretWant] {
+    package var secretKeys: [KubeSecretWant] {
         var wants: [KubeSecretWant] = []
         func add(_ name: String, _ change: (inout KubeSecretWant) -> Void) {
             if let index = wants.firstIndex(where: { $0.secret == name }) {
@@ -137,16 +137,16 @@ struct KubeDatabaseTarget: Equatable, Sendable {
     }
 
     /// Whether the password is one only a Secret holds.
-    var passwordInSecret: Bool { (password + rootPassword).contains { $0.secretName != nil } }
+    package var passwordInSecret: Bool { (password + rootPassword).contains { $0.secretName != nil } }
 }
 
-enum KubeDatabase {
+package enum KubeDatabase {
     /// The kinds the Database client speaks, as the page says them.
-    static let spoken = "PostgreSQL, MySQL, MariaDB, ClickHouse, Redis, Valkey and MongoDB"
+    package static let spoken = "PostgreSQL, MySQL, MariaDB, ClickHouse, Redis, Valkey and MongoDB"
 
     /// The first container whose image is a database the Database client
     /// speaks; nil when none is.
-    static func detect(_ pod: [String: Any]) -> KubeDatabaseTarget? {
+    package static func detect(_ pod: [String: Any]) -> KubeDatabaseTarget? {
         for container in containers(of: pod) {
             guard let image = container["image"] as? String, let (kind, inside) = DockerClient.kind(of: image)?.database else { continue }
             let env = env(of: container)
@@ -217,19 +217,19 @@ enum KubeDatabase {
     /// The ports an image serves another protocol on than the one the
     /// Database client speaks: ClickHouse's native, its TLS and its
     /// replicas' (the client speaks its HTTP, 8123); MySQL's X Protocol.
-    static let otherProtocolPorts: [DatabaseKind: Set<Int>] = [.clickhouse: [9000, 9440, 9009], .mysql: [33060]]
+    package static let otherProtocolPorts: [DatabaseKind: Set<Int>] = [.clickhouse: [9000, 9440, 9009], .mysql: [33060]]
 
     /// The forward's remote end: the image's own port when it is declared
     /// or nothing is; else the one port declared — unless that is one the
     /// image serves another protocol on, which the client doesn't speak.
-    static func port(_ kind: DatabaseKind, inside: Int, declared: [Int]) -> Int {
+    package static func port(_ kind: DatabaseKind, inside: Int, declared: [Int]) -> Int {
         guard declared.count == 1, declared[0] != inside, !(otherProtocolPorts[kind] ?? []).contains(declared[0]) else { return inside }
         return declared[0]
     }
 
     /// The database client of an image the Database client doesn't speak
     /// (Mongo, Cassandra…), for saying why `d` can't: nil when none is.
-    static func otherClient(_ pod: [String: Any]) -> DockerClient.Kind? {
+    package static func otherClient(_ pod: [String: Any]) -> DockerClient.Kind? {
         for container in containers(of: pod) {
             if let image = container["image"] as? String, let kind = DockerClient.kind(of: image), kind.database == nil { return kind }
         }
@@ -246,7 +246,7 @@ enum KubeDatabase {
     /// it (`secretIfHeld`: which keys it has isn't known without reading
     /// it) — and `env` wins over them.
     /// Values are kept as the spec has them; nothing is fetched.
-    static func env(of container: [String: Any]) -> [String: KubeEnvValue] {
+    package static func env(of container: [String: Any]) -> [String: KubeEnvValue] {
         var env: [String: KubeEnvValue] = [:]
         let wanted = allNames
         for source in container["envFrom"] as? [[String: Any]] ?? [] {
@@ -285,7 +285,7 @@ enum KubeDatabase {
     /// The keys of a Secret read on the user's ask that `wanted` names, as
     /// text: every other value of the answer is left with it, to go when
     /// the caller drops it. A value that isn't text is none.
-    static func take(_ read: KubeSecretRead, keys wanted: [String]) -> [String: String] {
+    package static func take(_ read: KubeSecretRead, keys wanted: [String]) -> [String: String] {
         var taken: [String: String] = [:]
         for key in wanted {
             guard let value = read.values[key], KubeSecret.isText(value) else { continue }
@@ -299,7 +299,7 @@ enum KubeDatabase {
     /// ConfigMap's key) or, without `literal`, written in the spec. An
     /// envFrom Secret's key the Secret, read, doesn't hold gives way to the
     /// next source.
-    static func resolve(_ sources: [KubeEnvValue], _ read: KubeSecretValues, literal: Bool = true) -> (given: Bool, value: String?) {
+    package static func resolve(_ sources: [KubeEnvValue], _ read: KubeSecretValues, literal: Bool = true) -> (given: Bool, value: String?) {
         for source in sources {
             switch source {
             case .literal(let text): return (true, literal ? text : nil)
@@ -321,7 +321,7 @@ enum KubeDatabase {
     /// spec is left for the user to type, and none is ever put anywhere
     /// but the form, which keeps it in the keychain if saved. MySQL's
     /// app user only with its password, else root with root's.
-    static func connection(
+    package static func connection(
         _ target: KubeDatabaseTarget, pod: String, context: String, namespace: String, localPort: Int, read: KubeSecretValues = KubeSecretValues()
     ) -> DockerDatabaseGuess.Guess {
         var user = resolve(target.user, read)
@@ -348,12 +348,12 @@ enum KubeDatabase {
 }
 
 extension KubeResourceKind {
-    static let secrets = KubeResourceKind(
+    package static let secrets = KubeResourceKind(
         group: "", version: "v1", resource: "secrets", kind: "Secret", singular: "secret", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"])
 }
 
 extension KubeObjectRef {
     /// An Ingress: `o` opens where it is reached, in the default browser.
-    var isIngress: Bool { kind.kind == "Ingress" && ["networking.k8s.io", "extensions"].contains(kind.group) }
+    package var isIngress: Bool { kind.kind == "Ingress" && ["networking.k8s.io", "extensions"].contains(kind.group) }
 }

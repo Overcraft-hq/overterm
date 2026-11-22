@@ -5,10 +5,10 @@ import Foundation
 /// switch, so a key added without one doesn't build) and the window's
 /// Kubernetes commands in `KeyCommands` with the key bound now — never a
 /// list written by hand that drifts from what the keys do. Pure.
-enum KubeKeyGroup: String, CaseIterable, Sendable {
+package enum KubeKeyGroup: String, CaseIterable, Sendable {
     case navigation, list, verbs, writes, sections, window
 
-    var title: String {
+    package var title: String {
         switch self {
         case .navigation: "Navigation"
         case .list: "The list"
@@ -21,7 +21,7 @@ enum KubeKeyGroup: String, CaseIterable, Sendable {
 }
 
 extension KubernetesKey {
-    var group: KubeKeyGroup {
+    package var group: KubeKeyGroup {
         switch self {
         case .overview, .workloads, .network, .config, .storage, .cluster, .custom, .helm, .gitops, .forwards: .sections
         case .open, .back, .forward, .close, .command, .namespace, .context, .filter, .help: .navigation
@@ -32,30 +32,30 @@ extension KubernetesKey {
     }
 }
 
-enum KubeKeySheet {
-    struct Row: Equatable, Sendable, Identifiable {
+package enum KubeKeySheet {
+    package struct Row: Equatable, Sendable, Identifiable {
         /// What is pressed, as the sheet shows it: `l`, `↩`, `⌥⌘J`; "no key"
         /// for a command left unbound.
-        var key: String
-        var title: String
-        var id: String { key + " " + title }
+        package var key: String
+        package var title: String
+        package var id: String { key + " " + title }
     }
 
-    struct Group: Equatable, Sendable, Identifiable {
-        var group: KubeKeyGroup
-        var rows: [Row]
-        var id: String { group.rawValue }
-        var title: String { group.title }
+    package struct Group: Equatable, Sendable, Identifiable {
+        package var group: KubeKeyGroup
+        package var rows: [Row]
+        package var id: String { group.rawValue }
+        package var title: String { group.title }
     }
 
     /// The window's commands that are the page's: `KeyCommands`' Kubernetes ones.
-    static let windowCommands: [KeyCommand] = KeyCommands.all.filter { $0.id.hasPrefix("kubernetes.") }
+    package static let windowCommands: [KeyCommand] = KeyCommands.all.filter { $0.id.hasPrefix("kubernetes.") }
 
-    static let unbound = "no key"
+    package static let unbound = "no key"
 
     /// Every group in order, each key once, in `KubernetesKey`'s order;
     /// `binding`, a window command's key as it is bound now (nil: none).
-    static func groups(binding: (KeyCommand) -> String?) -> [Group] {
+    package static func groups(binding: (KeyCommand) -> String?) -> [Group] {
         KubeKeyGroup.allCases.compactMap { group in
             let rows: [Row]
             if group == .window {
@@ -68,11 +68,11 @@ enum KubeKeySheet {
     }
 
     /// What closes the sheet without doing anything else: Esc, or `?` again.
-    static func closes(_ characters: String) -> Bool { characters == "\u{1B}" || characters == KubernetesKey.help.key }
+    package static func closes(_ characters: String) -> Bool { characters == "\u{1B}" || characters == KubernetesKey.help.key }
 
     /// What closes it and goes on to do what it does: the command bar and
     /// the filter keep their keys while it shows.
-    static func passesThrough(_ characters: String) -> Bool {
+    package static func passesThrough(_ characters: String) -> Bool {
         characters == KubernetesKey.command.key || characters == KubernetesKey.filter.key
     }
 }

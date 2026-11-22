@@ -23,22 +23,22 @@ import Foundation
 /// A Secret isn't followed: a read is every value at once, so it is read
 /// only when the user asks (Show, `y`), and only its masks are kept.
 @MainActor
-final class KubeResourceBuffer: ObservableObject {
-    enum State: Equatable {
+package final class KubeResourceBuffer: ObservableObject {
+    package enum State: Equatable {
         case empty
         case loaded
         case failed(String)
     }
 
     /// What the cluster did while the text had edits.
-    enum ClusterChange: Equatable {
+    package enum ClusterChange: Equatable {
         /// A newer object: its text (stripped and masked) and its version.
         case changed(text: String, resourceVersion: String?)
         case deleted
     }
 
     /// What one object read does to the buffer (`rule`). Pure.
-    enum Outcome: Equatable {
+    package enum Outcome: Equatable {
         /// The first text, or a change taken quietly: the text replaced.
         case replace
         /// The same object (its version, or its text unchanged): only the version kept.
@@ -47,28 +47,28 @@ final class KubeResourceBuffer: ObservableObject {
         case banner
     }
 
-    let ref: KubeObjectRef
+    package let ref: KubeObjectRef
     /// Its name in the editor: a path nothing is ever written at.
-    let url: URL
-    let buffer = EditorBuffer()
-    let session: KubeManifestSession
-    let model: KubernetesModel
-    @Published private(set) var state: State = .empty
-    @Published private(set) var clusterChange: ClusterChange?
+    package let url: URL
+    package let buffer = EditorBuffer()
+    package let session: KubeManifestSession
+    package let model: KubernetesModel
+    @Published package private(set) var state: State = .empty
+    @Published package private(set) var clusterChange: ClusterChange?
     /// The text differs from what the cluster had when it was read.
-    @Published private(set) var isEdited = false
+    @Published package private(set) var isEdited = false
     /// The detail's YAML tab shows the diff in place of the text (the
     /// right-hand pane is under the page).
-    @Published var showsDiff = false
+    @Published package var showsDiff = false
     /// The text as last read from the cluster (or last applied).
-    private(set) var baseline = ""
+    package private(set) var baseline = ""
     /// The version that text is of: sent with the apply.
-    private(set) var resourceVersion: String?
+    package private(set) var resourceVersion: String?
 
     /// What it reads through: the context's proxy, the page's slot — or a test's.
-    var client: () -> KubeClient?
+    package var client: () -> KubeClient?
     /// The registry's: held by nobody and without edits, it goes.
-    var onSettled: ((KubeResourceBuffer) -> Void)?
+    package var onSettled: ((KubeResourceBuffer) -> Void)?
 
     private var watchers: Set<ObjectIdentifier> = []
     private var following: Task<Void, Never>?
@@ -78,11 +78,11 @@ final class KubeResourceBuffer: ObservableObject {
     private var restarting: Task<Void, Never>?
     private var restarts = 0
     /// The `n`th wait in a row before following again: backing off to 30 s.
-    var restartDelay: (Int) -> Duration = { n in .milliseconds(min(500 * (1 << min(n, 6)), 30_000)) }
+    package var restartDelay: (Int) -> Duration = { n in .milliseconds(min(500 * (1 << min(n, 6)), 30_000)) }
     private var reading: Task<Void, Never>?
     private var readAgain = false
 
-    init(ref: KubeObjectRef, model: KubernetesModel) {
+    package init(ref: KubeObjectRef, model: KubernetesModel) {
         self.ref = ref
         self.model = model
         url = KubeManifestEdits.url(for: ref)
@@ -98,16 +98,16 @@ final class KubeResourceBuffer: ObservableObject {
         _ = KubeManifestEdits.register(ref, resourceVersion: nil)
     }
 
-    var spoken: String { KubeWriteOutcome.spoken(ref) }
-    var isProduction: Bool { model.contexts.context(named: ref.context)?.isProduction ?? true }
+    package var spoken: String { KubeWriteOutcome.spoken(ref) }
+    package var isProduction: Bool { model.contexts.context(named: ref.context)?.isProduction ?? true }
 
     /// The text an object is shown as.
-    func text(of object: [String: Any]) -> String {
+    package func text(of object: [String: Any]) -> String {
         KubeManifestEdits.header(ref, production: isProduction) + KubeYAML.text(KubeManifestDiff.forEditing(object))
     }
 
     /// The rule, for one object read. Pure.
-    static func rule(loaded: Bool, edited: Bool, sameVersion: Bool, sameText: Bool) -> Outcome {
+    package static func rule(loaded: Bool, edited: Bool, sameVersion: Bool, sameText: Bool) -> Outcome {
         guard loaded else { return .replace }
         if sameVersion || sameText { return .keep }
         return edited ? .banner : .replace
@@ -119,7 +119,7 @@ final class KubeResourceBuffer: ObservableObject {
     /// replaced, kept, or — edited — held for the banner. A Secret's only
     /// from a read of its own (its values masked here), never any other
     /// kind's answer that turns out to be one.
-    func take(_ object: [String: Any]) {
+    package func take(_ object: [String: Any]) {
         guard KubeObjectStrip.isSecret(object) == ref.isSecret else { return }
         let version = (object["metadata"] as? [String: Any])?["resourceVersion"] as? String
         let text = text(of: object)
@@ -139,25 +139,25 @@ final class KubeResourceBuffer: ObservableObject {
 
     /// The object is gone from the cluster: said, the text kept — Apply
     /// would make it again.
-    func deleted() {
+    package func deleted() {
         guard state == .loaded else { return state = .failed("\(spoken) isn't in \(ref.context).") }
         clusterChange = .deleted
     }
 
     /// The banner's Reload: the cluster's newer object, the edits dropped.
-    func reload() {
+    package func reload() {
         guard case .changed(let text, let version) = clusterChange else { return }
         replace(with: text, version: version)
     }
 
     /// Back to what the cluster has — its newer object when one came.
-    func revert() {
+    package func revert() {
         if case .changed(let text, let version) = clusterChange { return replace(with: text, version: version) }
         replace(with: baseline, version: resourceVersion)
     }
 
     /// The banner's Diff against it: the text against the live object.
-    func diffAgainstCluster() { session.diffWithCluster() }
+    package func diffAgainstCluster() { session.diffWithCluster() }
 
     /// An apply landed: what is in the editor is what the cluster has now —
     /// masked again. A Secret's apply goes through only once every value
@@ -181,7 +181,7 @@ final class KubeResourceBuffer: ObservableObject {
     /// `typed`'s one object as `shown` would show it, when that masks
     /// something typed in clear; nil when nothing is to be masked (or it
     /// isn't one object). Pure but for `shown`.
-    static func masked(_ typed: String, as shown: ([String: Any]) -> String) -> String? {
+    package static func masked(_ typed: String, as shown: ([String: Any]) -> String) -> String? {
         guard let objects = try? KubeManifest.parse(typed), objects.count == 1 else { return nil }
         let object = objects[0].object
         let masking = KubeObjectStrip.shown(object, full: false)
@@ -226,7 +226,7 @@ final class KubeResourceBuffer: ObservableObject {
     /// One GET of the object, taken. A Secret only when `secret` says the
     /// user asked (Show's consent, `y`'s): every value comes, and only
     /// their masks are kept.
-    func load(secret: Bool = false) async throws {
+    package func load(secret: Bool = false) async throws {
         guard !ref.isSecret || secret else { throw KubeManifestProblem("A Secret is read only when you ask: Show, or Edit YAML.") }
         guard let client = client() else { throw KubeManifestProblem("Kubernetes is off, or the context is gone.") }
         do {
@@ -257,17 +257,17 @@ final class KubeResourceBuffer: ObservableObject {
 
     // MARK: Following, while it shows
 
-    var isFollowing: Bool { following != nil }
+    package var isFollowing: Bool { following != nil }
     /// Followed, or waiting to follow again: somebody shows it.
-    var wantsFollowing: Bool { following != nil || restarting != nil }
+    package var wantsFollowing: Bool { following != nil || restarting != nil }
 
     /// `who` shows it now: followed while anybody does.
-    func watch(by who: AnyObject) {
+    package func watch(by who: AnyObject) {
         watchers.insert(ObjectIdentifier(who))
         startFollowing()
     }
 
-    func unwatch(by who: AnyObject) {
+    package func unwatch(by who: AnyObject) {
         watchers.remove(ObjectIdentifier(who))
         guard watchers.isEmpty else { return }
         stopFollowing()
@@ -326,14 +326,14 @@ final class KubeResourceBuffer: ObservableObject {
 
     // MARK: Holders
 
-    weak var registry: KubeResourceBuffers?
+    package weak var registry: KubeResourceBuffers?
 
     /// A view that keeps it: the detail showing it, an editor tab.
-    func hold(by holder: AnyObject) { registry?.hold(self, by: holder) }
-    func release(by holder: AnyObject) { registry?.release(self, by: holder) }
+    package func hold(by holder: AnyObject) { registry?.hold(self, by: holder) }
+    package func release(by holder: AnyObject) { registry?.release(self, by: holder) }
 
     /// Gone from the registry: nothing followed, nothing read, its session's diff dropped.
-    func close() {
+    package func close() {
         stopFollowing()
         reading?.cancel()
         reading = nil
@@ -350,17 +350,17 @@ final class KubeResourceBuffer: ObservableObject {
 /// tab) or while it has edits — the edits are nowhere else; held by
 /// nobody and without edits it goes.
 @MainActor
-final class KubeResourceBuffers {
-    unowned let model: KubernetesModel
-    private(set) var open: [String: KubeResourceBuffer] = [:]
+package final class KubeResourceBuffers {
+    package unowned let model: KubernetesModel
+    package private(set) var open: [String: KubeResourceBuffer] = [:]
     private var holders: [String: Set<ObjectIdentifier>] = [:]
 
-    init(model: KubernetesModel) { self.model = model }
+    package init(model: KubernetesModel) { self.model = model }
 
     private static func key(_ url: URL) -> String { url.standardizedFileURL.path }
 
     /// `ref`'s, made when there is none (held by nobody yet).
-    func buffer(for ref: KubeObjectRef) -> KubeResourceBuffer {
+    package func buffer(for ref: KubeObjectRef) -> KubeResourceBuffer {
         let url = KubeManifestEdits.url(for: ref)
         if let known = open[Self.key(url)] { return known }
         let made = KubeResourceBuffer(ref: ref, model: model)
@@ -370,31 +370,31 @@ final class KubeResourceBuffers {
         return made
     }
 
-    func existing(_ ref: KubeObjectRef) -> KubeResourceBuffer? { open[Self.key(KubeManifestEdits.url(for: ref))] }
+    package func existing(_ ref: KubeObjectRef) -> KubeResourceBuffer? { open[Self.key(KubeManifestEdits.url(for: ref))] }
 
     /// The one named `url` in the editor.
-    func resource(at url: URL) -> KubeResourceBuffer? { open[Self.key(url)] }
+    package func resource(at url: URL) -> KubeResourceBuffer? { open[Self.key(url)] }
 
     @discardableResult
-    func hold(_ ref: KubeObjectRef, by holder: AnyObject) -> KubeResourceBuffer {
+    package func hold(_ ref: KubeObjectRef, by holder: AnyObject) -> KubeResourceBuffer {
         let resource = buffer(for: ref)
         hold(resource, by: holder)
         return resource
     }
 
-    func hold(_ resource: KubeResourceBuffer, by holder: AnyObject) {
+    package func hold(_ resource: KubeResourceBuffer, by holder: AnyObject) {
         holders[Self.key(resource.url), default: []].insert(ObjectIdentifier(holder))
     }
 
-    func release(_ resource: KubeResourceBuffer, by holder: AnyObject) {
+    package func release(_ resource: KubeResourceBuffer, by holder: AnyObject) {
         holders[Self.key(resource.url)]?.remove(ObjectIdentifier(holder))
         dropIfUnheld(resource)
     }
 
-    func isHeld(_ resource: KubeResourceBuffer) -> Bool { !(holders[Self.key(resource.url)] ?? []).isEmpty }
+    package func isHeld(_ resource: KubeResourceBuffer) -> Bool { !(holders[Self.key(resource.url)] ?? []).isEmpty }
 
     /// Nobody holds it and it has no edits: gone.
-    func dropIfUnheld(_ resource: KubeResourceBuffer) {
+    package func dropIfUnheld(_ resource: KubeResourceBuffer) {
         let key = Self.key(resource.url)
         guard open[key] === resource, !isHeld(resource), !resource.isEdited else { return }
         open[key] = nil
@@ -403,5 +403,5 @@ final class KubeResourceBuffers {
     }
 
     /// The ones with edits not applied.
-    var edited: [KubeResourceBuffer] { open.values.filter(\.isEdited).sorted { $0.url.path < $1.url.path } }
+    package var edited: [KubeResourceBuffer] { open.values.filter(\.isEdited).sorted { $0.url.path < $1.url.path } }
 }

@@ -10,9 +10,9 @@ import Foundation
 /// `newSession`: a session of its own as well (`POSIX_SPAWN_SETSID`), so no
 /// controlling terminal and no SIGHUP when the app's goes — Terraform's
 /// detached apply; its group is still its own, led by it.
-enum ProcessGroup {
+package enum ProcessGroup {
     /// The child's pid (its group's id too), or the errno posix_spawn gave.
-    static func spawn(
+    package static func spawn(
         _ executable: URL, _ arguments: [String], _ environment: [String: String], directory: URL? = nil, stdout: Int32, stderr: Int32,
         stdin: Int32? = nil, descriptors: [Int32: Int32] = [:], newSession: Bool = false
     ) -> Result<pid_t, POSIXError> {
@@ -69,13 +69,13 @@ enum ProcessGroup {
     /// One spawned child, reaped when it exits (a dispatch source, and
     /// whenever it is asked about): its status as `Process` says it — the
     /// exit code, or the signal that ended it.
-    final class Child: @unchecked Sendable {
-        let pid: pid_t
+    package final class Child: @unchecked Sendable {
+        package let pid: pid_t
         private let lock = NSLock()
         private var status: Int32?
         private var source: DispatchSourceProcess?
 
-        init(pid: pid_t) {
+        package init(pid: pid_t) {
             self.pid = pid
             let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .global(qos: .utility))
             // Strong until it exits: a zombie nobody reaps otherwise.
@@ -86,12 +86,12 @@ enum ProcessGroup {
             reap()
         }
 
-        var isRunning: Bool {
+        package var isRunning: Bool {
             reap()
             return lock.withLock { status == nil }
         }
 
-        var terminationStatus: Int32 { lock.withLock { status ?? 0 } }
+        package var terminationStatus: Int32 { lock.withLock { status ?? 0 } }
 
         private func reap() {
             let done: DispatchSourceProcess? = lock.withLock {

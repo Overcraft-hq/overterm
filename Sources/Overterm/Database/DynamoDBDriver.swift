@@ -11,21 +11,21 @@ import Foundation
 /// the row limit; items come back as rows — the table's keys first, then
 /// every attribute by name, each value as text (`DynamoItems`). The tree is
 /// the region's tables, and a table's keys and indexes as its columns.
-actor DynamoDBDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor DynamoDBDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let password: String?
     private let http: HTTPDriverTransport
     /// Each table's keys, partition then sort — read once, for a result's order.
     private var keys: [String: [String]] = [:]
     private var tableNames: [String]?
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
         http = HTTPDriverTransport(connection)
     }
 
-    var region: String {
+    package var region: String {
         let region = config.location.trimmingCharacters(in: .whitespaces)
         if !region.isEmpty { return region }
         if !config.awsProfile.isEmpty, let profile = AWSProfile.load(config.awsProfile), let own = profile.region { return own }
@@ -33,7 +33,7 @@ actor DynamoDBDriver: DatabaseDriver {
     }
 
     /// The profile's, the key's, or — only off AWS — placeholders.
-    func signer() throws -> S3Signer {
+    package func signer() throws -> S3Signer {
         let host = config.serverName ?? config.host
         if !config.awsProfile.isEmpty {
             guard let profile = AWSProfile.load(config.awsProfile) else {
@@ -54,7 +54,7 @@ actor DynamoDBDriver: DatabaseDriver {
     }
 
     /// One API call: `operation`'s JSON in, its JSON out — or the error AWS said.
-    func call(_ operation: String, _ body: [String: Any]) async throws -> [String: Any] {
+    package func call(_ operation: String, _ body: [String: Any]) async throws -> [String: Any] {
         guard let url = http.url("/") else { throw DatabaseError.failed("The endpoint isn't a valid address.") }
         let payload = try JSONSerialization.data(withJSONObject: body)
         var request = URLRequest(url: url)
@@ -75,19 +75,19 @@ actor DynamoDBDriver: DatabaseDriver {
 
     /// An operation's JSON as text, its answer as text: a call from
     /// outside the actor (the tests make and drop their tables so).
-    func call(_ operation: String, json: String) async throws -> String {
+    package func call(_ operation: String, json: String) async throws -> String {
         let body = (try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any]) ?? [:]
         let answer = try await call(operation, body)
         return String(decoding: try JSONSerialization.data(withJSONObject: answer), as: UTF8.self)
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         _ = try await call("ListTables", ["Limit": 1])
     }
 
-    func close() async { http.close() }
+    package func close() async { http.close() }
 
-    func execute(_ text: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ text: String, limit: Int) async throws -> QueryResult {
         var statement = text.trimmingCharacters(in: .whitespacesAndNewlines)
         while statement.hasSuffix(";") { statement = String(statement.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines) }
         guard !statement.isEmpty else { throw DatabaseError.failed("No statement.") }
@@ -135,20 +135,20 @@ actor DynamoDBDriver: DatabaseDriver {
         return names
     }
 
-    func describe(_ table: String) async throws -> [String: Any] {
+    package func describe(_ table: String) async throws -> [String: Any] {
         (try await call("DescribeTable", ["TableName": table]))["Table"] as? [String: Any] ?? [:]
     }
 
     // MARK: The catalog
 
     /// One folder: the region (DynamoDB has no databases).
-    func schemas() async throws -> [String] { [region] }
+    package func schemas() async throws -> [String] { [region] }
 
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         try await names().map { CatalogTable(schema: schema, name: $0) }
     }
 
-    func names() async throws -> [String] {
+    package func names() async throws -> [String] {
         var names: [String] = []
         var after: String?
         repeat {
@@ -163,7 +163,7 @@ actor DynamoDBDriver: DatabaseDriver {
     }
 
     /// Each table's keys and indexes — the first 200 tables.
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         var tables = tableNames ?? []
         if tableNames == nil { tables = try await names() }
         var columns: [CatalogColumn] = []

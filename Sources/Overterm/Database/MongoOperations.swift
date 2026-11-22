@@ -7,13 +7,13 @@ import Foundation
 extension MongoDriver: DatabaseMonitoring {
     /// DocumentDB sends its profiler to CloudWatch and says nothing of who
     /// waits on a lock: those tabs aren't there (the overview says so).
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] {
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] {
         kind == .documentdb ? [.overview, .activity, .sizes] : MonitorPart.allCases
     }
 
     /// killOp only: an operation stops at its next yield; the connection
     /// it came on isn't the page's to end.
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
         [
             SessionStop(
                 terminate: false, menu: "Kill Operation…", title: "Kill operation \(session.id)?",
@@ -23,7 +23,7 @@ extension MongoDriver: DatabaseMonitoring {
         ]
     }
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         if hello == nil { try await connect() }
         var notes: [String] = []
         var status = BSONDocument()
@@ -42,7 +42,7 @@ extension MongoDriver: DatabaseMonitoring {
         return overview
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         .value(MongoOps.activity(try await operations(), own: hello?["connectionId"]?.int))
     }
 
@@ -67,7 +67,7 @@ extension MongoDriver: DatabaseMonitoring {
         }
     }
 
-    func slowQueries() async throws -> Monitored<[SlowQuery]> {
+    package func slowQueries() async throws -> Monitored<[SlowQuery]> {
         if hello == nil { try await connect() }
         if hello?["msg"]?.string == "isdbgrid" {
             return .unavailable(MonitorGap(reason: "A mongos has no profiler of its own: each shard's is read on the shard."))
@@ -111,11 +111,11 @@ extension MongoDriver: DatabaseMonitoring {
         return .value(MongoOps.profiled(entries))
     }
 
-    func locks() async throws -> Monitored<[LockWait]> {
+    package func locks() async throws -> Monitored<[LockWait]> {
         .value(MongoOps.locks(try await operations()))
     }
 
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         if hello == nil { try await connect() }
         var sizes = DatabaseSizes()
         if let reply = try? await send(["listDatabases": .int32(1)], database: "admin") {
@@ -150,7 +150,7 @@ extension MongoDriver: DatabaseMonitoring {
         return try? await send(["collStats": .string(name)], database: database)
     }
 
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("killOp") }
         guard !terminate else { throw DatabaseError.failed("MongoDB stops an operation (killOp); it doesn't end a session from here.") }
         guard session != "?" else { throw DatabaseError.failed("MongoDB didn't say which operation holds the lock.") }
@@ -161,12 +161,12 @@ extension MongoDriver: DatabaseMonitoring {
 // MARK: Editing documents
 
 extension MongoDriver: DatabaseTableEditing {
-    func editDialect() async -> SQLDialect { .postgres }
+    package func editDialect() async -> SQLDialect { .postgres }
 
     /// Not SQL: a find's documents are found by `editableResult`.
-    func key(of table: TableName) async throws -> TableKey? { nil }
+    package func key(of table: TableName) async throws -> TableKey? { nil }
 
-    func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
+    package func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
         let command: MongoCommand
         do {
             command = try MongoText.command(statement)
@@ -176,7 +176,7 @@ extension MongoDriver: DatabaseTableEditing {
         return MongoEdits.editable(command, database: command.database ?? current, result: result)
     }
 
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
+    package func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
         try MongoEdits.statements(edits, rows: rows, result: result)
     }
 
@@ -187,14 +187,14 @@ extension MongoDriver: DatabaseTableEditing {
         return hello["setName"]?.string != nil || hello["msg"]?.string == "isdbgrid"
     }
 
-    func editSaveNote() async -> String {
+    package func editSaveNote() async -> String {
         if hello == nil { try? await connect() }
         return transactional
             ? "In one transaction: if any statement fails, or doesn't find its document, none is kept."
             : "One by one — a standalone server has no transactions: a failure stops the rest, and those before it are kept."
     }
 
-    func apply(_ statements: [EditStatement]) async throws {
+    package func apply(_ statements: [EditStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("a write") }
         if hello == nil { try await connect() }
         // Every statement read before anything is sent.
@@ -243,13 +243,13 @@ extension MongoDriver: DatabaseTableEditing {
 // MARK: Users and roles
 
 extension MongoDriver: DatabaseUserManagement {
-    func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
+    package func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
 
-    func userStatements() async -> any UserStatementMaking { MongoUserStatements(signsInTo: authDatabase) }
+    package func userStatements() async -> any UserStatementMaking { MongoUserStatements(signsInTo: authDatabase) }
 
     private var authDatabase: String { config.authSource.isEmpty ? "admin" : config.authSource }
 
-    func users() async throws -> Monitored<[DatabaseUser]> {
+    package func users() async throws -> Monitored<[DatabaseUser]> {
         if hello == nil { try await connect() }
         var found: [BSONDocument]
         do {
@@ -276,7 +276,7 @@ extension MongoDriver: DatabaseUserManagement {
         return .value(users)
     }
 
-    func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
+    package func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
         let database = user.host ?? "admin"
         let name: BSONValue = .document(["\(user.isRole ? "role" : "user")": .string(user.name), "db": .string(database)])
         let key = user.isRole ? "rolesInfo" : "usersInfo"
@@ -300,7 +300,7 @@ extension MongoDriver: DatabaseUserManagement {
     /// Each a command the console reads (`MongoUserStatements`), sent once;
     /// never recorded, never logged. An error says the server's words, which
     /// never repeat a password.
-    func run(_ statements: [UserStatement]) async throws {
+    package func run(_ statements: [UserStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("a user change") }
         if hello == nil { try await connect() }
         for statement in statements {
@@ -316,14 +316,14 @@ extension MongoDriver: DatabaseUserManagement {
 }
 
 /// MongoDB's answers read for the Server page and the Users page. Pure.
-enum MongoOps {
+package enum MongoOps {
     /// An operation's id as killOp takes it: a number, or a mongos' `shard:123`.
-    static func operationID(_ text: String) -> BSONValue {
+    package static func operationID(_ text: String) -> BSONValue {
         if let n = Int64(text) { return Int32(exactly: n).map(BSONValue.int32) ?? .int64(n) }
         return .string(text)
     }
 
-    static func overview(status: BSONDocument, hello: BSONDocument, kind: DatabaseKind) -> ServerOverview {
+    package static func overview(status: BSONDocument, hello: BSONDocument, kind: DatabaseKind) -> ServerOverview {
         var facts: [ServerFact] = []
         func number(_ value: BSONValue?) -> Double? {
             switch value {
@@ -374,7 +374,7 @@ enum MongoOps {
     /// `$currentOp`'s (or DocumentDB's currentOp's) operations as sessions.
     /// An operation without a client is the server's own work (a TTL
     /// monitor, a checkpoint): listed as a daemon, out of the busy list.
-    static func activity(_ operations: [BSONDocument], own: Int?) -> [DatabaseActivity] {
+    package static func activity(_ operations: [BSONDocument], own: Int?) -> [DatabaseActivity] {
         operations.compactMap { op -> DatabaseActivity? in
             guard let id = op["opid"] else { return nil }
             let active = op["active"]?.bool ?? false
@@ -408,7 +408,7 @@ enum MongoOps {
 
     /// What an operation runs, as the shell writes it — its session's and
     /// the cluster's fields left out, a password never.
-    static func statement(_ op: BSONDocument) -> String? {
+    package static func statement(_ op: BSONDocument) -> String? {
         guard var command = op["command"]?.document ?? op["query"]?.document else { return nil }
         for noise in ["lsid", "$clusterTime", "$db", "$readPreference", "txnNumber", "autocommit", "$audit", "$client"] { command[noise] = nil }
         guard !command.isEmpty else { return nil }
@@ -416,7 +416,7 @@ enum MongoOps {
     }
 
     /// pwd, password, and anything named like a secret, said as ••••.
-    static func masked(_ document: BSONDocument) -> BSONDocument {
+    package static func masked(_ document: BSONDocument) -> BSONDocument {
         var out = BSONDocument()
         for field in document.fields {
             let lower = field.key.lowercased()
@@ -435,7 +435,7 @@ enum MongoOps {
 
     /// A command's shape: every value a `?`, so one statement is one row
     /// whatever its values (and no value is shown).
-    static func shape(_ value: BSONValue) -> BSONValue {
+    package static func shape(_ value: BSONValue) -> BSONValue {
         switch value {
         case .document(let document):
             return .document(BSONDocument(document.fields.map { ($0.key, shape($0.value)) }))
@@ -448,7 +448,7 @@ enum MongoOps {
 
     /// The profiler's entries summed by statement: its namespace, its kind,
     /// its query hash or its shape.
-    static func profiled(_ entries: [BSONDocument]) -> [SlowQuery] {
+    package static func profiled(_ entries: [BSONDocument]) -> [SlowQuery] {
         struct Sum {
             var statement: String
             var database: String?
@@ -484,7 +484,7 @@ enum MongoOps {
     }
 
     /// `$queryStats`' query shapes: each its count and its time.
-    static func queryStats(_ entries: [BSONDocument]) -> [SlowQuery] {
+    package static func queryStats(_ entries: [BSONDocument]) -> [SlowQuery] {
         entries.enumerated().map { index, entry in
             let key = entry["key"]?.document ?? [:]
             let metrics = entry["metrics"]?.document ?? [:]
@@ -505,7 +505,7 @@ enum MongoOps {
     /// operation waits, not on whom: the blocker is the longest-running
     /// operation not waiting that holds an exclusive lock (W or X) on the
     /// same database, or the whole server — else "?".
-    static func locks(_ operations: [BSONDocument]) -> [LockWait] {
+    package static func locks(_ operations: [BSONDocument]) -> [LockWait] {
         let pairs = operations.compactMap { op in activity([op], own: nil).first.map { ($0, op) } }
         let sessions = pairs.map(\.0)
         let byID = Dictionary(pairs.map { ($0.0.id, $0.1) }, uniquingKeysWith: { a, _ in a })
@@ -529,7 +529,7 @@ enum MongoOps {
         }
     }
 
-    static func databases(_ reply: BSONDocument) -> [SizeEntry] {
+    package static func databases(_ reply: BSONDocument) -> [SizeEntry] {
         (reply["databases"]?.array?.compactMap(\.document) ?? []).compactMap { entry in
             guard let name = entry["name"]?.string else { return nil }
             return SizeEntry(name: name, bytes: Int64(entry["sizeOnDisk"]?.int ?? 0), detail: entry["empty"]?.bool == true ? "empty" : nil)
@@ -537,7 +537,7 @@ enum MongoOps {
     }
 
     /// Collections by their storage on disk, and their indexes, largest first.
-    static func collections(_ stats: [(String, BSONDocument)], database: String) -> (tables: [SizeEntry], indexes: [SizeEntry]) {
+    package static func collections(_ stats: [(String, BSONDocument)], database: String) -> (tables: [SizeEntry], indexes: [SizeEntry]) {
         var tables: [SizeEntry] = []
         var indexes: [SizeEntry] = []
         for (name, stat) in stats {
@@ -556,7 +556,7 @@ enum MongoOps {
 
     /// usersInfo's users: a name in a database, its roles — never its
     /// credentials (they aren't asked for).
-    static func users(_ found: [BSONDocument]) -> [DatabaseUser] {
+    package static func users(_ found: [BSONDocument]) -> [DatabaseUser] {
         found.compactMap { entry in
             guard let name = entry["user"]?.string else { return nil }
             let roles = roleNames(entry["roles"])
@@ -569,14 +569,14 @@ enum MongoOps {
     }
 
     /// rolesInfo's roles that aren't built in.
-    static func roles(_ found: [BSONDocument]) -> [DatabaseUser] {
+    package static func roles(_ found: [BSONDocument]) -> [DatabaseUser] {
         found.compactMap { entry in
             guard let name = entry["role"]?.string, entry["isBuiltin"]?.bool != true else { return nil }
             return DatabaseUser(name: name, host: entry["db"]?.string ?? "admin", isRole: true, canLogin: false, memberOf: roleNames(entry["roles"]))
         }
     }
 
-    static func roleNames(_ value: BSONValue?) -> [String] {
+    package static func roleNames(_ value: BSONValue?) -> [String] {
         (value?.array?.compactMap(\.document) ?? []).compactMap { role in
             guard let name = role["role"]?.string else { return nil }
             return "\(name)@\(role["db"]?.string ?? "admin")"
@@ -585,7 +585,7 @@ enum MongoOps {
 
     /// A user's or a role's grants: the roles granted (each revocable), then
     /// what they give together, by resource.
-    static func grants(_ entry: BSONDocument) -> [DatabaseGrant] {
+    package static func grants(_ entry: BSONDocument) -> [DatabaseGrant] {
         var grants = roleNames(entry["roles"]).map { DatabaseGrant(kind: "role", object: $0, privileges: ["granted role"]) }
         let privileges = entry["inheritedPrivileges"]?.array ?? entry["privileges"]?.array ?? []
         for privilege in privileges.compactMap(\.document) {
@@ -613,8 +613,8 @@ enum MongoOps {
 /// a top-level field — `$set` to a value or null, `$unset` to remove it —,
 /// a new document `insertOne`, a deleted one `deleteOne`. Each statement
 /// is written as the console reads it, and that is what runs. Pure.
-enum MongoEdits {
-    static func editable(_ command: MongoCommand, database: String, result: QueryResult) -> Result<EditableResult, EditRefusal> {
+package enum MongoEdits {
+    package static func editable(_ command: MongoCommand, database: String, result: QueryResult) -> Result<EditableResult, EditRefusal> {
         guard command.action == .cursor, command.name == "find", let collection = command.collection else {
             return .failure(.said("Documents are edited in a find() on one collection — not an aggregate or a command's answer."))
         }
@@ -635,7 +635,7 @@ enum MongoEdits {
         return .success(EditableResult(key: key, columns: result.columns, keyIndexes: [at], removesFields: true, types: result.types))
     }
 
-    static func statements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
+    package static func statements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
         let database = result.key.table.schema ?? "test"
         let collection = "db.getSiblingDB(\(BSONText.quoted(database))).getCollection(\(BSONText.quoted(result.key.table.name)))"
         let idColumn = result.keyIndexes.first ?? 0
@@ -698,7 +698,7 @@ enum MongoEdits {
     /// a date as its ISO time, a number as the column's kind of number —;
     /// any other type, or a column of several, as the shell writes a value
     /// (`{ "a": 1 }`, `ObjectId("…")`, `42`), else the text.
-    static func value(_ text: String, type: String) throws -> BSONValue {
+    package static func value(_ text: String, type: String) throws -> BSONValue {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         switch type {
         case "string": return .string(text)
@@ -741,18 +741,18 @@ enum MongoEdits {
 /// on a database, or one of the server's own. The password goes once,
 /// inside createUser or updateUser; the server keeps only its SCRAM
 /// verifiers. Pure.
-struct MongoUserStatements: UserStatementMaking {
-    static let databaseRoles = ["read", "readWrite", "dbAdmin", "dbOwner", "userAdmin"]
-    static let adminRoles = [
+package struct MongoUserStatements: UserStatementMaking {
+    package static let databaseRoles = ["read", "readWrite", "dbAdmin", "dbOwner", "userAdmin"]
+    package static let adminRoles = [
         "readAnyDatabase", "readWriteAnyDatabase", "userAdminAnyDatabase", "dbAdminAnyDatabase", "clusterMonitor", "clusterManager", "hostManager",
         "clusterAdmin", "backup", "restore", "root",
     ]
 
     /// The database a new user signs in to unless the sheet says otherwise:
     /// the connection's own (its authSource), else admin.
-    var signsInTo = "admin"
+    package var signsInTo = "admin"
 
-    var form: UserForm {
+    package var form: UserForm {
         UserForm(
             account: "Database it signs in to (admin if empty)", accountFill: signsInTo, superuser: nil,
             passwordNote:
@@ -761,17 +761,17 @@ struct MongoUserStatements: UserStatementMaking {
             noGrants: "No roles of its own.")
     }
 
-    func offers(_ action: UserAction, on user: DatabaseUser) -> Bool { action != .password || !user.isRole }
+    package func offers(_ action: UserAction, on user: DatabaseUser) -> Bool { action != .password || !user.isRole }
 
-    func target(_ kind: GrantKind, fields: [String]) -> GrantTarget { .database(fields.first ?? "") }
+    package func target(_ kind: GrantKind, fields: [String]) -> GrantTarget { .database(fields.first ?? "") }
 
-    func privileges(on target: GrantTarget) -> [String] {
+    package func privileges(on target: GrantTarget) -> [String] {
         guard case .database(let name) = target else { return [] }
         return name == "admin" ? Self.databaseRoles + Self.adminRoles : Self.databaseRoles
     }
 
     /// Roles only: a user isn't granted to another.
-    func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
+    package func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
         users.filter { $0.isRole && $0.id != user.id && !user.memberOf.contains($0.display) }
     }
 
@@ -798,7 +798,7 @@ struct MongoUserStatements: UserStatementMaking {
         .array(names.map { .document(["role": .string($0), "db": .string(database)]) })
     }
 
-    func create(_ user: NewUser) throws -> [UserStatement] {
+    package func create(_ user: NewUser) throws -> [UserStatement] {
         _ = try checked(user.name)
         guard !user.password.isEmpty else { throw Self.refusal("A password, please.") }
         let database = Self.database(DatabaseUser(name: user.name, host: user.host.trimmingCharacters(in: .whitespaces)))
@@ -806,18 +806,18 @@ struct MongoUserStatements: UserStatementMaking {
         return [Self.withPassword(["createUser": .string(user.name), "roles": .array([])], user.password, in: database)]
     }
 
-    func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
+    package func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
         _ = try checked(user.name)
         guard !user.isRole else { throw Self.refusal("A role has no password.") }
         guard !password.isEmpty else { throw Self.refusal("A password, please.") }
         return Self.withPassword(["updateUser": .string(user.name)], password, in: Self.database(user))
     }
 
-    func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
+    package func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
         try UserStatement(Self.command(rolesCommand(grant: true, privileges, on: target, user), in: Self.database(user)))
     }
 
-    func revoke(_ privileges: [String], on target: GrantTarget, from user: DatabaseUser) throws -> UserStatement {
+    package func revoke(_ privileges: [String], on target: GrantTarget, from user: DatabaseUser) throws -> UserStatement {
         try UserStatement(Self.command(rolesCommand(grant: false, privileges, on: target, user), in: Self.database(user)))
     }
 
@@ -834,28 +834,28 @@ struct MongoUserStatements: UserStatementMaking {
         return [verb: .string(user.name), "roles": Self.roles(privileges, in: name)]
     }
 
-    func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
+    package func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
         _ = try checked(user.name)
         _ = try checked(role.name, "A role")
         let verb = user.isRole ? "grantRolesToRole" : "grantRolesToUser"
         return UserStatement(Self.command([verb: .string(user.name), "roles": Self.roles([role.name], in: Self.database(role))], in: Self.database(user)))
     }
 
-    func revokeRole(_ role: DatabaseUser, from user: DatabaseUser) throws -> UserStatement {
+    package func revokeRole(_ role: DatabaseUser, from user: DatabaseUser) throws -> UserStatement {
         _ = try checked(user.name)
         _ = try checked(role.name, "A role")
         let verb = user.isRole ? "revokeRolesFromRole" : "revokeRolesFromUser"
         return UserStatement(Self.command([verb: .string(user.name), "roles": Self.roles([role.name], in: Self.database(role))], in: Self.database(user)))
     }
 
-    func drop(_ user: DatabaseUser) throws -> UserStatement {
+    package func drop(_ user: DatabaseUser) throws -> UserStatement {
         _ = try checked(user.name)
         return UserStatement(Self.command([user.isRole ? "dropRole" : "dropUser": .string(user.name)], in: Self.database(user)))
     }
 
     /// A role granted (`readWrite@shop`) is revoked; a privilege it gives isn't
     /// the user's own to revoke.
-    func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
+    package func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
         guard grant.kind == "role", let at = grant.object.lastIndex(of: "@") else { return nil }
         let role = DatabaseUser(name: String(grant.object[..<at]), host: String(grant.object[grant.object.index(after: at)...]), isRole: true)
         return try? revokeRole(role, from: user)

@@ -10,7 +10,7 @@ import SwiftUI
 /// terraform-ls isn't running. Format is an edit (`replaceText`), undoable;
 /// nothing is written behind the buffer, and nothing ever runs `init`.
 extension EditorViewController {
-    func attachTerraform(_ buffer: EditorBuffer) {
+    package func attachTerraform(_ buffer: EditorBuffer) {
         guard let url = buffer.url, buffer.document.unavailable == nil, buffer.sqlConsole == nil, TerraformEditorModel.isTerraform(url) else { return }
         let folder = TerraformEditorModel.shared.folder(for: url)
         buffer.terraform = folder
@@ -22,7 +22,7 @@ extension EditorViewController {
     }
 
     /// The bar under a Terraform file's text.
-    func showTerraformBar(_ folder: TerraformFolder) {
+    package func showTerraformBar(_ folder: TerraformFolder) {
         consoleHost.rootView = AnyView(
             TerraformEditorBar(
                 folder: folder, model: TerraformEditorModel.shared, theme: chrome, title: terraformTitle(folder),
@@ -51,7 +51,7 @@ extension EditorViewController {
     // MARK: Validate
 
     /// Validates the showing file's folder (the bar's button, the palette).
-    func validateTerraform(manual: Bool) {
+    package func validateTerraform(manual: Bool) {
         guard let buffer = active, let folder = buffer.terraform else { return NSSound.beep() }
         // A manual run asks fmt -check again: the checkout may have been formatted since.
         if manual { TerraformEditorModel.shared.checkFormat(for: folder, again: true) }
@@ -67,7 +67,7 @@ extension EditorViewController {
 
     /// After a save: validate where terraform-ls isn't running (it has its
     /// own), and always when the save was Validate's.
-    func terraformSaved(_ buffer: EditorBuffer) {
+    package func terraformSaved(_ buffer: EditorBuffer) {
         guard let folder = buffer.terraform, let url = buffer.url else { return }
         if buffer.terraformValidatesOnSave {
             buffer.terraformValidatesOnSave = false
@@ -77,7 +77,7 @@ extension EditorViewController {
         folder.validate(manual: false)
     }
 
-    func observeTerraformDiagnostics() {
+    package func observeTerraformDiagnostics() {
         NotificationCenter.default.addObserver(forName: .terraformDiagnostics, object: nil, queue: .main) { [weak self] note in
             guard let folder = note.object as? TerraformFolder else { return }
             MainActor.assumeIsolated { self?.receiveTerraform(folder) }
@@ -110,7 +110,7 @@ extension EditorViewController {
         }
     }
 
-    func dropTerraformDiagnostics(_ buffer: EditorBuffer) {
+    package func dropTerraformDiagnostics(_ buffer: EditorBuffer) {
         buffer.terraformDiagnostics = []
         guard buffer === active else { return }
         textView.diagnostics = buffer.diagnostics
@@ -123,7 +123,7 @@ extension EditorViewController {
     /// when it isn't a Terraform file (the caller formats some other way).
     /// `done` runs whatever came of it.
     @discardableResult
-    func formatTerraform(_ buffer: EditorBuffer, manual: Bool = false, then done: @escaping () -> Void) -> Bool {
+    package func formatTerraform(_ buffer: EditorBuffer, manual: Bool = false, then done: @escaping () -> Void) -> Bool {
         guard let url = buffer.url, TerraformEditorModel.isFormattable(url) else { return false }
         // A manual Format asks fmt -check again, as Validate does.
         if manual, let folder = buffer.terraform { TerraformEditorModel.shared.checkFormat(for: folder, again: true) }
@@ -154,7 +154,7 @@ extension EditorViewController {
     /// module's index is read and parsed off the main thread
     /// (`TerraformConfigIndex.load`), then the jump is made if the caret
     /// hasn't moved meanwhile.
-    func terraformDefinition(at index: Int) {
+    package func terraformDefinition(at index: Int) {
         guard let buffer = active, let url = buffer.url else { return NSSound.beep() }
         let tfvars = url.pathExtension.lowercased() == "tfvars"
         guard let address = TerraformConfigIndex.reference(at: index, in: buffer.storage.string, tfvars: tfvars) else { return NSSound.beep() }
@@ -172,7 +172,7 @@ extension EditorViewController {
     }
 
     /// ⇧⌘O's list and the breadcrumb: the file's blocks, its locals each.
-    func terraformSymbols(_ buffer: EditorBuffer) -> [EditorSymbol] {
+    package func terraformSymbols(_ buffer: EditorBuffer) -> [EditorSymbol] {
         guard let url = buffer.url else { return [] }
         return TerraformConfigIndex.definitions(in: buffer.storage.string, file: url).map { definition in
             let name = definition.address.hasPrefix("tfvars.") ? String(definition.address.dropFirst("tfvars.".count)) : definition.address
@@ -183,17 +183,17 @@ extension EditorViewController {
 
 /// The bar under a Terraform file: its folder, Validate, Format, and what
 /// the last of them said.
-struct TerraformEditorBar: View {
-    @ObservedObject var folder: TerraformFolder
-    @ObservedObject var model: TerraformEditorModel
-    @ObservedObject var theme: ChromeTheme
-    let title: String
-    let validate: () -> Void
-    let format: () -> Void
+package struct TerraformEditorBar: View {
+    @ObservedObject package var folder: TerraformFolder
+    @ObservedObject package var model: TerraformEditorModel
+    @ObservedObject package var theme: ChromeTheme
+    package let title: String
+    package let validate: () -> Void
+    package let format: () -> Void
     /// Ask Why on a failed validate: its diagnostics to the checkout's agent.
-    var askWhy: (() -> Void)? = nil
+    package var askWhy: (() -> Void)? = nil
 
-    static let height: CGFloat = 33
+    package static let height: CGFloat = 33
 
     private var failed: Bool {
         if case .problems(let errors, _) = folder.state, errors > 0 { return true }
@@ -219,7 +219,7 @@ struct TerraformEditorBar: View {
         }
     }
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 8) {
             Text(verbatim: "Terraform").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.dimText)
             Text(verbatim: title).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text).lineLimit(1)

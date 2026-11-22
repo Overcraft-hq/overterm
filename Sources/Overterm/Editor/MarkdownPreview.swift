@@ -4,8 +4,8 @@ import AppKit
 /// parser (`AttributedString(markdown:)`, full syntax — no web view, no
 /// bundled script), drawn in the editor's colours with TextKit 1's blocks —
 /// code and quotes on a surface, tables as tables.
-enum MarkdownRenderer {
-    static func render(_ markdown: String, theme: EditorTheme, size: CGFloat = 14) -> NSAttributedString {
+package enum MarkdownRenderer {
+    package static func render(_ markdown: String, theme: EditorTheme, size: CGFloat = 14) -> NSAttributedString {
         let options = AttributedString.MarkdownParsingOptions(
             allowsExtendedAttributes: true, interpretedSyntax: .full, failurePolicy: .returnPartiallyParsedIfPossible)
         guard let parsed = try? AttributedString(markdown: markdown, options: options) else {
@@ -258,12 +258,12 @@ enum MarkdownRenderer {
 /// The preview pane over the editor's text: read-only, selectable, links
 /// that work — a web link in the browser, a relative one in the editor.
 @MainActor
-final class MarkdownPreviewView: NSScrollView, NSTextViewDelegate {
+package final class MarkdownPreviewView: NSScrollView, NSTextViewDelegate {
     private let textView: NSTextView
     /// Settable: the terminal's theme can change while a preview is open
     /// (`EditorViewController.applyTerminalColors`), and the rendering
     /// carries its colours.
-    var theme: EditorTheme {
+    package var theme: EditorTheme {
         didSet {
             backgroundColor = theme.background
             textView.backgroundColor = theme.background
@@ -272,10 +272,10 @@ final class MarkdownPreviewView: NSScrollView, NSTextViewDelegate {
     }
     private var lastMarkdown = ""
     /// A link to a file beside this one (`CLAUDE.md`, `docs/x.md#part`).
-    var onOpenFile: ((URL) -> Void)?
-    var baseURL: URL?
+    package var onOpenFile: ((URL) -> Void)?
+    package var baseURL: URL?
 
-    init(theme: EditorTheme) {
+    package init(theme: EditorTheme) {
         self.theme = theme
         let storage = NSTextStorage()
         let layout = NSLayoutManager()
@@ -305,14 +305,14 @@ final class MarkdownPreviewView: NSScrollView, NSTextViewDelegate {
         backgroundColor = theme.background
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    var renderedText: NSAttributedString { textView.attributedString() }
+    package var renderedText: NSAttributedString { textView.attributedString() }
 
     /// Renders `markdown`, keeping where you had scrolled to.
-    func show(_ markdown: String) {
+    package func show(_ markdown: String) {
         lastMarkdown = markdown
         let origin = contentView.bounds.origin
         textView.textStorage?.setAttributedString(MarkdownRenderer.render(markdown, theme: theme))
@@ -320,7 +320,7 @@ final class MarkdownPreviewView: NSScrollView, NSTextViewDelegate {
         reflectScrolledClipView(contentView)
     }
 
-    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+    package func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
         let url = (link as? URL) ?? (link as? String).flatMap { URL(string: $0) }
         guard let url else { return false }
         if let scheme = url.scheme, ["http", "https", "mailto"].contains(scheme) {

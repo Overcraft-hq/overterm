@@ -8,33 +8,33 @@ import Foundation
 /// commit is read for, Ask Why's brief goes back to and the agents' tools
 /// default to. Kept in Overterm's support folder (`KubeBindingStore`),
 /// keyed by the checkout's root — never in the repository.
-struct KubeBinding: Codable, Equatable, Sendable, Identifiable {
+package struct KubeBinding: Codable, Equatable, Sendable, Identifiable {
     /// The checkout's root, its real path: the key.
-    var checkout: String
-    var context: String
-    var namespace: String
+    package var checkout: String
+    package var context: String
+    package var namespace: String
     /// A Helm release the checkout's chart is installed as.
-    var release: String?
+    package var release: String?
     /// A label selector narrowing the namespace to the checkout's own
     /// (`app.kubernetes.io/part-of=shop`); nil for every workload there.
-    var selector: String?
+    package var selector: String?
     /// The workloads the checkout deploys (`deploy/web`, `sts/db`, `ds/agent`);
     /// empty for every one the selector picks.
-    var workloads: [String] = []
+    package var workloads: [String] = []
 
-    var id: String { checkout }
+    package var id: String { checkout }
 
     /// `fake-dev · shop`, with the release when there is one.
-    var said: String { "\(context) · \(namespace)" + (release.map { " · release \($0)" } ?? "") }
+    package var said: String { "\(context) · \(namespace)" + (release.map { " · release \($0)" } ?? "") }
 
     /// Whether `kind`/`name` is one of the bound workloads.
-    func includes(_ kind: KubeWorkloadKind, _ name: String) -> Bool {
+    package func includes(_ kind: KubeWorkloadKind, _ name: String) -> Bool {
         workloads.isEmpty || workloads.contains { KubeWorkloadRef(parsing: $0) == KubeWorkloadRef(kind: kind, name: name) }
     }
 
     /// The same binding with its fields trimmed and emptied ones nil; nil
     /// when no context or namespace is left.
-    func cleaned() -> KubeBinding? {
+    package func cleaned() -> KubeBinding? {
         func trimmed(_ value: String?) -> String? {
             value.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 }
         }
@@ -47,12 +47,12 @@ struct KubeBinding: Codable, Equatable, Sendable, Identifiable {
 }
 
 /// The workload kinds a binding names, by kubectl's short names.
-enum KubeWorkloadKind: String, Codable, Sendable, CaseIterable {
+package enum KubeWorkloadKind: String, Codable, Sendable, CaseIterable {
     case deployment = "deploy"
     case statefulSet = "sts"
     case daemonSet = "ds"
 
-    var kind: KubeResourceKind {
+    package var kind: KubeResourceKind {
         switch self {
         case .deployment: .deployments
         case .statefulSet: .statefulSets
@@ -61,7 +61,7 @@ enum KubeWorkloadKind: String, Codable, Sendable, CaseIterable {
     }
 
     /// From a manifest's `kind:`.
-    init?(manifestKind: String) {
+    package init?(manifestKind: String) {
         switch manifestKind {
         case "Deployment": self = .deployment
         case "StatefulSet": self = .statefulSet
@@ -71,7 +71,7 @@ enum KubeWorkloadKind: String, Codable, Sendable, CaseIterable {
     }
 
     /// From what a person types: `deploy`, `deployment`, `deployments`, `sts`…
-    init?(typed: String) {
+    package init?(typed: String) {
         switch typed.lowercased() {
         case "deploy", "deployment", "deployments", "deployments.apps": self = .deployment
         case "sts", "statefulset", "statefulsets", "statefulsets.apps": self = .statefulSet
@@ -82,22 +82,22 @@ enum KubeWorkloadKind: String, Codable, Sendable, CaseIterable {
 }
 
 /// `deploy/web`: a workload a binding names.
-struct KubeWorkloadRef: Hashable, Sendable {
-    var kind: KubeWorkloadKind
-    var name: String
+package struct KubeWorkloadRef: Hashable, Sendable {
+    package var kind: KubeWorkloadKind
+    package var name: String
 
-    init(kind: KubeWorkloadKind, name: String) {
+    package init(kind: KubeWorkloadKind, name: String) {
         self.kind = kind
         self.name = name
     }
 
-    init?(parsing text: String) {
+    package init?(parsing text: String) {
         let parts = text.trimmingCharacters(in: .whitespaces).split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count == 2, let kind = KubeWorkloadKind(typed: String(parts[0])), KubeMCPText.isName(String(parts[1])) else { return nil }
         self.init(kind: kind, name: String(parts[1]))
     }
 
-    var said: String { "\(kind.rawValue)/\(name)" }
+    package var said: String { "\(kind.rawValue)/\(name)" }
 }
 
 // MARK: Where they are kept
@@ -107,36 +107,36 @@ struct KubeWorkloadRef: Hashable, Sendable {
 /// — keyed by the checkout's real path. Read once, on first use; written
 /// whole on each change. Never anything in the repository, and no secret.
 @MainActor
-final class KubeBindingStore: ObservableObject {
+package final class KubeBindingStore: ObservableObject {
     /// The app's: the support folder's (an isolated run's own, a unit
     /// test's too) — never the user's bindings in a test.
-    static let shared = KubeBindingStore(file: defaultFile)
+    package static let shared = KubeBindingStore(file: defaultFile)
 
-    nonisolated static var defaultFile: URL {
+    package nonisolated static var defaultFile: URL {
         AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/bindings.json")
     }
 
-    let file: URL
-    @Published private(set) var bindings: [String: KubeBinding] = [:]
+    package let file: URL
+    @Published package private(set) var bindings: [String: KubeBinding] = [:]
     /// What couldn't be read or written, said plainly.
-    @Published private(set) var problem: String?
+    @Published package private(set) var problem: String?
     private var loaded = false
 
-    init(file: URL) {
+    package init(file: URL) {
         self.file = file
     }
 
     /// The key a checkout is kept under: its real path.
-    nonisolated static func key(_ checkout: URL) -> String { FileTreeModel.realPath(checkout.standardizedFileURL) }
+    package nonisolated static func key(_ checkout: URL) -> String { FileTreeModel.realPath(checkout.standardizedFileURL) }
 
-    func binding(for checkout: URL?) -> KubeBinding? {
+    package func binding(for checkout: URL?) -> KubeBinding? {
         guard let checkout else { return nil }
         loadIfNeeded()
         return bindings[Self.key(checkout)]
     }
 
     /// Every checkout bound to `context` and `namespace`.
-    func bindings(on context: String, namespace: String?) -> [KubeBinding] {
+    package func bindings(on context: String, namespace: String?) -> [KubeBinding] {
         loadIfNeeded()
         return bindings.values.filter { $0.context == context && (namespace == nil || $0.namespace == namespace) }.sorted { $0.checkout < $1.checkout }
     }
@@ -145,7 +145,7 @@ final class KubeBindingStore: ObservableObject {
     /// for: `preferred` (the selected tab's, the calling pane's) when it
     /// is bound there — several worktrees of one repository are often
     /// bound to one namespace — else the first.
-    func binding(on context: String, namespace: String, preferring preferred: KubeBinding?) -> KubeBinding? {
+    package func binding(on context: String, namespace: String, preferring preferred: KubeBinding?) -> KubeBinding? {
         if let preferred, preferred.context == context, preferred.namespace == namespace { return preferred }
         return bindings(on: context, namespace: namespace).first
     }
@@ -153,7 +153,7 @@ final class KubeBindingStore: ObservableObject {
     /// Binds (or binds again) a checkout; a binding without a context or
     /// namespace is refused.
     @discardableResult
-    func set(_ binding: KubeBinding) -> Bool {
+    package func set(_ binding: KubeBinding) -> Bool {
         loadIfNeeded()
         guard var cleaned = binding.cleaned() else {
             problem = "A binding needs a context and a namespace."
@@ -165,13 +165,13 @@ final class KubeBindingStore: ObservableObject {
         return true
     }
 
-    func remove(_ checkout: URL) {
+    package func remove(_ checkout: URL) {
         loadIfNeeded()
         guard bindings.removeValue(forKey: Self.key(checkout)) != nil else { return }
         save()
     }
 
-    func loadIfNeeded() {
+    package func loadIfNeeded() {
         guard !loaded else { return }
         loaded = true
         guard let data = try? Data(contentsOf: file) else { return }
@@ -184,7 +184,7 @@ final class KubeBindingStore: ObservableObject {
     }
 
     /// Read again from the file (a test's, a scenario's).
-    func reload() {
+    package func reload() {
         loaded = false
         bindings = [:]
         loadIfNeeded()
@@ -212,7 +212,7 @@ final class KubeBindingStore: ObservableObject {
 // MARK: What the checkout says (pure)
 
 /// A Kubernetes file found in a checkout, by what it is.
-enum KubeCheckoutFileKind: String, Sendable, Equatable, CaseIterable {
+package enum KubeCheckoutFileKind: String, Sendable, Equatable, CaseIterable {
     case chart = "Chart.yaml"
     case kustomization = "kustomization.yaml"
     case manifest
@@ -222,7 +222,7 @@ enum KubeCheckoutFileKind: String, Sendable, Equatable, CaseIterable {
 
     /// What a file's name says it is; nil for one that isn't any (a plain
     /// YAML is a manifest only once its text says `apiVersion` and `kind`).
-    static func named(_ name: String) -> KubeCheckoutFileKind? {
+    package static func named(_ name: String) -> KubeCheckoutFileKind? {
         switch name {
         case "Chart.yaml", "Chart.yml": .chart
         case "kustomization.yaml", "kustomization.yml", "Kustomization": .kustomization
@@ -235,10 +235,10 @@ enum KubeCheckoutFileKind: String, Sendable, Equatable, CaseIterable {
 }
 
 /// One file read: its path in the checkout and its text.
-struct KubeCheckoutFile: Equatable, Sendable {
-    var path: String
-    var kind: KubeCheckoutFileKind
-    var text: String
+package struct KubeCheckoutFile: Equatable, Sendable {
+    package var path: String
+    package var kind: KubeCheckoutFileKind
+    package var text: String
 }
 
 /// What Overterm guesses a checkout deploys, from its files (3.1): the
@@ -246,19 +246,19 @@ struct KubeCheckoutFile: Equatable, Sendable {
 /// manifests' `metadata.namespace`, their workloads, and a label such as
 /// `app.kubernetes.io/part-of`. A guess — the user confirms it and picks
 /// the context.
-struct KubeBindingGuess: Equatable, Sendable {
+package struct KubeBindingGuess: Equatable, Sendable {
     /// The files that told something, by path in the checkout.
-    var files: [String] = []
-    var kinds: Set<KubeCheckoutFileKind> = []
-    var release: String?
-    var namespace: String?
-    var selector: String?
-    var workloads: [String] = []
+    package var files: [String] = []
+    package var kinds: Set<KubeCheckoutFileKind> = []
+    package var release: String?
+    package var namespace: String?
+    package var selector: String?
+    package var workloads: [String] = []
 
-    var isEmpty: Bool { files.isEmpty }
+    package var isEmpty: Bool { files.isEmpty }
 
     /// The files' words: `Chart.yaml, 2 manifests`.
-    var said: String {
+    package var said: String {
         var words: [String] = []
         for kind in KubeCheckoutFileKind.allCases where kinds.contains(kind) {
             let count = filesOf(kind)
@@ -275,7 +275,7 @@ struct KubeBindingGuess: Equatable, Sendable {
 
     /// The guess from the files read, in the order they came (the nearest
     /// the checkout's top first).
-    static func from(_ files: [KubeCheckoutFile]) -> KubeBindingGuess {
+    package static func from(_ files: [KubeCheckoutFile]) -> KubeBindingGuess {
         var guess = KubeBindingGuess()
         var namespaces: [String: Int] = [:]
         var partOf: [String: Int] = [:]
@@ -329,7 +329,7 @@ struct KubeBindingGuess: Equatable, Sendable {
     }
 
     /// The guess as a binding of `checkout` to `context`.
-    func binding(checkout: URL, context: String) -> KubeBinding {
+    package func binding(checkout: URL, context: String) -> KubeBinding {
         KubeBinding(
             checkout: KubeBindingStore.key(checkout), context: context, namespace: namespace ?? "default", release: release, selector: selector,
             workloads: workloads)
@@ -344,12 +344,12 @@ struct KubeBindingGuess: Equatable, Sendable {
 /// most `maxFiles` files read, each up to `maxBytes`. A YAML inside a
 /// chart (its walk up finds the chart's `Chart.yaml`) is a template, not
 /// a manifest, and isn't read. Runs off the main thread.
-enum KubeCheckoutScan {
-    static let maxDepth = 5
-    static let maxEntries = 5000
-    static let maxFiles = 120
-    static let maxBytes = 256 << 10
-    static let skipped: Set<String> = [
+package enum KubeCheckoutScan {
+    package static let maxDepth = 5
+    package static let maxEntries = 5000
+    package static let maxFiles = 120
+    package static let maxBytes = 256 << 10
+    package static let skipped: Set<String> = [
         "node_modules", "vendor", "target", "build", "dist", "Pods", "DerivedData", "venv", "__pycache__", "Library",
     ]
 
@@ -360,7 +360,7 @@ enum KubeCheckoutScan {
     /// Desktop, Documents and Downloads (privacy prompts), other apps'
     /// containers and iCloud's placeholders, and read what manifests it
     /// found there.
-    nonisolated static func isRepositoryRoot(
+    package nonisolated static func isRepositoryRoot(
         _ folder: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser,
         exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
     ) -> Bool {
@@ -371,7 +371,7 @@ enum KubeCheckoutScan {
         return exists(real.appendingPathComponent(".git").path)
     }
 
-    nonisolated static func files(in root: URL) -> [KubeCheckoutFile] {
+    package nonisolated static func files(in root: URL) -> [KubeCheckoutFile] {
         let manager = FileManager.default
         let base = root.standardizedFileURL
         var found: [KubeCheckoutFile] = []
@@ -414,7 +414,7 @@ enum KubeCheckoutScan {
     /// checkout's root) holding a `Chart.yaml`. The walk stops at the root,
     /// at `pathComponents.count <= 1`, and after `maxDepth * 4` steps
     /// (CLAUDE.md: never walk up comparing with "/").
-    nonisolated static func chartRoot(
+    package nonisolated static func chartRoot(
         of file: URL, within root: URL, exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
     ) -> URL? {
         let top = root.standardizedFileURL.pathComponents
@@ -432,7 +432,7 @@ enum KubeCheckoutScan {
     /// The guess for a checkout, read now (off the main thread); nothing
     /// read, and nothing guessed, for a folder that isn't a repository's
     /// root (`isRepositoryRoot`).
-    static func guess(_ root: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) async -> KubeBindingGuess {
+    package static func guess(_ root: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) async -> KubeBindingGuess {
         await KubeBlocking.run { isRepositoryRoot(root, home: home) ? KubeBindingGuess.from(files(in: root)) : KubeBindingGuess() }
     }
 }

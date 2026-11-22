@@ -7,7 +7,7 @@ import Foundation
 extension DockerPageModel {
     /// Asked first. The run is read again at the yes, so what it made
     /// meanwhile goes too.
-    func confirmRemove(session: TestcontainersSession) {
+    package func confirmRemove(session: TestcontainersSession) {
         let members = session.members
         let title =
             members.isEmpty
@@ -34,7 +34,7 @@ extension DockerPageModel {
     /// Removes the run: its containers together, then what it labelled,
     /// then Ryuk — only when everything else went, so it still clears what
     /// couldn't go when the run ends. The window asks before.
-    func remove(session: TestcontainersSession) {
+    package func remove(session: TestcontainersSession) {
         guard let engine = docker.engine else { return }
         let tag = Self.sessionTag(session.id)
         let members = session.members
@@ -62,7 +62,7 @@ extension DockerPageModel {
     /// One container forced out with its anonymous volumes, as Ryuk removes
     /// it: nil when it went, or was gone — Ryuk's own removal racing this
     /// one says "already in progress". Else what the engine said.
-    nonisolated static func removing(_ container: ContainerSummary, _ engine: DockerEngine) async -> String? {
+    package nonisolated static func removing(_ container: ContainerSummary, _ engine: DockerEngine) async -> String? {
         do {
             try await engine.remove(container: container.Id, force: true, volumes: true)
             return nil
@@ -76,7 +76,7 @@ extension DockerPageModel {
     /// What the run labelled, in Ryuk's order once its containers are
     /// gone: networks, volumes, images — each list read once. Nothing for
     /// the containers in no run. What couldn't go, said.
-    nonisolated static func removingLabelled(_ session: String, _ engine: DockerEngine) async -> [String] {
+    package nonisolated static func removingLabelled(_ session: String, _ engine: DockerEngine) async -> [String] {
         guard !session.isEmpty else { return [] }
         var failures: [String] = []
         func failed(_ name: String, _ error: Error) {

@@ -4,7 +4,7 @@ import Foundation
 /// engine (`DockerLogSource`), a pod's. Only reads: it opens the stream,
 /// and says whether one that ended is worth opening again.
 @MainActor
-protocol LogSource: AnyObject {
+package protocol LogSource: AnyObject {
     /// The log followed: its last `tail` lines then what comes, or — given
     /// `after`, the newest line's timestamp already in the feed — what was
     /// written from then on. A line or two already shown may come again
@@ -23,14 +23,14 @@ protocol LogSource: AnyObject {
 /// followed again after a restart from where it stopped, nothing twice. A
 /// container's session has one; a compose project's, one a service.
 @MainActor
-final class LogFollower {
-    let source: any LogSource
+package final class LogFollower {
+    package let source: any LogSource
     private let feed: LogFeed
     /// Merged by time with other followers' lines in the same feed, rather
     /// than added at the end.
     private let merging: Bool
     private var task: Task<Void, Never>?
-    private(set) var following = false
+    package private(set) var following = false
     /// The newest line's time, so a log followed again starts after it.
     private var lastStamp: String?
     /// The lines in at `lastStamp`: followed again from that time, a line
@@ -41,15 +41,15 @@ final class LogFollower {
     /// Followed again from a time: until a line past it comes, what comes
     /// may be lines already shown (the source asks from that second).
     private var resuming: (stamp: String, shown: [LogLine])?
-    var onChange: () -> Void = {}
+    package var onChange: () -> Void = {}
 
-    init(source: any LogSource, feed: LogFeed, merging: Bool) {
+    package init(source: any LogSource, feed: LogFeed, merging: Bool) {
         self.source = source
         self.feed = feed
         self.merging = merging
     }
 
-    func start(tail: Int) {
+    package func start(tail: Int) {
         task?.cancel()
         let after = lastStamp
         resuming = lastStamp.map { (LogFeed.sortable($0), atLastStamp) }
@@ -110,7 +110,7 @@ final class LogFollower {
         lastStamp = newest
     }
 
-    func stop() {
+    package func stop() {
         task?.cancel()
         task = nil
         set(following: false)

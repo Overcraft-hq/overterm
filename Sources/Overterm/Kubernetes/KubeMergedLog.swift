@@ -1,12 +1,12 @@
 import Foundation
 
 /// One stream of a merged log: a pod's container, as stern follows it.
-struct KubeLogStreamKey: Hashable, Sendable, CustomStringConvertible {
-    var pod: String
-    var container: String
+package struct KubeLogStreamKey: Hashable, Sendable, CustomStringConvertible {
+    package var pod: String
+    package var container: String
 
     /// What its lines are prefixed with, and coloured by: `pod/container`.
-    var description: String { "\(pod)/\(container)" }
+    package var description: String { "\(pod)/\(container)" }
 }
 
 /// stern's include and exclude: regular expressions (case aside) over a
@@ -14,20 +14,20 @@ struct KubeLogStreamKey: Hashable, Sendable, CustomStringConvertible {
 /// (`--container`) and a line (`--include`, `--exclude`). Empty, a part
 /// picks everything. A pod or container left out takes no stream; a
 /// line left out never reaches the feed. Pure.
-struct KubeMergedLogFilter: Equatable, Sendable {
-    var pods = ""
-    var excludePods = ""
-    var containers = ""
-    var lines = ""
-    var excludeLines = ""
+package struct KubeMergedLogFilter: Equatable, Sendable {
+    package var pods = ""
+    package var excludePods = ""
+    package var containers = ""
+    package var lines = ""
+    package var excludeLines = ""
 
-    var isEmpty: Bool { [pods, excludePods, containers, lines, excludeLines].allSatisfy { $0.isEmpty } }
+    package var isEmpty: Bool { [pods, excludePods, containers, lines, excludeLines].allSatisfy { $0.isEmpty } }
 
     /// How many parts pick something.
-    var count: Int { [pods, excludePods, containers, lines, excludeLines].filter { !$0.isEmpty }.count }
+    package var count: Int { [pods, excludePods, containers, lines, excludeLines].filter { !$0.isEmpty }.count }
 
     /// The first part that isn't a regular expression, said; nil when each is one.
-    var problem: String? {
+    package var problem: String? {
         for (title, pattern) in [("Pods", pods), ("Pods left out", excludePods), ("Containers", containers), ("Lines", lines), ("Lines left out", excludeLines)]
         where !pattern.isEmpty && Self.expression(pattern) == nil {
             return "\(title): not a regular expression"
@@ -35,7 +35,7 @@ struct KubeMergedLogFilter: Equatable, Sendable {
         return nil
     }
 
-    static func expression(_ pattern: String) -> NSRegularExpression? {
+    package static func expression(_ pattern: String) -> NSRegularExpression? {
         pattern.isEmpty ? nil : try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }
 
@@ -45,24 +45,24 @@ struct KubeMergedLogFilter: Equatable, Sendable {
 
     /// Whether a pod's streams are followed: its name matches `pods` (when
     /// set) and not `excludePods`.
-    func picks(pod name: String) -> Bool {
+    package func picks(pod name: String) -> Bool {
         if !pods.isEmpty, !Self.found(Self.expression(pods), in: name) { return false }
         return excludePods.isEmpty || !Self.found(Self.expression(excludePods), in: name)
     }
 
-    func picks(container name: String) -> Bool {
+    package func picks(container name: String) -> Bool {
         containers.isEmpty || Self.found(Self.expression(containers), in: name)
     }
 
     /// The line parts, made once: a stream's thousands of lines go through it.
-    func lineMatcher() -> LineMatcher { LineMatcher(include: Self.expression(lines), exclude: Self.expression(excludeLines)) }
+    package func lineMatcher() -> LineMatcher { LineMatcher(include: Self.expression(lines), exclude: Self.expression(excludeLines)) }
 
-    struct LineMatcher {
-        let include: NSRegularExpression?
-        let exclude: NSRegularExpression?
+    package struct LineMatcher {
+        package let include: NSRegularExpression?
+        package let exclude: NSRegularExpression?
 
         /// Its message and a JSON line's fields, as the pane shows them.
-        func keeps(_ line: LogLine) -> Bool {
+        package func keeps(_ line: LogLine) -> Bool {
             guard include != nil || exclude != nil else { return true }
             let text = line.fields.isEmpty ? line.message : line.message + "  " + line.fields.map { "\($0.0)=\($0.1)" }.joined(separator: " ")
             if include != nil, !KubeMergedLogFilter.found(include, in: text) { return false }
@@ -78,22 +78,22 @@ struct KubeMergedLogFilter: Equatable, Sendable {
 /// in the pods' order (by name) and their containers' (the spec's). A pod
 /// whose containers aren't known yet is read (`fetch`) while there is
 /// room. Pure.
-enum KubeMergedLogPlan {
-    struct Plan: Equatable {
+package enum KubeMergedLogPlan {
+    package struct Plan: Equatable {
         /// The streams followed, in the pods' order.
-        var streams: [KubeLogStreamKey] = []
+        package var streams: [KubeLogStreamKey] = []
         /// The pods to read for their containers.
-        var fetch: [String] = []
+        package var fetch: [String] = []
         /// How many streams the selector and the filter pick (a pod not
         /// read yet counts as one).
-        var total = 0
+        package var total = 0
         /// How many of them the cap leaves out.
-        var capped: Int { total - streams.count - fetch.count }
+        package var capped: Int { total - streams.count - fetch.count }
     }
 
     /// `pods`: each pod the selector picks now, with its containers' names
     /// once read (nil: not yet). `following`: the streams open now.
-    static func plan(pods: [(name: String, containers: [String]?)], following: Set<KubeLogStreamKey>, cap: Int, filter: KubeMergedLogFilter)
+    package static func plan(pods: [(name: String, containers: [String]?)], following: Set<KubeLogStreamKey>, cap: Int, filter: KubeMergedLogFilter)
         -> Plan
     {
         let cap = max(cap, 1)

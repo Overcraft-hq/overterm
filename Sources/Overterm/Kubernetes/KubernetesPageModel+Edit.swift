@@ -10,28 +10,28 @@ import Foundation
 /// every class: diffing changes nothing. Applying is the bar's own step
 /// (`KubeManifestSession`), on writable contexts only.
 extension KubernetesPageModel {
-    static let editTitle = "Edit YAML in Editor"
+    package static let editTitle = "Edit YAML in Editor"
 
-    func editVerb(for ref: KubeObjectRef) -> ResourceVerb {
+    package func editVerb(for ref: KubeObjectRef) -> ResourceVerb {
         ResourceVerb(
             title: Self.editTitle, label: "Edit", symbol: "pencil", place: .more, key: KubernetesKey.edit.key,
             unavailable: model.contexts.context(named: ref.context) == nil ? "The context is gone." : nil, group: 4
         ) { [weak self] in self?.editYAML(ref) }
     }
 
-    func editVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+    package func editVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
         guard picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
         return [editVerb(for: ref)]
     }
 
     /// `y`: the object the detail shows, else the one selected row.
-    func editKey() -> Bool {
+    package func editKey() -> Bool {
         guard let ref = writeTarget else { return false }
         editYAML(ref)
         return true
     }
 
-    func editYAML(_ ref: KubeObjectRef) {
+    package func editYAML(_ ref: KubeObjectRef) {
         writeStatus = nil
         guard let context = model.contexts.context(named: ref.context), model.client(for: ref.context) != nil else {
             writeStatus = .failed("Kubernetes is off, or the context is gone.")
@@ -85,7 +85,7 @@ extension KubernetesPageModel {
     /// The YAML tab reads while it shows — the page on screen, in a window
     /// on screen: the resource's buffer made from the detail's read, and
     /// the object followed so a change on the cluster reaches it.
-    func updateYAMLReading() {
+    package func updateYAMLReading() {
         guard let detail else { return }
         let onScreen = visible && windowVisible && detailTab == .yaml
         if onScreen {
@@ -97,7 +97,7 @@ extension KubernetesPageModel {
     }
 
     /// The YAML tab's editor: one for the page, showing the detail's buffer.
-    var yamlEditor: EditorViewController? {
+    package var yamlEditor: EditorViewController? {
         if let made = madeYAMLEditor { return made }
         madeYAMLEditor = makeYAMLEditor?()
         return madeYAMLEditor

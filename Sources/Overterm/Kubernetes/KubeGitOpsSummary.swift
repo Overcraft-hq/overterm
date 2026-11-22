@@ -6,17 +6,17 @@ import Foundation
 /// ladder run over them all at once — a Flux object's Blocked is its
 /// peers' — and again on every tick with no read, the scope rule, the
 /// order and the counts. Pure.
-enum KubeGitOpsSummary {
+package enum KubeGitOpsSummary {
     /// A kind by its group and plural.
-    struct Kind: Hashable, Sendable {
-        var group: String
-        var resource: String
+    package struct Kind: Hashable, Sendable {
+        package var group: String
+        package var resource: String
 
-        var fullName: String { "\(resource).\(group)" }
+        package var fullName: String { "\(resource).\(group)" }
     }
 
     /// What is followed live, as rows (R1, decision 5).
-    static let followed: [Kind] = [
+    package static let followed: [Kind] = [
         Kind(group: "argoproj.io", resource: "applications"), Kind(group: "kustomize.toolkit.fluxcd.io", resource: "kustomizations"),
         Kind(group: "helm.toolkit.fluxcd.io", resource: "helmreleases"), Kind(group: "source.toolkit.fluxcd.io", resource: "gitrepositories"),
         Kind(group: "source.toolkit.fluxcd.io", resource: "ocirepositories"),
@@ -24,7 +24,7 @@ enum KubeGitOpsSummary {
 
     /// Every kind summarised (R2): the followed ones, ApplicationSets (no
     /// columns to follow) and the other three sources.
-    static let summarised: [Kind] =
+    package static let summarised: [Kind] =
         followed + [
             Kind(group: "argoproj.io", resource: "applicationsets"), Kind(group: "source.toolkit.fluxcd.io", resource: "helmrepositories"),
             Kind(group: "source.toolkit.fluxcd.io", resource: "helmcharts"), Kind(group: "source.toolkit.fluxcd.io", resource: "buckets"),
@@ -32,12 +32,12 @@ enum KubeGitOpsSummary {
 
     /// Whether the section has anything to show here: Argo CD's
     /// Applications or any Flux kind served.
-    static func served(_ discovery: KubeDiscovery?) -> Bool {
+    package static func served(_ discovery: KubeDiscovery?) -> Bool {
         discovery?.kinds.contains { ($0.group == "argoproj.io" && $0.resource == "applications") || $0.group.hasSuffix(".toolkit.fluxcd.io") } ?? false
     }
 
     /// Which tools are served: Argo CD's kinds and Flux's, counted.
-    static func tools(_ discovery: KubeDiscovery?) -> (argo: Int, flux: Int) {
+    package static func tools(_ discovery: KubeDiscovery?) -> (argo: Int, flux: Int) {
         let kinds = discovery?.kinds ?? []
         let argo = Set(kinds.filter { $0.group == "argoproj.io" && ["applications", "applicationsets"].contains($0.resource) }.map(\.resource)).count
         let flux = Set(kinds.filter { $0.group.hasSuffix(".toolkit.fluxcd.io") && summarised.contains(Kind(group: $0.group, resource: $0.resource)) }.map(\.fullName)).count
@@ -45,7 +45,7 @@ enum KubeGitOpsSummary {
     }
 
     /// The summarised kinds `discovery` serves and lets be listed, at their versions.
-    static func kinds(_ discovery: KubeDiscovery?) -> [KubeResourceKind] {
+    package static func kinds(_ discovery: KubeDiscovery?) -> [KubeResourceKind] {
         let wanted = Set(summarised)
         return (discovery?.kinds ?? []).filter { wanted.contains(Kind(group: $0.group, resource: $0.resource)) && $0.canList }
     }
@@ -53,20 +53,20 @@ enum KubeGitOpsSummary {
     // MARK: Reading
 
     /// One object as a GET answers it; nil for a kind that isn't Argo CD's or Flux's.
-    static func object(_ data: Data, readAt: Date) throws -> KubeGitOpsObject? {
+    package static func object(_ data: Data, readAt: Date) throws -> KubeGitOpsObject? {
         KubeGitOpsObject(try KubeGitOpsWire.object(data), readAt: readAt)
     }
 
     /// One already-decoded object (the Overview's, `KubeHealth.kept`):
     /// encoded again and read through the same allow-list.
-    static func object(_ object: [String: Any], readAt: Date) -> KubeGitOpsObject? {
+    package static func object(_ object: [String: Any], readAt: Date) -> KubeGitOpsObject? {
         guard JSONSerialization.isValidJSONObject(object), let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
         return try? Self.object(data, readAt: readAt)
     }
 
     /// A page of a list: its summaries (each given `kind`, which a list's
     /// items may not say), and where the next page starts.
-    static func page(_ data: Data, kind: KubeResourceKind, readAt: Date) throws -> (objects: [KubeGitOpsObject], next: String?, remaining: Int?) {
+    package static func page(_ data: Data, kind: KubeResourceKind, readAt: Date) throws -> (objects: [KubeGitOpsObject], next: String?, remaining: Int?) {
         let list = try KubeGitOpsWire.list(data)
         let objects = (list.items ?? []).compactMap { item -> KubeGitOpsObject? in
             var item = item
@@ -83,14 +83,14 @@ enum KubeGitOpsSummary {
     /// Each object's state, why, since and tags from the ladder, with the
     /// others as its peers; `stale`, the tools whose controller isn't ready
     /// (each of its rows "may be stale"). The tick: run again at `now`.
-    static func ranked(_ objects: [KubeGitOpsObject], now: Date, stale: Set<KubeGitOpsObject.Tool> = []) -> [KubeGitOpsObject] {
+    package static func ranked(_ objects: [KubeGitOpsObject], now: Date, stale: Set<KubeGitOpsObject.Tool> = []) -> [KubeGitOpsObject] {
         var peers: KubeGitOpsLadder.Peers = [:]
         for object in objects { peers[object.key] = object }
         return objects.map { evaluated($0, now: now, peers: peers, stale: stale) }.sorted(by: ordered)
     }
 
     /// One object put on the ladder against `peers` (its source, chart, dependencies).
-    static func evaluated(_ object: KubeGitOpsObject, now: Date, peers: KubeGitOpsLadder.Peers, stale: Set<KubeGitOpsObject.Tool> = []) -> KubeGitOpsObject {
+    package static func evaluated(_ object: KubeGitOpsObject, now: Date, peers: KubeGitOpsLadder.Peers, stale: Set<KubeGitOpsObject.Tool> = []) -> KubeGitOpsObject {
         var object = object
         let verdict = KubeGitOpsLadder.evaluate(object, now: now, peers: peers)
         object.state = verdict.state
@@ -102,7 +102,7 @@ enum KubeGitOpsSummary {
     }
 
     /// State in display order, then the oldest problem first, then by name.
-    static func ordered(_ a: KubeGitOpsObject, _ b: KubeGitOpsObject) -> Bool {
+    package static func ordered(_ a: KubeGitOpsObject, _ b: KubeGitOpsObject) -> Bool {
         if a.state != b.state { return a.state < b.state }
         let at = a.stateSince ?? a.created ?? .distantFuture
         let bt = b.stateSince ?? b.created ?? .distantFuture
@@ -111,7 +111,7 @@ enum KubeGitOpsSummary {
     }
 
     /// How many in each state.
-    static func counts(_ objects: [KubeGitOpsObject]) -> [KubeGitOpsState: Int] {
+    package static func counts(_ objects: [KubeGitOpsObject]) -> [KubeGitOpsState: Int] {
         var counts: [KubeGitOpsState: Int] = [:]
         for object in objects { counts[object.state, default: 0] += 1 }
         return counts
@@ -122,7 +122,7 @@ enum KubeGitOpsSummary {
     /// Kept by itself: its own namespace in scope, or one it manages, or —
     /// nothing applied yet — its destination in this cluster. One that
     /// deploys to another cluster only by its own namespace.
-    static func inScope(_ object: KubeGitOpsObject, _ scope: KubeScope) -> Bool {
+    package static func inScope(_ object: KubeGitOpsObject, _ scope: KubeScope) -> Bool {
         if scope.includes(object.ref.namespace) { return true }
         if object.remote != nil || object.destination?.inCluster == false { return false }
         if object.managedNamespaces.contains(where: { scope.includes($0) }) { return true }
@@ -135,7 +135,7 @@ enum KubeGitOpsSummary {
     /// What lives in or deploys into `scope`: each object kept by itself,
     /// then the ApplicationSets whose Applications are kept, then the
     /// sources (and charts, and their sources) a kept one takes from.
-    static func kept(_ objects: [KubeGitOpsObject], scope: KubeScope) -> [KubeGitOpsObject] {
+    package static func kept(_ objects: [KubeGitOpsObject], scope: KubeScope) -> [KubeGitOpsObject] {
         guard scope != .all else { return objects }
         var keep = Set(objects.filter { inScope($0, scope) }.map(\.key))
         let sets = Set(objects.filter { keep.contains($0.key) }.compactMap(\.ownerAppSet))

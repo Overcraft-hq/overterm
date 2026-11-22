@@ -10,32 +10,32 @@ import Foundation
 /// focus stealing, no saved divider positions and no saved window frame
 /// (macOS keeps it in the standard defaults: the window opens at a fixed
 /// frame instead, `TerminalWindowController.placeIsolatedWindow`).
-enum AppEnvironment {
+package enum AppEnvironment {
     private static let env = ProcessInfo.processInfo.environment
 
     /// The app's bundle id (Scripts/make-app.sh writes the same one): its
     /// defaults domain, log subsystem, caches folder, pasteboards.
-    static let bundleIdentifier = "io.github.overcraft-hq.overterm"
+    package static let bundleIdentifier = "io.github.overcraft-hq.overterm"
     /// The ids it has had, newest first; settings are carried over from the
     /// newest one that has any, once. It was Terminus until 2026-10-14, and
     /// published under another name again before 2026-09-26.
-    static let formerBundleIdentifiers = ["io.github.terminus-app.terminus", "ai.promptrails.terminus"]
+    package static let formerBundleIdentifiers = ["io.github.terminus-app.terminus", "ai.promptrails.terminus"]
     private static let migratedKey = "migratedFromFormerBundleIdentifier"
 
     /// The end-to-end scenario to run, if any.
-    static let e2eScenario = env["OVERTERM_E2E"]
+    package static let e2eScenario = env["OVERTERM_E2E"]
 
     /// The unit tests too: `Settings.shared` read the user's settings.json
     /// in them, so a test passed or failed by what the person running it had
     /// switched off (Browser off: twelve of BrowserMCPTests failed).
-    static let isUnderTest = env["XCTestConfigurationFilePath"] != nil || NSClassFromString("XCTestCase") != nil
+    package static let isUnderTest = env["XCTestConfigurationFilePath"] != nil || NSClassFromString("XCTestCase") != nil
 
-    static let isIsolated = e2eScenario != nil || env["OVERTERM_DUMP_LAYOUT"] != nil || isUnderTest
+    package static let isIsolated = e2eScenario != nil || env["OVERTERM_DUMP_LAYOUT"] != nil || isUnderTest
 
     /// session.json and snippets.json live here. OVERTERM_SUPPORT_DIR
     /// overrides (a test hands in a prepared session); an isolated run
     /// without it gets a fresh temporary directory.
-    static let supportDirectory: URL = {
+    package static let supportDirectory: URL = {
         if let dir = env["OVERTERM_SUPPORT_DIR"] { return URL(fileURLWithPath: dir, isDirectory: true) }
         if isIsolated {
             // A unit test process removes its own at exit: run in parallel,
@@ -58,7 +58,7 @@ enum AppEnvironment {
 
     /// Whether the support directory is this run's own temporary one, to
     /// remove at its end — not one a test handed in.
-    static var ownsSupportDirectory: Bool { isIsolated && env["OVERTERM_SUPPORT_DIR"] == nil }
+    package static var ownsSupportDirectory: Bool { isIsolated && env["OVERTERM_SUPPORT_DIR"] == nil }
 
     private static func removeOwnSupportDirectory() {
         guard ownsSupportDirectory else { return }
@@ -69,7 +69,7 @@ enum AppEnvironment {
     /// screenshot thumbnail write theirs only when asked) land here, a
     /// folder per drop. The caches, where macOS may clear them in time; an
     /// isolated run keeps them in its own support directory.
-    static let dropsDirectory: URL = {
+    package static let dropsDirectory: URL = {
         if isIsolated || env["OVERTERM_SUPPORT_DIR"] != nil {
             return supportDirectory.appendingPathComponent("Drops", isDirectory: true)
         }
@@ -82,7 +82,7 @@ enum AppEnvironment {
     /// own — the changes pane reads transcripts, and a scenario must never
     /// read the user's — until a scenario points ClaudeUsageReader at the
     /// transcripts it wrote.
-    static let claudeProjectsDirectory: URL = {
+    package static let claudeProjectsDirectory: URL = {
         if isIsolated { return supportDirectory.appendingPathComponent("claude-projects", isDirectory: true) }
         if let dir = env["CLAUDE_CONFIG_DIR"] { return URL(fileURLWithPath: dir).appendingPathComponent("projects") }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
@@ -92,14 +92,14 @@ enum AppEnvironment {
     /// iTerm2-Color-Schemes beside them (Scripts/fetch-themes.sh). Ghostty
     /// resolves `theme = "<name>"` here itself; Settings ▸ Themes reads the
     /// files to draw each one.
-    static var bundledThemesDirectory: URL? {
+    package static var bundledThemesDirectory: URL? {
         Bundle.main.resourceURL?.appendingPathComponent("ghostty/themes", isDirectory: true)
     }
 
     /// The user's own themes, where Ghostty looks for them too. An isolated
     /// run has an empty one of its own: a scenario must not depend on what
     /// the user has put there, nor write a theme into it.
-    static var userThemesDirectory: URL? {
+    package static var userThemesDirectory: URL? {
         if isIsolated { return supportDirectory.appendingPathComponent("ghostty-themes", isDirectory: true) }
         if let config = env["XDG_CONFIG_HOME"], !config.isEmpty {
             return URL(fileURLWithPath: config, isDirectory: true).appendingPathComponent("ghostty/themes", isDirectory: true)
@@ -112,7 +112,7 @@ enum AppEnvironment {
     /// per account, `~/.claude-work` — and a GUI app never sees that
     /// variable. Each `~/.claude-*` folder with sessions in it counts. None
     /// in an isolated run.
-    static var otherClaudeConfigDirectories: [URL] {
+    package static var otherClaudeConfigDirectories: [URL] {
         guard !isIsolated else { return [] }
         let home = FileManager.default.homeDirectoryForCurrentUser
         // ~/.claude too: the main folder is CLAUDE_CONFIG_DIR's when it is set.
@@ -136,7 +136,7 @@ enum AppEnvironment {
 
     /// A config folder's state file: `~/.claude`'s lives beside it, as
     /// `~/.claude.json`; any other folder keeps its own inside.
-    static func claudeConfigFile(of directory: URL) -> URL {
+    package static func claudeConfigFile(of directory: URL) -> URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
         if directory.standardizedFileURL.path == home.appendingPathComponent(".claude").standardizedFileURL.path {
             return home.appendingPathComponent(".claude.json")
@@ -148,7 +148,7 @@ enum AppEnvironment {
     /// about your limits (Settings ▸ Usage reads it; nobody writes it).
     /// An isolated run points at its own, so a scenario never reads the
     /// developer's real quota.
-    static var claudeConfigFile: URL {
+    package static var claudeConfigFile: URL {
         if isIsolated { return supportDirectory.appendingPathComponent("claude.json") }
         if let dir = env["CLAUDE_CONFIG_DIR"] { return URL(fileURLWithPath: dir).appendingPathComponent(".claude.json") }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
@@ -159,7 +159,7 @@ enum AppEnvironment {
     /// setting, when not empty). An isolated run without the variable
     /// reaches none: a scenario must never list the user's containers, let
     /// alone stop one.
-    static func dockerEndpoint(setting: String = "", context: String = "") -> DockerEndpoint? {
+    package static func dockerEndpoint(setting: String = "", context: String = "") -> DockerEndpoint? {
         if let host = env["OVERTERM_DOCKER_HOST"], !host.isEmpty {
             return DockerEndpoint(address: DockerEndpoint.address(of: host), context: nil, source: "OVERTERM_DOCKER_HOST")
         }
@@ -171,11 +171,11 @@ enum AppEnvironment {
 
     /// Whether this process is a unit test's (`isUnderTest`): isolated too,
     /// its support folder a temporary one.
-    static var isUnitTest: Bool { isUnderTest }
+    package static var isUnitTest: Bool { isUnderTest }
 
     /// Whether the user's own kubeconfig is out of bounds: an isolated run
     /// or a unit test. This Mac's current context is production.
-    static var guardsKubeconfig: Bool { isIsolated || isUnitTest }
+    package static var guardsKubeconfig: Bool { isIsolated || isUnitTest }
 
     /// The kubeconfig files Overterm reads, in kubectl's order: the shell's
     /// KUBECONFIG list (else ~/.kube/config), then `extra`
@@ -185,7 +185,7 @@ enum AppEnvironment {
     /// without it none: it never asks the shell, so an inherited KUBECONFIG
     /// is never seen either. Blocking the first time (the shell is asked):
     /// off the main thread.
-    static func kubeconfigs(extra: [String]) -> [URL] {
+    package static func kubeconfigs(extra: [String]) -> [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let overterm = env["OVERTERM_KUBECONFIG"]
         let guarded = guardsKubeconfig
@@ -198,7 +198,7 @@ enum AppEnvironment {
     /// shell environment, credentials, CLI config, plugin cache: an
     /// isolated run or a unit test (analysis 4.5, 5.13 rule 8). Terraform
     /// changes real infrastructure.
-    static var guardsTerraform: Bool { isIsolated || isUnitTest }
+    package static var guardsTerraform: Bool { isIsolated || isUnitTest }
 
     /// Whether Activity's signal path keeps to this run's own processes: an
     /// isolated run or a unit test (docs/design/activity/analysis.md, 6.10
@@ -206,13 +206,13 @@ enum AppEnvironment {
     /// registered as its own child (`ActivitySignalGate`) or what runs
     /// under a `login` its own panes spawned — never the person's real
     /// processes during `make e2e` or `make test`.
-    static var guardsSignals: Bool { isIsolated || isUnitTest }
+    package static var guardsSignals: Bool { isIsolated || isUnitTest }
 
     /// The user's LaunchAgents folder, whose plists name a launchd job by
     /// the program it runs (docs/design/activity/analysis.md, 6.8 rule 8;
     /// `LaunchdJobs`): none in an isolated run or a unit test (9.9) — a
     /// test hands its own fixtures to `LaunchdJobs.agents(in:)`.
-    static var launchAgentsDirectory: URL? {
+    package static var launchAgentsDirectory: URL? {
         guard !isIsolated, !isUnitTest else { return nil }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
     }
@@ -221,7 +221,7 @@ enum AppEnvironment {
     /// (`LaunchdSockets`, 6.8 rule 9): the system's and the user's
     /// LaunchAgents; in an isolated run or a unit test only a test's own
     /// (`LaunchdSockets.standIn`), else none (9.9).
-    static var launchdSocketFolders: [LaunchdSockets.Folder] {
+    package static var launchdSocketFolders: [LaunchdSockets.Folder] {
         guard !isIsolated, !isUnitTest else { return LaunchdSockets.standIn ?? [] }
         return LaunchdSockets.defaultFolders(home: FileManager.default.homeDirectoryForCurrentUser)
     }
@@ -230,14 +230,14 @@ enum AppEnvironment {
     /// scenario's recording wrapper) when it is an absolute path to an
     /// executable, else none; else the user's, searched for by
     /// `TerraformCLI` — the variable ignored there.
-    static var terraformBinary: TerraformGuards.Binary {
+    package static var terraformBinary: TerraformGuards.Binary {
         TerraformGuards.binary(variable: env["OVERTERM_TERRAFORM"], guarded: guardsTerraform)
     }
 
     /// The credential variables, by name, a scenario run refuses to start
     /// with (`AppDelegate`, before any pane): its panes would inherit them
     /// (analysis 4.5). Empty outside a scenario.
-    static var terraformRefusedCredentials: [String] {
+    package static var terraformRefusedCredentials: [String] {
         TerraformGuards.refusedCredentials(scenario: e2eScenario, environment: env)
     }
 
@@ -246,7 +246,7 @@ enum AppEnvironment {
     /// terraform-ls get. The caches — `~/Library/Caches/<bundle id>/Terraform`;
     /// a guarded run's own support directory, so a scenario never writes
     /// provider executables into the real cache.
-    static let terraformDirectory: URL = {
+    package static let terraformDirectory: URL = {
         if guardsTerraform { return supportDirectory.appendingPathComponent("Terraform", isDirectory: true) }
         return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("\(bundleIdentifier)/Terraform", isDirectory: true)
@@ -254,18 +254,18 @@ enum AppEnvironment {
 
     /// `TF_PLUGIN_CACHE_DIR` for Overterm's own runs, when the person took
     /// the offer (analysis 4.13). Never `~/.terraformrc`'s.
-    static var terraformCacheDirectory: URL { terraformDirectory.appendingPathComponent("plugins", isDirectory: true) }
+    package static var terraformCacheDirectory: URL { terraformDirectory.appendingPathComponent("plugins", isDirectory: true) }
 
     /// A HOME and a CLI config with nothing of the user's in them
     /// (`TerraformGuards.prepareScratch`): every guarded run's, and in the
     /// user's app validate's and terraform-ls's HOME.
-    static var terraformScratchDirectory: URL { terraformDirectory.appendingPathComponent("scratch", isDirectory: true) }
+    package static var terraformScratchDirectory: URL { terraformDirectory.appendingPathComponent("scratch", isDirectory: true) }
 
     /// Where the per-process plan folder goes (`$TMPDIR/ot-tf-<uid>-<pid>`,
     /// analysis 4.4): the temporary directory, never the support folder; a
     /// guarded run's under its own support directory, so a scenario never
     /// touches the user's app's runs — nor its sweep the scenario's.
-    static var terraformRunsBase: URL {
+    package static var terraformRunsBase: URL {
         if guardsTerraform { return supportDirectory.appendingPathComponent("terraform-runs", isDirectory: true) }
         return FileManager.default.temporaryDirectory
     }
@@ -273,14 +273,14 @@ enum AppEnvironment {
     /// `TerraformRootStore`'s file: var files and workspaces chosen per
     /// checkout and root, and the state identities seen production — names
     /// only, never a value. In the support directory, an isolated run's own.
-    static var terraformRootsFile: URL { supportDirectory.appendingPathComponent("terraform-roots.json") }
+    package static var terraformRootsFile: URL { supportDirectory.appendingPathComponent("terraform-roots.json") }
 
     /// The environment Terraform's runs are built on (`TerraformEnvironment`):
     /// the user's login shell's, so credential chains reach the providers
     /// unchanged; in a guarded run, nothing of the user's — a scratch HOME
     /// and CLI config, proxies at a dead port. Blocking the first time (the
     /// shell is asked): off the main thread.
-    static func terraformBaseEnvironment() throws -> [String: String] {
+    package static func terraformBaseEnvironment() throws -> [String: String] {
         guard guardsTerraform else { return ShellEnvironment.environment() }
         var environment = try TerraformGuards.prepareScratch(at: terraformScratchDirectory).environment
         for (name, value) in TerraformCLI.scenarioEnvironment { environment[name] = value }
@@ -290,7 +290,7 @@ enum AppEnvironment {
     /// Whether the user configures Terraform's CLI themselves, so the
     /// plugin cache isn't offered: `~/.terraformrc` checked for existence,
     /// never opened. A guarded run never looks.
-    static func terraformUserConfiguresCLI(shell: [String: String]) -> Bool {
+    package static func terraformUserConfiguresCLI(shell: [String: String]) -> Bool {
         TerraformGuards.userConfiguresCLI(
             environment: shell, home: FileManager.default.homeDirectoryForCurrentUser, guarded: guardsTerraform,
             exists: { FileManager.default.fileExists(atPath: $0) })
@@ -298,7 +298,7 @@ enum AppEnvironment {
 
     /// Codex's rollouts: ~/.codex/sessions, or $CODEX_HOME/sessions. Every
     /// turn ends with the quota the server reported.
-    static var codexSessionsDirectory: URL {
+    package static var codexSessionsDirectory: URL {
         if isIsolated { return supportDirectory.appendingPathComponent("codex-sessions", isDirectory: true) }
         if let dir = env["CODEX_HOME"] { return URL(fileURLWithPath: dir).appendingPathComponent("sessions", isDirectory: true) }
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions", isDirectory: true)
@@ -317,7 +317,7 @@ enum AppEnvironment {
 
     /// UserDefaults.standard, or a throwaway suite for an isolated run,
     /// wiped at launch.
-    nonisolated(unsafe) static let defaults: UserDefaults = {
+    package nonisolated(unsafe) static let defaults: UserDefaults = {
         guard isIsolated else { return .standard }
         try? FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
         guard let suite = UserDefaults(suiteName: isolatedSuite) else { return .standard }
@@ -330,7 +330,7 @@ enum AppEnvironment {
     /// open in) are copied over. Before the window is built — it reads them.
     /// Privacy grants belong to the id and are asked for again; the session
     /// and snippets live in Application Support/Overterm and never moved.
-    static func carryOverFormerDefaults() {
+    package static func carryOverFormerDefaults() {
         guard !isIsolated, !defaults.bool(forKey: migratedKey) else { return }
         for id in formerBundleIdentifiers {
             let former = UserDefaults.standard.persistentDomain(forName: id) ?? [:]
@@ -345,7 +345,7 @@ enum AppEnvironment {
     /// id wins over the old one. A key naming the app the window and the
     /// dividers were saved under ("NSWindow Frame TerminusMainWindow") is
     /// renamed with it, or the window opens where it never was.
-    static func carryOver(_ former: [String: Any], into defaults: UserDefaults) {
+    package static func carryOver(_ former: [String: Any], into defaults: UserDefaults) {
         for (key, value) in former {
             let key = key.replacingOccurrences(of: "Terminus", with: "Overterm")
             guard defaults.object(forKey: key) == nil else { continue }

@@ -9,8 +9,8 @@ import Foundation
 /// neither `~/.aws` nor `~/.terraform.d/credentials.tfrc.json`, and nothing
 /// is downloaded. Whatever the purpose, what injects flags or logs values
 /// never reaches a run (`isAlwaysRemoved`).
-enum TerraformEnvironment {
-    enum Purpose: Sendable, Equatable {
+package enum TerraformEnvironment {
+    package enum Purpose: Sendable, Equatable {
         /// `fmt -`, `fmt -check`: reads HCL, runs no provider.
         case format
         /// `validate -json`: starts every provider binary (spike 19), so
@@ -45,7 +45,7 @@ enum TerraformEnvironment {
     /// (logs `-var` values), `TF_REATTACH_PROVIDERS` (bypasses the lock
     /// file's hashes), and an inherited `TF_WORKSPACE` or `TF_DATA_DIR`
     /// (each decides silently which state a run touches).
-    static func isAlwaysRemoved(_ name: String) -> Bool {
+    package static func isAlwaysRemoved(_ name: String) -> Bool {
         name == "TF_CLI_ARGS" || name.hasPrefix("TF_CLI_ARGS_") || name == "TF_LOG" || name.hasPrefix("TF_LOG_")
             || name == "TF_REATTACH_PROVIDERS" || name == "TF_WORKSPACE" || name == "TF_DATA_DIR"
     }
@@ -55,7 +55,7 @@ enum TerraformEnvironment {
     /// `AppEnvironment.terraformBaseEnvironment`).
     /// `guarded`: a guarded run's (`AppEnvironment.guardsTerraform`), whose
     /// New Task init fetches nothing.
-    static func build(
+    package static func build(
         base: [String: String], purpose: Purpose, root: URL, scratch: TerraformGuards.Scratch, guarded: Bool = AppEnvironment.guardsTerraform
     ) -> [String: String] {
         var environment: [String: String]
@@ -90,11 +90,11 @@ enum TerraformEnvironment {
 
     /// What New Task's init never has, besides the credentials: the agent
     /// socket ssh would sign with, and git's own overrides.
-    static let worktreeInitRemoved = ["SSH_AUTH_SOCK", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_ASKPASS", "SSH_ASKPASS"]
+    package static let worktreeInitRemoved = ["SSH_AUTH_SOCK", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_ASKPASS", "SSH_ASKPASS"]
 
     /// The `TF_VAR_*` names of an environment — never their values: what
     /// the plan's header says changes it (2.2, "Inputs that change a plan").
-    static func variableNames(in environment: [String: String]) -> [String] {
+    package static func variableNames(in environment: [String: String]) -> [String] {
         environment.keys.filter { $0.hasPrefix("TF_VAR_") && $0.count > 7 }.map { String($0.dropFirst(7)) }.sorted()
     }
 
@@ -102,7 +102,7 @@ enum TerraformEnvironment {
     /// `terraform validate` it runs, in `LanguageServers.Spec`'s patterns
     /// (`X*` begins, `*X` ends, `*X*` contains): the credentials of
     /// `TerraformGuards` and `isAlwaysRemoved`'s names.
-    static let languageServerRemoved: [String] = {
+    package static let languageServerRemoved: [String] = {
         var patterns = TerraformGuards.credentialPrefixes.map { $0 + "*" }
         patterns += TerraformGuards.credentialNames.sorted()
         patterns += TerraformGuards.credentialSuffixes.map { "*" + $0 }
@@ -114,7 +114,7 @@ enum TerraformEnvironment {
     /// home, and a scratch HOME and CLI config — the stripped variables
     /// alone leave `~/.aws` and `~/.terraform.d` readable to the providers
     /// its `validate` starts.
-    static func languageServerAdded(scratch: TerraformGuards.Scratch) -> [String: String] {
+    package static func languageServerAdded(scratch: TerraformGuards.Scratch) -> [String: String] {
         ["CHECKPOINT_DISABLE": "1", "HOME": scratch.home.path, "TF_CLI_CONFIG_FILE": scratch.cliConfig.path]
     }
 }

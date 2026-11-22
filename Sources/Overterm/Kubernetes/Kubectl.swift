@@ -10,12 +10,12 @@ import Foundation
 ///
 /// An isolated run or a unit test uses only the configured path: a
 /// scenario's stand-in, or nothing.
-enum KubectlLocator {
-    static func knownFolders(home: URL) -> [String] {
+package enum KubectlLocator {
+    package static func knownFolders(home: URL) -> [String] {
         ["/usr/local/bin", "/opt/homebrew/bin", "/Applications/Docker.app/Contents/Resources/bin", home.appendingPathComponent(".rd/bin").path]
     }
 
-    static func candidates(
+    package static func candidates(
         configured: String, guarded: Bool, loginPath: String?, home: URL,
         isExecutable: (String) -> Bool = FileManager.default.isExecutableFile,
         resolve: (URL) -> URL = { $0.resolvingSymlinksInPath() }
@@ -32,7 +32,7 @@ enum KubectlLocator {
 
     /// The one to use: the configured one when it is set, else the closest
     /// to the server's minor (the first of equals), else the first.
-    static func choose(_ candidates: [(url: URL, minor: Int?)], serverMinor: Int?, configured: Bool) -> URL? {
+    package static func choose(_ candidates: [(url: URL, minor: Int?)], serverMinor: Int?, configured: Bool) -> URL? {
         guard let first = candidates.first else { return nil }
         guard !configured, let serverMinor else { return first.url }
         var best: (url: URL, distance: Int)?
@@ -47,12 +47,12 @@ enum KubectlLocator {
 
 /// The kubectls this Mac has, their client versions asked once each
 /// (`kubectl version --client -o json`, which reaches no server).
-actor Kubectls {
-    static let shared = Kubectls()
+package actor Kubectls {
+    package static let shared = Kubectls()
 
     private var minors: [String: Int?] = [:]
 
-    func choose(_ candidates: [URL], serverMinor: Int?, configured: Bool, environment: [String: String]) async -> URL? {
+    package func choose(_ candidates: [URL], serverMinor: Int?, configured: Bool, environment: [String: String]) async -> URL? {
         guard candidates.count > 1, serverMinor != nil, !configured else {
             return KubectlLocator.choose(candidates.map { ($0, nil) }, serverMinor: nil, configured: configured)
         }
@@ -64,7 +64,7 @@ actor Kubectls {
         return KubectlLocator.choose(versions, serverMinor: serverMinor, configured: configured)
     }
 
-    static func clientMinor(_ kubectl: URL, environment: [String: String]) async -> Int? {
+    package static func clientMinor(_ kubectl: URL, environment: [String: String]) async -> Int? {
         let data = await KubeBlocking.run { ShellEnvironment.run(kubectl, ["version", "--client", "-o", "json"], environment: environment, timeout: 10) }
         return data.flatMap { KubeVersion.minor($0, under: "clientVersion") }
     }
@@ -72,8 +72,8 @@ actor Kubectls {
 
 /// Blocking work — a shell asked, a process waited for — on a GCD thread,
 /// never on a Swift-concurrency one (the cooperative pool starves).
-enum KubeBlocking {
-    static func run<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
+package enum KubeBlocking {
+    package static func run<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T {
         await withCheckedContinuation { continuation in enqueue(work, continuation) }
     }
 
@@ -85,32 +85,32 @@ enum KubeBlocking {
 }
 
 /// A kubectl to run for a context, and what it is given.
-struct KubectlTool: Sendable, Equatable {
-    var kubectl: URL
-    var environment: [String: String]
+package struct KubectlTool: Sendable, Equatable {
+    package var kubectl: URL
+    package var environment: [String: String]
     /// A cache folder of the run's own (an isolated run, a test).
-    var cacheDirectory: String?
+    package var cacheDirectory: String?
 }
 
 /// How a context's proxy is made: which kubectl, its environment, its
 /// socket, and the checks before anything starts — a plugin that isn't
 /// installed, one that needs a terminal.
-struct KubeProxyPlanner: Sendable {
-    var folder: KubeSocketFolder = .app
+package struct KubeProxyPlanner: Sendable {
+    package var folder: KubeSocketFolder = .app
     /// An isolated run or a unit test: only OVERTERM_KUBECONFIG, only the configured kubectl.
-    var guarded: Bool = AppEnvironment.guardsKubeconfig
-    var home: URL = FileManager.default.homeDirectoryForCurrentUser
+    package var guarded: Bool = AppEnvironment.guardsKubeconfig
+    package var home: URL = FileManager.default.homeDirectoryForCurrentUser
     /// The kubeconfig files; blocking the first time (the shell is asked).
-    var kubeconfigs: @Sendable ([String]) -> [URL] = { AppEnvironment.kubeconfigs(extra: $0) }
+    package var kubeconfigs: @Sendable ([String]) -> [URL] = { AppEnvironment.kubeconfigs(extra: $0) }
     /// The environment kubectl starts from: the login shell's, blocking the
     /// first time — the process's own when guarded (a unit test asks no
     /// shell of the user's).
-    var baseEnvironment: @Sendable () -> [String: String] = {
+    package var baseEnvironment: @Sendable () -> [String: String] = {
         AppEnvironment.guardsKubeconfig ? ProcessInfo.processInfo.environment : ShellEnvironment.environment()
     }
-    var kubectls: Kubectls = .shared
+    package var kubectls: Kubectls = .shared
 
-    func plan(_ context: KubeContext, configuration: KubeProxies.Configuration, serverMinor: Int?) async throws -> KubeProxySpec {
+    package func plan(_ context: KubeContext, configuration: KubeProxies.Configuration, serverMinor: Int?) async throws -> KubeProxySpec {
         let tool = try await tool(context, configuration: configuration, serverMinor: serverMinor)
         let readOnly = !context.isWritable
         let socket = try folder.proxySocket(for: context.name, readOnly: readOnly)
@@ -124,7 +124,7 @@ struct KubeProxyPlanner: Sendable {
     /// files as `KUBECONFIG`, kuberc off, and guarded the run's own HOME and
     /// cache. The same checks first: a plugin that isn't installed, one
     /// that needs a terminal.
-    func tool(_ context: KubeContext, configuration: KubeProxies.Configuration, serverMinor: Int?) async throws -> KubectlTool {
+    package func tool(_ context: KubeContext, configuration: KubeProxies.Configuration, serverMinor: Int?) async throws -> KubectlTool {
         if case .exec(let exec) = context.auth, exec.interactiveMode == "Always" { throw KubeProxyProblem.needsTerminal(context: context.name) }
         let guarded = self.guarded
         let home = self.home
@@ -158,7 +158,7 @@ struct KubeProxyPlanner: Sendable {
     /// Whether the plugin's command is there: a path that is executable, or
     /// a name on the environment's PATH — for `kubectl oidc-login`, kubectl's
     /// plugin `kubectl-oidc_login` too.
-    static func isInstalled(
+    package static func isInstalled(
         _ exec: KubeExec, in environment: [String: String], isExecutable: (String) -> Bool = FileManager.default.isExecutableFile
     ) -> Bool {
         func found(_ command: String) -> Bool {

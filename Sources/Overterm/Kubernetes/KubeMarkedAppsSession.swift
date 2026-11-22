@@ -52,13 +52,13 @@ import Foundation
 /// or a pod across the cluster, never a list or a watch of whole objects,
 /// never a write.
 @MainActor
-final class KubeMarkedAppsSession: ObservableObject {
-    enum State: Equatable {
+package final class KubeMarkedAppsSession: ObservableObject {
+    package enum State: Equatable {
         case idle, loading, live
     }
 
     /// How M1's rows are read.
-    enum Reads: Equatable, Sendable {
+    package enum Reads: Equatable, Sendable {
         /// Followed: Argo CD's Applications aren't here.
         case follow
         /// A paged list on show, Refresh and every 5 min, never watched:
@@ -67,60 +67,60 @@ final class KubeMarkedAppsSession: ObservableObject {
     }
 
     /// The bounds (gitops.md 14.4.1): constants but for the tests'.
-    struct Bounds: Sendable {
+    package struct Bounds: Sendable {
         /// M3 (and M1 listed): rows a page, bytes a page, objects and bytes a kind.
-        var rowsPage = 500
-        var pageBytes = 16 << 20
-        var rowsObjects = 5000
-        var rowsBytes = 16 << 20
+        package var rowsPage = 500
+        package var pageBytes = 16 << 20
+        package var rowsObjects = 5000
+        package var rowsBytes = 16 << 20
         /// M1b, M2, M3b: an object's GET.
-        var getBytes = 4 << 20
+        package var getBytes = 4 << 20
     }
 
-    nonisolated static let inFlight = 4
-    nonisolated static let storeLife: TimeInterval = 300
+    package nonisolated static let inFlight = 4
+    package nonisolated static let storeLife: TimeInterval = 300
     /// M3 and listed M1 again, while shown.
-    nonisolated static let rereadEvery: TimeInterval = 300
+    package nonisolated static let rereadEvery: TimeInterval = 300
 
-    var bounds = Bounds()
+    package var bounds = Bounds()
 
     /// What M1b, M2, M3 and M3b read of a context: kept five minutes while the page shows.
-    struct Store {
-        var context: String
-        var readAt: Date
+    package struct Store {
+        package var context: String
+        package var readAt: Date
         /// Each object as its GET said it (M1b, M2, M3b).
-        var settled: [KubeMarkedMember.ID: KubeMarkedSettled] = [:]
+        package var settled: [KubeMarkedMember.ID: KubeMarkedSettled] = [:]
         /// M3's rows, by kind.
-        var rows: [String: KubeRows] = [:]
+        package var rows: [String: KubeRows] = [:]
         /// What finished: `rows:<kind>`.
-        var done: Set<String> = []
+        package var done: Set<String> = []
         /// Each read's cut or refusal, said (its counts kept as numbers).
-        var notes: [String: KubeCountedText] = [:]
+        package var notes: [String: KubeCountedText] = [:]
     }
 
-    @Published private(set) var state: State = .idle
+    @Published package private(set) var state: State = .idle
     /// The derived apps, ranked: problems first.
-    @Published private(set) var apps: [KubeMarkedRanked] = []
+    @Published package private(set) var apps: [KubeMarkedRanked] = []
     /// Their section rows (`KubeMarkedSection.base`), in the section's
     /// order — made off the main thread with them, each app's only when
     /// it was made again; swapped with `apps`.
-    private(set) var sectionRows: [KubeGitOpsRow] = []
+    package private(set) var sectionRows: [KubeGitOpsRow] = []
     /// Their keys, made with them: what the section's mode is decided from.
-    private(set) var keys: Set<KubeTrackingID.AppKey> = []
+    package private(set) var keys: Set<KubeTrackingID.AppKey> = []
     /// The apps are grouped by `app.kubernetes.io/instance` alone: no
     /// object read carries Argo CD's own marks (D-5) — only "probably"
     /// Argo CD's, never said where Argo CD runs.
-    @Published private(set) var probable = false
+    @Published package private(set) var probable = false
     /// Copies, garbled marks and Helm's instance labels: counted, never shown.
-    @Published private(set) var tally = KubeMarkedApps.Tally()
+    @Published package private(set) var tally = KubeMarkedApps.Tally()
     /// What the reads could say of what they read.
-    @Published private(set) var reading = KubeMarkedReading()
+    @Published package private(set) var reading = KubeMarkedReading()
     /// When M3 last read.
-    @Published private(set) var readAt: Date?
+    @Published package private(set) var readAt: Date?
 
-    private(set) var context: String?
-    private(set) var scope: KubeScope = .all
-    private(set) var reads: Reads = .follow
+    package private(set) var context: String?
+    package private(set) var scope: KubeScope = .all
+    package private(set) var reads: Reads = .follow
     private var client: KubeClient?
     private var accessible: [String] = []
     private var watches = KubeScope.watchCap
@@ -128,25 +128,25 @@ final class KubeMarkedAppsSession: ObservableObject {
     private var rowKinds: [KubeResourceKind] = []
     /// The kinds an object of is read by a GET: the workloads, CronJobs, HPAs.
     private var fetched: [KubeResourceKind] = []
-    private(set) var store: Store?
+    package private(set) var store: Store?
 
     /// Beside read Applications, the derived apps whose members are read
     /// by GET (M1b, M2, M3b): only theirs; nil: every app's when followed
     /// (a spoke), none when listed beside Applications.
-    var settling: Set<KubeTrackingID.AppKey>? {
+    package var settling: Set<KubeTrackingID.AppKey>? {
         didSet { if settling != oldValue { askAgain() } }
     }
     /// Told after the apps were ranked again (once a flush), once live, and
     /// when they were dropped by a failure here: never on a row event.
-    var changed: (() -> Void)?
+    package var changed: (() -> Void)?
 
-    var flushInterval: Duration = .milliseconds(250)
-    var tickInterval: Duration = .seconds(30)
-    var clock: () -> Date = { Date() }
+    package var flushInterval: Duration = .milliseconds(250)
+    package var tickInterval: Duration = .seconds(30)
+    package var clock: () -> Date = { Date() }
     /// Every context's minute of GETs: the app's (`KubernetesModel.
     /// markedMinutes`, every window's section sharing it) on a page; a
     /// session's own otherwise.
-    var ledger = KubeMarkedLedger()
+    package var ledger = KubeMarkedLedger()
 
     /// Every row read with marks, by kind (M1's, M3's).
     private var rows: [String: KubeRows] = [:]
@@ -176,7 +176,7 @@ final class KubeMarkedAppsSession: ObservableObject {
     /// The M1 kinds read by paged lists, refused across the cluster: where.
     private var fallback: [String: [String]] = [:]
 
-    var isReading: Bool { !follows.isEmpty || !lists.isEmpty || !gets.isEmpty }
+    package var isReading: Bool { !follows.isEmpty || !lists.isEmpty || !gets.isEmpty }
 
     // MARK: Shown, hidden
 
@@ -184,7 +184,7 @@ final class KubeMarkedAppsSession: ObservableObject {
     /// the store holds it fresh, each object not yet settled asked for.
     /// `discovery` nil: nothing. `watches`: how many M1 may take (the
     /// page's ten less the GitOps section's own).
-    func show(
+    package func show(
         context: String, scope: KubeScope, discovery: KubeDiscovery?, client: KubeClient?, accessible: [String] = [], reads: Reads = .follow,
         watches: Int = KubeScope.watchCap
     ) {
@@ -245,7 +245,7 @@ final class KubeMarkedAppsSession: ObservableObject {
 
     /// Refresh (⌘R): M3 and listed M1 read again; what is settled stays,
     /// read again by its rules.
-    func refresh() {
+    package func refresh() {
         guard let client, let context, state != .idle else { return }
         store = Store(context: context, readAt: clock(), settled: store?.settled ?? [:], rows: store?.rows ?? [:])
         rereadAt = store?.readAt
@@ -254,7 +254,7 @@ final class KubeMarkedAppsSession: ObservableObject {
 
     /// Off screen: every read ends; what M1b, M2, M3 and M3b read stays,
     /// and so does the context's minute of GETs.
-    func hide() {
+    package func hide() {
         generation += 1
         for task in follows.values { task.cancel() }
         follows = [:]
@@ -303,7 +303,7 @@ final class KubeMarkedAppsSession: ObservableObject {
     /// The page hidden, another context, a credential failure: what was
     /// read goes too — the context's minute stays (`ledger`): shown again
     /// within it, its 60 aren't given again.
-    func drop() {
+    package func drop() {
         hide()
         store = nil
         readAt = nil
@@ -317,12 +317,12 @@ final class KubeMarkedAppsSession: ObservableObject {
 
     // MARK: What is read
 
-    nonisolated static let rollouts = "rollouts.argoproj.io"
+    package nonisolated static let rollouts = "rollouts.argoproj.io"
 
     /// The kinds read here, as discovery serves them: M1's workloads (and
     /// Argo Rollouts), in the order they get a watch; M3's rows, CronJobs
     /// and HPAs among them. Never a Secret, a ConfigMap, a ReplicaSet or a pod.
-    nonisolated static func kinds(_ discovery: KubeDiscovery) -> (workloads: [KubeResourceKind], rows: [KubeResourceKind]) {
+    package nonisolated static func kinds(_ discovery: KubeDiscovery) -> (workloads: [KubeResourceKind], rows: [KubeResourceKind]) {
         func served(_ name: String) -> KubeResourceKind? {
             discovery.kinds.first { $0.fullName == name && $0.canList }
         }
@@ -339,7 +339,7 @@ final class KubeMarkedAppsSession: ObservableObject {
     /// M1's watches, a kind each in order: `watches` shared evenly when
     /// every kind has one; else the first kinds one each, the rest (0)
     /// listed every 5 min. Listed beside Applications: none.
-    nonisolated static func allot(_ watches: Int, reads: Reads, kinds: Int) -> [Int] {
+    package nonisolated static func allot(_ watches: Int, reads: Reads, kinds: Int) -> [Int] {
         guard reads == .follow, kinds > 0 else { return Array(repeating: 0, count: kinds) }
         if watches >= kinds { return Array(repeating: watches / kinds, count: kinds) }
         return (0..<kinds).map { $0 < watches ? 1 : 0 }
@@ -549,7 +549,7 @@ final class KubeMarkedAppsSession: ObservableObject {
     /// One kind's rows with their marks as a paged list said them, and the
     /// bytes its pages took (what a caller sharing one bound across kinds
     /// spends: the checkout rail's option B).
-    enum RowsRead: Sendable {
+    package enum RowsRead: Sendable {
         case read(KubeRows, refused: [String], cut: Bool, bytes: Int)
         case refusedAcross
         case failed(Error)
@@ -559,7 +559,7 @@ final class KubeMarkedAppsSession: ObservableObject {
     /// no watch, in each place (nil: across the cluster) within `bounds` —
     /// M1 listed, M3, and the checkout rail's option B and its namespace's
     /// Argo Rollouts (14.2.5).
-    nonisolated static func readRows(_ kind: KubeResourceKind, places: [String?], client: KubeClient, bounds: Bounds) async -> RowsRead {
+    package nonisolated static func readRows(_ kind: KubeResourceKind, places: [String?], client: KubeClient, bounds: Bounds) async -> RowsRead {
         var columns: [KubeColumn] = []
         var all: [KubeRow] = []
         var bytes = 0
@@ -695,7 +695,7 @@ final class KubeMarkedAppsSession: ObservableObject {
     /// its app's row says what the detail does (14.4.2) — the GET it had
     /// waiting or taken for it forgotten (one already sent answers as it
     /// would). Nothing while hidden, or for a kind not read here by GET.
-    func settled(byDetail id: KubeMarkedMember.ID, _ wire: KubeMarkedWorkloadWire, at readAt: Date) {
+    package func settled(byDetail id: KubeMarkedMember.ID, _ wire: KubeMarkedWorkloadWire, at readAt: Date) {
         guard state != .idle, let context, let kind = fetched.first(where: { KubeMarkedKind($0) == id.kind }) else { return }
         refetch.forget(id)
         if let waiting = queue.firstIndex(of: id) {
@@ -802,7 +802,7 @@ final class KubeMarkedAppsSession: ObservableObject {
 
     /// What is in progress asked again every 60 s, what is Degraded every
     /// 5 min; M3 and every M1 kind not followed read again every 5 min.
-    func tick() {
+    package func tick() {
         guard state != .idle, let client else { return }
         let now = clock()
         for (id, settled) in store?.settled ?? [:] {
@@ -852,32 +852,32 @@ final class KubeMarkedAppsSession: ObservableObject {
     // MARK: For the tests
 
     /// How many follows are open now.
-    var openFollows: Int { follows.count }
+    package var openFollows: Int { follows.count }
     /// The most GETs in flight at once, and taken in one flush, since shown.
-    private(set) var mostInFlight = 0
-    private(set) var mostTaken = 0
+    package private(set) var mostInFlight = 0
+    package private(set) var mostTaken = 0
     /// The first flush's GETs since shown that took any, in the order taken:
     /// what may be a problem first, across every kind.
-    private(set) var firstTaken: [KubeMarkedMember.ID] = []
+    package private(set) var firstTaken: [KubeMarkedMember.ID] = []
     /// How many GETs were taken as `priority` since made (M2's moves: `.moved`).
-    func taken(as priority: KubeMarkedRefetch.Priority) -> Int { refetch.takenBy[priority] ?? 0 }
+    package func taken(as priority: KubeMarkedRefetch.Priority) -> Int { refetch.takenBy[priority] ?? 0 }
     /// Every GET asked since made.
-    private(set) var getsAsked = 0
+    package private(set) var getsAsked = 0
     /// Every row change a follow brought since made.
-    private(set) var rowsChanged = 0
+    package private(set) var rowsChanged = 0
     /// Whether M2 has nothing waiting, taken or in flight.
-    var refetchIdle: Bool { refetch.isEmpty && queue.isEmpty && gets.isEmpty }
+    package var refetchIdle: Bool { refetch.isEmpty && queue.isEmpty && gets.isEmpty }
     /// Whether a GET of `id` waits, is taken or is in flight.
-    func isAsking(_ id: KubeMarkedMember.ID) -> Bool { refetch.pending[id] != nil || queue.contains(id) || gets[id] != nil }
+    package func isAsking(_ id: KubeMarkedMember.ID) -> Bool { refetch.pending[id] != nil || queue.contains(id) || gets[id] != nil }
     /// Why a GET of `id` waits — M2's move, the tick's, the settle's —, if one does.
-    func waiting(_ id: KubeMarkedMember.ID) -> KubeMarkedRefetch.Priority? { refetch.pending[id] }
+    package func waiting(_ id: KubeMarkedMember.ID) -> KubeMarkedRefetch.Priority? { refetch.pending[id] }
     /// Every change made into the apps: none waiting, none being made.
-    var isMerged: Bool { box != nil && changes.isEmpty && removed.isEmpty }
+    package var isMerged: Bool { box != nil && changes.isEmpty && removed.isEmpty }
     /// M2's GETs taken and not yet answered.
-    var getsQueued: Int { queue.count + gets.count }
+    package var getsQueued: Int { queue.count + gets.count }
     /// The places the context's minute holds at the session's clock: every
     /// GET taken and unanswered, each answered in the minute before.
-    var takenLastMinute: Int { context.map { ledger[$0].held(at: clock()) } ?? 0 }
+    package var takenLastMinute: Int { context.map { ledger[$0].held(at: clock()) } ?? 0 }
 }
 
 /// Every context's minute of the marks' GETs (`KubeMarkedMinute`): the
@@ -886,16 +886,16 @@ final class KubeMarkedAppsSession: ObservableObject {
 /// another context and back can't give again; a test's session its own.
 /// In memory only, spent minutes forgotten.
 @MainActor
-final class KubeMarkedLedger {
+package final class KubeMarkedLedger {
     private var minutes: [String: KubeMarkedMinute] = [:]
 
-    subscript(context: String) -> KubeMarkedMinute {
+    package subscript(context: String) -> KubeMarkedMinute {
         get { minutes[context] ?? KubeMarkedMinute() }
         set { minutes[context] = newValue.isEmpty ? nil : newValue }
     }
 
     /// Every context's spent places and old asks forgotten.
-    func prune(now: Date) {
+    package func prune(now: Date) {
         for (context, var minute) in minutes {
             minute.prune(now: now)
             minutes[context] = minute.isEmpty ? nil : minute

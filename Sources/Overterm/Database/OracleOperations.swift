@@ -7,25 +7,25 @@ import OracleNIO
 /// without the privilege to read them is told which grant gives it
 /// (SELECT_CATALOG_ROLE). docs/architecture.md, Database: Server page.
 extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserManagement {
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { MonitorPart.allCases }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { MonitorPart.allCases }
 
     /// `ALTER SYSTEM CANCEL SQL` and `KILL SESSION`, for an id that is
     /// `sid,serial#`; one of Overterm's own connections only cancelled.
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
         OracleOps.stops(for: session)
     }
 
-    func editDialect() async -> SQLDialect { .oracle }
-    func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
-    func userStatements() async -> any UserStatementMaking { OracleUserStatements(owner: config.user.uppercased()) }
+    package func editDialect() async -> SQLDialect { .oracle }
+    package func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
+    package func userStatements() async -> any UserStatementMaking { OracleUserStatements(owner: config.user.uppercased()) }
 
     /// A new row sets a column at least (Oracle has no DEFAULT VALUES); the
     /// rest is SQL's, in Oracle's quoting.
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
+    package func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
         try OracleOps.editStatements(edits, rows: rows, result: result)
     }
 
-    func editSaveNote() async -> String { "In one transaction: if any statement fails, none is kept. " + OracleOps.emptyIsNull }
+    package func editSaveNote() async -> String { "In one transaction: if any statement fails, none is kept. " + OracleOps.emptyIsNull }
 
     private func read(_ sql: String, limit: Int = 10_000) async throws -> QueryResult {
         try await execute(sql, limit: limit)
@@ -49,7 +49,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
 
     // MARK: Monitoring
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         do {
             let result: QueryResult
             do {
@@ -71,7 +71,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
         }
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         do {
             return .value(OracleOps.activity(try await read(OracleOps.activitySQL)))
         } catch {
@@ -80,7 +80,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
         }
     }
 
-    func slowQueries() async throws -> Monitored<[SlowQuery]> {
+    package func slowQueries() async throws -> Monitored<[SlowQuery]> {
         do {
             let byTotal = try await read(OracleOps.slowSQL(byMean: false), limit: 100)
             let byMean = try await read(OracleOps.slowSQL(byMean: true), limit: 100)
@@ -91,7 +91,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
         }
     }
 
-    func locks() async throws -> Monitored<[LockWait]> {
+    package func locks() async throws -> Monitored<[LockWait]> {
         do {
             return .value(PostgresOps.locks(try await read(OracleOps.locksSQL)))
         } catch {
@@ -101,7 +101,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
     }
 
     /// dba_segments; without it, user_segments — this user's own, said.
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         var sizes = DatabaseSizes()
         do {
             sizes.databases = PostgresOps.sizes(try await read(OracleOps.schemaSizesSQL, limit: 50))
@@ -119,7 +119,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
 
     /// `ALTER SYSTEM CANCEL SQL` (the statement stops) or `KILL SESSION …
     /// IMMEDIATE` — the ALTER SYSTEM privilege's.
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly(terminate ? "KILL SESSION" : "CANCEL SQL") }
         guard let statement = OracleOps.stopStatement(session, terminate: terminate) else { throw DatabaseError.failed("No session \(session).") }
         let own = await identify()
@@ -147,7 +147,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
     /// The primary key, else an enabled unique key over NOT NULL columns,
     /// else — a heap table's — its ROWID. A name as written first, then as
     /// Oracle reads it unquoted (upper-case).
-    func key(of table: TableName) async throws -> TableKey? {
+    package func key(of table: TableName) async throws -> TableKey? {
         let current = try await read("SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM dual", limit: 1).rows.first?.first ?? nil
         for candidate in OracleOps.candidates(table, currentSchema: current ?? "") {
             let owner = DatabaseDrivers.literal(candidate.schema ?? "")
@@ -164,7 +164,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
     /// In one transaction: each statement must change its one row, else
     /// all of it is rolled back. The session's date and number formats are
     /// set to the ones the grid shows values in, then put back.
-    func apply(_ statements: [EditStatement]) async throws {
+    package func apply(_ statements: [EditStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("saving the edits") }
         try await exclusive {
             guard let connection else { throw DatabaseError.notConnected }
@@ -215,7 +215,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
 
     /// dba_users (never a password column — none is asked for), the roles,
     /// who is granted which.
-    func users() async throws -> Monitored<[DatabaseUser]> {
+    package func users() async throws -> Monitored<[DatabaseUser]> {
         do {
             let users = try await read(OracleOps.usersSQL)
             let roles = try await read(OracleOps.rolesSQL)
@@ -232,7 +232,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
 
     /// System privileges, roles, object grants — dba_*; this user's own
     /// through user_* when dba_* can't be read.
-    func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
+    package func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
         do {
             return .value(OracleOps.grants(try await read(OracleOps.grantsSQL(DatabaseDrivers.literal(user.name)))))
         } catch {
@@ -250,7 +250,7 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
 
     /// Sent once each, in order (DDL commits itself); an error said with the
     /// password scrubbed.
-    func run(_ statements: [UserStatement]) async throws {
+    package func run(_ statements: [UserStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("changing users") }
         try await exclusive {
             guard let connection else { throw DatabaseError.notConnected }
@@ -267,19 +267,19 @@ extension OracleDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMa
 
 /// Oracle's statements for the Server and Users pages, and their answers
 /// read. Pure.
-enum OracleOps {
+package enum OracleOps {
     /// What Overterm's connections call themselves (`v$session.program`).
-    static let programName = "Overterm"
+    package static let programName = "Overterm"
 
     /// The statement that stops a session — nil unless the id is `sid,serial#`.
-    static func stopStatement(_ session: String, terminate: Bool) -> String? {
+    package static func stopStatement(_ session: String, terminate: Bool) -> String? {
         guard isSession(session) else { return nil }
         return terminate ? "ALTER SYSTEM KILL SESSION '\(session)' IMMEDIATE" : "ALTER SYSTEM CANCEL SQL '\(session)'"
     }
 
     /// Cancel the statement; end the session — not one of Overterm's own,
     /// which OracleNIO would wait on forever (disconnected in the panel instead).
-    static func stops(for session: DatabaseActivity) -> [SessionStop] {
+    package static func stops(for session: DatabaseActivity) -> [SessionStop] {
         guard let cancel = stopStatement(session.id, terminate: false), let kill = stopStatement(session.id, terminate: true) else { return [] }
         var stops = [
             SessionStop(
@@ -297,19 +297,19 @@ enum OracleOps {
 
     /// ORA-00942 (no such view — or no privilege to see it), ORA-01031
     /// (insufficient privileges), ORA-01039.
-    static func isPrivilege(_ error: Error) -> Bool {
+    package static func isPrivilege(_ error: Error) -> Bool {
         let text = error.localizedDescription
         return ["ORA-00942", "ORA-01031", "ORA-01039", "insufficient privileges", "does not exist"].contains { text.contains($0) }
     }
 
     /// `sid,serial#`, digits only — what goes into ALTER SYSTEM's literal.
-    static func isSession(_ id: String) -> Bool {
+    package static func isSession(_ id: String) -> Bool {
         id.range(of: #"^[0-9]{1,10},[0-9]{1,10}$"#, options: .regularExpression) != nil
     }
 
     // MARK: Monitoring statements
 
-    static func overviewSQL(fullVersion: Bool) -> String {
+    package static func overviewSQL(fullVersion: Bool) -> String {
         """
         SELECT \(fullVersion ? "i.version_full" : "i.version") AS version, i.instance_name, i.host_name,
           ROUND((SYSDATE - i.startup_time) * 86400) AS uptime, d.name AS db_name, d.database_role AS role, d.open_mode,
@@ -328,7 +328,7 @@ enum OracleOps {
     }
 
     /// Client sessions, the busy first; the statement from v$sql.
-    static let activitySQL = """
+    package static let activitySQL = """
         SELECT s.sid || ',' || s.serial# AS id, s.username AS "user", s.schemaname AS "database", s.machine AS client,
           s.program AS application, s.status AS state, CASE WHEN s.wait_class <> 'Idle' THEN s.event END AS waiting,
           s.last_call_et AS seconds,
@@ -339,7 +339,7 @@ enum OracleOps {
         """
 
     /// v$sqlstats, the hundred costliest by elapsed time — all of it, or a call's.
-    static func slowSQL(byMean: Bool) -> String {
+    package static func slowSQL(byMean: Bool) -> String {
         let order = byMean ? "elapsed_time / executions" : "elapsed_time"
         return """
             SELECT sql_id AS id, executions AS calls, elapsed_time / 1000000 AS total, elapsed_time / 1000000 / executions AS mean,
@@ -350,7 +350,7 @@ enum OracleOps {
 
     /// Who waits on whom: v$session's blocking_session, the object from the
     /// row it waits on; an idle blocker's last statement (prev_sql_id).
-    static let locksSQL = """
+    package static let locksSQL = """
         SELECT w.sid || ',' || w.serial# AS waiting, w.username AS waiting_user,
           (SELECT q.sql_text FROM v$sql q WHERE q.sql_id = w.sql_id AND ROWNUM = 1) AS waiting_query,
           b.sid || ',' || b.serial# AS blocking, b.username AS blocking_user,
@@ -362,14 +362,14 @@ enum OracleOps {
         ORDER BY w.wait_time_micro DESC
         """
 
-    static let schemaSizesSQL = """
+    package static let schemaSizesSQL = """
         SELECT owner AS name, SUM(bytes) AS "bytes", COUNT(*) || ' segments' AS detail
         FROM dba_segments GROUP BY owner ORDER BY 2 DESC FETCH FIRST 50 ROWS ONLY
         """
 
     /// The biggest tables or indexes — `dba_segments` (Oracle's own schemas
     /// left out) or `user_segments`, which has no owner.
-    static func segmentSizesSQL(view: String, index: Bool) -> String {
+    package static func segmentSizesSQL(view: String, index: Bool) -> String {
         let dba = view == "dba_segments"
         let owner = dba ? "s.owner" : "SYS_CONTEXT('USERENV', 'CURRENT_USER')"
         let type = index ? "s.segment_type LIKE 'INDEX%'" : "s.segment_type LIKE 'TABLE%'"
@@ -388,13 +388,13 @@ enum OracleOps {
     // MARK: Editing statements
 
     /// A name as written, then as Oracle reads it unquoted.
-    static func candidates(_ table: TableName, currentSchema: String) -> [TableName] {
+    package static func candidates(_ table: TableName, currentSchema: String) -> [TableName] {
         let exact = TableName(schema: table.schema ?? currentSchema, name: table.name)
         let upper = TableName(schema: (table.schema ?? currentSchema).uppercased(), name: table.name.uppercased())
         return exact == upper ? [exact] : [exact, upper]
     }
 
-    static func keySQL(owner: String, table: String) -> String {
+    package static func keySQL(owner: String, table: String) -> String {
         """
         SELECT c.constraint_name AS "index", c.constraint_type AS kind, cc.column_name AS "column", tc.nullable
         FROM all_constraints c
@@ -405,7 +405,7 @@ enum OracleOps {
         """
     }
 
-    static func columnsSQL(owner: String, table: String) -> String {
+    package static func columnsSQL(owner: String, table: String) -> String {
         """
         SELECT c.column_name AS name, c.data_type AS type, c.data_type_owner AS type_owner, c.virtual_column AS virtual,
           (SELECT i.generation_type FROM all_tab_identity_cols i
@@ -415,9 +415,9 @@ enum OracleOps {
     }
 
     /// Types whose grid text isn't their value, or that a literal can't set.
-    static let unwritable: [String] = ["CLOB", "NCLOB", "BLOB", "BFILE", "LONG", "JSON", "VECTOR", "XMLTYPE", "ROWID", "UROWID", "ANYDATA"]
+    package static let unwritable: [String] = ["CLOB", "NCLOB", "BLOB", "BFILE", "LONG", "JSON", "VECTOR", "XMLTYPE", "ROWID", "UROWID", "ANYDATA"]
 
-    static func key(_ table: TableName, heap: Bool, constraints: QueryResult, columns: QueryResult) -> TableKey? {
+    package static func key(_ table: TableName, heap: Bool, constraints: QueryResult, columns: QueryResult) -> TableKey? {
         var readOnly: Set<String> = []
         for row in ResultRow.rows(of: columns) {
             guard let name = row["name"] else { continue }
@@ -452,12 +452,12 @@ enum OracleOps {
         return key
     }
 
-    static let rowidNote =
+    package static let rowidNote =
         "No primary or unique NOT NULL key: rows are found by their ROWID — select it too (SELECT ROWID, t.* FROM … t). A row's ROWID holds until the table is moved, shrunk or rebuilt."
 
     /// SQL's statements in Oracle's quoting; a new row with nothing set is
     /// refused (no DEFAULT VALUES), a ROWID key said in the confirmation.
-    static func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
+    package static func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
         for values in edits.inserted where !values.keys.contains(where: result.isEditable) {
             throw EditRefusal.said("A new row needs a value in one column at least: Oracle has no DEFAULT VALUES.")
         }
@@ -469,18 +469,18 @@ enum OracleOps {
     }
 
     /// What an Oracle-maintained role says among its attributes.
-    static let maintained = "Oracle's own"
+    package static let maintained = "Oracle's own"
 
     /// Oracle's own rule, said where NULL and '' are told apart elsewhere.
-    static let emptyIsNull = "Oracle keeps an empty string as NULL."
+    package static let emptyIsNull = "Oracle keeps an empty string as NULL."
 
     /// The session's formats while a Save runs: the ones the grid shows
     /// dates, timestamps and numbers in, so their text reads back as the
     /// same value (Oracle reads a shorter date than its format).
-    static let nlsParameters = ["NLS_DATE_FORMAT", "NLS_TIMESTAMP_FORMAT", "NLS_TIMESTAMP_TZ_FORMAT", "NLS_NUMERIC_CHARACTERS"]
-    static let nlsReadSQL =
+    package static let nlsParameters = ["NLS_DATE_FORMAT", "NLS_TIMESTAMP_FORMAT", "NLS_TIMESTAMP_TZ_FORMAT", "NLS_NUMERIC_CHARACTERS"]
+    package static let nlsReadSQL =
         "SELECT parameter, value FROM nls_session_parameters WHERE parameter IN (\(nlsParameters.map(DatabaseDrivers.literal).joined(separator: ", ")))"
-    static let nlsSetStatements = [
+    package static let nlsSetStatements = [
         "ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD HH24:MI:SS'",
         "ALTER SESSION SET NLS_TIMESTAMP_FORMAT = 'YYYY-MM-DD HH24:MI:SS.FF'",
         "ALTER SESSION SET NLS_TIMESTAMP_TZ_FORMAT = 'YYYY-MM-DD HH24:MI:SS.FF TZR'",
@@ -488,7 +488,7 @@ enum OracleOps {
     ]
 
     /// The session's own formats back, as they were read.
-    static func nlsRestoreStatements(_ saved: [[String?]]) -> [String] {
+    package static func nlsRestoreStatements(_ saved: [[String?]]) -> [String] {
         saved.compactMap { row in
             guard row.count >= 2, let name = row[0], nlsParameters.contains(name), let value = row[1] else { return nil }
             return "ALTER SESSION SET \(name) = \(DatabaseDrivers.literal(value))"
@@ -498,21 +498,21 @@ enum OracleOps {
     // MARK: Users statements
 
     /// Users that aren't Oracle's own; no password column is asked for.
-    static let usersSQL = """
+    package static let usersSQL = """
         SELECT username AS name, account_status, expiry_date, profile, authentication_type, common
         FROM dba_users WHERE oracle_maintained = 'N' ORDER BY username
         """
 
     /// The roles made here, and Oracle's few a user is usually given.
-    static let rolesSQL = """
+    package static let rolesSQL = """
         SELECT role AS name, authentication_type, oracle_maintained FROM dba_roles
         WHERE oracle_maintained = 'N' OR role IN ('CONNECT', 'RESOURCE', 'DBA', 'SELECT_CATALOG_ROLE', 'EXECUTE_CATALOG_ROLE', 'DB_DEVELOPER_ROLE')
         ORDER BY role
         """
 
-    static let roleGrantsSQL = "SELECT grantee, granted_role FROM dba_role_privs"
+    package static let roleGrantsSQL = "SELECT grantee, granted_role FROM dba_role_privs"
 
-    static func grantsSQL(_ name: String) -> String {
+    package static func grantsSQL(_ name: String) -> String {
         """
         SELECT 'system' AS kind, privilege, admin_option AS grantable, NULL AS owner, NULL AS object_name FROM dba_sys_privs WHERE grantee = \(name)
         UNION ALL SELECT 'role', granted_role, admin_option, NULL, NULL FROM dba_role_privs WHERE grantee = \(name)
@@ -522,7 +522,7 @@ enum OracleOps {
     }
 
     /// This user's own, which every user may read.
-    static let ownGrantsSQL = """
+    package static let ownGrantsSQL = """
         SELECT 'system' AS kind, privilege, admin_option AS grantable, NULL AS owner, NULL AS object_name FROM user_sys_privs
         UNION ALL SELECT 'role', granted_role, admin_option, NULL, NULL FROM user_role_privs
         UNION ALL SELECT LOWER(type), privilege, grantable, owner, table_name FROM user_tab_privs WHERE grantee = USER
@@ -531,7 +531,7 @@ enum OracleOps {
 
     // MARK: Answers
 
-    static func overview(_ result: QueryResult) -> ServerOverview {
+    package static func overview(_ result: QueryResult) -> ServerOverview {
         guard let row = ResultRow.rows(of: result).first else { return ServerOverview() }
         var facts: [ServerFact] = []
         facts.append(ServerFact(title: "Version", value: row["version"] ?? "—", detail: row["host_name"].map { "on \($0)" }))
@@ -561,7 +561,7 @@ enum OracleOps {
     }
 
     /// INACTIVE is idle; the rest lower-cased as Oracle says them.
-    static func activity(_ result: QueryResult) -> [DatabaseActivity] {
+    package static func activity(_ result: QueryResult) -> [DatabaseActivity] {
         ResultRow.rows(of: result).map { row in
             let status = (row["state"] ?? "").lowercased()
             return DatabaseActivity(
@@ -573,7 +573,7 @@ enum OracleOps {
     }
 
     /// The two rankings merged, each statement once.
-    static func slowQueries(_ results: [QueryResult]) -> [SlowQuery] {
+    package static func slowQueries(_ results: [QueryResult]) -> [SlowQuery] {
         var seen: Set<String> = []
         var out: [SlowQuery] = []
         for result in results {
@@ -589,7 +589,7 @@ enum OracleOps {
         return out.sorted { $0.total > $1.total }
     }
 
-    static func users(_ users: QueryResult, roles: QueryResult, memberships: QueryResult) -> [DatabaseUser] {
+    package static func users(_ users: QueryResult, roles: QueryResult, memberships: QueryResult) -> [DatabaseUser] {
         var memberOf: [String: [String]] = [:]
         for row in ResultRow.rows(of: memberships) {
             guard let grantee = row["grantee"], let role = row["granted_role"] else { continue }
@@ -623,7 +623,7 @@ enum OracleOps {
     }
 
     /// A system privilege a grant each; a role each; an object's privileges together.
-    static func grants(_ result: QueryResult) -> [DatabaseGrant] {
+    package static func grants(_ result: QueryResult) -> [DatabaseGrant] {
         var out: [DatabaseGrant] = []
         var objects: [String: Int] = [:]
         for row in ResultRow.rows(of: result) {
@@ -660,13 +660,13 @@ enum OracleOps {
 /// ADMIN OPTION or a table's WITH GRANT OPTION, roles, DROP USER/ROLE. A
 /// plain name typed is upper-cased as Oracle reads it unquoted; a name
 /// from the catalog is quoted as it is. Pure.
-struct OracleUserStatements: UserStatementMaking {
+package struct OracleUserStatements: UserStatementMaking {
     /// Whose tables a Grant sheet's Owner starts with: the connection's user.
-    var owner = ""
+    package var owner = ""
 
-    static let mask = "\"••••••••\""
+    package static let mask = "\"••••••••\""
 
-    var form: UserForm {
+    package var form: UserForm {
         UserForm(
             login: true, superuser: nil,
             passwordNote:
@@ -682,7 +682,7 @@ struct OracleUserStatements: UserStatementMaking {
     /// A plain name — a letter, then letters, digits, `_`, `$`, `#` — as
     /// Oracle reads it unquoted: upper-case. Anything else as written. A
     /// `"` can't be in an Oracle name at all.
-    static func name(_ typed: String, _ what: String = "A name") throws -> String {
+    package static func name(_ typed: String, _ what: String = "A name") throws -> String {
         let name = typed.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { throw refusal("\(what), please.") }
         guard !name.contains("\0"), !name.contains("\"") else { throw refusal("\(what) can't hold a \" or a NUL in Oracle.") }
@@ -703,7 +703,7 @@ struct OracleUserStatements: UserStatementMaking {
         return "\"" + password + "\""
     }
 
-    func create(_ user: NewUser) throws -> [UserStatement] {
+    package func create(_ user: NewUser) throws -> [UserStatement] {
         let name = SQLDialect.oracle.identifier(try Self.name(user.name))
         let head = "CREATE USER \(name) IDENTIFIED BY "
         var statements = [UserStatement(head + (try Self.password(user.password)), shown: head + Self.mask)]
@@ -711,13 +711,13 @@ struct OracleUserStatements: UserStatementMaking {
         return statements
     }
 
-    func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
+    package func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
         let head = "ALTER USER \(try quoted(user.name)) IDENTIFIED BY "
         return UserStatement(head + (try Self.password(password)), shown: head + Self.mask)
     }
 
     /// Oracle's own roles (CONNECT, DBA…) are granted, never changed or dropped.
-    func offers(_ action: UserAction, on user: DatabaseUser) -> Bool {
+    package func offers(_ action: UserAction, on user: DatabaseUser) -> Bool {
         let oracles = user.attributes.contains(OracleOps.maintained)
         switch action {
         case .password: return !user.isRole
@@ -726,12 +726,12 @@ struct OracleUserStatements: UserStatementMaking {
         }
     }
 
-    func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
+    package func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
         guard kind.title == "Table" else { return .server }
         return .table(TableName(schema: fields.first ?? "", name: fields.count > 1 ? fields[1] : ""))
     }
 
-    func privileges(on target: GrantTarget) -> [String] {
+    package func privileges(on target: GrantTarget) -> [String] {
         switch target {
         case .server:
             return [
@@ -766,7 +766,7 @@ struct OracleUserStatements: UserStatementMaking {
         return privileges.contains("ALL") ? "ALL" : privileges.joined(separator: ", ")
     }
 
-    func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
+    package func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
         let words = try words(privileges, on: target)
         let who = try quoted(user.name)
         guard let object = try object(target) else {
@@ -781,7 +781,7 @@ struct OracleUserStatements: UserStatementMaking {
     }
 
     /// The listed grant taken back: a system privilege, a role, a table's privileges.
-    func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
+    package func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
         guard let who = try? quoted(user.name) else { return nil }
         switch grant.kind {
         case "system":
@@ -800,15 +800,15 @@ struct OracleUserStatements: UserStatementMaking {
     }
 
     /// Roles only: Oracle grants a role, never a user.
-    func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
+    package func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
         users.filter { $0.isRole && $0.id != user.id && !user.memberOf.contains($0.name) }
     }
 
-    func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
+    package func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
         UserStatement("GRANT \(try quoted(role.name)) TO \(try quoted(user.name))")
     }
 
-    func drop(_ user: DatabaseUser) throws -> UserStatement {
+    package func drop(_ user: DatabaseUser) throws -> UserStatement {
         UserStatement((user.isRole ? "DROP ROLE " : "DROP USER ") + (try quoted(user.name)))
     }
 }

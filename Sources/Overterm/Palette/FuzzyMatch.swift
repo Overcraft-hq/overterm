@@ -2,8 +2,8 @@ import Foundation
 
 /// Subsequence matching with a score, for the palette. "ncl" finds "New
 /// Claude Tab". Higher is better; nil means no match.
-enum FuzzyMatch {
-    static func score(_ query: String, in candidate: String) -> Int? {
+package enum FuzzyMatch {
+    package static func score(_ query: String, in candidate: String) -> Int? {
         let query = query.lowercased().filter { !$0.isWhitespace }
         guard !query.isEmpty else { return 0 }
         let text = Array(candidate.lowercased())

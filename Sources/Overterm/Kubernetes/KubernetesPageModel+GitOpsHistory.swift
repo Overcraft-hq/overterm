@@ -5,21 +5,21 @@ import Foundation
 /// source (the rail's match, `KubeGitOpsMatch`), and the paths it
 /// renders — its `path` and its `manifest-generate-paths`, each checked to
 /// be in that checkout (`KubeGitOpsPath`).
-struct KubeGitOpsHistoryCheckout: Equatable, Sendable {
-    var root: URL
+package struct KubeGitOpsHistoryCheckout: Equatable, Sendable {
+    package var root: URL
     /// Which of the Application's sources it is (its revisions' index).
-    var source: Int
-    var pathspecs: [String]
+    package var source: Int
+    package var pathspecs: [String]
 
     /// "ot-kube-shop".
-    var name: String { root.lastPathComponent }
+    package var name: String { root.lastPathComponent }
 }
 
 extension KubernetesPageModel {
     /// The window's checkout of the Application's repository, if one is
     /// open; nil otherwise, or when its path isn't in it. Reads only the
     /// checkouts' remotes, once each, and looks at their files.
-    func historyCheckout(_ detail: KubeGitOpsDetail) async -> KubeGitOpsHistoryCheckout? {
+    package func historyCheckout(_ detail: KubeGitOpsDetail) async -> KubeGitOpsHistoryCheckout? {
         guard detail.object.role == .application, !detail.history.isEmpty, let roots = actions?.checkouts(), !roots.isEmpty else { return nil }
         for (index, source) in detail.object.sources.enumerated() where !source.isValuesRef {
             guard let repo = source.repo, let checkout = await KubeGitOpsCheckouts.shared.checkout(naming: repo, among: roots) else { continue }
@@ -35,7 +35,7 @@ extension KubernetesPageModel {
     /// Application's paths, in a review tab of the checkout: both
     /// revisions verified to be commits there first (5.4) — one that isn't
     /// is said, nothing opened.
-    func reviewHistory(_ detail: KubeGitOpsDetail, entry index: Int, in checkout: KubeGitOpsHistoryCheckout) {
+    package func reviewHistory(_ detail: KubeGitOpsDetail, entry index: Int, in checkout: KubeGitOpsHistoryCheckout) {
         guard detail.history.indices.contains(index), detail.history.indices.contains(index + 1) else { return }
         func revision(_ entry: KubeGitOpsDetail.HistoryEntry) -> String? {
             let revisions = entry.revisions

@@ -2,13 +2,13 @@ import Foundation
 
 /// A log line as the engine sends it: which stream it came on and its
 /// text (a timestamp first, when asked for).
-struct DockerLogChunk: Equatable, Sendable {
-    enum Stream: UInt8, Sendable {
+package struct DockerLogChunk: Equatable, Sendable {
+    package enum Stream: UInt8, Sendable {
         case stdin = 0, stdout = 1, stderr = 2
     }
 
-    var stream: Stream
-    var text: String
+    package var stream: Stream
+    package var text: String
 }
 
 /// Docker's log stream for a container without a TTY: frames of an 8-byte
@@ -16,16 +16,16 @@ struct DockerLogChunk: Equatable, Sendable {
 /// that many bytes. A container with a TTY sends its bytes plain. Fed in
 /// whatever pieces the socket gives; a frame cut in two waits for the rest.
 /// Pure.
-struct DockerLogDemuxer: Sendable {
+package struct DockerLogDemuxer: Sendable {
     /// False for a TTY's plain bytes (ContainerDetail.Config.Tty).
-    let framed: Bool
+    package let framed: Bool
     private var pending = Data()
 
-    init(framed: Bool) {
+    package init(framed: Bool) {
         self.framed = framed
     }
 
-    mutating func feed(_ data: Data) -> [DockerLogChunk] {
+    package mutating func feed(_ data: Data) -> [DockerLogChunk] {
         guard framed else {
             // Plain bytes come in whatever pieces the socket reads: up to the
             // last newline out, decoded whole, the rest kept. Each piece as
@@ -55,7 +55,7 @@ struct DockerLogDemuxer: Sendable {
 
     /// What a TTY's stream ended with after its last newline; a frame cut
     /// short is no line.
-    mutating func flush() -> [DockerLogChunk] {
+    package mutating func flush() -> [DockerLogChunk] {
         defer { pending = Data() }
         guard !framed, !pending.isEmpty else { return [] }
         return [DockerLogChunk(stream: .stdout, text: String(decoding: pending, as: UTF8.self))]
@@ -64,10 +64,10 @@ struct DockerLogDemuxer: Sendable {
 
 /// Newline-delimited JSON (events, stats, a pull's progress), fed in
 /// pieces: whole lines out, the last half line kept. Pure.
-struct DockerLineSplitter: Sendable {
+package struct DockerLineSplitter: Sendable {
     private var pending = Data()
 
-    mutating func feed(_ data: Data) -> [Data] {
+    package mutating func feed(_ data: Data) -> [Data] {
         pending.append(data)
         var lines: [Data] = []
         while let newline = pending.firstIndex(of: 0x0A) {
@@ -80,7 +80,7 @@ struct DockerLineSplitter: Sendable {
 
     /// The half line left at the end, if any — emptied: what a stream that
     /// ended without a last newline still said.
-    mutating func finish() -> Data? {
+    package mutating func finish() -> Data? {
         defer { pending = Data() }
         return pending.isEmpty ? nil : pending
     }
@@ -88,14 +88,14 @@ struct DockerLineSplitter: Sendable {
 
 extension DockerLogChunk.Stream {
     /// The line's stream: stdin's (never sent in a log) read as stdout's.
-    var log: LogLine.Stream { self == .stderr ? .stderr : .stdout }
+    package var log: LogLine.Stream { self == .stderr ? .stderr : .stdout }
 }
 
 extension LogLine {
     /// One chunk may hold several lines (and the engine's timestamp starts
     /// each one). Split on any newline: `\r\n` is one Character, which a
     /// split on `\n` leaves whole.
-    static func lines(of chunk: DockerLogChunk, timestamps: Bool, source: String? = nil) -> [LogLine] {
+    package static func lines(of chunk: DockerLogChunk, timestamps: Bool, source: String? = nil) -> [LogLine] {
         chunk.text.split(whereSeparator: \.isNewline).map {
             parse(String($0), stream: chunk.stream.log, timestamps: timestamps, source: source)
         }

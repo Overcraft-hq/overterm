@@ -38,45 +38,45 @@ import Foundation
 /// lists them, and no app's detail is opened here. Fictional names only.
 extension FakeKubeAPI {
     /// What `addSurveySpoke` made, by what the leg looks for.
-    struct SurveySpoke: Sendable {
-        typealias Workload = (namespace: String, name: String, app: String)
+    package struct SurveySpoke: Sendable {
+        package typealias Workload = (namespace: String, name: String, app: String)
         /// Every app the marks make, by its instance name.
-        var apps: Set<String> = []
+        package var apps: Set<String> = []
         /// The plain apps' primary Deployments that read ready, their
         /// desired two: the burst's and the churn's.
-        var ready: [Workload] = []
+        package var ready: [Workload] = []
         /// Rollouts past their deadline; and not every replica available: their apps.
-        var stalled: [Workload] = []
-        var unavailable: [String] = []
+        package var stalled: [Workload] = []
+        package var unavailable: [String] = []
         /// Only their objects say so, their cells ready, synced in the last
         /// hour: the stalled single replicas (among `stalled`), the others
         /// stuck behind the old pod, the paused one.
-        var hidden: [Workload] = []
-        var stuck: [String] = []
-        var paused = ""
+        package var hidden: [Workload] = []
+        package var stuck: [String] = []
+        package var paused = ""
         /// The Argo Rollouts' apps.
-        var rolloutApps: [String] = []
+        package var rolloutApps: [String] = []
         /// Ingresses only: Unknown, no workload read.
-        var ingressOnly = ""
+        package var ingressOnly = ""
         /// Marked objects of each kind, by its full name.
-        var marked: [String: Int] = [:]
+        package var marked: [String: Int] = [:]
         /// Every object of each kind made, marked or not.
-        var made: [String: Int] = [:]
+        package var made: [String: Int] = [:]
         /// What the settle reads by GET: every marked workload, CronJob and
         /// `<unknown>` HPA.
-        var fetched = 0
+        package var fetched = 0
         /// The GET paths of those whose rows may hide a problem — not ready
         /// by their cells, what no cell says (the Rollouts' phases, the
         /// CronJobs' last runs, the `<unknown>` HPA's metrics), or synced in
         /// the last hour (`hidden`'s, `stuck`'s, `paused`'s): the settle's first.
-        var doubtful: Set<String> = []
+        package var doubtful: Set<String> = []
     }
 
     /// The survey's production spoke (gitops.md 14.12) on this fake.
     /// `padding`: kubectl's last-applied copy on each marked Deployment —
     /// 13,000 bytes give rows of about 15 KB with managedFields.
     @discardableResult
-    func addSurveySpoke(env: String = "prod", padding: Int = 13_000, now: Date = Date()) -> SurveySpoke {
+    package func addSurveySpoke(env: String = "prod", padding: Int = 13_000, now: Date = Date()) -> SurveySpoke {
         var spoke = SurveySpoke()
         let namespaces = (0..<10).map { "team-\($0)" } + (0..<60).map { String(format: "globex-%02d", $0) }
         for namespace in namespaces + ["kube-system"] { addNamespace(namespace) }
@@ -351,7 +351,7 @@ extension FakeKubeAPI {
     }
 
     /// kubectl's last-applied copy of a small object (a Service's): its manifest again, a kilobyte or so.
-    static func surveyApplied(_ name: String, kind: String) -> [String: String] {
+    package static func surveyApplied(_ name: String, kind: String) -> [String: String] {
         let manifest =
             "{\"apiVersion\":\"v1\",\"kind\":\"\(kind)\",\"metadata\":{\"name\":\"\(name)\",\"labels\":{\"app\":\"\(name)\"}},\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"protocol\":\"TCP\",\"targetPort\":8080}],\"selector\":{\"app\":\"\(name)\"},\"type\":\"ClusterIP\"},\"pad\":\""
         return ["kubectl.kubernetes.io/last-applied-configuration": manifest + String(repeating: "x", count: 900) + "\"}"]
@@ -361,7 +361,7 @@ extension FakeKubeAPI {
     /// them: Argo CD's server-side apply (`argocd-controller`, the spec it
     /// owns field by field) at `argoChanged`, the controller's status
     /// writes since.
-    static func surveyManagedFields(desired: Int, argoChanged: Date, now: Date) -> [[String: Any]] {
+    package static func surveyManagedFields(desired: Int, argoChanged: Date, now: Date) -> [[String: Any]] {
         let empty = [String: Any]()
         let container: [String: Any] = [
             ".": empty, "f:env": [".": empty, "k:{\"name\":\"DB_PASSWORD\"}": [".": empty, "f:name": empty, "f:value": empty]], "f:image": empty,

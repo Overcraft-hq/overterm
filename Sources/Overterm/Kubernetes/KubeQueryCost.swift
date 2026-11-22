@@ -8,22 +8,22 @@ import Foundation
 /// names 50 at most. A samples estimate — series × span ÷ scrape — says
 /// how much a refused one would read. A refused query is never sent; its
 /// sentence (`KubeChartEmpty.costRefused`) says why and what to pick. Pure.
-enum KubeQueryCost {
+package enum KubeQueryCost {
     /// Raw cAdvisor across the whole cluster, at most this span.
-    static let rawClusterSpan: TimeInterval = 6 * 3600
+    package static let rawClusterSpan: TimeInterval = 6 * 3600
     /// Raw cAdvisor across one namespace, below this many series.
-    static let rawNamespaceSeries = 2000
+    package static let rawNamespaceSeries = 2000
     /// The top-N ranking reads every raw sample of its span: under this, at any span.
-    static let rankingSamples = 10_000_000
+    package static let rankingSamples = 10_000_000
     /// A ranking past `rankingSamples` ranks over this span instead.
-    static let rankingFallback: TimeInterval = 24 * 3600
+    package static let rankingFallback: TimeInterval = 24 * 3600
     /// The most names a regex of pods holds; beyond, pods are selected by owner.
-    static let maxNames = 50
+    package static let maxNames = 50
     /// The most pods a workload's subquery covers without recording rules.
-    static let maxSubqueryPods = 50
+    package static let maxSubqueryPods = 50
 
     /// Whom a query covers.
-    enum Scope: Equatable, Sendable {
+    package enum Scope: Equatable, Sendable {
         case cluster
         /// A namespace, with its cAdvisor series counted (nil: not yet).
         case namespace(String, series: Int?)
@@ -31,32 +31,32 @@ enum KubeQueryCost {
         case workload(pods: Int)
     }
 
-    enum Verdict: Equatable, Sendable {
+    package enum Verdict: Equatable, Sendable {
         case allowed
         case refused(KubeChartEmpty)
 
-        var isAllowed: Bool { self == .allowed }
-        var sentence: String? {
+        package var isAllowed: Bool { self == .allowed }
+        package var sentence: String? {
             if case .refused(let why) = self { return why.sentence }
             return nil
         }
     }
 
     /// About how many raw samples `series` hold over `span` at `scrape`.
-    static func samples(series: Int, span: TimeInterval, scrape: TimeInterval) -> Int {
+    package static func samples(series: Int, span: TimeInterval, scrape: TimeInterval) -> Int {
         guard series > 0, span > 0, scrape > 0 else { return 0 }
         return Int((Double(series) * span / scrape).rounded())
     }
 
     /// `30M`, `450k`, `800`.
-    static func said(_ samples: Int) -> String {
+    package static func said(_ samples: Int) -> String {
         if samples >= 1_000_000 { return "\(Int((Double(samples) / 1_000_000).rounded()))M" }
         if samples >= 1000 { return "\(Int((Double(samples) / 1000).rounded()))k" }
         return "\(samples)"
     }
 
     /// Raw cAdvisor over `scope` for `span`.
-    static func raw(_ scope: Scope, span: TimeInterval, profile: KubePromProfile) -> Verdict {
+    package static func raw(_ scope: Scope, span: TimeInterval, profile: KubePromProfile) -> Verdict {
         let series = profile.count(KubePromProfile.cpuMetric)
         switch scope {
         case .pod, .workload:
@@ -80,7 +80,7 @@ enum KubeQueryCost {
     }
 
     /// A subquery (a peak band, sizing) over `scope`.
-    static func subquery(_ scope: Scope, profile: KubePromProfile) -> Verdict {
+    package static func subquery(_ scope: Scope, profile: KubePromProfile) -> Verdict {
         switch scope {
         case .pod: return .allowed
         case .workload(let pods) where pods <= maxSubqueryPods: return .allowed
@@ -97,7 +97,7 @@ enum KubeQueryCost {
     }
 
     /// A regex of `count` pod names.
-    static func names(_ count: Int) -> Verdict {
+    package static func names(_ count: Int) -> Verdict {
         guard count > maxNames else { return .allowed }
         return .refused(
             .costRefused(what: "A pattern of \(count) pods", span: "the range", samples: nil, rules: true, pick: "a workload, which selects its pods by owner"))
@@ -105,7 +105,7 @@ enum KubeQueryCost {
 
     /// The span a raw CPU ranking reads: the range under `rankingSamples`,
     /// else the last 24 h, and the note that says so.
-    static func rankingSpan(series: Int, span: TimeInterval, scrape: TimeInterval) -> (span: TimeInterval, note: String?) {
+    package static func rankingSpan(series: Int, span: TimeInterval, scrape: TimeInterval) -> (span: TimeInterval, note: String?) {
         guard samples(series: series, span: span, scrape: scrape) >= rankingSamples, span > rankingFallback else { return (span, nil) }
         return (rankingFallback, "ranked by the last \(KubePromQL.duration(rankingFallback))")
     }

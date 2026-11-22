@@ -12,7 +12,7 @@ import AppKit
 /// and the page's header says what became of it.
 extension TerminalWindowController {
     /// `f` on `row`, or its Free verb.
-    func activityFree(_ row: ActivityPortRow) {
+    package func activityFree(_ row: ActivityPortRow) {
         guard let step = ActivityPortHolder.step(for: row) else { return NSSound.beep() }
         switch step {
         case .refused(let reason):
@@ -110,7 +110,7 @@ extension TerminalWindowController {
     // MARK: The user's own process (6.8's rows a process of the user's holds)
 
     /// What a fresh read makes of a Free of the user's own holder.
-    enum OwnFree: Sendable {
+    package enum OwnFree: Sendable {
         case plan(ActivityPortHolder.Plan, holders: [ActivityProcessID])
         /// Nothing to ask: the port changed hands, or is free, or its holder
         /// is gone.
@@ -120,7 +120,7 @@ extension TerminalWindowController {
     /// The plan made from a fresh census (6.8: "made again when its sheet
     /// opens"), off the main thread: every holder of the port now, the
     /// listed one among them, read as the policy sees it.
-    func ownFree(_ row: ActivityPortRow, _ step: ActivityPortHolder.Step) async -> OwnFree? {
+    package func ownFree(_ row: ActivityPortRow, _ step: ActivityPortHolder.Step) async -> OwnFree? {
         await activityRead { snapshot, owners, known in
             let holders = ListeningPorts.holders(of: row.port, proto: row.proto, in: snapshot)
             if let changed = ActivityPortHolder.changed(row, step: step, holders: holders, snapshot: snapshot) { return .said(changed) }
@@ -181,7 +181,7 @@ extension TerminalWindowController {
     /// do of a Free nobody records (9.9, 10.6): run a service's stop in a
     /// real shell, or open System Settings. Signals are ProcessSignals'
     /// gate's; a container's Stop goes to the run's own engine. Pure.
-    nonisolated static func isolatedFreeRefusal(_ step: ActivityPortHolder.Step, isolated: Bool, recorded: Bool, terminalRecorded: Bool) -> String? {
+    package nonisolated static func isolatedFreeRefusal(_ step: ActivityPortHolder.Step, isolated: Bool, recorded: Bool, terminalRecorded: Bool) -> String? {
         guard isolated else { return nil }
         switch step {
         case .stopService where !terminalRecorded:
@@ -196,7 +196,7 @@ extension TerminalWindowController {
     /// The port watched after a Free's step, the page's header saying
     /// what became of it. `sentAt`: taken before the step went — what
     /// started after it came back.
-    func watchActivityFree(_ row: ActivityPortRow, freed: ActivityProcessID?, write: String? = nil, sentAt: UInt64 = PortFreeing.now()) {
+    package func watchActivityFree(_ row: ActivityPortRow, freed: ActivityProcessID?, write: String? = nil, sentAt: UInt64 = PortFreeing.now()) {
         let page = activityPage
         let freeing = PortFreeing.label(.freeing, port: row.port)
         page.freeing = freeing
@@ -216,7 +216,7 @@ extension TerminalWindowController {
     /// terraform write interrupted over the one freed, its plugin — never
     /// Force Quit, which would SIGKILL into the write: it is said to be
     /// still stopping instead. Pure.
-    nonisolated static func freeSaid(_ state: PortFreeing.State, port: Int, freed: ActivityProcessID?, write: String? = nil) -> String {
+    package nonisolated static func freeSaid(_ state: PortFreeing.State, port: Int, freed: ActivityProcessID?, write: String? = nil) -> String {
         let said = PortFreeing.label(state, port: port)
         guard case .stillHeld(let pid?) = state, pid == freed?.pid else { return said }
         if let write { return said + " — “\(DockerMCP.displayed(write))” is still stopping" }
@@ -227,7 +227,7 @@ extension TerminalWindowController {
     /// typed as the shell starts — run, or left for the person. The tab
     /// goes where `NewTabGroup.placement` puts it (`addTab`), the page put
     /// away. A scenario's recorder takes it instead.
-    func activityTerminal(_ request: ActivityTerminalRequest) {
+    package func activityTerminal(_ request: ActivityTerminalRequest) {
         if let activityTerminalRecorder { return activityTerminalRecorder(request) }
         if store.showingOverlay != nil { hideOverlay(focus: false) }
         let directory = URL(fileURLWithPath: request.directory, isDirectory: true)

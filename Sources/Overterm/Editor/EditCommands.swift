@@ -1,21 +1,21 @@
 import Foundation
 
 /// One replacement, against the text as it was before the edit (UTF-16).
-struct TextChange: Equatable, Sendable {
-    let range: NSRange
-    let replacement: String
+package struct TextChange: Equatable, Sendable {
+    package let range: NSRange
+    package let replacement: String
 }
 
 /// What an editing command does: its changes — sorted, not overlapping, all
 /// against the original text, so the view applies them as one undo group
 /// (`shouldChangeText(inRanges:replacementStrings:)`, then each from the last
 /// back) — and the selections afterwards, in the new text, sorted.
-struct TextEdit: Equatable, Sendable {
-    var changes: [TextChange]
-    var selections: [NSRange]
+package struct TextEdit: Equatable, Sendable {
+    package var changes: [TextChange]
+    package var selections: [NSRange]
 
     /// `text` with the changes made — what the view ends up with.
-    func applied(to text: String) -> String {
+    package func applied(to text: String) -> String {
         let result = NSMutableString(string: text)
         for change in changes.reversed() { result.replaceCharacters(in: change.range, with: change.replacement) }
         return result as String
@@ -23,11 +23,11 @@ struct TextEdit: Equatable, Sendable {
 }
 
 /// How a file indents: what one level is.
-enum IndentStyle: Equatable, Sendable {
+package enum IndentStyle: Equatable, Sendable {
     case tabs
     case spaces(Int)
 
-    var unit: String {
+    package var unit: String {
         switch self {
         case .tabs: "\t"
         case .spaces(let count): String(repeating: " ", count: count)
@@ -35,7 +35,7 @@ enum IndentStyle: Equatable, Sendable {
     }
 
     /// One level in columns; a tab is `tabWidth` wide.
-    func width(tabWidth: Int = 4) -> Int {
+    package func width(tabWidth: Int = 4) -> Int {
         switch self {
         case .tabs: tabWidth
         case .spaces(let count): count
@@ -44,15 +44,15 @@ enum IndentStyle: Equatable, Sendable {
 
     /// Lines read for detection: past this many indented lines, or 1 MB, the
     /// answer doesn't change.
-    static let maxIndentedLines = 1000
-    static let maxScanned = 1 << 20
+    package static let maxIndentedLines = 1000
+    package static let maxScanned = 1 << 20
 
     /// The style the file already uses: tabs when more lines start with a tab
     /// than with spaces; otherwise the step most often seen between one line's
     /// indentation and the next one's (VS Code's guess). A single space is a
     /// doc comment's ` *`, not a level. A file with nothing indented gets the
     /// language's convention: tabs for Go and Makefiles, else four spaces.
-    static func detect(in text: NSString, languageID: String? = nil) -> IndentStyle {
+    package static func detect(in text: NSString, languageID: String? = nil) -> IndentStyle {
         let fallback: IndentStyle = (languageID == "go" || languageID == "make") ? .tabs : .spaces(4)
         let count = min(text.length, maxScanned)
         guard count > 0 else { return fallback }
@@ -101,7 +101,7 @@ enum IndentStyle: Equatable, Sendable {
 }
 
 /// A language's comment syntax, for ⌘/.
-enum CommentStyle: Equatable, Sendable {
+package enum CommentStyle: Equatable, Sendable {
     /// The prefix as inserted, with its space: `"// "`.
     case line(String)
     /// Wrapped around each line: `<!-- … -->`.
@@ -109,18 +109,18 @@ enum CommentStyle: Equatable, Sendable {
 }
 
 /// Where the partner of the bracket by the caret is.
-struct BracketMatch: Equatable, Sendable {
-    let bracket: Int
-    let partner: Int
+package struct BracketMatch: Equatable, Sendable {
+    package let bracket: Int
+    package let partner: Int
 }
 
 /// The selections ⌘D leaves, and whether it now matches whole words only
 /// (it does when it started from a caret, as in VS Code and Zed). The view
 /// passes `wholeWord` back on the next ⌘D, and forgets it when the
 /// selection changes any other way.
-struct OccurrenceSelection: Equatable, Sendable {
-    var selections: [NSRange]
-    var wholeWord: Bool
+package struct OccurrenceSelection: Equatable, Sendable {
+    package var selections: [NSRange]
+    package var wholeWord: Bool
 }
 
 /// The editor's commands as Zed and VS Code have them — auto-indent, pairs,
@@ -128,13 +128,13 @@ struct OccurrenceSelection: Equatable, Sendable {
 /// text and the selections. Each reads only the lines it touches (the text
 /// may be 4 MB), works in UTF-16 as NSTextView does, and never splits a
 /// surrogate pair. nil: nothing to do (or, for typing, let the view type).
-enum EditCommands {
-    enum Direction: Sendable { case up, down }
+package enum EditCommands {
+    package enum Direction: Sendable { case up, down }
 
     // MARK: Languages
 
     /// The id the commands key on, by file name (nil: plain text).
-    static func languageID(forFileName name: String) -> String? {
+    package static func languageID(forFileName name: String) -> String? {
         if name == "Dockerfile" || name.hasPrefix("Dockerfile.") { return "dockerfile" }
         if name == "Makefile" || name == "GNUmakefile" || name == "makefile" { return "make" }
         let ext = (name as NSString).pathExtension.lowercased()
@@ -164,7 +164,7 @@ enum EditCommands {
     }
 
     /// How ⌘/ comments a line in this language; nil: it doesn't.
-    static func commentPrefix(forLanguageID id: String?) -> CommentStyle? {
+    package static func commentPrefix(forLanguageID id: String?) -> CommentStyle? {
         switch id {
         case "swift", "go", "rust", "c", "cpp", "objc", "javascript", "typescript", "tsx", "jsx", "java", "kotlin", "zig", "json", "jsonc":
             .line("// ")
@@ -178,7 +178,7 @@ enum EditCommands {
 
     /// The text's line ending — its first line's — for lines a command adds:
     /// a CRLF file keeps CRLF.
-    static func lineEnding(of text: NSString) -> String {
+    package static func lineEnding(of text: NSString) -> String {
         let newline = text.range(of: "\n", options: .literal)
         guard newline.location != NSNotFound, newline.location > 0, text.character(at: newline.location - 1) == 0x0D else { return "\n" }
         return "\r\n"
@@ -193,7 +193,7 @@ enum EditCommands {
     /// indentation with the caret on the indented line between (Zed).
     /// Whitespace after the caret doesn't come along, and a line left with
     /// only whitespace is left empty.
-    static func newline(in text: NSString, selections: [NSRange], style: IndentStyle, languageID: String? = nil) -> TextEdit {
+    package static func newline(in text: NSString, selections: [NSRange], style: IndentStyle, languageID: String? = nil) -> TextEdit {
         let scan = TextScanner(text)
         let eol = lineEnding(of: text)
         var builder = EditBuilder()
@@ -221,7 +221,7 @@ enum EditCommands {
 
     /// ⌘↩: a new line below each caret's line, indented as Return at its end
     /// would, the caret on it. Several carets on a line make one.
-    static func insertLineBelow(in text: NSString, selections: [NSRange], style: IndentStyle, languageID: String? = nil) -> TextEdit {
+    package static func insertLineBelow(in text: NSString, selections: [NSRange], style: IndentStyle, languageID: String? = nil) -> TextEdit {
         let scan = TextScanner(text)
         let eol = lineEnding(of: text)
         var builder = EditBuilder()
@@ -239,7 +239,7 @@ enum EditCommands {
     }
 
     /// ⇧⌘↩: a new line above each caret's line, at its indentation.
-    static func insertLineAbove(in text: NSString, selections: [NSRange]) -> TextEdit {
+    package static func insertLineAbove(in text: NSString, selections: [NSRange]) -> TextEdit {
         let scan = TextScanner(text)
         let eol = lineEnding(of: text)
         var builder = EditBuilder()
@@ -257,7 +257,7 @@ enum EditCommands {
     // MARK: Pairs
 
     /// Opener → closer; a quote closes itself.
-    static let pairs: [unichar: unichar] = [0x28: 0x29, 0x5B: 0x5D, 0x7B: 0x7D, 0x22: 0x22, 0x27: 0x27, 0x60: 0x60]
+    package static let pairs: [unichar: unichar] = [0x28: 0x29, 0x5B: 0x5D, 0x7B: 0x7D, 0x22: 0x22, 0x27: 0x27, 0x60: 0x60]
     private static let closers: Set<unichar> = [0x29, 0x5D, 0x7D]
     private static let quotes: Set<unichar> = [0x22, 0x27, 0x60]
     /// A pair opens only before these, whitespace, or the end of the line
@@ -271,7 +271,7 @@ enum EditCommands {
     /// before the same closer steps over it — when the line's pairs of that
     /// kind are balanced, which is what one auto-inserted looks like (a quote:
     /// when the line holds an even number of them). nil: type it as is.
-    static func typeCharacter(_ character: String, in text: NSString, selections: [NSRange], languageID: String? = nil) -> TextEdit? {
+    package static func typeCharacter(_ character: String, in text: NSString, selections: [NSRange], languageID: String? = nil) -> TextEdit? {
         let units = Array(character.utf16)
         guard units.count == 1, let c = units.first, pairs[c] != nil || closers.contains(c) else { return nil }
         let scan = TextScanner(text)
@@ -314,7 +314,7 @@ enum EditCommands {
     /// Backspace: a caret inside an empty pair — `(|)`, `"|"` — deletes both
     /// halves. Other selections delete as usual (a selection, or the
     /// character before the caret, whole). nil when no caret is in a pair.
-    static func deleteBackward(in text: NSString, selections: [NSRange]) -> TextEdit? {
+    package static func deleteBackward(in text: NSString, selections: [NSRange]) -> TextEdit? {
         let scan = TextScanner(text)
         var builder = EditBuilder()
         var special = false
@@ -340,7 +340,7 @@ enum EditCommands {
     /// commented, uncomments them all; otherwise comments each non-blank line
     /// at the block's least indentation, so the markers line up (VS Code,
     /// Zed). A block of only blank lines is commented at its indentation.
-    static func toggleLineComment(in text: NSString, selections: [NSRange], style: CommentStyle) -> TextEdit? {
+    package static func toggleLineComment(in text: NSString, selections: [NSRange], style: CommentStyle) -> TextEdit? {
         let scan = TextScanner(text)
         let blocks = scan.blocks(for: sorted(selections))
         let open: String
@@ -411,7 +411,7 @@ enum EditCommands {
 
     /// ⌘]: one level more on every line of every selection (blank lines of a
     /// multi-line selection stay empty).
-    static func indent(in text: NSString, selections: [NSRange], style: IndentStyle) -> TextEdit? {
+    package static func indent(in text: NSString, selections: [NSRange], style: IndentStyle) -> TextEdit? {
         let scan = TextScanner(text)
         var changes: [TextChange] = []
         for block in scan.blocks(for: sorted(selections)) {
@@ -425,7 +425,7 @@ enum EditCommands {
     }
 
     /// ⌘[: one level less — a tab, or up to a level's worth of spaces.
-    static func outdent(in text: NSString, selections: [NSRange], style: IndentStyle, tabWidth: Int = 4) -> TextEdit? {
+    package static func outdent(in text: NSString, selections: [NSRange], style: IndentStyle, tabWidth: Int = 4) -> TextEdit? {
         let scan = TextScanner(text)
         let width = style.width(tabWidth: tabWidth)
         var changes: [TextChange] = []
@@ -446,7 +446,7 @@ enum EditCommands {
 
     /// Tab: carets get a level's worth up to the next stop (spaces) or a tab;
     /// a selection over more than one line is indented instead.
-    static func insertTab(in text: NSString, selections: [NSRange], style: IndentStyle, tabWidth: Int = 4) -> TextEdit {
+    package static func insertTab(in text: NSString, selections: [NSRange], style: IndentStyle, tabWidth: Int = 4) -> TextEdit {
         let scan = TextScanner(text)
         let ordered = sorted(selections)
         if ordered.contains(where: { $0.length > 0 && scan.lineStart($0.location) != scan.line(at: $0.upperBound).start }),
@@ -470,7 +470,7 @@ enum EditCommands {
 
     /// ⌥↑ / ⌥↓: the lines of each selection swap with the line above or
     /// below, the selections moving with them. A block at the edge stays.
-    static func moveLines(_ direction: Direction, in text: NSString, selections: [NSRange]) -> TextEdit? {
+    package static func moveLines(_ direction: Direction, in text: NSString, selections: [NSRange]) -> TextEdit? {
         let scan = TextScanner(text)
         var changes: [TextChange] = []
         var result: [NSRange] = []
@@ -501,7 +501,7 @@ enum EditCommands {
 
     /// ⇧⌥↓ / ⇧⌥↑: each selection's lines copied below (the selection moves
     /// to the copy) or above (it stays on the upper one, the copy).
-    static func duplicateLines(_ direction: Direction, in text: NSString, selections: [NSRange]) -> TextEdit {
+    package static func duplicateLines(_ direction: Direction, in text: NSString, selections: [NSRange]) -> TextEdit {
         let scan = TextScanner(text)
         let eol = lineEnding(of: text)
         var builder = EditBuilder()
@@ -527,7 +527,7 @@ enum EditCommands {
     /// ⇧⌘K: each selection's lines go, the caret to the line that takes their
     /// place, at the column it had (the last line goes with the newline
     /// before it).
-    static func deleteLines(in text: NSString, selections: [NSRange]) -> TextEdit {
+    package static func deleteLines(in text: NSString, selections: [NSRange]) -> TextEdit {
         let scan = TextScanner(text)
         var builder = EditBuilder()
         for block in scan.blocks(for: sorted(selections)) {
@@ -548,14 +548,14 @@ enum EditCommands {
     }
 
     /// The whole lines of each selection, their newlines included.
-    static func selectLine(in text: NSString, selections: [NSRange]) -> [NSRange] {
+    package static func selectLine(in text: NSString, selections: [NSRange]) -> [NSRange] {
         let scan = TextScanner(text)
         return scan.blocks(for: sorted(selections)).map { NSRange(location: $0.start, length: $0.end - $0.start) }
     }
 
     /// ⌘L (VS Code, Zed): selects the caret's line; a selection already of
     /// whole lines takes the next line too.
-    static func expandLineSelection(in text: NSString, selections: [NSRange]) -> [NSRange] {
+    package static func expandLineSelection(in text: NSString, selections: [NSRange]) -> [NSRange] {
         let scan = TextScanner(text)
         var expanded: [NSRange] = []
         for selection in sorted(selections) {
@@ -578,7 +578,7 @@ enum EditCommands {
     /// ⌃J: a caret's line joins the next; a selection's lines join each
     /// other. One space where they meet (none next to a blank line), the
     /// whitespace around the join gone; a caret goes to the join.
-    static func joinLines(in text: NSString, selections: [NSRange]) -> TextEdit? {
+    package static func joinLines(in text: NSString, selections: [NSRange]) -> TextEdit? {
         let scan = TextScanner(text)
         var changes: [TextChange] = []
         var carets: [Int: Int] = [:]  // a single-line block's caret → its join's change
@@ -619,7 +619,7 @@ enum EditCommands {
     /// whole-word); then the next occurrence of the last selection's text
     /// after it is added, wrapping past the end, skipping what is selected.
     /// Case-sensitive. nil: nothing (more) to select.
-    static func selectNextOccurrence(in text: NSString, selections: [NSRange], wholeWord: Bool) -> OccurrenceSelection? {
+    package static func selectNextOccurrence(in text: NSString, selections: [NSRange], wholeWord: Bool) -> OccurrenceSelection? {
         let scan = TextScanner(text)
         let ordered = sorted(selections)
         guard let last = ordered.last else { return nil }
@@ -645,11 +645,11 @@ enum EditCommands {
     }
 
     /// Past this many, ⇧⌘L stops: more carets than anyone can follow.
-    static let maxOccurrences = 10_000
+    package static let maxOccurrences = 10_000
 
     /// ⇧⌘L: every occurrence of the last selection's text (of the word at a
     /// caret, whole-word).
-    static func selectAllOccurrences(in text: NSString, selections: [NSRange], wholeWord: Bool) -> OccurrenceSelection? {
+    package static func selectAllOccurrences(in text: NSString, selections: [NSRange], wholeWord: Bool) -> OccurrenceSelection? {
         let scan = TextScanner(text)
         guard var last = sorted(selections).last else { return nil }
         var whole = wholeWord
@@ -677,7 +677,7 @@ enum EditCommands {
     // MARK: Brackets
 
     /// How far a bracket's partner is looked for, each way (UTF-16).
-    static let maxBracketScan = 200_000
+    package static let maxBracketScan = 200_000
     private static let bracketPartners: [unichar: (partner: unichar, forward: Bool)] = [
         0x28: (0x29, true), 0x5B: (0x5D, true), 0x7B: (0x7D, true), 0x29: (0x28, false), 0x5D: (0x5B, false), 0x7D: (0x7B, false),
     ]
@@ -685,7 +685,7 @@ enum EditCommands {
     /// The bracket just before the caret — or else at it — and its partner,
     /// counting only brackets of its kind and skipping the positions `skip`
     /// says are inside strings or comments (the highlighter's tokens).
-    static func matchingBracket(at index: Int, in text: NSString, skip: (Int) -> Bool = { _ in false }) -> BracketMatch? {
+    package static func matchingBracket(at index: Int, in text: NSString, skip: (Int) -> Bool = { _ in false }) -> BracketMatch? {
         let length = text.length
         for position in [index - 1, index] where position >= 0 && position < length && !skip(position) {
             let c = text.character(at: position)
@@ -709,14 +709,14 @@ enum EditCommands {
     // MARK: Indent guides
 
     /// How far a blank line looks for the lines around it.
-    static let maxGuideLookaround = 1000
+    package static let maxGuideLookaround = 1000
 
     /// The indent guides of `lines` (0-based, by `LineIndex.starts`): per
     /// line, how many levels deep it is — guides at columns 0, w, 2w… below
     /// that, w the indent width (columns, tabs `tabWidth` wide). A blank line
     /// takes the shallower of the non-blank lines around it, so guides run
     /// through the gaps in a block and stop where it ends (Zed).
-    static func indentGuides(in text: NSString, lineStarts: [Int], lines: Range<Int>, indentWidth: Int, tabWidth: Int = 4) -> [Int] {
+    package static func indentGuides(in text: NSString, lineStarts: [Int], lines: Range<Int>, indentWidth: Int, tabWidth: Int = 4) -> [Int] {
         let scan = TextScanner(text)
         let width = max(1, indentWidth)
         let count = lineStarts.count
@@ -779,7 +779,7 @@ enum EditCommands {
     }
 
     /// Overlapping selections made one (carets that land on each other too).
-    static func merged(_ selections: [NSRange]) -> [NSRange] {
+    package static func merged(_ selections: [NSRange]) -> [NSRange] {
         var result: [NSRange] = []
         for selection in sorted(selections) {
             if let last = result.last,
@@ -797,7 +797,7 @@ enum EditCommands {
     /// at it; a selection takes in what is inserted inside it but not at
     /// its edges' outsides (its start stays before, its end after).
     /// `before`: indices of insertions a caret at them stays in front of.
-    static func mapSelections(_ selections: [NSRange], through changes: [TextChange], before: Set<Int> = []) -> [NSRange] {
+    package static func mapSelections(_ selections: [NSRange], through changes: [TextChange], before: Set<Int> = []) -> [NSRange] {
         var mapper = PositionMapper(changes: changes, before: before)
         return selections.map { selection in
             if selection.length == 0 { return NSRange(location: mapper.map(selection.location, after: true, caret: true), length: 0) }
@@ -807,7 +807,7 @@ enum EditCommands {
         }
     }
 
-    static func isWord(_ scalar: Unicode.Scalar) -> Bool {
+    package static func isWord(_ scalar: Unicode.Scalar) -> Bool {
         if scalar.isASCII {
             let v = scalar.value
             return (v >= 0x30 && v <= 0x39) || (v >= 0x41 && v <= 0x5A) || (v >= 0x61 && v <= 0x7A) || v == 0x5F
@@ -818,13 +818,13 @@ enum EditCommands {
 
 /// Positions in the original text carried into the edited one; queries must
 /// come in ascending order (sorted selections, start before end).
-struct PositionMapper {
-    let changes: [TextChange]
-    let before: Set<Int>
+package struct PositionMapper {
+    package let changes: [TextChange]
+    package let before: Set<Int>
     private var index = 0
     private var delta = 0
 
-    init(changes: [TextChange], before: Set<Int> = []) {
+    package init(changes: [TextChange], before: Set<Int> = []) {
         self.changes = changes
         self.before = before
     }
@@ -832,7 +832,7 @@ struct PositionMapper {
     /// `after`: a position at an insertion, or inside a replaced range, goes
     /// after the new text rather than before it — but a `caret` stays in
     /// front of the insertions in `before`.
-    mutating func map(_ position: Int, after: Bool, caret: Bool = false) -> Int {
+    package mutating func map(_ position: Int, after: Bool, caret: Bool = false) -> Int {
         while index < changes.count {
             let change = changes[index]
             let end = NSMaxRange(change.range)
@@ -882,51 +882,51 @@ private struct EditBuilder {
 
 /// A line: where it starts, where its text ends (before `\r\n` or `\n`),
 /// and where the next one starts.
-struct LineSpan: Equatable {
-    let start: Int
-    let contentEnd: Int
-    let end: Int
-    var hasNewline: Bool { end > contentEnd }
+package struct LineSpan: Equatable {
+    package let start: Int
+    package let contentEnd: Int
+    package let end: Int
+    package var hasNewline: Bool { end > contentEnd }
 }
 
 /// The lines a group of selections covers, merged when they touch.
-struct LineBlock {
-    var first: LineSpan
-    var last: LineSpan
-    var selections: [NSRange]
-    var start: Int { first.start }
-    var contentEnd: Int { last.contentEnd }
-    var end: Int { last.end }
+package struct LineBlock {
+    package var first: LineSpan
+    package var last: LineSpan
+    package var selections: [NSRange]
+    package var start: Int { first.start }
+    package var contentEnd: Int { last.contentEnd }
+    package var end: Int { last.end }
 }
 
 /// Reads around an offset: lines are found by searching out from it
 /// (NSString's own search), never by indexing the whole text.
-struct TextScanner {
-    let text: NSString
-    let length: Int
+package struct TextScanner {
+    package let text: NSString
+    package let length: Int
 
-    init(_ text: NSString) {
+    package init(_ text: NSString) {
         self.text = text
         length = text.length
     }
 
-    func unit(_ i: Int) -> unichar { text.character(at: i) }
+    package func unit(_ i: Int) -> unichar { text.character(at: i) }
 
-    func substring(_ from: Int, _ to: Int) -> String {
+    package func substring(_ from: Int, _ to: Int) -> String {
         to > from ? text.substring(with: NSRange(location: from, length: to - from)) : ""
     }
 
-    func isBlank(_ unit: unichar) -> Bool { unit == 0x20 || unit == 0x09 }
+    package func isBlank(_ unit: unichar) -> Bool { unit == 0x20 || unit == 0x09 }
 
-    func isWhitespaceOrNewline(_ unit: unichar) -> Bool { unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x0D }
+    package func isWhitespaceOrNewline(_ unit: unichar) -> Bool { unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x0D }
 
-    func lineStart(_ i: Int) -> Int {
+    package func lineStart(_ i: Int) -> Int {
         guard i > 0 else { return 0 }
         let newline = text.range(of: "\n", options: [.literal, .backwards], range: NSRange(location: 0, length: min(i, length)))
         return newline.location == NSNotFound ? 0 : newline.location + 1
     }
 
-    func line(at i: Int) -> LineSpan {
+    package func line(at i: Int) -> LineSpan {
         let start = lineStart(i)
         let newline = text.range(of: "\n", options: .literal, range: NSRange(location: start, length: length - start))
         guard newline.location != NSNotFound else { return LineSpan(start: start, contentEnd: length, end: length) }
@@ -935,30 +935,30 @@ struct TextScanner {
         return LineSpan(start: start, contentEnd: contentEnd, end: newline.location + 1)
     }
 
-    func line(after line: LineSpan) -> LineSpan? { line.hasNewline ? self.line(at: line.end) : nil }
+    package func line(after line: LineSpan) -> LineSpan? { line.hasNewline ? self.line(at: line.end) : nil }
 
-    func line(before line: LineSpan) -> LineSpan? { line.start > 0 ? self.line(at: line.start - 1) : nil }
+    package func line(before line: LineSpan) -> LineSpan? { line.start > 0 ? self.line(at: line.start - 1) : nil }
 
-    func leadingWhitespaceEnd(_ line: LineSpan) -> Int {
+    package func leadingWhitespaceEnd(_ line: LineSpan) -> Int {
         var i = line.start
         while i < line.contentEnd, isBlank(unit(i)) { i += 1 }
         return i
     }
 
     /// After the line's last non-blank character (its start when blank).
-    func trimmedEnd(_ line: LineSpan) -> Int {
+    package func trimmedEnd(_ line: LineSpan) -> Int {
         var i = line.contentEnd
         while i > line.start, isBlank(unit(i - 1)) { i -= 1 }
         return i
     }
 
-    func hasPrefix(_ prefix: NSString, at i: Int, before end: Int) -> Bool {
+    package func hasPrefix(_ prefix: NSString, at i: Int, before end: Int) -> Bool {
         guard i >= 0, i + prefix.length <= end else { return false }
         return text.substring(with: NSRange(location: i, length: prefix.length)) == prefix as String
     }
 
     /// Visual column of an offset, tabs `tabWidth` wide.
-    func column(of i: Int, tabWidth: Int) -> Int {
+    package func column(of i: Int, tabWidth: Int) -> Int {
         var column = 0
         var j = lineStart(i)
         while j < i {
@@ -969,12 +969,12 @@ struct TextScanner {
     }
 
     /// An offset moved back off the second half of a surrogate pair.
-    func snap(_ i: Int) -> Int {
+    package func snap(_ i: Int) -> Int {
         guard i > 0, i < length else { return i }
         return text.rangeOfComposedCharacterSequence(at: i).location
     }
 
-    func scalar(before i: Int) -> Unicode.Scalar? {
+    package func scalar(before i: Int) -> Unicode.Scalar? {
         guard i > 0 else { return nil }
         let low = unit(i - 1)
         if UTF16.isTrailSurrogate(low), i > 1, UTF16.isLeadSurrogate(unit(i - 2)) {
@@ -983,7 +983,7 @@ struct TextScanner {
         return Unicode.Scalar(low)
     }
 
-    func scalar(at i: Int) -> Unicode.Scalar? {
+    package func scalar(at i: Int) -> Unicode.Scalar? {
         guard i < length else { return nil }
         let high = unit(i)
         if UTF16.isLeadSurrogate(high), i + 1 < length, UTF16.isTrailSurrogate(unit(i + 1)) {
@@ -993,7 +993,7 @@ struct TextScanner {
     }
 
     /// The word around (or just before) a caret: letters, digits, `_`.
-    func word(at i: Int) -> NSRange? {
+    package func word(at i: Int) -> NSRange? {
         var start = i
         while let scalar = scalar(before: start), EditCommands.isWord(scalar) { start -= scalar.utf16.count }
         var end = i
@@ -1001,13 +1001,13 @@ struct TextScanner {
         return end > start ? NSRange(location: start, length: end - start) : nil
     }
 
-    func isWholeWord(_ range: NSRange) -> Bool {
+    package func isWholeWord(_ range: NSRange) -> Bool {
         !(scalar(before: range.location).map(EditCommands.isWord) ?? false) && !(scalar(at: range.upperBound).map(EditCommands.isWord) ?? false)
     }
 
     /// The opener a line ends with before `i`, trailing blanks aside: a
     /// bracket, `:` in Python/YAML, or `do`/`then` where blocks open so.
-    func opener(endingAt i: Int, lineStart: Int, languageID: String?) -> unichar? {
+    package func opener(endingAt i: Int, lineStart: Int, languageID: String?) -> unichar? {
         var end = i
         while end > lineStart, isBlank(unit(end - 1)) { end -= 1 }
         guard end > lineStart else { return nil }
@@ -1026,7 +1026,7 @@ struct TextScanner {
 
     /// Whether typing closer `c` before the same character steps over it:
     /// the line's pairs of its kind are balanced (a quote: an even count).
-    func overtypes(_ c: unichar, at i: Int) -> Bool {
+    package func overtypes(_ c: unichar, at i: Int) -> Bool {
         let line = line(at: i)
         let open: unichar? = c == 0x29 ? 0x28 : c == 0x5D ? 0x5B : c == 0x7D ? 0x7B : nil
         var opens = 0
@@ -1041,7 +1041,7 @@ struct TextScanner {
     /// The lines selections cover — a selection ending at a line's start
     /// doesn't take that line — in blocks, touching ones merged (moving or
     /// commenting lines one block at a time would hit the same line twice).
-    func blocks(for selections: [NSRange], mergingAdjacent: Bool = true) -> [LineBlock] {
+    package func blocks(for selections: [NSRange], mergingAdjacent: Bool = true) -> [LineBlock] {
         var blocks: [LineBlock] = []
         for selection in selections {
             let first = line(at: selection.location)
@@ -1060,7 +1060,7 @@ struct TextScanner {
         return blocks
     }
 
-    func lines(in block: LineBlock) -> [LineSpan] {
+    package func lines(in block: LineBlock) -> [LineSpan] {
         var result: [LineSpan] = []
         var line = block.first
         while true {
@@ -1073,7 +1073,7 @@ struct TextScanner {
 
     /// Walks from `start` (excluded) one way, a chunk at a time, until
     /// `visit` says stop or `limit` units have gone by; the offset it stopped at.
-    func scan(from start: Int, forward: Bool, limit: Int, _ visit: (Int, unichar) -> Bool) -> Int? {
+    package func scan(from start: Int, forward: Bool, limit: Int, _ visit: (Int, unichar) -> Bool) -> Int? {
         // The start itself counts: it opens the depth.
         if visit(start, unit(start)) { return start }
         let chunk = 4096

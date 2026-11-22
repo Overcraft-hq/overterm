@@ -9,83 +9,83 @@ import os
 /// TerminalView stays alive in the container (hidden and occluded when not
 /// selected) so its pty and scrollback survive tab switches.
 @MainActor
-final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
-    let store = TabStore()
+package final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSToolbarDelegate {
+    package let store = TabStore()
     private let container = NSView()
     /// Each tab's panes, laid out; only the selected tab's is visible.
     private var hosts: [Tab.ID: SplitHostView] = [:]
-    private(set) var tree = FileTreeModel()
-    private(set) var worktrees = WorktreeModel()
+    package private(set) var tree = FileTreeModel()
+    package private(set) var worktrees = WorktreeModel()
     /// Which panel the sidebar shows — the window's, not the view's, so
     /// Overgit can be told when to read git and when to stop.
-    let sidebarPanel = SidebarModel()
+    package let sidebarPanel = SidebarModel()
     /// The checkout's history, branches, stashes, tags and remotes.
-    let overgit = OvergitModel()
-    let snippets = SnippetStore()
-    private(set) var palette = PaletteModel()
-    private(set) var paletteView: NSView?
-    private(set) var tabBarView: NSView?
+    package let overgit = OvergitModel()
+    package let snippets = SnippetStore()
+    package private(set) var palette = PaletteModel()
+    package private(set) var paletteView: NSView?
+    package private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
     /// The pages' lists' single-letter keys (each page's `ResourceKey`
     /// table — DockerKey, for Docker's).
-    var pageKeys: Any?
+    package var pageKeys: Any?
     /// What the engine's events say went wrong (DockerAttention).
-    var dockerAttention = DockerAttention()
+    package var dockerAttention = DockerAttention()
     /// The last connection a database container or pod was opened in the
     /// Database panel's form with — its password only in an isolated run,
     /// and only while the form shows (the scenarios' check).
-    var databaseDraft: DockerDatabaseGuess.Guess?
+    package var databaseDraft: DockerDatabaseGuess.Guess?
     /// Containers' files open in the editor, by their local copy's path.
-    var dockerFileCopies: [String: DockerFileCopy] = [:]
-    var dockerSaveHooked = false
+    package var dockerFileCopies: [String: DockerFileCopy] = [:]
+    package var dockerSaveHooked = false
     /// Copies made to be read (a resolved compose config), by path: each
     /// removed when its editor tab closes, or the window does.
-    var dockerReadCopies: Set<String> = []
+    package var dockerReadCopies: Set<String> = []
     private var dragMonitor: Any?
     /// The find bar, over the terminal's top-right corner; shows the
     /// selected terminal's search while it is active.
-    private(set) var searchBar: NSHostingView<AnyView>?
+    package private(set) var searchBar: NSHostingView<AnyView>?
     /// settings.json's security settings changed outside the page, waiting
     /// for Keep or Revert (`Settings.held`); hidden while none is.
-    private(set) var settingsHeldBanner: NSHostingView<SettingsHeldBanner>?
+    package private(set) var settingsHeldBanner: NSHostingView<SettingsHeldBanner>?
     private var searchSubscription: AnyCancellable?
     /// The ⌘F overlay over the terminal (terminal + files + contents).
-    let spotlight = SpotlightModel()
-    private(set) var spotlightView: NSView?
+    package let spotlight = SpotlightModel()
+    package private(set) var spotlightView: NSView?
     /// This window wants the census's light tick for its tabs: it is on
     /// screen (`updateLightTick`, TerminalWindowController+Activity).
-    var lightTickWanted = false
+    package var lightTickWanted = false
     /// A scenario's say over whether the window counts as on screen for
     /// the light tick; nil follows the window.
-    var lightTickVisibility: Bool?
+    package var lightTickVisibility: Bool?
     /// Each tab's agent's folder as the light tick last decided it against
     /// the tab's shell: the folder, the shell's then, and what the tab
     /// follows — decided again only when either moved.
-    var lightTickAgents: [UUID: (folder: String, shell: String?, following: String?)] = [:]
+    package var lightTickAgents: [UUID: (folder: String, shell: String?, following: String?)] = [:]
     /// The screen check's loop (`TerminalWindowController+AgentScreen`).
-    var agentScreenLoop: Task<Void, Never>?
+    package var agentScreenLoop: Task<Void, Never>?
     /// Its per-pane state, by `processTag`.
-    var agentScreenPanes: [String: AgentScreenPane] = [:]
+    package var agentScreenPanes: [String: AgentScreenPane] = [:]
     /// A round still reading: the next one skips.
-    var agentScreenInFlight = false
+    package var agentScreenInFlight = false
     /// This window's readers' lookups in the app's census (`ProcessInspector`,
     /// docs/design/activity/analysis.md 7.8). It keeps nothing of its own:
     /// the CPU baselines and what was read of each process live with the
     /// census, every reader's.
     private let inspector = ProcessInspector()
     /// The strip's width in the toolbar (`sizeStrip`).
-    var stripWidth: NSLayoutConstraint?
+    package var stripWidth: NSLayoutConstraint?
     /// Kept across popovers: transcripts are re-read only where they grew.
     private let claudeReader = ClaudeUsageReader()
-    private(set) var infoPopover: NSPopover?
-    private(set) var infoModel: TabInfoModel?
-    private(set) var theme: ChromeTheme?
+    package private(set) var infoPopover: NSPopover?
+    package private(set) var infoModel: TabInfoModel?
+    package private(set) var theme: ChromeTheme?
     /// The body's four insets from the window (the card gap).
     private var bodyInsets: [NSLayoutConstraint] = []
     /// While presenting (⌃⌘P): what it shut (TerminalWindowController+Presentation).
-    var presentation: Presentation?
+    package var presentation: Presentation?
     /// The theme the window was last dressed in for the selected tab.
-    var lastWindowTheme: String?
+    package var lastWindowTheme: String?
     /// A press on a tab that may become a drag: the tab and where it began.
     private var pressedTab: (tab: Tab, x: CGFloat)?
     /// A chip pressed in the strip: dragging it moves the whole island.
@@ -94,177 +94,177 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private var dropZones: NSHostingView<DropZonesView>?
     private var dropZone: DropZone?
     // Readable (not writable) outside so the E2E scenarios can check them.
-    private(set) var split = WideDividerSplitViewController()
-    private(set) var sidebarItem: NSSplitViewItem?
+    package private(set) var split = WideDividerSplitViewController()
+    package private(set) var sidebarItem: NSSplitViewItem?
     /// Reads the checkout's Claude transcripts for why each file changed.
-    private(set) var diff = DiffModel(transcripts: ClaudeEditsReader())
+    package private(set) var diff = DiffModel(transcripts: ClaudeEditsReader())
     /// The right pane's switch (Changes / Pull Request) and the PR it shows.
-    let rightPane = RightPane()
+    package let rightPane = RightPane()
     /// ⇧⌘A: every tab as a card.
-    let overview = AgentOverviewModel()
+    package let overview = AgentOverviewModel()
     /// The Sessions panel's Claude conversations.
-    let sessions = SessionsModel()
+    package let sessions = SessionsModel()
     /// The API panel's collections, and the requests open in the editor.
-    let apiWorkspace = APIWorkspace()
+    package let apiWorkspace = APIWorkspace()
     /// Agents in tabs on other checkouts than the panel's: theirs, by path.
-    var agentAPIWorkspaces: [String: APIWorkspace] = [:]
-    private(set) var overviewView: NSView?
+    package var agentAPIWorkspaces: [String: APIWorkspace] = [:]
+    package private(set) var overviewView: NSView?
     private var overviewPoll: Timer?
     /// The Settings tab's page (Warp's): over the window's body while it shows.
-    let settingsPage = SettingsPageModel()
+    package let settingsPage = SettingsPageModel()
     /// The pages that cover the body (WorkspaceOverlay): what each is
     /// declared to do, and its view.
-    let pages = WorkspacePages()
-    var settingsView: NSView? { pages.view(.settings) }
-    var dockerView: NSView? { pages.view(.docker) }
+    package let pages = WorkspacePages()
+    package var settingsView: NSView? { pages.view(.settings) }
+    package var dockerView: NSView? { pages.view(.docker) }
     /// The Docker page's own state; its view is made the first time it opens.
-    let dockerPage = DockerPageModel()
+    package let dockerPage = DockerPageModel()
     /// The rail's Docker panel and the container it put on the right.
-    let dockerPanel = DockerPanelModel()
+    package let dockerPanel = DockerPanelModel()
     /// Whether this window's panel holds the model's poll.
-    var dockerPanelShown = false
+    package var dockerPanelShown = false
     /// Whether this window holds `DockerModel.show()` for its page.
-    var dockerPageHeld = false
+    package var dockerPageHeld = false
     /// The Kubernetes page's own state; its view is made the first time it opens.
-    let kubernetesPage = KubernetesPageModel()
+    package let kubernetesPage = KubernetesPageModel()
     /// The rail's Kubernetes panel (the selected tab's checkout's binding)
     /// and the pod it put on the right.
-    let kubernetesPanel = KubernetesPanelModel()
+    package let kubernetesPanel = KubernetesPanelModel()
     /// The rail's Terraform panel (analysis 6.1): the selected tab's checkout's roots.
-    let terraformPanel = TerraformPanelModel()
+    package let terraformPanel = TerraformPanelModel()
     /// The right slot's Terraform tab: the plan shown (analysis 6.3).
-    let terraformPlanPane = TerraformPlanPaneModel()
+    package let terraformPlanPane = TerraformPlanPaneModel()
     /// Whether this window holds `KubernetesModel.show()` for its page.
-    var kubernetesPageHeld = false
+    package var kubernetesPageHeld = false
     /// The Activity page's own state; its view is made the first time it opens.
-    let activityPage = ActivityPageModel()
+    package let activityPage = ActivityPageModel()
     /// The ⌃⌘A switcher's hold and rows, while the palette shows it.
-    let activitySwitcher = ActivitySwitcher()
+    package let activitySwitcher = ActivitySwitcher()
     /// What an isolated run would have opened in the default browser (an Ingress).
-    var kubernetesOpenedExternally: [URL] = []
+    package var kubernetesOpenedExternally: [URL] = []
     /// …and for the ⌃⌘J switcher, while the palette shows it.
-    var kubernetesSwitcherHeld = false
+    package var kubernetesSwitcherHeld = false
     /// The review tabs' page: the one showing, over the body as the pages are.
-    var reviewView: ReviewHostingView?
+    package var reviewView: ReviewHostingView?
     /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
-    let focus = GroupFocus()
+    package let focus = GroupFocus()
     /// ⌥⌘I: one line typed into every tab of an island.
-    let broadcast = BroadcastModel()
+    package let broadcast = BroadcastModel()
     /// The broadcast and focus bars, under the terminal.
-    private(set) var groupBars: NSHostingView<GroupBarsView>?
+    package private(set) var groupBars: NSHostingView<GroupBarsView>?
     /// ⌃⌘G: the islands and their tabs.
-    private(set) var switcherView: GroupSwitcherHostingView<GroupSwitcherView>?
+    package private(set) var switcherView: GroupSwitcherHostingView<GroupSwitcherView>?
     /// Esc / the arrows while the switcher shows, wherever the keyboard is.
     private var switcherKeys: Any?
     /// Three fingers down (or ⇧⌘E): every tab's live terminal as a card.
-    private(set) lazy var peek = TabPeekController(container: container)
-    private(set) var peekView: TabPeekHostingView<TabPeekView>?
+    package private(set) lazy var peek = TabPeekController(container: container)
+    package private(set) var peekView: TabPeekHostingView<TabPeekView>?
     /// Esc / the arrows while the peek shows, wherever the keyboard is —
     /// as the overview's, and for the same reason.
     private var peekKeys: Any?
     /// Esc while the overview shows, wherever the keyboard is: its host
     /// having it was not enough (a click, or the terminal behind, took it).
     private var overviewEscape: Any?
-    let pullRequest = PullRequestModel()
+    package let pullRequest = PullRequestModel()
     /// Asks GitHub again every minute: CI moves while nothing local changes.
     private var pullRequestPoll: Timer?
     private var finalSaveDone = false
-    private(set) var editor: EditorViewController?
+    package private(set) var editor: EditorViewController?
     /// Opens files in the app picked for them (the file tree, the editor's ↗).
-    let opener = ExternalOpener()
-    private(set) var editorItem: NSSplitViewItem?
+    package let opener = ExternalOpener()
+    package private(set) var editorItem: NSSplitViewItem?
     /// The terminal's column: collapsed only while the editor is zoomed.
-    private(set) var terminalColumn: NSSplitViewItem?
+    package private(set) var terminalColumn: NSSplitViewItem?
     /// The browser column: the selected tab's browser (Browser/).
-    private(set) var browser: BrowserViewController?
+    package private(set) var browser: BrowserViewController?
     /// The browser column: the browser, or the simulator in its place.
-    private(set) var browserColumn: BrowserColumnController?
-    private(set) var browserItem: NSSplitViewItem?
+    package private(set) var browserColumn: BrowserColumnController?
+    package private(set) var browserItem: NSSplitViewItem?
     /// Each tab's browser (its pages), made when first used.
-    var browserWorkspaces: [UUID: BrowserWorkspace] = [:]
+    package var browserWorkspaces: [UUID: BrowserWorkspace] = [:]
     /// A restored tab's pages, loaded when its browser is first shown.
-    var pendingBrowserPages: [UUID: (urls: [URL], active: Int)] = [:]
-    var browserObservers: Set<AnyCancellable> = []
+    package var pendingBrowserPages: [UUID: (urls: [URL], active: Int)] = [:]
+    package var browserObservers: Set<AnyCancellable> = []
     /// The title bar's globe.
-    let browserButton = BrowserButtonState()
+    package let browserButton = BrowserButtonState()
     /// Which column fills the window, and how the others were.
     private var columnZoom: (column: ZoomedColumn, restore: [(item: NSSplitViewItem, collapsed: Bool)])?
     /// Which of the two right-hand panes gave up the slot to the other, so
     /// it comes back when that one closes (`RightSlot`).
-    var displacedSlot: RightSlot?
+    package var displacedSlot: RightSlot?
     /// While the editor is zoomed: each other column's state before it.
-    private(set) var diffItem: NSSplitViewItem?
+    package private(set) var diffItem: NSSplitViewItem?
     /// Not private: the Overgit extension subscribes too.
-    var cancellables: Set<AnyCancellable> = []
+    package var cancellables: Set<AnyCancellable> = []
     /// Terminal in this context: the pins' folder watched while a pane of
     /// this window is pinned, and the contexts' list, so each pane's label
     /// and band follow what its plain kubectl reaches (`followKubernetesPins`).
-    var kubePinWatcher: DirectoryWatcher?
-    var kubePinContexts: AnyCancellable?
+    package var kubePinWatcher: DirectoryWatcher?
+    package var kubePinContexts: AnyCancellable?
     /// A scenario's: a pod's command (a shell, a log followed) isn't typed
     /// — its tab opens pinned, and the line that would be typed (the pin's
     /// `export KUBECONFIG=…; ` first) is handed here with it.
-    var kubernetesCommandRecorder: ((String, Tab) -> Void)?
+    package var kubernetesCommandRecorder: ((String, Tab) -> Void)?
     /// A scenario's: a Docker link (a port pill's) handed here instead of
     /// the browser.
-    var dockerLinkRecorder: ((URL) -> Void)?
+    package var dockerLinkRecorder: ((URL) -> Void)?
     /// A scenario's: a link `openLink` would open — a pane pill's, Tab
     /// Info's — handed here with whether Settings ▸ Browser opens it in
     /// the browser column, instead of either browser.
-    var linkRecorder: ((URL, _ inside: Bool) -> Void)?
+    package var linkRecorder: ((URL, _ inside: Bool) -> Void)?
     /// A scenario's: a Free on the Activity page — its owner's verb —
     /// handed here; only a container's Stop also acts (on the run's fake
     /// engine), nothing else reaches a forward, a tunnel, launchd or System
     /// Settings.
-    var activityFreeRecorder: ((ActivityPortHolder.Step) -> Void)?
+    package var activityFreeRecorder: ((ActivityPortHolder.Step) -> Void)?
     /// A scenario's: what the Activity page would open in a new tab — a
     /// folder, a command typed, run or not — handed here instead.
-    var activityTerminalRecorder: ((ActivityTerminalRequest) -> Void)?
+    package var activityTerminalRecorder: ((ActivityTerminalRequest) -> Void)?
     /// Ask Why on a tab's mark, in a scenario: the brief handed here
     /// instead of the sheet.
-    var kubernetesBriefRecorder: ((KubeAgentBrief, Tab) -> Void)?
+    package var kubernetesBriefRecorder: ((KubeAgentBrief, Tab) -> Void)?
     /// A scenario's: Terraform's Ask Why briefs land here instead of the sheet.
-    var terraformBriefRecorder: ((TerraformAgentBrief) -> Void)?
+    package var terraformBriefRecorder: ((TerraformAgentBrief) -> Void)?
     /// A scenario's: the questions before a plan or an init (5.3, 5.5) answered here instead of the sheet.
-    var terraformPlanQuestionRecorder: ((TerraformPlanGate.Question) -> Bool)?
+    package var terraformPlanQuestionRecorder: ((TerraformPlanGate.Question) -> Bool)?
     /// A scenario's: the plugin cache's offer (4.13) answered here.
-    var terraformCacheOfferRecorder: (() -> Bool)?
+    package var terraformCacheOfferRecorder: (() -> Bool)?
     /// A scenario's: an apply's sheets (5.4) answered here — what was
     /// typed, or nil for Cancel — instead of on the window.
-    var terraformApplyQuestionRecorder: ((TerraformApplySheet) -> String?)?
+    package var terraformApplyQuestionRecorder: ((TerraformApplySheet) -> String?)?
     /// The terraform writes a close's Interrupt signalled, until they stop (4.8).
-    var terraformInterrupted: [TerraformCloseGuard.Running] = []
+    package var terraformInterrupted: [TerraformCloseGuard.Running] = []
     /// What Ask Why on a mark couldn't do, said (the scenario reads it).
-    var kubernetesAttentionProblem: String?
+    package var kubernetesAttentionProblem: String?
     /// Cluster failures told under another mark (an agent waiting): the scenario's count.
-    var clusterNotices = 0
+    package var clusterNotices = 0
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
     /// What this machine has run, for the palette.
-    let history = CommandHistory()
+    package let history = CommandHistory()
 
     /// Handing a selection to an agent (⌘L).
-    let askAgent = AskAgentModel()
+    package let askAgent = AskAgentModel()
     private var selectionBar: NSHostingView<SelectionBar>?
 
     /// What the agents have spent and what is left of their quotas, in the
     /// right pane and on the strip's gauge.
-    let usage = UsageModel()
+    package let usage = UsageModel()
     /// The commit picked in Overgit, shown in the right pane.
-    let commitDetail = CommitDetailModel()
+    package let commitDetail = CommitDetailModel()
     /// Two branches, tags or commits compared (Overgit ▸ Compare).
-    let compare = CompareModel()
+    package let compare = CompareModel()
     /// A stored file opened from the Database panel.
-    let storageObject = StorageObjectModel()
-    let redisSlot = RedisSlotModel()
+    package let storageObject = StorageObjectModel()
+    package let redisSlot = RedisSlotModel()
     /// A database connection's Server or Users page, in the right slot.
-    let databaseSlot = DatabaseSlotModel()
+    package let databaseSlot = DatabaseSlotModel()
     /// A Kubernetes manifest's diff with its cluster (the editor's Diff with Cluster).
-    let kubernetesManifest = KubeManifestPane()
+    package let kubernetesManifest = KubeManifestPane()
     /// Everything waiting on you (⌘I), as its own column on the right.
-    let inbox = InboxModel()
-    private(set) var inboxItem: NSSplitViewItem?
+    package let inbox = InboxModel()
+    package private(set) var inboxItem: NSSplitViewItem?
     private var inboxPoll: Timer?
     /// Shown in the menu bar only while something waits.
     private var menuBarItem: NSStatusItem?
@@ -274,10 +274,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private var paneBlocks: [ObjectIdentifier: PaneBlocks] = [:]
 
     /// A new island's settings, under its chip (`showGroupPopover`).
-    var groupPopover: NSPopover?
+    package var groupPopover: NSPopover?
     /// "Does this tab belong in the island?", when nothing in the strip
     /// answers it (`askNewTabGroup`).
-    var newTabPopover: NSPopover?
+    package var newTabPopover: NSPopover?
 
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let diffVisibleKey = "diffVisible"
@@ -295,7 +295,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         window.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height), display: false)
     }
 
-    init() {
+    package init() {
         // The sizes everything below is built at.
         ChromeMetrics.apply()
         let window = NSWindow(
@@ -356,7 +356,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             .store(in: &cancellables)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
@@ -976,7 +976,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Opens a tab after `source`'s, starting in its directory at its font
     /// size. `joining`: the island it is meant for — the island's own + and
     /// its menu say so; everything else leaves it to `NewTabGroup`.
-    func newTab(from source: TerminalView?, joining group: TabGroup.ID? = nil) {
+    package func newTab(from source: TerminalView?, joining group: TabGroup.ID? = nil) {
         let inherited = source?.inheritedSettings()
         // The tab's own OSC 7 directory first: libghostty's inherited pwd can
         // lag it under load, and the new tab then opened in ~.
@@ -1050,7 +1050,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Connects one pane to its tab and the window. The tab's title and
     /// directory follow the focused pane; events and attention are the tab's.
     /// A pane's ledger, made the first time anything asks for it.
-    func blocks(of pane: TerminalView?) -> PaneBlocks {
+    package func blocks(of pane: TerminalView?) -> PaneBlocks {
         guard let pane else { return PaneBlocks() }
         let key = ObjectIdentifier(pane)
         if let existing = paneBlocks[key] { return existing }
@@ -1154,14 +1154,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// The view laying out `tab`'s panes.
-    func host(of tab: Tab) -> SplitHostView? { hosts[tab.id] }
+    package func host(of tab: Tab) -> SplitHostView? { hosts[tab.id] }
 
     private func refreshHost(_ tab: Tab) {
         hosts[tab.id]?.update(tree: tab.splits, focused: tab.terminal, zoomed: tab.zoomed)
     }
 
     /// The tab `pane` is in.
-    func tab(containing pane: TerminalView?) -> Tab? {
+    package func tab(containing pane: TerminalView?) -> Tab? {
         guard let pane else { return nil }
         return store.tabs.first { $0.splits.contains(pane) }
     }
@@ -1170,7 +1170,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Splits `source` (else the selected tab's focused pane): a new pane
     /// on `direction`'s side, in the same directory, with the keyboard.
-    func split(_ source: TerminalView?, _ direction: SplitTree<TerminalView>.Direction) {
+    package func split(_ source: TerminalView?, _ direction: SplitTree<TerminalView>.Direction) {
         guard let tab = tab(containing: source) ?? store.selected else { return }
         let from = source.flatMap { tab.splits.contains($0) ? $0 : nil } ?? tab.terminal
         let inherited = from.inheritedSettings()
@@ -1187,7 +1187,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Moves the keyboard to the pane beside `source`'s. Unzooms.
     @discardableResult
-    func focusSplit(from source: TerminalView?, _ focus: SplitTree<TerminalView>.Focus) -> Bool {
+    package func focusSplit(from source: TerminalView?, _ focus: SplitTree<TerminalView>.Focus) -> Bool {
         guard let tab = tab(containing: source) ?? store.selected,
             let next = tab.splits.neighbor(of: source.flatMap { tab.splits.contains($0) ? $0 : nil } ?? tab.terminal, focus)
         else { return false }
@@ -1198,7 +1198,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// Ghostty's resize_split: `points` toward `direction`.
-    func resizeSplit(_ source: TerminalView?, toward direction: SplitTree<TerminalView>.Direction, points: Double) {
+    package func resizeSplit(_ source: TerminalView?, toward direction: SplitTree<TerminalView>.Direction, points: Double) {
         guard let tab = tab(containing: source) ?? store.selected, let host = hosts[tab.id] else { return }
         let size = direction.axis == .horizontal ? host.bounds.width : host.bounds.height
         guard size > 0 else { return }
@@ -1206,14 +1206,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         refreshHost(tab)
     }
 
-    func equalizeSplits(_ source: TerminalView?) {
+    package func equalizeSplits(_ source: TerminalView?) {
         guard let tab = tab(containing: source) ?? store.selected else { return }
         tab.setSplits(tab.splits.equalized())
         refreshHost(tab)
     }
 
     /// The focused pane alone, filling the tab — or back to all of them.
-    func toggleSplitZoom(_ source: TerminalView?) {
+    package func toggleSplitZoom(_ source: TerminalView?) {
         guard let tab = tab(containing: source) ?? store.selected, tab.isSplit else { return }
         let pane = source.flatMap { tab.splits.contains($0) ? $0 : nil } ?? tab.terminal
         tab.zoomed = tab.zoomed == nil ? pane : nil
@@ -1223,7 +1223,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// ⌘W on a pane of a split tab: closes it, asking first only if
     /// something runs in it (closing the whole tab always asks).
-    func closePane(_ pane: TerminalView, in tab: Tab) {
+    package func closePane(_ pane: TerminalView, in tab: Tab) {
         guard tab.isSplit else { return closeTab(tab) }
         // A terraform write in it asks whatever else is said (4.8).
         let guarded = terraformCloseGuard(tabs: [tab], panes: [pane], path: .pane) { [weak self, weak tab, weak pane] in
@@ -1255,7 +1255,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// What a pane's header does, for `tab`'s panes: each action names its
     /// own pane or port.
-    func paneHeaderActions(for tab: Tab) -> PaneHeaderActions {
+    package func paneHeaderActions(for tab: Tab) -> PaneHeaderActions {
         PaneHeaderActions(
             copyOutput: { [weak self] in self?.copyOutput(of: $0) },
             freePort: { [weak self] port, pane in self?.freePort(port, in: pane) },
@@ -1289,7 +1289,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// ⌘D makes an empty one. The view is reparented rather than
     /// recreated: the pty, the scrollback and whatever is in it have to
     /// survive, which is the whole point.
-    func movePane(_ pane: TerminalView, from tab: Tab, into target: Tab, _ direction: SplitTree<TerminalView>.Direction) {
+    package func movePane(_ pane: TerminalView, from tab: Tab, into target: Tab, _ direction: SplitTree<TerminalView>.Direction) {
         guard tab !== target, target.splits.contains(target.terminal) else { return }
         let rest = tab.splits.removing(pane)
         // Out of the old tab's tree and its host before it joins another:
@@ -1315,7 +1315,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         peek.relayout()
     }
 
-    func removePane(_ pane: TerminalView, from tab: Tab) {
+    package func removePane(_ pane: TerminalView, from tab: Tab) {
         guard tab.splits.contains(pane) else { return }
         guard tab.isSplit, let rest = tab.splits.removing(pane) else { return removeTab(tab) }
         let wasFocused = tab.terminal === pane
@@ -1332,7 +1332,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// `startAgent: false` makes an agent tab without starting the agent
     /// (the E2E scenarios use it; nothing else should).
     /// `command`: what starts the agent, when not its plain command (a resume).
-    func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true, command: String? = nil) {
+    package func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true, command: String? = nil) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let start = agent.map { agentCommand($0, base: command, in: directory) }
         let input = startAgent ? start.map { $0.command + "\n" } : nil
@@ -1345,7 +1345,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// plain one) with Settings ▸ Agents' arguments, and — in a checkout
     /// with a production root — Terraform's writes denied for this launch
     /// (`TerraformAgentGuard`, analysis 3.4).
-    func agentCommand(_ agent: Agent, base: String? = nil, in directory: URL) -> (command: String, launch: TerraformAgentGuard.Launch) {
+    package func agentCommand(_ agent: Agent, base: String? = nil, in directory: URL) -> (command: String, launch: TerraformAgentGuard.Launch) {
         let launch = TerraformAgentGuards.shared.launch(for: agent, in: directory)
         let command = base ?? agent.command(Settings.shared.launch(for: agent))
         let policy = agent == .gemini && launch == .denied ? AgentLaunchFiles.geminiPolicy() : nil
@@ -1354,7 +1354,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// An agent's tab (or a shell's), pinned as Terminal in this context
     /// pins one: New Task's, its agent's kubectl going to `kubePin`'s context.
-    func newTab(in directory: URL, agent: Agent?, environment: [String: String], kubePin: KubeTerminalPin) {
+    package func newTab(in directory: URL, agent: Agent?, environment: [String: String], kubePin: KubeTerminalPin) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let start = agent.map { agentCommand($0, in: directory) }
         let terminal = TerminalView(
@@ -1369,7 +1369,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// context's `KUBECONFIG` — and pinned to `kubePin`'s context.
     /// `command`, when given, is typed as soon as its shell starts.
     @discardableResult
-    func newTab(in directory: URL, environment: [String: String], kubePin: KubeTerminalPin?, running command: String? = nil) -> Tab? {
+    package func newTab(in directory: URL, environment: [String: String], kubePin: KubeTerminalPin?, running command: String? = nil) -> Tab? {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let terminal = TerminalView(
             workingDirectory: directory.path, initialInput: command.map { $0 + "\n" }, fontSize: fontSize, environment: environment, kubePin: kubePin)
@@ -1380,7 +1380,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// A shell tab after the selected one, in `directory`, that runs
     /// `command` as soon as its shell starts — as an agent tab starts its agent.
-    func newTab(in directory: URL, running command: String) {
+    package func newTab(in directory: URL, running command: String) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: command + "\n", fontSize: fontSize)
         addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
@@ -1389,7 +1389,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// A shell tab after the selected one, in `directory`, with `command`
     /// typed as its shell starts and left there: Return is the person's
     /// (Activity's read route, which asks for a password).
-    func newTab(in directory: URL, typing command: String) {
+    package func newTab(in directory: URL, typing command: String) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: command, fontSize: fontSize)
         addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
@@ -1398,7 +1398,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     // MARK: Attention
 
     /// Actually in front of you: selected, in the key window, app active.
-    func isVisible(_ tab: Tab) -> Bool {
+    package func isVisible(_ tab: Tab) -> Bool {
         NSApp.isActive && window?.isKeyWindow == true && store.selectedID == tab.id
     }
 
@@ -1412,7 +1412,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// A container of `tab`'s checkout went wrong on its own: marked as a
     /// failed command is, and told while you are elsewhere.
-    func markContainerFailure(_ note: String, on tab: Tab) {
+    package func markContainerFailure(_ note: String, on tab: Tab) {
         if tab.activity.containerFailed(note, visible: isVisible(tab)) { notifyUnlessHeld(tab) }
         updateAttentionBadge()
     }
@@ -1423,7 +1423,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// A tab whose mark is something else's (an agent waiting, a failed
     /// command) keeps it, but the failure is still told — the bound
     /// checkout's agent waiting after a deploy is where it matters most.
-    func markClusterFailure(_ note: String, on tab: Tab) {
+    package func markClusterFailure(_ note: String, on tab: Tab) {
         let visible = isVisible(tab)
         if tab.activity.clusterFailed(note, visible: visible) {
             notifyUnlessHeld(tab)
@@ -1437,7 +1437,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// An agent run in `tab` ended and left processes running (6.9, D-17):
     /// the tab's note, told while you are elsewhere — off with
     /// `activity.leftBehindNotice`.
-    func markLeftBehind(_ note: String, on tab: Tab) {
+    package func markLeftBehind(_ note: String, on tab: Tab) {
         guard Settings.shared.activityLeftBehindNotice else { return }
         if tab.activity.leftBehind(note, visible: isVisible(tab)) { notifyUnlessHeld(tab) }
         updateAttentionBadge()
@@ -1447,7 +1447,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// (`ask` nil): the tab marked waiting with what it asks — looked at or
     /// not — and, for an agent's ask, told while you are elsewhere; the
     /// mark goes when the ask does. Nothing answers it.
-    func markTerraformAsk(_ ask: TerraformAsk?, on tab: Tab) {
+    package func markTerraformAsk(_ ask: TerraformAsk?, on tab: Tab) {
         guard tab.terraformAsk != ask else { return }
         let before = tab.terraformAsk
         tab.terraformAsk = ask
@@ -1461,16 +1461,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// A cluster mark came or went: the Dock badge, the menu bar, the Inbox.
-    func kubernetesAttentionChanged() { updateAttentionBadge() }
+    package func kubernetesAttentionChanged() { updateAttentionBadge() }
 
-    func updateAttentionBadge() {
+    package func updateAttentionBadge() {
         AttentionNotifier.updateBadge(count: store.tabs.filter { $0.activity.needsAttention }.count)
         updateMenuBarItem(count: store.tabs.count { $0.activity.needsAttention })
         if inboxItem?.isCollapsed == false { refreshInbox() }
     }
 
     /// Brings up a tab a notification was about.
-    func reveal(tabID: UUID) {
+    package func reveal(tabID: UUID) {
         guard let tab = store.tabs.first(where: { $0.id == tabID }) else { return }
         store.select(tab)
         window?.makeKeyAndOrderFront(nil)
@@ -1480,7 +1480,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     // MARK: Claude sessions
 
     /// What the rail draws: the panels' order, and the toggles that show them.
-    static let sidebarPanelKeys: Set<String> = [
+    package static let sidebarPanelKeys: Set<String> = [
         "general.sidebarOrder", "general.sidebarRail", "general.sessions", "general.snippets",
     ]
 
@@ -1490,14 +1490,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         item.maximumThickness = 520 + SidebarRail.width
     }
 
-    func sizeSidebarColumn() {
+    package func sizeSidebarColumn() {
         guard let sidebarItem else { return }
         Self.sizeSidebar(sidebarItem)
     }
 
     /// Sessions or Snippets switched off, or the rail reordered: the panel
     /// on screen gives way to Files if it went, and the rail draws again.
-    func sidebarPanelsChanged() {
+    package func sidebarPanelsChanged() {
         if !sidebarPanel.panel.isEnabled { sidebarPanel.panel = .files }
         sidebarPanel.objectWillChange.send()
         if Settings.shared.sessionsEnabled { refreshSessions() }
@@ -1505,7 +1505,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Re-lists the sessions of the repository's worktrees (or, outside
     /// one, of the file tree's root).
-    func refreshSessions() {
+    package func refreshSessions() {
         guard Settings.shared.sessionsEnabled else { return }
         let directories = worktrees.worktrees.isEmpty ? [tree.root?.path].compactMap { $0 } : worktrees.worktrees.map(\.path.path)
         Task { await sessions.refresh(directories: directories, tabs: store.tabs) }
@@ -1514,7 +1514,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The tab a session runs in, or — `inNewTab`, or not running — a new
     /// tab in its directory with `claude --resume <id>`. `start: false`
     /// opens the tab without typing it (the E2E scenarios; nothing else).
-    func resume(_ session: ClaudeSession, inNewTab: Bool = false, start: Bool = true) {
+    package func resume(_ session: ClaudeSession, inNewTab: Bool = false, start: Bool = true) {
         if !inNewTab, let id = sessions.running[session.id], let tab = store.tabs.first(where: { $0.id == id }) {
             store.select(tab)
             focusSelectedTerminal()
@@ -1533,7 +1533,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// could run commands, or a program reading the clipboard. Asks in a
     /// sheet — for the selected tab only, one at a time; anything else is
     /// refused at once — and tells `answer` whether it's allowed.
-    func confirmClipboard(_ confirmation: ClipboardConfirmation, from terminal: TerminalView, answer: @escaping @MainActor (Bool) -> Void) {
+    package func confirmClipboard(_ confirmation: ClipboardConfirmation, from terminal: TerminalView, answer: @escaping @MainActor (Bool) -> Void) {
         let fromSelectedTab = store.selected?.terminals.contains { $0 === terminal } == true
         guard let window, ClipboardConfirmation.shouldAsk(fromSelectedTab: fromSelectedTab, alreadyAsking: askingClipboard) else {
             return answer(false)
@@ -1574,7 +1574,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// service: a folder becomes a tab there; a file opens in the editor, in
     /// a tab already in its checkout if there is one, else a new tab in its
     /// folder (so the sidebar and changes match it).
-    func open(_ urls: [URL]) {
+    package func open(_ urls: [URL]) {
         for url in urls.map(\.standardizedFileURL) {
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else { continue }
@@ -1596,7 +1596,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         if !AppEnvironment.isIsolated { NSApp.activate(ignoringOtherApps: true) }
     }
 
-    func windowDidBecomeKey(_ notification: Notification) {
+    package func windowDidBecomeKey(_ notification: Notification) {
         markSelectedSeen()
         // The Kubernetes list is the app's: the window looked at asks with its filter.
         if kubernetesPage.visible { kubernetesPage.applySelector() }
@@ -1608,10 +1608,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     // MARK: Session
 
-    var sessionState: SessionState { sessionState(scrollback: [:]) }
+    package var sessionState: SessionState { sessionState(scrollback: [:]) }
 
     /// `scrollback`: each pane's saved text, by pane (only at quit).
-    func sessionState(scrollback: [ObjectIdentifier: String]) -> SessionState {
+    package func sessionState(scrollback: [ObjectIdentifier: String]) -> SessionState {
         // Islands in strip order, stashed ones after, so a tab's index is
         // stable and the strip comes back as it was.
         let ordered = switcherGroups
@@ -1648,7 +1648,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The panes whose text the last save keeps: Settings ▸ General's
     /// reopening tabs and their text, shell tabs only — and never a pane
     /// that printed what Terraform keeps secret (5.6 rule 6).
-    func scrollbackPanes() -> [TerminalView] {
+    package func scrollbackPanes() -> [TerminalView] {
         guard Settings.shared.restoreTabs, Settings.shared.restoreScrollback else { return [] }
         return store.tabs.filter { $0.agent == nil }.flatMap { tab in tab.terminals.filter { !terraformSensitive($0) } }
     }
@@ -1656,7 +1656,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The last save, at quit or when the window closes (whichever comes
     /// first — after it the terminals are gone): with each shell pane's
     /// text. Agent tabs' aren't kept: their conversation resumes instead.
-    func saveFinalSession(to url: URL = SessionState.defaultURL) {
+    package func saveFinalSession(to url: URL = SessionState.defaultURL) {
         guard !finalSaveDone else { return }
         finalSaveDone = true
         var saved: [ObjectIdentifier: String] = [:]
@@ -1673,7 +1673,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Rebuilds saved tabs: a fresh shell in each old directory (home if it
     /// is gone), agents resuming their last conversation there.
-    func restore(_ state: SessionState) {
+    package func restore(_ state: SessionState) {
         func existing(_ path: String?) -> String? { path.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } }
         // A resumed agent is started as a new one is: Terraform's writes denied where they apply (3.4).
         func resuming(_ agent: Agent?, in path: String?) -> (input: String?, launch: TerraformAgentGuard.Launch) {
@@ -1781,7 +1781,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// a second, so a crash loses at most that second. A throttle, not a
     /// debounce: a working agent changes its tab's title and activity many
     /// times a second, and a debounce waiting for a quiet second never saved.
-    func autosaveSession(to url: URL = SessionState.defaultURL) {
+    package func autosaveSession(to url: URL = SessionState.defaultURL) {
         let tabChanges = store.$tabs
             .map { tabs in Publishers.MergeMany(tabs.map { $0.objectWillChange }).map { _ in () }.prepend(()) }
             .switchToLatest()
@@ -1794,7 +1794,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// What the last save wrote, so an unchanged session isn't written again.
     private var savedSession: (url: URL, data: Data)?
 
-    func saveSession(to url: URL = SessionState.defaultURL) {
+    package func saveSession(to url: URL = SessionState.defaultURL) {
         // After the final save, a late autosave — the terminals closing
         // change their tabs — would write over it without the scrollback.
         guard !finalSaveDone else { return }
@@ -1809,7 +1809,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// An agent tab in the selected tab's directory.
-    func newAgentTab(_ agent: Agent) {
+    package func newAgentTab(_ agent: Agent) {
         let cwd = store.selected?.terminal.inheritedSettings().workingDirectory
         newTab(in: URL(fileURLWithPath: cwd ?? FileManager.default.homeDirectoryForCurrentUser.path), agent: agent)
     }
@@ -1852,13 +1852,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// ⌘F with the terminal focused comes through Ghostty's own binding;
     /// this is the menu's way in.
-    @objc func findInTerminal(_ sender: Any?) {
+    @objc package func findInTerminal(_ sender: Any?) {
         guard let terminal = store.selected?.terminal else { return }
         showSpotlight(for: terminal, needle: nil)
     }
 
     /// The ⌘F overlay for `terminal`, searching it and its tab's checkout.
-    func showSpotlight(for terminal: TerminalView, needle: String?) {
+    package func showSpotlight(for terminal: TerminalView, needle: String?) {
         guard let spotlightView else { return }
         // It searches the terminal, which a zoomed column hides.
         setZoomed(nil)
@@ -1870,7 +1870,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
     }
 
-    func hideSpotlight(keepTerminalSearch: Bool) {
+    package func hideSpotlight(keepTerminalSearch: Bool) {
         spotlightView?.isHidden = true
         spotlight.close(keepTerminalSearch: keepTerminalSearch)
         focusSelectedTerminal()
@@ -1910,7 +1910,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// (`lazy.compactMap(…).first` read the pane it returned twice and
     /// force-unwrapped the second answer — an agent exiting in between
     /// crashed the app.)
-    nonisolated static func firstAgent(in roots: [(pid_t?, String)], tree: (pid_t?, String) -> [ProcessNode]) -> ProcessNode? {
+    package nonisolated static func firstAgent(in roots: [(pid_t?, String)], tree: (pid_t?, String) -> [ProcessNode]) -> ProcessNode? {
         for (root, tag) in roots {
             if let agent = tree(root, tag).flatMap(\.flattened).first(where: isAgent) { return agent }
         }
@@ -1919,17 +1919,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// A known agent (`Agent`), by process name or argv (`Agent.of`, the
     /// census's rule too).
-    nonisolated static func isAgent(_ node: ProcessNode) -> Bool {
+    package nonisolated static func isAgent(_ node: ProcessNode) -> Bool {
         AgentOverviewModel.agent(of: node) != nil
     }
 
     /// Pins the selected tab's sidebar and diff to `worktree`.
-    func attach(_ worktree: Worktree) {
+    package func attach(_ worktree: Worktree) {
         store.selected?.attachedCheckout = worktree.path
     }
 
     /// Back to following the agent / shell.
-    func detach() {
+    package func detach() {
         store.selected?.attachedCheckout = nil
     }
 
@@ -1947,7 +1947,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// Selects the (first) tab already in `worktree`, else opens one there.
-    func openWorktree(_ worktree: Worktree) {
+    package func openWorktree(_ worktree: Worktree) {
         if let tab = tabs(in: worktree).first {
             store.select(tab)
         } else {
@@ -1958,7 +1958,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// `git worktree remove`, after confirming. Refused while a tab is in it:
     /// its shell would be left in a deleted directory. A dirty worktree gets
     /// a second, explicit Force.
-    func removeWorktree(_ worktree: Worktree, force: Bool = false) {
+    package func removeWorktree(_ worktree: Worktree, force: Bool = false) {
         guard let window, let repo = worktrees.main?.path else { return }
         let open = tabs(in: worktree)
         guard open.isEmpty else {
@@ -1997,7 +1997,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// `git worktree remove`, the dirty case offered with --force.
-    func performRemoveWorktree(_ worktree: Worktree, force: Bool, repo: URL) {
+    package func performRemoveWorktree(_ worktree: Worktree, force: Bool, repo: URL) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -2018,7 +2018,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// is already gone), after fetching and one confirmation listing what
     /// goes and what stays. Kept: a worktree with a tab in it, uncommitted
     /// changes, or a lock — the same things single removal refuses.
-    @objc func cleanUpMergedWorktrees(_ sender: Any?) {
+    @objc package func cleanUpMergedWorktrees(_ sender: Any?) {
         guard let repo = worktrees.main?.path else { return NSSound.beep() }
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -2138,11 +2138,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// New Task: a worktree on a new (or existing) branch next to the repo,
     /// then a tab in it named after the branch, with the agent started.
-    @objc func newTask(_ sender: Any?) { newTask(base: nil) }
+    @objc package func newTask(_ sender: Any?) { newTask(base: nil) }
 
     /// `base` is the branch to start from — Overgit's branch rows pass one,
     /// the menu item passes nothing and the setting decides.
-    func newTask(base: String?) {
+    package func newTask(base: String?) {
         guard let repo = worktrees.main?.path else {
             showAlert("Not in a git repository", "Open a tab inside a repository first; the task’s worktree is created from it.")
             return
@@ -2176,7 +2176,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// unsaved-changes question about the file already open).
     /// A request in the editor on its Docs tab — the file opens, its model
     /// is made with it, a moment later.
-    func openAPIDocs(_ url: URL) {
+    package func openAPIDocs(_ url: URL) {
         openInEditor(url)
         let target = url.standardizedFileURL
         Task { [weak self] in
@@ -2190,7 +2190,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
     }
 
-    func openInEditor(_ url: URL, line: Int? = nil) {
+    package func openInEditor(_ url: URL, line: Int? = nil) {
         guard let editor, let editorItem else { return }
         editor.open(url) { [weak self] opened in
             guard opened else { return }
@@ -2215,7 +2215,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Instant, as Zed's: an animated collapse finishing after a quick
     /// un-zoom (a search started right after a file opened) hid the
     /// terminal's column again, and the keyboard had nowhere to go.
-    func setEditorZoomed(_ zoomed: Bool) {
+    package func setEditorZoomed(_ zoomed: Bool) {
         if zoomed {
             setZoomed(.editor)
         } else if columnZoom?.column == .editor {
@@ -2225,7 +2225,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// `column` alone with the sidebar (nil: every column as it was). One
     /// at a time: zooming the browser first gives the editor's back.
-    func setZoomed(_ column: ZoomedColumn?) {
+    package func setZoomed(_ column: ZoomedColumn?) {
         guard let terminalColumn, columnZoom?.column != column else { return }
         if let current = columnZoom {
             columnZoom = nil
@@ -2247,13 +2247,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         browserColumn?.simulator.setZoomed(columnZoom?.column == .browser)
     }
 
-    var zoomedColumn: ZoomedColumn? { columnZoom?.column }
+    package var zoomedColumn: ZoomedColumn? { columnZoom?.column }
 
-    var isEditorZoomed: Bool { columnZoom?.column == .editor }
+    package var isEditorZoomed: Bool { columnZoom?.column == .editor }
 
     /// A file in the app picked for files — asking which first, if none is
     /// yet (or it is gone). The file tree's double-click and "Open in …".
-    func openExternally(_ url: URL) {
+    package func openExternally(_ url: URL) {
         opener.open(url)
     }
 
@@ -2263,7 +2263,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// print the view tree's frames to stderr, quit. For debugging layout
     /// without anyone having to click around. See docs/debugging.md for the
     /// other OVERTERM_DUMP_* switches.
-    func dumpLayoutIfRequested() {
+    package func dumpLayoutIfRequested() {
         guard let path = ProcessInfo.processInfo.environment["OVERTERM_DUMP_LAYOUT"] else { return }
         let env = ProcessInfo.processInfo.environment
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
@@ -2437,7 +2437,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Writes the composited window, as on screen, to a PNG. An app may
     /// capture its own window without Screen Recording permission;
     /// cacheDisplay misses layer-backed content here.
-    func captureWindow(to path: String, window: NSWindow? = nil) {
+    package func captureWindow(to path: String, window: NSWindow? = nil) {
         let restore = window == nil ? stageForPhoto() : {}
         defer { restore() }
         guard let image = windowImage(window) else { return }
@@ -2469,7 +2469,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// The composited window, as on screen: its frame, at its backing scale.
-    func windowImage(_ window: NSWindow? = nil) -> CGImage? {
+    package func windowImage(_ window: NSWindow? = nil) -> CGImage? {
         guard let window = window ?? self.window else { return nil }
         return CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(window.windowNumber), [.boundsIgnoreFraming, .bestResolution])
     }
@@ -2551,7 +2551,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// past 4 pt of travel a tab is dragged — its copy following the pointer,
     /// the strip reordering as it passes each neighbour's middle, dropped on
     /// the panes into a split — and a chip drags its whole island.
-    func stripPress(_ subject: StripPressSubject, _ event: NSEvent, _ phase: StripPressPhase, fromMonitor: Bool = false) {
+    package func stripPress(_ subject: StripPressSubject, _ event: NSEvent, _ phase: StripPressPhase, fromMonitor: Bool = false) {
         // While the press's own monitor runs, it is the one that says.
         if phase != .down, stripDragMonitor != nil, !fromMonitor { return }
         guard let strip = tabBarView else { return }
@@ -2664,9 +2664,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// What the strip's mouse does, for `log stream --level debug
     /// --predicate 'category == "strip"'`: debug level, kept only while
     /// someone is streaming it.
-    static let stripLog = Logger(subsystem: AppEnvironment.bundleIdentifier, category: "strip")
+    package static let stripLog = Logger(subsystem: AppEnvironment.bundleIdentifier, category: "strip")
 
-    func menu(for tab: Tab) -> NSMenu {
+    package func menu(for tab: Tab) -> NSMenu {
         let menu = NSMenu()
         if !tab.isPinned {
             menu.addItem(
@@ -2728,7 +2728,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// A popover under the tab: its location and what it is running, live
     /// while open.
-    func showInfo(for tab: Tab) {
+    package func showInfo(for tab: Tab) {
         infoPopover?.close()
         guard let strip = tabBarView, let theme, let frame = store.tabFrames[tab.id] else { return }
         // A split tab's groups are labelled by what each pane runs.
@@ -2756,7 +2756,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         infoModel = model
     }
 
-    @objc func showSelectedTabInfo(_ sender: Any?) {
+    @objc package func showSelectedTabInfo(_ sender: Any?) {
         if infoPopover?.isShown == true {
             infoPopover?.close()
         } else if let tab = store.selected {
@@ -2766,7 +2766,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     // MARK: Palette
 
-    @objc func showPalette(_ sender: Any?) {
+    @objc package func showPalette(_ sender: Any?) {
         guard let paletteView else { return }
         if !paletteView.isHidden {
             hidePalette()
@@ -2783,12 +2783,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// The open palette's items again — containers came or went.
-    func restockPalette() {
+    package func restockPalette() {
         guard paletteView?.isHidden == false else { return }
         palette.restock(paletteItems(matching: palette.query))
     }
 
-    static func firstTextField(in view: NSView) -> NSTextField? {
+    package static func firstTextField(in view: NSView) -> NSTextField? {
         if let field = view as? NSTextField, field.isEditable { return field }
         for sub in view.subviews {
             if let found = firstTextField(in: sub) { return found }
@@ -2800,13 +2800,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// ⇧⌘E: every tab's live terminal as a card. Three fingers down the
     /// trackpad opens it a stage at a time (TabPeekController).
-    @objc func toggleTabPeek(_ sender: Any?) {
+    @objc package func toggleTabPeek(_ sender: Any?) {
         peek.toggle()
     }
 
     /// Esc and the arrows wherever the keyboard is, as the overview's: a
     /// click, or the terminal behind, takes first responder back.
-    func installPeekKeys() {
+    package func installPeekKeys() {
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
         peekKeys = nil
         guard peek.isOpen else { return }
@@ -2826,7 +2826,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// next tab after this one that wants something, wrapping. Going in tab
     /// order rather than by urgency means pressing it repeatedly walks the
     /// strip once instead of bouncing between two tabs.
-    @objc func showNextAttention(_ sender: Any?) {
+    @objc package func showNextAttention(_ sender: Any?) {
         // The nearest thing wanting you first: a failed command further
         // down this pane, before another tab entirely. One key, widening
         // scope — the designs wanted ⌥⌘↓ for both and they are the same
@@ -2849,11 +2849,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// ⇧⌘C: the last finished command's output on the clipboard. Its rows
     /// are the ledger's; libghostty hands over any range of them.
-    @objc func copyLastOutput(_ sender: Any?) {
+    @objc package func copyLastOutput(_ sender: Any?) {
         store.selected.map { copyOutput(of: $0.terminal) }
     }
 
-    func copyOutput(of pane: TerminalView) {
+    package func copyOutput(of pane: TerminalView) {
         guard let block = blocks(of: pane).ledger.lastFinished, let text = output(of: block, in: pane), !text.isEmpty
         else { return }
         NSPasteboard.general.clearContents()
@@ -2868,7 +2868,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// is in it — the output is everything after the last line that *ends*
     /// with the command. Ends, not contains: a command that prints itself
     /// would otherwise cut its own output in half.
-    func output(of block: CommandBlock, in pane: TerminalView) -> String? {
+    package func output(of block: CommandBlock, in pane: TerminalView) -> String? {
         // The visible screen is far cheaper, and covers output that never
         // scrolled — which is exactly the case the ledger calls unlocated.
         let whole = block.isLocated ? pane.scrollbackText : pane.visibleText
@@ -2886,11 +2886,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// ⌘R: type the last command again. Typed rather than run, so a
     /// destructive one is still yours to press Return on — and because the
     /// name comes from the shell's title, which can be approximate.
-    @objc func rerunLastCommand(_ sender: Any?) {
+    @objc package func rerunLastCommand(_ sender: Any?) {
         store.selected.map { rerun(in: $0.terminal) }
     }
 
-    func rerun(in pane: TerminalView) {
+    package func rerun(in pane: TerminalView) {
         guard let block = blocks(of: pane).ledger.lastFinished else { return }
         pane.insertText(block.command)
         window?.makeFirstResponder(pane)
@@ -2944,7 +2944,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The strip over a selection. Hidden the moment there is no selection
     /// — including when the one that was there is scrolled out of sight,
     /// which libghostty reports by giving it no position.
-    func showSelectionBar(for pane: TerminalView) {
+    package func showSelectionBar(for pane: TerminalView) {
         guard let bar = selectionBar else { return }
         guard let selection = pane.selection, !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
             selection.origin != .zero
@@ -2964,7 +2964,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         bar.isHidden = false
     }
 
-    func hideSelectionBar() { selectionBar?.isHidden = true }
+    package func hideSelectionBar() { selectionBar?.isHidden = true }
 
     private func copySelection(asMarkdown: Bool) {
         guard let text = store.selected?.terminal.selectionText else { return }
@@ -2981,7 +2981,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// The last command's output into today's note.
-    @objc func lastOutputToNote(_ sender: Any?) {
+    @objc package func lastOutputToNote(_ sender: Any?) {
         guard let pane = store.selected?.terminal, let block = blocks(of: pane).ledger.lastFinished,
             let text = output(of: block, in: pane), !text.isEmpty
         else { return NSSound.beep() }
@@ -3002,7 +3002,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Docker page it means the selected container that failed, never the
     /// terminal hidden under the page (lines picked in a log view answer
     /// it themselves: `LogLinesTextView`).
-    @objc func askAboutSelection(_ sender: Any?) {
+    @objc package func askAboutSelection(_ sender: Any?) {
         if let overlay = store.showingOverlay, let ask = pages[overlay]?.askAboutSelection {
             if !ask() { NSSound.beep() }
             return
@@ -3019,7 +3019,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// What ⌘L hands on of `text` selected in `pane`: a pod's or a pinned
     /// tab's output is the cluster's, and a pane that printed Terraform's
     /// secrets is as risky — scrubbed as the page's Logs tab is.
-    func askSelection(_ text: String, of pane: TerminalView, in tab: Tab) -> (text: String, command: CommandBlock?) {
+    package func askSelection(_ text: String, of pane: TerminalView, in tab: Tab) -> (text: String, command: CommandBlock?) {
         let pinned = pane.kubePin != nil || pane.kubePinLost != nil || terraformSensitive(pane)
         let env = pane.kubePodEnv
         return (
@@ -3033,7 +3033,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// already typed; `subject`: what the fixed chip calls the text;
     /// `parts`: what else goes with it, a chip each; `diff`: whether the
     /// git diff chip is offered (the window's checkout, by default).
-    func presentAskAgent(
+    package func presentAskAgent(
         text: String, command: CommandBlock?, folder: String?, targets agents: [Tab], message: String = "", subject: String? = nil,
         parts: [AskAgentModel.Part] = [], diff: Bool? = nil, showsBrief: Bool = false
     ) {
@@ -3066,7 +3066,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The keyboard back where it was before a sheet: the page's list
     /// while a page with one shows (the terminal is hidden under it), else
     /// the selected terminal.
-    func focusAfterSheet() {
+    package func focusAfterSheet() {
         if let overlay = store.showingOverlay, pages[overlay]?.hasList == true {
             focusPageList(overlay)
         } else {
@@ -3086,7 +3086,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// for. One function, so what the Send button does can be read in a
     /// test: the chip reached the sheet but nothing ever handed `prompt`
     /// a diff to put in.
-    func askAgentPrompt() async -> String {
+    package func askAgentPrompt() async -> String {
         guard askAgent.extras.diff, let root = diff.root else { return askAgent.prompt(diff: nil) }
         return askAgent.prompt(diff: await Self.uncommittedDiff(in: root))
     }
@@ -3097,7 +3097,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// to compare with, so the empty tree stands in, as the changes pane
     /// does it: plain `git diff` would compare with the index and show
     /// nothing at all for a first commit that is already staged.
-    static func uncommittedDiff(in root: URL) async -> String? {
+    package static func uncommittedDiff(in root: URL) async -> String? {
         let limit = AskAgentModel.maxDiffBytes
         var text = try? await Git.run(["diff", "--no-color", "HEAD"], in: root, outputLimit: limit)
         if text == nil {
@@ -3137,7 +3137,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// with it is yours to finish. Never into a tab at a Terraform ask
     /// (3.3): the text would land in the agent's permission prompt.
     @discardableResult
-    func type(_ prompt: String, intoAgent target: Tab) -> Bool {
+    package func type(_ prompt: String, intoAgent target: Tab) -> Bool {
         guard !terraformAsking(target) else {
             NSSound.beep()
             return false
@@ -3152,7 +3152,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// ⌘I. The column is only polled while it is open — the question on an
     /// agent's screen is read by reading the screen, which is not free.
-    @objc func toggleInbox(_ sender: Any?) {
+    @objc package func toggleInbox(_ sender: Any?) {
         guard let item = inboxItem else { return }
         let show = item.isCollapsed
         item.animator().isCollapsed = !show
@@ -3168,7 +3168,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
     }
 
-    func refreshInbox() {
+    package func refreshInbox() {
         inbox.refresh(
             tabs: store.tabs, group: { [weak self] in self?.store.group(of: $0) },
             screen: { tab in
@@ -3197,7 +3197,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Types a choice's number and Return into the tab's agent. Return is
     /// its own keystroke — `insertText` is a bracketed paste, so a newline
     /// inside it would arrive as a literal.
-    func answer(_ choice: AgentPrompt.Choice, in id: Tab.ID) {
+    package func answer(_ choice: AgentPrompt.Choice, in id: Tab.ID) {
         guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
         // A Terraform write is never answered by Overterm (3.3): not by a
         // button, a key or anything automated — read again here, in case
@@ -3211,7 +3211,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// In the menu bar while anything waits, and gone when nothing does —
     /// an icon that is always there saying nothing is noise.
-    func updateMenuBarItem(count: Int) {
+    package func updateMenuBarItem(count: Int) {
         guard !AppEnvironment.isIsolated else { return }
         guard count > 0 else {
             menuBarItem.map { NSStatusBar.system.removeStatusItem($0) }
@@ -3234,7 +3234,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         if inboxItem?.isCollapsed == true { toggleInbox(nil) }
     }
 
-    @objc func showAgentOverview(_ sender: Any?) {
+    @objc package func showAgentOverview(_ sender: Any?) {
         guard let overviewView else { return }
         if !overviewView.isHidden { return hideAgentOverview() }
         Task { await overview.refresh(store.tabs) }
@@ -3254,14 +3254,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// A card clicked: its tab, with the keyboard.
-    func chooseOverviewCard(_ id: Tab.ID) {
+    package func chooseOverviewCard(_ id: Tab.ID) {
         guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
         hideAgentOverview()
         store.select(tab)
         focusSelectedTerminal()
     }
 
-    func hideAgentOverview() {
+    package func hideAgentOverview() {
         overviewPoll?.invalidate()
         overviewPoll = nil
         if let overviewEscape { NSEvent.removeMonitor(overviewEscape) }
@@ -3271,7 +3271,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         focusSelectedTerminal()
     }
 
-    func hidePalette() {
+    package func hidePalette() {
         paletteView?.isHidden = true
         focusSelectedTerminal()
         releaseKubernetesSwitcher()
@@ -3471,7 +3471,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// pins one (3.11) — read and checked before the worktree is made, so a
     /// pin refused leaves nothing behind; its file written after it, so a
     /// worktree that fails leaves none either.
-    func createTask(repo: URL, branch: String, base: String, agent: Agent?, startStack: Bool = false, kubeContext: String? = nil) async throws {
+    package func createTask(repo: URL, branch: String, base: String, agent: Agent?, startStack: Bool = false, kubeContext: String? = nil) async throws {
         var checked: (pin: KubeTerminalPin, kubeconfigs: [URL])?
         if let kubeContext { checked = try await kubernetesTaskPin(kubeContext, repo: repo) }
         let path = try await TaskCreator.create(repo: repo, branch: branch, base: base, location: Settings.shared.worktreeLocation)
@@ -3503,7 +3503,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Types a snippet into the selected terminal — Return too when `run` —
     /// asking for its placeholder values first if it has any.
-    func useSnippet(_ snippet: Snippet, run: Bool) {
+    package func useSnippet(_ snippet: Snippet, run: Bool) {
         guard snippet.placeholders.isEmpty else {
             presentSheet { close in
                 SnippetFillView(
@@ -3519,14 +3519,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         type(snippet.command, run: run)
     }
 
-    func type(_ command: String, run: Bool) {
+    package func type(_ command: String, run: Bool) {
         guard let terminal = store.selected?.terminal else { return }
         terminal.insertText(command)
         if run { terminal.pressReturn() }
         focusSelectedTerminal()
     }
 
-    func editSnippet(_ snippet: Snippet?) {
+    package func editSnippet(_ snippet: Snippet?) {
         presentSheet { close in
             SnippetEditorView(
                 snippet: snippet ?? Snippet(name: "", command: ""),
@@ -3542,7 +3542,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Shows a SwiftUI view as a sheet; the builder gets the closure that
     /// dismisses it.
     /// `ended` runs once the sheet is gone, however it was put away.
-    func presentSheet<Content: View>(ended: (@MainActor () -> Void)? = nil, _ build: (@escaping () -> Void) -> Content) {
+    package func presentSheet<Content: View>(ended: (@MainActor () -> Void)? = nil, _ build: (@escaping () -> Void) -> Content) {
         guard let window else { return }
         let sheet = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let close = { [weak window, weak sheet] in
@@ -3570,11 +3570,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// `url` as the selected tab's shell would write it: relative to its cwd
     /// when inside it, else absolute.
-    func relativePath(_ url: URL) -> String {
+    package func relativePath(_ url: URL) -> String {
         Self.relativePath(url, cwd: store.selected?.workingDirectory)
     }
 
-    nonisolated static func relativePath(_ url: URL, cwd: String?) -> String {
+    package nonisolated static func relativePath(_ url: URL, cwd: String?) -> String {
         let path = url.standardizedFileURL.path
         guard let cwd = cwd.map({ URL(fileURLWithPath: $0).standardizedFileURL.path }) else { return path }
         if path == cwd { return "." }
@@ -3583,7 +3583,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Types the path into the selected terminal, shell-quoted, with a
     /// trailing space so the next word can follow.
-    func insertPath(_ url: URL) {
+    package func insertPath(_ url: URL) {
         guard let terminal = store.selected?.terminal else { return }
         terminal.insertText(Self.shellQuoted(relativePath(url)) + " ")
         focusSelectedTerminal()
@@ -3591,7 +3591,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Leaves plain paths bare; anything with shell metacharacters goes in
     /// single quotes.
-    nonisolated static func shellQuoted(_ path: String) -> String {
+    package nonisolated static func shellQuoted(_ path: String) -> String {
         let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/._-+,:@%"))
         if path.unicodeScalars.allSatisfy(safe.contains) { return path }
         if ShellWord.hasControl(path) { return ShellWord.ansiC(path) }
@@ -3602,15 +3602,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Whether the window close has been confirmed, so quitting right after
     /// doesn't ask a second time.
-    private(set) var closeConfirmed = false
+    package private(set) var closeConfirmed = false
 
     /// Closes a tab after confirming.
-    func closeTab(_ tab: Tab) {
+    package func closeTab(_ tab: Tab) {
         closeTabs([tab])
     }
 
     /// Closes several tabs behind one confirmation.
-    func closeTabs(_ tabs: [Tab]) {
+    package func closeTabs(_ tabs: [Tab]) {
         guard !tabs.isEmpty, let window else { return }
         // A terraform write in one of their panes asks first, whatever the setting (4.8).
         if terraformCloseGuard(tabs: tabs, path: .tabs, proceed: { [weak self] in tabs.forEach { self?.removeTab($0) } }) { return }
@@ -3648,7 +3648,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// port-forward the tab asked for that hasn't stopped (its pill).
     /// `quitting`: every forward that runs counts, whatever tab asked for
     /// it, since quitting stops them all.
-    static func needsCloseConfirmation(
+    package static func needsCloseConfirmation(
         _ tabs: [Tab], forwards: [KubeForward] = KubeForwards.shared.forwards, quitting: Bool = false,
         confirmClose: Settings.CloseConfirmation = Settings.shared.confirmClose
     ) -> Bool {
@@ -3660,14 +3660,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// The forwards closing these tabs (or quitting) is about: those not
     /// stopped that one of them asked for — every one, quitting.
-    static func runningForwards(of tabs: [Tab], in forwards: [KubeForward], quitting: Bool) -> [KubeForward] {
+    package static func runningForwards(of tabs: [Tab], in forwards: [KubeForward], quitting: Bool) -> [KubeForward] {
         let ids = Set(tabs.map(\.id))
         return forwards.filter { forward in !forward.state.isStopped && (quitting || forward.spec.tab.map { ids.contains($0) } == true) }
     }
 
     /// The dim over panes without the keyboard (Settings ▸ Appearance).
     /// Settings that change the chrome alone, applied without Ghostty.
-    static let chromeKeys: Set<String> = ["appearance.accent"]
+    package static let chromeKeys: Set<String> = ["appearance.accent"]
 
     private func setBodyInsets() {
         guard bodyInsets.count == 4 else { return }
@@ -3681,7 +3681,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Settings ▸ Appearance ▸ Interface changed the sizes: everything lays
     /// itself out again, and the SwiftUI views (which all observe the
     /// theme) draw at the new ones.
-    func applyMetrics() {
+    package func applyMetrics() {
         setBodyInsets()
         for item in split.splitViewItems { item.viewController.view.needsLayout = true }
         hosts.values.forEach { $0.needsLayout = true }
@@ -3708,15 +3708,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Settings ▸ Appearance ▸ Opacity; 1 is opaque. Not in native full
     /// screen, where there is no desktop to show — Ghostty's own rule. (The
     /// surfaces still paint no background then: the terminal's card does.)
-    var windowOpacity: CGFloat {
+    package var windowOpacity: CGFloat {
         if window?.styleMask.contains(.fullScreen) == true { return 1 }
         return CGFloat(min(max(Settings.shared.number("appearance.backgroundOpacity") ?? 1, 0.3), 1))
     }
 
-    static var paneDim: NSColor { GhosttyRuntime.shared.backgroundColor.withAlphaComponent(Settings.shared.unfocusedPaneDim) }
+    package static var paneDim: NSColor { GhosttyRuntime.shared.backgroundColor.withAlphaComponent(Settings.shared.unfocusedPaneDim) }
     /// Between a tab's panes: the terminal's own text, nearly all the way
     /// out of the way.
-    static var paneDivider: NSColor { GhosttyRuntime.shared.foregroundColor.withAlphaComponent(0.18) }
+    package static var paneDivider: NSColor { GhosttyRuntime.shared.foregroundColor.withAlphaComponent(0.18) }
 
     /// Settings take effect as they change — from the Settings tab, or
     /// settings.json / keybindings.json edited by hand: Ghostty's options
@@ -3783,7 +3783,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// The sidebar card's fill, for the E2E run.
-    var sidebarCardFill: NSColor? {
+    package var sidebarCardFill: NSColor? {
         (sidebarItem?.viewController.view as? CardColumn)?.groundColor
     }
 
@@ -3792,7 +3792,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// redraw themselves; the layers are nobody's binding, so the window,
     /// the cards and the dividers are repainted here.
     /// The chrome's colours again (a tab's own theme came or went).
-    func refreshChrome() { applyTerminalColors() }
+    package func refreshChrome() { applyTerminalColors() }
 
     private func applyTerminalColors() {
         let runtime = GhosttyRuntime.shared
@@ -3846,7 +3846,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// A page, opened if it isn't, over the body — in place of whichever
     /// page showed: they take turns.
-    func showOverlay(_ overlay: WorkspaceOverlay) {
+    package func showOverlay(_ overlay: WorkspaceOverlay) {
         guard let view = pages.made(overlay) else { return }
         hideAgentOverview()
         if peek.isOpen { peek.close() }
@@ -3860,7 +3860,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// Uncovers the selected terminal tab; the pages stay in the strip.
-    func hideOverlay(focus: Bool = true) {
+    package func hideOverlay(focus: Bool = true) {
         guard let showing = store.showingOverlay else { return }
         store.hideOverlay()
         pages.view(showing)?.isHidden = true
@@ -3868,14 +3868,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// Its ✕, or ⌘W while it shows.
-    func closeOverlay(_ overlay: WorkspaceOverlay) {
+    package func closeOverlay(_ overlay: WorkspaceOverlay) {
         if store.showingOverlay == overlay { hideOverlay() }
         store.closeOverlay(overlay)
         pages[overlay]?.closed?()
     }
 
     /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
-    func openSettings(_ section: SettingsSection? = nil) {
+    package func openSettings(_ section: SettingsSection? = nil) {
         if let section { settingsPage.show(section) }
         showOverlay(.settings)
     }
@@ -3885,7 +3885,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// What closing them stops, said: the busy panes, then the forwards —
     /// which a tab's close leaves running, on the page's Forwards only (a
     /// forward is the app's, not the tab's), and quitting stops.
-    static func closeWarning(for tabs: [Tab], forwards: [KubeForward] = KubeForwards.shared.forwards, quitting: Bool = false) -> String {
+    package static func closeWarning(for tabs: [Tab], forwards: [KubeForward] = KubeForwards.shared.forwards, quitting: Bool = false) -> String {
         let busy = tabs.filter { $0.terminals.contains { $0.needsConfirmClose } }
         let running = runningForwards(of: tabs, in: forwards, quitting: quitting)
         var said: String
@@ -3937,12 +3937,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Removes tabs at once, as their shells exiting would (E2E: the last
     /// tab's close path, without a sheet).
-    func closeTabsWithoutAsking(_ tabs: [Tab]) { tabs.forEach { removeTab($0) } }
+    package func closeTabsWithoutAsking(_ tabs: [Tab]) { tabs.forEach { removeTab($0) } }
 
     /// The editor's file, when it has unsaved changes.
-    var unsavedEditorFile: String? { unsavedNames(everyWindow: isLastWindow).first }
+    package var unsavedEditorFile: String? { unsavedNames(everyWindow: isLastWindow).first }
 
-    func closeTabs(of view: TerminalView, mode: ghostty_action_close_tab_mode_e) {
+    package func closeTabs(of view: TerminalView, mode: ghostty_action_close_tab_mode_e) {
         guard let tab = tab(containing: view), let i = store.index(of: tab) else { return }
         switch mode {
         case GHOSTTY_ACTION_CLOSE_TAB_MODE_OTHER:
@@ -3955,7 +3955,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// Ghostty's goto_tab: 1-based index, or previous/next/last.
-    func gotoTab(_ value: Int32) -> Bool {
+    package func gotoTab(_ value: Int32) -> Bool {
         guard store.tabs.count > 1 else { return false }
         switch value {
         case GHOSTTY_GOTO_TAB_PREVIOUS.rawValue: store.selectAdjacent(-1)
@@ -3967,12 +3967,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         return true
     }
 
-    func moveTab(of view: TerminalView, by amount: Int) {
+    package func moveTab(of view: TerminalView, by amount: Int) {
         guard let tab = tab(containing: view) else { return }
         store.move(tab, by: amount)
     }
 
-    func focusSelectedTerminal() {
+    package func focusSelectedTerminal() {
         guard let terminal = store.selected?.terminal else { return }
         setZoomed(nil)
         window?.makeFirstResponder(terminal)
@@ -3980,7 +3980,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Only the selected tab renders. Apart from a tab switch this is what
     /// tab peek calls to put the others back to sleep when it closes.
-    func applyTabVisibility() {
+    package func applyTabVisibility() {
         guard let selected = store.selected else { return }
         hosts[selected.id]?.setVisible(true)
         // Hiding the view that has the keyboard makes AppKit look for the
@@ -4032,14 +4032,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     // MARK: Menu actions
 
-    @objc func newTab(_ sender: Any?) { newTab(from: store.selected?.terminal) }
-    @objc func newClaudeTab(_ sender: Any?) { newAgentTab(.claude) }
-    @objc func newCodexTab(_ sender: Any?) { newAgentTab(.codex) }
-    @objc func newOpencodeTab(_ sender: Any?) { newAgentTab(.opencode) }
-    @objc func newPiTab(_ sender: Any?) { newAgentTab(.pi) }
-    @objc func newGeminiTab(_ sender: Any?) { newAgentTab(.gemini) }
+    @objc package func newTab(_ sender: Any?) { newTab(from: store.selected?.terminal) }
+    @objc package func newClaudeTab(_ sender: Any?) { newAgentTab(.claude) }
+    @objc package func newCodexTab(_ sender: Any?) { newAgentTab(.codex) }
+    @objc package func newOpencodeTab(_ sender: Any?) { newAgentTab(.opencode) }
+    @objc package func newPiTab(_ sender: Any?) { newAgentTab(.pi) }
+    @objc package func newGeminiTab(_ sender: Any?) { newAgentTab(.gemini) }
     /// ⌘W: the focused pane of a split tab, else the tab.
-    @objc func closeSelectedTab(_ sender: Any?) {
+    @objc package func closeSelectedTab(_ sender: Any?) {
         if let overlay = store.showingOverlay { return closeOverlay(overlay) }
         if let review = shownReview { return closeReview(review) }
         guard let tab = store.selected else { return }
@@ -4052,14 +4052,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
     }
 
-    @objc func splitRight(_ sender: Any?) { split(nil, .right) }
-    @objc func splitDown(_ sender: Any?) { split(nil, .down) }
-    @objc func selectNextPane(_ sender: Any?) { focusSplit(from: nil, .next) }
-    @objc func selectPreviousPane(_ sender: Any?) { focusSplit(from: nil, .previous) }
-    @objc func equalizePanes(_ sender: Any?) { equalizeSplits(nil) }
-    @objc func togglePaneZoom(_ sender: Any?) { toggleSplitZoom(nil) }
+    @objc package func splitRight(_ sender: Any?) { split(nil, .right) }
+    @objc package func splitDown(_ sender: Any?) { split(nil, .down) }
+    @objc package func selectNextPane(_ sender: Any?) { focusSplit(from: nil, .next) }
+    @objc package func selectPreviousPane(_ sender: Any?) { focusSplit(from: nil, .previous) }
+    @objc package func equalizePanes(_ sender: Any?) { equalizeSplits(nil) }
+    @objc package func togglePaneZoom(_ sender: Any?) { toggleSplitZoom(nil) }
 
-    @objc func toggleDiff(_ sender: Any?) {
+    @objc package func toggleDiff(_ sender: Any?) {
         guard let diffItem else { return }
         let show = diffItem.isCollapsed
         // The right-hand slot is one place: the browser steps aside for it
@@ -4075,7 +4075,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Opens or closes the right-hand pane itself. `remember` is for a
     /// choice of yours, which the next launch keeps; giving the slot to the
     /// browser is not one.
-    func setRightPaneShown(_ show: Bool, remember: Bool) {
+    package func setRightPaneShown(_ show: Bool, remember: Bool) {
         guard let diffItem else { return }
         // First: closing, the content goes before the pane animates shut.
         diff.panelVisible = show
@@ -4088,7 +4088,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// badge counts — the uncommitted changes, or the branch's once all is
     /// committed; a plain ± keeps the scope picked last — or closes it.
     /// View ▸ Changes (⌥⌘D) opens it on the scope picked last.
-    func toggleDiffFromBadge() {
+    package func toggleDiffFromBadge() {
         if diffItem?.isCollapsed == true {
             rightPane.mode = .changes
             if let scope = diff.badge?.scope { diff.choose(scope) }
@@ -4099,7 +4099,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The right pane, on the checkout's pull request.
     /// A pull request picked in Overgit — the checkout's branch's, or
     /// another — in the right-hand pane rather than on GitHub.
-    func showPullRequest(number pr: PullRequestSummary) {
+    package func showPullRequest(number pr: PullRequestSummary) {
         if pr.branch == diff.branch {
             pullRequest.unpick()
         } else if let root = diff.root ?? worktrees.main?.path {
@@ -4108,7 +4108,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         showPullRequest(nil)
     }
 
-    @objc func showPullRequest(_ sender: Any?) {
+    @objc package func showPullRequest(_ sender: Any?) {
         rightPane.mode = .pullRequest
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
@@ -4116,7 +4116,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// The right pane, on what the agents have spent (⌥⌘U, the gauge in
     /// the strip, View ▸ Usage).
-    @objc func showUsage(_ sender: Any?) {
+    @objc package func showUsage(_ sender: Any?) {
         rightPane.mode = .usage
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
@@ -4148,7 +4148,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Which of the right pane's three is actually on screen. Each model
     /// reads only while it is: the pull request asks `gh`, usage walks the
     /// agents' logs.
-    func updateRightPaneVisibility() {
+    package func updateRightPaneVisibility() {
         let shown = diffItem?.isCollapsed == false
         pullRequest.visible = shown && rightPane.mode == .pullRequest
         usage.visible = shown && rightPane.mode == .usage
@@ -4165,7 +4165,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             && kubernetesManifest.chart === kubernetesPage.expandedChart
     }
 
-    @objc func toggleFileTree(_ sender: Any?) {
+    @objc package func toggleFileTree(_ sender: Any?) {
         guard let sidebarItem else { return }
         let show = sidebarItem.isCollapsed
         sidebarItem.animator().isCollapsed = !show
@@ -4183,19 +4183,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         if !show { isEditorZoomed ? editor?.focus() : focusSelectedTerminal() }
     }
 
-    @objc func togglePinTab(_ sender: Any?) {
+    @objc package func togglePinTab(_ sender: Any?) {
         guard let tab = store.selected else { return }
         store.setPinned(tab, !tab.isPinned)
     }
-    @objc func selectNextTab(_ sender: Any?) { store.selectAdjacent(1) }
-    @objc func selectPreviousTab(_ sender: Any?) { store.selectAdjacent(-1) }
+    @objc package func selectNextTab(_ sender: Any?) { store.selectAdjacent(1) }
+    @objc package func selectPreviousTab(_ sender: Any?) { store.selectAdjacent(-1) }
 
     // MARK: NSWindowDelegate
 
     /// Full screen keeps the toolbar — the strip is in it — and so the strip
     /// comes down with the title bar when the pointer reaches the top,
     /// rather than the traffic lights coming down over the tabs.
-    func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions = [])
+    package func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions = [])
         -> NSApplication.PresentationOptions
     {
         var options = proposed
@@ -4205,19 +4205,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         return options
     }
 
-    func windowDidEnterFullScreen(_ notification: Notification) {
+    package func windowDidEnterFullScreen(_ notification: Notification) {
         sizeStrip()
         applyTerminalColors()
     }
 
-    func windowDidExitFullScreen(_ notification: Notification) {
+    package func windowDidExitFullScreen(_ notification: Notification) {
         sizeStrip()
         applyTerminalColors()
     }
 
     // MARK: The strip, in the title bar
 
-    static let stripItem = NSToolbarItem.Identifier("overterm.strip")
+    package static let stripItem = NSToolbarItem.Identifier("overterm.strip")
 
     /// The tab strip is the toolbar's one item, as Safari's tabs are. Laid
     /// under the title bar instead, the title bar's own views lay over it,
@@ -4225,7 +4225,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// it: dragging a tab dragged the window, whatever the strip's views
     /// answered. In the toolbar it is the title bar — after the traffic
     /// lights, and in full screen it comes down with them.
-    func installToolbar(in window: NSWindow) {
+    package func installToolbar(in window: NSWindow) {
         let toolbar = NSToolbar(identifier: "overterm.main")
         toolbar.delegate = self
         toolbar.allowsUserCustomization = false
@@ -4240,7 +4240,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// or from the edge in full screen — set as the window resizes and goes
     /// in and out of full screen. Never wider: an item the bar can't hold
     /// goes into the overflow menu, and the tabs vanished behind a ».
-    func sizeStrip() {
+    package func sizeStrip() {
         let width = Self.stripWidth(for: window)
         stripWidth?.constant = width
         (tabBarView as? TitleBarStrip)?.barWidth = width
@@ -4248,16 +4248,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// The bar gives an item its width less 95 pt beside the traffic
     /// lights (measured); a little under, to be sure.
-    static func stripWidth(for window: NSWindow?) -> CGFloat {
+    package static func stripWidth(for window: NSWindow?) -> CGFloat {
         guard let window else { return 600 }
         let used: CGFloat = window.styleMask.contains(.fullScreen) ? 24 : 100
         return max(200, window.frame.width - used)
     }
 
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [Self.stripItem] }
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [Self.stripItem] }
+    package func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [Self.stripItem] }
+    package func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [Self.stripItem] }
 
-    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool)
+    package func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool)
         -> NSToolbarItem?
     {
         guard identifier == Self.stripItem, let strip = tabBarView else { return nil }
@@ -4292,7 +4292,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// Closing the window closes every tab: always confirmed.
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
+    package func windowShouldClose(_ sender: NSWindow) -> Bool {
         let unsaved = unsavedNames(everyWindow: isLastWindow)
         if let name = unsaved.first {
             let alert = NSAlert()
@@ -4339,29 +4339,29 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// The peek's cards are frames in the container; a resize moves them.
-    func windowDidResize(_ notification: Notification) {
+    package func windowDidResize(_ notification: Notification) {
         sizeStrip()
         peek.relayout()
     }
 
-    func windowDidChangeOcclusionState(_ notification: Notification) {
+    package func windowDidChangeOcclusionState(_ notification: Notification) {
         for page in pages.all { page.occlusionChanged?() }
         updateEditorOnScreen()
         updateLightTick()
     }
 
-    func windowDidMiniaturize(_ notification: Notification) { updateLightTick() }
+    package func windowDidMiniaturize(_ notification: Notification) { updateLightTick() }
 
-    func windowDidDeminiaturize(_ notification: Notification) { updateLightTick() }
+    package func windowDidDeminiaturize(_ notification: Notification) { updateLightTick() }
 
     /// Shown, its tabs are the light tick's (an isolated run's window too,
     /// which may never be told its occlusion changed).
-    override func showWindow(_ sender: Any?) {
+    package override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         updateLightTick()
     }
 
-    func windowWillClose(_ notification: Notification) {
+    package func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
         if let pageKeys { NSEvent.removeMonitor(pageKeys) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
@@ -4391,7 +4391,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 extension TerminalWindowController: NSMenuItemValidation {
     /// View ▸ Changes is ticked while the pane shows. Everything else it
     /// handles stays enabled, as without validation.
-    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+    package func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         let compose: [Selector] = [#selector(composeUp(_:)), #selector(composeDown(_:)), #selector(composeRestart(_:)), #selector(composeWatch(_:))]
         if let action = menuItem.action, compose.contains(action), !Settings.shared.dockerEnabled { return false }
         if menuItem.action == #selector(toggleBrowser(_:)) {
@@ -4436,7 +4436,7 @@ extension TerminalWindowController: NSMenuItemValidation {
 }
 
 extension TerminalWindowController: NSPopoverDelegate {
-    func popoverDidClose(_ notification: Notification) {
+    package func popoverDidClose(_ notification: Notification) {
         infoModel?.stop()
         infoModel = nil
         infoPopover = nil

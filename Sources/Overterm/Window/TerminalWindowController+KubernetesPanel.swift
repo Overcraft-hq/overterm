@@ -6,7 +6,7 @@ import Combine
 extension TerminalWindowController {
     /// The panel follows the selected tab's checkout and reads only while
     /// it is the panel on screen; a pod picked takes the right slot.
-    func wireKubernetesPanel() {
+    package func wireKubernetesPanel() {
         kubernetesPanel.openReview = { [weak self] source, root in self?.openReview(source, in: root) }
         kubernetesPanel.helmHost = self
         kubernetesPanel.gitOpsHost = self
@@ -43,17 +43,17 @@ extension TerminalWindowController {
     /// The selected tab's checkout, as the diff, Ask Why and agents'
     /// tools (`KubeMCP.paneCheckout`) have it: `Tab.checkoutSource`'s root
     /// — an attached checkout, else where its agent works, else the shell's.
-    var kubernetesCheckout: URL? { store.selected?.checkoutSource?.root }
+    package var kubernetesCheckout: URL? { store.selected?.checkoutSource?.root }
 
     /// `root` (the diff's, which follows the same) only says when to look again.
-    func updateKubernetesCheckout(root _: URL?) {
+    package func updateKubernetesCheckout(root _: URL?) {
         let folder = kubernetesCheckout
         if kubernetesPanel.checkout != folder { kubernetesPanel.checkout = folder }
     }
 
     /// On screen: the sidebar open on the panel, Kubernetes on, the window
     /// itself visible (a covered or minimized one reads nothing).
-    func updateKubernetesPanelVisibility(panel: SidebarPanel? = nil) {
+    package func updateKubernetesPanelVisibility(panel: SidebarPanel? = nil) {
         let shown =
             sidebarItem?.isCollapsed == false && (panel ?? sidebarPanel.panel) == .kubernetes && Settings.shared.kubernetesEnabled
             && kubernetesPage.windowVisible && window != nil
@@ -64,7 +64,7 @@ extension TerminalWindowController {
     }
 
     /// The rail's helm: the sidebar, on the Kubernetes panel.
-    @objc func showKubernetesPanel(_ sender: Any?) {
+    @objc package func showKubernetesPanel(_ sender: Any?) {
         guard Settings.shared.kubernetesEnabled else { return }
         if sidebarItem?.isCollapsed == true { toggleFileTree(nil) }
         sidebarPanel.panel = .kubernetes
@@ -72,7 +72,7 @@ extension TerminalWindowController {
     }
 
     /// The pod picked, in the right-hand pane — which takes the slot (`RightSlot`).
-    func showKubernetesSlot() {
+    package func showKubernetesSlot() {
         rightPane.kubernetesOpened = true
         rightPane.mode = .kubernetes
         // A zoomed column hides the slot: what was asked for must show.
@@ -81,7 +81,7 @@ extension TerminalWindowController {
         updateRightPaneVisibility()
     }
 
-    func kubernetesPanelSettingsChanged() {
+    package func kubernetesPanelSettingsChanged() {
         if !Settings.shared.kubernetesEnabled {
             if sidebarPanel.panel == .kubernetes { sidebarPanel.panel = .files }
             if rightPane.mode == .kubernetes { rightPane.mode = .changes }
@@ -98,7 +98,7 @@ extension TerminalWindowController {
     /// The agents Ask Why's brief is offered to, in order: the agents in a
     /// tab of the checkout bound to the brief's namespace (3.4) — it has
     /// the code that failed — then the selected tab's, then the window's others.
-    func kubernetesBriefTargets(_ brief: KubeAgentBrief) -> [Tab] {
+    package func kubernetesBriefTargets(_ brief: KubeAgentBrief) -> [Tab] {
         let bound = Set(
             KubeBindingStore.shared.bindings(on: brief.context, namespace: brief.namespace).map(\.checkout) + [brief.checkout].compactMap { $0 })
         return KubeBriefTargets.ordered(
@@ -120,18 +120,18 @@ extension TerminalWindowController: KubeGitOpsPanelHost {
         for _ in 0..<50 where !model.contextsRead { try? await Task.sleep(for: .milliseconds(100)) }
     }
 
-    func gitOpsWrite(_ verb: KubeWriteVerb, on ref: KubeObjectRef) async {
+    package func gitOpsWrite(_ verb: KubeWriteVerb, on ref: KubeObjectRef) async {
         await kubernetesContextsLoaded()
         kubernetesPage.write(verb, on: ref)
     }
 
-    func gitOpsTabWrite(_ verb: KubeProcessVerb, on ref: KubeObjectRef) async {
+    package func gitOpsTabWrite(_ verb: KubeProcessVerb, on ref: KubeObjectRef) async {
         await kubernetesContextsLoaded()
         kubernetesPage.runTabWrite(verb, on: ref)
     }
 
     /// The page on the binding's context, the object's list and its detail.
-    func gitOpsOpenOnPage(_ ref: KubeObjectRef) async {
+    package func gitOpsOpenOnPage(_ ref: KubeObjectRef) async {
         await kubernetesContextsLoaded()
         let model = kubernetesPage.model
         if model.selectedName != ref.context { model.select(ref.context) }
@@ -148,7 +148,7 @@ extension TerminalWindowController: KubeGitOpsPanelHost {
     /// it. A context the page's list hasn't (one added since it was read)
     /// is read again once; still not there, the page says so and nothing
     /// else changes — never another cluster's scope or section.
-    func gitOpsOpenMarked(_ ref: KubeMarkedDetailRef, namespaces: [String]) async {
+    package func gitOpsOpenMarked(_ ref: KubeMarkedDetailRef, namespaces: [String]) async {
         await kubernetesContextsLoaded()
         let model = kubernetesPage.model
         if model.contexts.context(named: ref.context) == nil {
@@ -168,17 +168,17 @@ extension TerminalWindowController: KubeGitOpsPanelHost {
         kubernetesPage.openMarkedApp(ref)
     }
 
-    func gitOpsAskWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part]) async {
+    package func gitOpsAskWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part]) async {
         await kubernetesContextsLoaded()
         kubernetesPage.askWhy(ref, extra: extra)
     }
 
-    func gitOpsAskWhyMarked(_ app: KubeMarkedRanked, context: String, lead: String, whereApplication: String, scope: String) async {
+    package func gitOpsAskWhyMarked(_ app: KubeMarkedRanked, context: String, lead: String, whereApplication: String, scope: String) async {
         await kubernetesContextsLoaded()
         kubernetesPage.askWhyMarked(app, context: context, lead: lead, whereApplication: whereApplication, scope: scope)
     }
 
-    var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { kubernetesPage.$writeStatus.eraseToAnyPublisher() }
+    package var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { kubernetesPage.$writeStatus.eraseToAnyPublisher() }
 }
 
 /// What the diff knows of the checkout's git that the rail's GitOps answers depend on.

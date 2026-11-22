@@ -5,83 +5,83 @@ import Foundation
 /// analysis.md, 3.8, 6.4's meters): each core's ticks, memory in pages,
 /// swap, load, uptime, thermal state, Low Power Mode. Raw values, as the
 /// kernel gives them: `SystemMeters` makes the page's numbers of two reads.
-struct SystemMeterCounters: Hashable, Sendable {
+package struct SystemMeterCounters: Hashable, Sendable {
     /// Each core's ticks (`PROCESSOR_CPU_LOAD_INFO`): user, system, idle,
     /// nice — 32-bit counters that wrap.
-    var cores: [[UInt32]]
+    package var cores: [[UInt32]]
     /// The performance and efficiency cores (`hw.perflevel0`/`1.logicalcpu`):
     /// nil where the Mac has one kind.
-    var performanceCores: Int?
-    var efficiencyCores: Int?
+    package var performanceCores: Int?
+    package var efficiencyCores: Int?
     /// `hw.memsize`, bytes.
-    var memory: UInt64
-    var pageSize: UInt64
+    package var memory: UInt64
+    package var pageSize: UInt64
     /// `vm_statistics64`, pages.
-    var wired: UInt64
-    var compressed: UInt64
+    package var wired: UInt64
+    package var compressed: UInt64
     /// Anonymous memory (`internal_page_count`), what apps hold…
-    var internalPages: UInt64
+    package var internalPages: UInt64
     /// …and file-backed (`external_page_count`): cached files.
-    var externalPages: UInt64
-    var purgeable: UInt64
-    var free: UInt64
+    package var externalPages: UInt64
+    package var purgeable: UInt64
+    package var free: UInt64
     /// `kern.memorystatus_vm_pressure_level`: 1 normal, 2 warning, 4
     /// critical; nil when it can't be read.
-    var pressureLevel: Int32?
+    package var pressureLevel: Int32?
     /// `vm.swapusage`, bytes.
-    var swapUsed: UInt64
-    var swapTotal: UInt64
+    package var swapUsed: UInt64
+    package var swapTotal: UInt64
     /// `getloadavg`: 1, 5 and 15 minutes.
-    var load: [Double]
+    package var load: [Double]
     /// Seconds since boot (`kern.boottime`).
-    var uptime: TimeInterval
+    package var uptime: TimeInterval
     /// `ProcessInfo.thermalState`'s raw value.
-    var thermal: Int
-    var lowPower: Bool
+    package var thermal: Int
+    package var lowPower: Bool
 }
 
 /// The meters as the page shows them (6.4): CPU a bar a core since the last
 /// read — none the first time —, memory in Activity Monitor's terms. Pure.
-struct SystemMeters: Hashable, Sendable {
-    enum Pressure: String, Sendable {
+package struct SystemMeters: Hashable, Sendable {
+    package enum Pressure: String, Sendable {
         case normal, warning, critical, unknown
     }
 
-    enum Thermal: String, Sendable {
+    package enum Thermal: String, Sendable {
         case nominal, fair, serious, critical
     }
 
     /// Each core's busy share since the last read, 0…1; empty for a first
     /// read: never 0 for what wasn't measured.
-    var cores: [Double]
-    var performanceCores: Int?
-    var efficiencyCores: Int?
+    package var cores: [Double]
+    package var performanceCores: Int?
+    package var efficiencyCores: Int?
     /// bytes.
-    var memory: UInt64
+    package var memory: UInt64
     /// Activity Monitor's Memory Used: app memory, wired and compressed.
-    var used: UInt64
+    package var used: UInt64
     /// App memory: anonymous pages less the purgeable ones.
-    var app: UInt64
-    var wired: UInt64
-    var compressed: UInt64
+    package var app: UInt64
+    package var wired: UInt64
+    package var compressed: UInt64
     /// Cached Files: file-backed and purgeable pages.
-    var cached: UInt64
-    var pressure: Pressure
-    var swapUsed: UInt64
-    var swapTotal: UInt64
-    var load: [Double]
-    var uptime: TimeInterval
-    var thermal: Thermal
-    var lowPower: Bool
+    package var cached: UInt64
+    package var pressure: Pressure
+    package var swapUsed: UInt64
+    package var swapTotal: UInt64
+    package var load: [Double]
+    package var uptime: TimeInterval
+    package var thermal: Thermal
+    package var lowPower: Bool
 
     /// The whole CPU's busy share, the cores' mean; nil for a first read.
-    var cpu: Double? { cores.isEmpty ? nil : cores.reduce(0, +) / Double(cores.count) }
+    package var cpu: Double? { cores.isEmpty ? nil : cores.reduce(0, +) / Double(cores.count) }
 
     /// The meters of `current`, its CPU against `previous`: when a core's
     /// counters didn't move, or the read has a different core count, no core
     /// has a rate — never a 0 that wasn't measured (6.4). Differences wrap at
     /// 2³², as the counters do.
-    static func from(_ current: SystemMeterCounters, previous: SystemMeterCounters?) -> SystemMeters {
+    package static func from(_ current: SystemMeterCounters, previous: SystemMeterCounters?) -> SystemMeters {
         var cores: [Double] = []
         if let previous, previous.cores.count == current.cores.count {
             for (now, then) in zip(current.cores, previous.cores) where now.count >= 4 && then.count >= 4 {
@@ -128,7 +128,7 @@ struct SystemMeters: Hashable, Sendable {
 extension LiveActivityKernel {
     /// The system's counters now: Mach's host calls and sysctls, under
     /// 0.05 ms together (3.8). Nil when the processor or memory read fails.
-    func readMeterCounters() -> SystemMeterCounters? {
+    package func readMeterCounters() -> SystemMeterCounters? {
         let host = mach_host_self()
         var count: natural_t = 0
         var info: processor_info_array_t?

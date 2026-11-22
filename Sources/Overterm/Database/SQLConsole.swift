@@ -6,49 +6,49 @@ import Foundation
 /// what its statements gave back — one tab a statement, as DataGrip shows.
 /// The text stays the file's; this is what sits under it.
 @MainActor
-final class SQLConsole: ObservableObject {
-    struct Run: Identifiable {
-        let id = UUID()
-        var sql: String
-        var result: QueryResult?
-        var error: String?
-        var running = false
+package final class SQLConsole: ObservableObject {
+    package struct Run: Identifiable {
+        package let id = UUID()
+        package var sql: String
+        package var result: QueryResult?
+        package var error: String?
+        package var running = false
     }
 
-    let file: URL
+    package let file: URL
     private let model: DatabaseModel
-    @Published private(set) var connection: DatabaseConnection?
-    @Published private(set) var runs: [Run] = []
-    @Published var selected: UUID?
-    @Published private(set) var isRunning = false
+    @Published package private(set) var connection: DatabaseConnection?
+    @Published package private(set) var runs: [Run] = []
+    @Published package var selected: UUID?
+    @Published package private(set) var isRunning = false
     private var task: Task<Void, Never>?
     private var sessionChanges: AnyCancellable?
     /// Asked before a statement that destroys: true to send it.
-    var confirm: (_ sql: String, _ why: String) async -> Bool = { _, _ in true }
+    package var confirm: (_ sql: String, _ why: String) async -> Bool = { _, _ in true }
     /// Asked before a Save of edited rows, its statements shown: true to run them.
-    var confirmWrite: (WriteConfirmation) async -> Bool = { _ in false }
+    package var confirmWrite: (WriteConfirmation) async -> Bool = { _ in false }
     /// Asked before rows edited and not saved are lost (a result's tab or
     /// the console closed): true to discard them.
-    var confirmDiscard: (_ edits: Int) async -> Bool = { _ in true }
+    package var confirmDiscard: (_ edits: Int) async -> Bool = { _ in true }
     /// Each run's rows as edited (`ResultEditor`), made when its grid first shows.
     private var editors: [UUID: ResultEditor] = [:]
 
     /// Row edits not saved, in a run or in all of them — never kept on
     /// disk, so closing loses them (CLAUDE.md: closing always asks).
-    func unsavedEdits(in run: Run? = nil) -> Int {
+    package func unsavedEdits(in run: Run? = nil) -> Int {
         editors.filter { id, editor in (run == nil || id == run?.id) && !editor.saving }.values.reduce(0) { $0 + $1.edits.count }
     }
 
-    init(file: URL, model: DatabaseModel) {
+    package init(file: URL, model: DatabaseModel) {
         self.file = file
         self.model = model
         connection = model.connection(for: file)
         observeSession()
     }
 
-    var session: DatabaseSession? { connection.map(model.session) }
+    package var session: DatabaseSession? { connection.map(model.session) }
 
-    func use(_ connection: DatabaseConnection?) {
+    package func use(_ connection: DatabaseConnection?) {
         self.connection = connection
         model.attach(file, to: connection?.id)
         observeSession()
@@ -62,7 +62,7 @@ final class SQLConsole: ObservableObject {
 
     /// The statements in order, each a tab. A destroying one is asked about
     /// first (Settings ▸ Database); a read-only connection refuses a write.
-    func run(_ statements: [String]) {
+    package func run(_ statements: [String]) {
         guard let session, !statements.isEmpty, !isRunning else { return }
         task = Task { @MainActor in
             for sql in statements {
@@ -104,7 +104,7 @@ final class SQLConsole: ObservableObject {
     }
 
     /// Stops waiting for the statement; the database may finish it anyway.
-    func stop() {
+    package func stop() {
         task?.cancel()
         task = nil
         isRunning = false
@@ -115,12 +115,12 @@ final class SQLConsole: ObservableObject {
     }
 
     /// Every run's row edits dropped (its file closing, asked first).
-    func discardAllEdits() {
+    package func discardAllEdits() {
         for editor in editors.values { editor.discard() }
     }
 
     /// A result's tab closed — asked first when its rows have edits not saved.
-    func requestClose(_ run: Run) {
+    package func requestClose(_ run: Run) {
         let edits = unsavedEdits(in: run)
         guard edits > 0 else { return close(run) }
         Task { @MainActor in
@@ -128,20 +128,20 @@ final class SQLConsole: ObservableObject {
         }
     }
 
-    func close(_ run: Run) {
+    package func close(_ run: Run) {
         if live == run.id { stopFollowing() }
         editors[run.id] = nil
         runs.removeAll { $0.id == run.id }
         if selected == run.id { selected = runs.last?.id }
     }
 
-    var current: Run? { runs.first { $0.id == selected } ?? runs.last }
+    package var current: Run? { runs.first { $0.id == selected } ?? runs.last }
 
     // MARK: Editing rows
 
     /// A run's editor — when its connection edits rows and the run has rows;
     /// whether these rows can be is its own to say (`ResultEditor.state`).
-    func editor(for run: Run) -> ResultEditor? {
+    package func editor(for run: Run) -> ResultEditor? {
         guard let session, session.editing != nil, let result = run.result, result.hasRows, result.payload == nil, !run.running else { return nil }
         if let editor = editors[run.id] { return editor }
         let editor = ResultEditor(runID: run.id, sql: run.sql, console: self, session: session)
@@ -154,7 +154,7 @@ final class SQLConsole: ObservableObject {
 
     /// A run's statement again, its rows replacing the old ones — after a
     /// Save. Not recorded in the history: the statement was, when first run.
-    func reread(_ id: UUID) async {
+    package func reread(_ id: UUID) async {
         guard let session, let at = runs.firstIndex(where: { $0.id == id }) else { return }
         let sql = runs[at].sql
         await session.run([sql], limit: Settings.shared.databaseRowLimit) { [weak self] _, outcome in
@@ -170,12 +170,12 @@ final class SQLConsole: ObservableObject {
 
     /// The run whose lines are followed: new ones polled every two seconds
     /// and put on top, as `logcli --tail` shows them.
-    @Published private(set) var live: UUID?
+    @Published package private(set) var live: UUID?
     private var liveTask: Task<Void, Never>?
     /// Lines a live run keeps; the oldest go.
-    static let liveKeep = 5000
+    package static let liveKeep = 5000
 
-    func follow(_ run: Run) {
+    package func follow(_ run: Run) {
         stopFollowing()
         guard let driver = session?.observability, case .logs(let lines)? = run.result?.payload else { return }
         live = run.id
@@ -207,7 +207,7 @@ final class SQLConsole: ObservableObject {
         }
     }
 
-    func stopFollowing() {
+    package func stopFollowing() {
         liveTask?.cancel()
         liveTask = nil
         live = nil

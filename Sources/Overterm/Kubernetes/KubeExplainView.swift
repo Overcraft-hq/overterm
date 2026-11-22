@@ -5,12 +5,12 @@ import SwiftUI
 /// typed (`deployment.spec.replicas`), the context it is asked of, and what
 /// that cluster's own docs say — the field's type, whether it is required,
 /// its description, and its fields, each opened with a press.
-struct KubeExplainView: View {
-    @ObservedObject var session: KubeExplainSession
-    @ObservedObject var theme: ChromeTheme
-    let onClose: () -> Void
+package struct KubeExplainView: View {
+    @ObservedObject package var session: KubeExplainSession
+    @ObservedObject package var theme: ChromeTheme
+    package let onClose: () -> Void
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.3)

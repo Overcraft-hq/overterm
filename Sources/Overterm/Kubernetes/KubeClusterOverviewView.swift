@@ -11,20 +11,20 @@ import SwiftUI
 /// only — every number comes from what the session, the metrics and the
 /// health checks already hold. A row opens its object's detail. Narrow,
 /// the cards stack in one column.
-struct KubeClusterOverviewView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var session: KubeClusterOverviewSession
-    @ObservedObject var model: KubernetesModel
-    @ObservedObject var theme: ChromeTheme
+package struct KubeClusterOverviewView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var session: KubeClusterOverviewSession
+    @ObservedObject package var model: KubernetesModel
+    @ObservedObject package var theme: ChromeTheme
     /// The page's width, for one column or two.
     @State private var width: CGFloat = 1000
 
     /// Below this the paired cards stack.
-    static let twoColumns: CGFloat = 720
+    package static let twoColumns: CGFloat = 720
     /// The most rows the Needs-attention card lists; the lists have the rest.
-    static let attentionShown = 12
+    package static let attentionShown = 12
 
-    var body: some View {
+    package var body: some View {
         let overview = session.overview
         ScrollView {
             VStack(alignment: .leading, spacing: ResourceCard.spacing) {
@@ -509,11 +509,11 @@ private struct KubeOverviewKindCard<Content: View>: View {
 }
 
 /// A thin bar of parts in proportion (ready, pending, failing), over its track.
-struct KubeOverviewBar: View {
-    var segments: [(colour: Color, count: Int)]
-    var track: Color
+package struct KubeOverviewBar: View {
+    package var segments: [(colour: Color, count: Int)]
+    package var track: Color
 
-    var body: some View {
+    package var body: some View {
         GeometryReader { geometry in
             let total = max(1, segments.reduce(0) { $0 + $1.count })
             HStack(spacing: segments.filter { $0.count > 0 }.count > 1 ? 1.5 : 0) {
@@ -534,13 +534,13 @@ struct KubeOverviewBar: View {
 
 /// Samples drawn as a line, scaled to `top` or their own highest (a
 /// flat line at the bottom when every one is zero); nothing with fewer than two.
-struct KubeSparkline: View {
-    var values: [Double]
-    var color: Color
+package struct KubeSparkline: View {
+    package var values: [Double]
+    package var color: Color
     /// The line's ceiling (allocatable), else the samples' own highest.
-    var top: Double?
+    package var top: Double?
 
-    var body: some View {
+    package var body: some View {
         if values.count >= 2 {
             GeometryReader { geometry in
                 Path { path in
@@ -561,12 +561,12 @@ struct KubeSparkline: View {
 /// The header's pills: what needs attention, the health checks' count and
 /// the checks that pass. Its own view, observing the health session — the
 /// page doesn't republish it, so the pills follow its read and its refresh.
-struct KubeOverviewHeaderPills: View {
-    let overview: KubeClusterOverview
-    @ObservedObject var health: KubeHealthSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeOverviewHeaderPills: View {
+    package let overview: KubeClusterOverview
+    @ObservedObject package var health: KubeHealthSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 6) {
             let pills = KubeOverviewCards.pills(overview, health: health.state == .loaded ? health.report : nil)
             if let attention = pills.first(where: { $0.tone == .failed }) {
@@ -587,12 +587,12 @@ struct KubeOverviewHeaderPills: View {
 /// count, from the health checks already read (K601–K603) — no read of its
 /// own. A press goes to the GitOps section (`g`), which counts what lives
 /// in or deploys into the scope.
-struct KubeOverviewGitOpsCard: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var session: KubeHealthSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeOverviewGitOpsCard: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var session: KubeHealthSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if session.state == .loaded, let line = KubeOverviewCards.gitOps(session.report, scope: session.scope) {
             let tint = line.tone == .failed ? TabStatusStyle.failed : TabStatusStyle.waiting
             Button {

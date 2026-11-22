@@ -5,11 +5,11 @@ import SwiftUI
 /// namespace, or a context after `@`. ↑↓ move, Tab completes, ↩ runs, Esc
 /// or a click outside goes back to the list. The field is the palette's
 /// (`PaletteField`).
-struct KubeCommandBarView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
+package struct KubeCommandBarView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if let bar = page.command {
             ZStack(alignment: .top) {
                 Color.black.opacity(0.001).onTapGesture { page.closeCommand() }

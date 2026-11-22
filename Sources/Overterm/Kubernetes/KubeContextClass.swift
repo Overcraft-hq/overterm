@@ -6,10 +6,10 @@ import Foundation
 /// everywhere and its writes asked, the destructive ones with the name
 /// typed; every class is writable unless its `writable` flag says no (the
 /// owner's decision: no session switch to turn on first).
-enum KubeContextClass: String, CaseIterable, Sendable {
+package enum KubeContextClass: String, CaseIterable, Sendable {
     case production, remote, local
 
-    var title: String {
+    package var title: String {
         switch self {
         case .production: "Production"
         case .remote: "Remote"
@@ -29,27 +29,27 @@ enum KubeContextClass: String, CaseIterable, Sendable {
 ///
 /// The server's address never makes a context local: an SSH tunnel or a
 /// bastion's forward to a remote cluster is on 127.0.0.1 too.
-enum KubeClassifier {
+package enum KubeClassifier {
     /// `prod`, `prd`, `production` or `live` as a word of the name, split
     /// on `-`, `_`, `/`, `.`, `:` or `@` — so EKS's ARNs
     /// (`…:cluster/acme-prod`) and kubeadm's `user@cluster`
     /// (`kubernetes-admin@prod`) match and `product-api` or `delivery` don't.
-    static let productionPattern = #"(^|[-_/.:@])(prod|prd|production|live)([-_/.:@]|$)"#
+    package static let productionPattern = #"(^|[-_/.:@])(prod|prd|production|live)([-_/.:@]|$)"#
 
-    static let localNames: Set<String> = ["docker-desktop", "orbstack", "minikube", "rancher-desktop", "colima"]
-    static let localPrefixes = ["kind-", "k3d-"]
+    package static let localNames: Set<String> = ["docker-desktop", "orbstack", "minikube", "rancher-desktop", "colima"]
+    package static let localPrefixes = ["kind-", "k3d-"]
 
     private static let production = try! NSRegularExpression(pattern: productionPattern, options: [.caseInsensitive])
 
-    static func isProduction(name: String) -> Bool {
+    package static func isProduction(name: String) -> Bool {
         production.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) != nil
     }
 
-    static func isLocal(name: String) -> Bool {
+    package static func isLocal(name: String) -> Bool {
         localNames.contains(name) || localPrefixes.contains { name.hasPrefix($0) }
     }
 
-    static func classify(context: String, cluster: String?, set: KubeContextClass?) -> KubeContextClass {
+    package static func classify(context: String, cluster: String?, set: KubeContextClass?) -> KubeContextClass {
         if let set { return set }
         if isProduction(name: context) || cluster.map(isProduction(name:)) == true { return .production }
         if isLocal(name: context) { return .local }
@@ -62,7 +62,7 @@ enum KubeClassifier {
     /// Production is still marked, asked and typed (`KubeWriteCheck`); it
     /// is a confirmation, not a lock. `kind` stays in the signature so a
     /// class rule can come back in one place.
-    static func isWritable(_ kind: KubeContextClass, flag: Bool?) -> Bool {
+    package static func isWritable(_ kind: KubeContextClass, flag: Bool?) -> Bool {
         flag ?? true
     }
 }
@@ -70,54 +70,54 @@ enum KubeClassifier {
 /// A context's own settings: its entry in `kubernetes.contexts`, by name.
 /// The only place a context's settings live (decision 32); more fields join
 /// with the stages that read them.
-struct KubeContextSettings: Equatable, Sendable {
+package struct KubeContextSettings: Equatable, Sendable {
     /// Set by hand; nil: its name decides.
-    var contextClass: KubeContextClass?
+    package var contextClass: KubeContextClass?
     /// Whether the context may be written to; nil: yes, on every class.
     /// `false` makes it read-only — production too.
-    var writable: Bool?
-    var displayName: String?
+    package var writable: Bool?
+    package var displayName: String?
     /// The namespace the page opens on, instead of the context's own.
-    var defaultNamespace: String?
+    package var defaultNamespace: String?
     /// When set, the namespace list is never asked for (RBAC may refuse it).
-    var accessibleNamespaces: [String] = []
+    package var accessibleNamespaces: [String] = []
     /// At the top of the namespace picker.
-    var favouriteNamespaces: [String] = []
+    package var favouriteNamespaces: [String] = []
     /// Where a Terminal in this context opens (`~` allowed); unset or not a
     /// folder, the home folder.
-    var terminalDirectory: String?
+    package var terminalDirectory: String?
     /// False: no shell or attach from Overterm on this context (rule 5);
     /// unset, they are offered after `kubectl auth can-i`.
-    var shells: Bool?
+    package var shells: Bool?
     /// The image `E` debugs a pod with (and a node, when `nodeShellImage`
     /// is unset); unset, `kubernetes.debugImage`.
-    var debugImage: String?
+    package var debugImage: String?
     /// The image a node is debugged with (one with the host's tools, say);
     /// unset, `debugImage`, then `kubernetes.debugImage`.
-    var nodeShellImage: String?
+    package var nodeShellImage: String?
     /// On: a node shell (`kubectl debug node/… --profile=sysadmin`) on
     /// a writable context, its name typed; unset or off, it is refused.
-    var nodeShell: Bool?
+    package var nodeShell: Bool?
     /// On: agents' `k8s_apply` may change this production context (where
     /// `KubeAgentWrites` lets agents write), the name typed and never
     /// forced (decision 30); unset or off, an agent only diffs there. A
     /// person's Apply from the editor needs no setting: writable is
     /// enough, the name typed (the owner's decision). Ignored on any other class.
-    var applyOnProduction: Bool?
+    package var applyOnProduction: Bool?
     /// Where usage comes from: metrics-server when served (unset), or
     /// `none` — no usage columns, and metrics.k8s.io never asked;
     /// `prometheus` (or `auto` set here) looks for Prometheus too (stage 4).
-    var metrics: KubeMetricsSource?
+    package var metrics: KubeMetricsSource?
     /// The Prometheus Service, `namespace/service:port`, instead of looking
     /// for one; it opts the context in unless `metrics` says otherwise.
-    var prometheus: String?
+    package var prometheus: String?
     /// The user's own charts on a workload's Metrics tab, from this
     /// context's Prometheus (metrics.md decision 11): written in
     /// settings.json by the user, never by an agent.
-    var charts: [KubeSavedChart] = []
+    package var charts: [KubeSavedChart] = []
 
     /// What an entry may hold, for SettingsSchema to check.
-    static let fields: [SettingField] = [
+    package static let fields: [SettingField] = [
         SettingField(
             name: "class", kind: .choice(KubeContextClass.allCases.map { SettingOption(value: $0.rawValue, label: $0.title) }),
             help: "production, remote or local; unset, the context's name decides."),
@@ -159,7 +159,7 @@ struct KubeContextSettings: Equatable, Sendable {
         KubeSavedChart.field,
     ]
 
-    init(
+    package init(
         contextClass: KubeContextClass? = nil, writable: Bool? = nil, displayName: String? = nil, defaultNamespace: String? = nil,
         accessibleNamespaces: [String] = [], favouriteNamespaces: [String] = [], terminalDirectory: String? = nil, shells: Bool? = nil,
         debugImage: String? = nil, nodeShellImage: String? = nil, nodeShell: Bool? = nil, applyOnProduction: Bool? = nil,
@@ -182,7 +182,7 @@ struct KubeContextSettings: Equatable, Sendable {
         self.charts = charts
     }
 
-    init(fields: [String: SettingValue]) {
+    package init(fields: [String: SettingValue]) {
         contextClass = fields["class"]?.string.flatMap(KubeContextClass.init(rawValue:))
         writable = fields["writable"]?.bool
         displayName = fields["displayName"]?.string.flatMap { $0.isEmpty ? nil : $0 }
@@ -206,7 +206,7 @@ struct KubeContextSettings: Equatable, Sendable {
     }
 
     /// Every context's, from the setting's value.
-    static func all(from value: SettingValue?) -> [String: KubeContextSettings] {
+    package static func all(from value: SettingValue?) -> [String: KubeContextSettings] {
         (value?.entries ?? [:]).mapValues(KubeContextSettings.init(fields:))
     }
 }

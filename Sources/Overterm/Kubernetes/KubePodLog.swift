@@ -2,11 +2,11 @@ import Foundation
 
 /// One of a pod's containers, as its log's picker offers it: a container,
 /// an init container or an ephemeral one, with what its status says.
-struct KubeLogContainer: Equatable, Sendable, Identifiable {
-    enum Role: String, Equatable, Sendable {
+package struct KubeLogContainer: Equatable, Sendable, Identifiable {
+    package enum Role: String, Equatable, Sendable {
         case container, initContainer, ephemeral
 
-        var title: String {
+        package var title: String {
             switch self {
             case .container: ""
             case .initContainer: "init"
@@ -15,7 +15,7 @@ struct KubeLogContainer: Equatable, Sendable, Identifiable {
         }
     }
 
-    enum State: Equatable, Sendable {
+    package enum State: Equatable, Sendable {
         case running
         case waiting(String)
         case terminated(reason: String, exitCode: Int)
@@ -23,27 +23,27 @@ struct KubeLogContainer: Equatable, Sendable, Identifiable {
         case unknown
     }
 
-    var name: String
-    var role: Role
-    var restarts: Int
-    var state: State
+    package var name: String
+    package var role: Role
+    package var restarts: Int
+    package var state: State
     /// How it last ended, when it restarted: what Previous shows.
-    var lastTerminated: String?
+    package var lastTerminated: String?
 
-    var id: String { name }
+    package var id: String { name }
 
     /// A terminated container before this one: Previous has a log to show.
-    var hasPrevious: Bool { restarts > 0 || lastTerminated != nil }
+    package var hasPrevious: Bool { restarts > 0 || lastTerminated != nil }
 }
 
 /// A pod's containers and which one its log shows first. Pure.
-enum KubePodContainers {
+package enum KubePodContainers {
     /// kubectl's annotation naming the container `logs`, `exec` and `attach` use.
-    static let defaultAnnotation = "kubectl.kubernetes.io/default-container"
+    package static let defaultAnnotation = "kubectl.kubernetes.io/default-container"
 
     /// Its containers, then its init containers, then its ephemeral ones —
     /// each with its status.
-    static func of(_ pod: [String: Any]) -> [KubeLogContainer] {
+    package static func of(_ pod: [String: Any]) -> [KubeLogContainer] {
         let spec = pod["spec"] as? [String: Any] ?? [:]
         let status = pod["status"] as? [String: Any] ?? [:]
         var out: [KubeLogContainer] = []
@@ -85,7 +85,7 @@ enum KubePodContainers {
     /// The container a pod's log shows first, as kubectl picks it: the one
     /// its `kubectl.kubernetes.io/default-container` annotation names, if
     /// the pod has it, else its first container. Nil: none at all.
-    static func defaultContainer(_ pod: [String: Any]) -> String? {
+    package static func defaultContainer(_ pod: [String: Any]) -> String? {
         let containers = ((pod["spec"] as? [String: Any])?["containers"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
         let annotations = (pod["metadata"] as? [String: Any])?["annotations"] as? [String: String] ?? [:]
         if let named = annotations[defaultAnnotation]?.trimmingCharacters(in: .whitespaces), containers.contains(named) { return named }
@@ -94,16 +94,16 @@ enum KubePodContainers {
 }
 
 /// How far back a pod's log goes (`sinceSeconds`): Since's choices.
-enum KubeLogSince: String, CaseIterable, Identifiable, Sendable {
+package enum KubeLogSince: String, CaseIterable, Identifiable, Sendable {
     case fiveMinutes = "5m"
     case hour = "1h"
     case sixHours = "6h"
     case day = "24h"
     case all
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var seconds: Int? {
+    package var seconds: Int? {
         switch self {
         case .fiveMinutes: 300
         case .hour: 3600
@@ -113,7 +113,7 @@ enum KubeLogSince: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .fiveMinutes: "Last 5 minutes"
         case .hour: "Last hour"
@@ -128,22 +128,22 @@ enum KubeLogSince: String, CaseIterable, Identifiable, Sendable {
 /// from the last line's and merges by them; shown or not is the view's.
 /// `sinceSeconds` or `sinceTime`, never both (the API refuses them
 /// together); `tailLines` with either. Pure.
-struct KubeLogQuery: Equatable, Sendable {
-    var container: String?
+package struct KubeLogQuery: Equatable, Sendable {
+    package var container: String?
     /// The container's last terminated instance: its whole log, not followed.
-    var previous = false
-    var follow = false
-    var tailLines: Int?
+    package var previous = false
+    package var follow = false
+    package var tailLines: Int?
     /// At most this many bytes of the answer (`limitBytes`): the server
     /// stops there, so it cuts from the start of the tail — the newest
     /// lines are the ones past it.
-    var limitBytes: Int?
-    var since: KubeLogSince = .all
+    package var limitBytes: Int?
+    package var since: KubeLogSince = .all
     /// From this time on (RFC 3339, whole seconds): a follow resumed.
-    var sinceTime: String?
+    package var sinceTime: String?
 
     /// `/api/v1/namespaces/ns/pods/p/log?container=…&follow=true&…`.
-    func path(namespace: String, pod: String) -> String {
+    package func path(namespace: String, pod: String) -> String {
         let base = KubeResourceKind.pods.path(namespace: namespace, name: pod) + "/log"
         let time = sinceTime
         return KubePath.query(
@@ -159,12 +159,12 @@ struct KubeLogQuery: Equatable, Sendable {
     /// The `sinceTime` a follow resumes from: its last line's time to the
     /// second, as the API takes it (`metav1.Time` is whole seconds there) —
     /// that second's lines come again, and the follower drops the ones shown.
-    static func sinceTime(after stamp: String) -> String {
+    package static func sinceTime(after stamp: String) -> String {
         stamp.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)
     }
 
     /// A time as `sinceTime` takes it: RFC 3339 in UTC, whole seconds.
-    static func sinceTime(_ date: Date) -> String {
+    package static func sinceTime(_ date: Date) -> String {
         Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down)).formatted(.iso8601)
     }
 }
@@ -172,15 +172,15 @@ struct KubeLogQuery: Equatable, Sendable {
 /// Whether a follow that ended is followed again: the container runs —
 /// yes; it is waiting (a restart's back-off) — wait and ask again; it
 /// ended for good, or the pod is gone — no, saying so. Pure.
-enum KubeLogResume: Equatable, Sendable {
+package enum KubeLogResume: Equatable, Sendable {
     case follow
     case wait(String)
     case stop(String)
 
-    static let podGone = "The pod is gone: its log ends here."
+    package static let podGone = "The pod is gone: its log ends here."
 
     /// From the pod read again (nil: it's gone).
-    static func of(pod: [String: Any]?, container name: String) -> KubeLogResume {
+    package static func of(pod: [String: Any]?, container name: String) -> KubeLogResume {
         guard let pod else { return .stop(podGone) }
         let containers = KubePodContainers.of(pod)
         guard let container = containers.first(where: { $0.name == name }) else { return .stop("The pod has no container \(name) any more.") }
@@ -209,13 +209,13 @@ enum KubeLogResume: Equatable, Sendable {
 
 /// A pod's log's pure pieces: its bytes as lines, what an answer with a
 /// larger tail adds before the lines shown, the file Save As suggests.
-enum KubeLogText {
+package enum KubeLogText {
     /// Lines out of a stream's bytes: whole ones, the rest kept for the
     /// next piece. A line is `<RFC 3339 time> <text>` (`timestamps=true`).
-    struct Splitter: Sendable {
+    package struct Splitter: Sendable {
         private var pending = Data()
 
-        mutating func feed(_ piece: Data) -> [LogLine] {
+        package mutating func feed(_ piece: Data) -> [LogLine] {
             pending.append(piece)
             guard let last = pending.lastIndex(of: 0x0A) else { return [] }
             let whole = pending[pending.startIndex...last]
@@ -224,7 +224,7 @@ enum KubeLogText {
         }
 
         /// The stream ended: a last line without its newline.
-        mutating func finish() -> [LogLine] {
+        package mutating func finish() -> [LogLine] {
             defer { pending = Data() }
             return pending.isEmpty ? [] : KubeLogText.lines(pending)
         }
@@ -234,7 +234,7 @@ enum KubeLogText {
     /// dropped) — each kubelet line has its own time, and a bare `\r`
     /// (progress output), a form feed or U+2028 inside one is its text, not
     /// a line of its own whose first word would be taken for a time.
-    static func lines(_ data: Data) -> [LogLine] {
+    package static func lines(_ data: Data) -> [LogLine] {
         data.split(separator: 0x0A, omittingEmptySubsequences: true).compactMap { line in
             let text = line.last == 0x0D ? line.dropLast() : line
             guard !text.isEmpty else { return nil }
@@ -248,7 +248,7 @@ enum KubeLogText {
     /// limit mid-line, the last back to its last newline (or space). A
     /// secret cut in two is never kept in part, where scrubbing can't
     /// know it.
-    static func tail(_ body: Data, keep: Int, stopped: Bool) -> Data {
+    package static func tail(_ body: Data, keep: Int, stopped: Bool) -> Data {
         var kept = body
         if stopped, kept.last != 0x0A {
             if let newline = kept.lastIndex(of: 0x0A) {
@@ -278,7 +278,7 @@ enum KubeLogText {
     /// up to where `shown` starts in it (its first lines matched, not only
     /// one: a line can say the same twice), else those older than its
     /// first. All of them when nothing is shown.
-    static func older(_ fetched: [LogLine], than shown: [LogLine]) -> [LogLine] {
+    package static func older(_ fetched: [LogLine], than shown: [LogLine]) -> [LogLine] {
         guard let first = shown.first else { return fetched }
         let run = min(shown.count, 5)
         for index in fetched.indices where fetched[index] == first {
@@ -291,7 +291,7 @@ enum KubeLogText {
 
     /// `web-7d9-app-20261104-153012.log` (`-previous` for the last
     /// terminated one's), the time it was saved, local.
-    static func fileName(pod: String, container: String?, previous: Bool, at date: Date = Date()) -> String {
+    package static func fileName(pod: String, container: String?, previous: Bool, at date: Date = Date()) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"
@@ -306,12 +306,12 @@ enum KubeLogText {
 /// keys, a kubeconfig's `token:`, `client-key-data:` and
 /// `client-certificate-data:`, `password=`/`secret:`-style pairs, base64
 /// blobs — taken out (`Secrets`). Pure.
-enum KubeLogScrub {
-    static let mask = "••••••"
+package enum KubeLogScrub {
+    package static let mask = "••••••"
 
     /// The pod's env as the spec writes it: plain `value`s only (a
     /// `secretKeyRef`'s value is never read).
-    static func env(of pod: [String: Any]) -> [(key: String, value: String)] {
+    package static func env(of pod: [String: Any]) -> [(key: String, value: String)] {
         let spec = pod["spec"] as? [String: Any] ?? [:]
         var out: [(key: String, value: String)] = []
         for key in ["initContainers", "containers", "ephemeralContainers"] {
@@ -328,7 +328,7 @@ enum KubeLogScrub {
     /// (`Secrets.scrub`), then what looks like a credential
     /// (`Secrets.scrubCredentials`: tokens, keys, a kubeconfig's fields,
     /// base64 blobs).
-    static func scrub(_ text: String, env: [(key: String, value: String)]) -> String {
+    package static func scrub(_ text: String, env: [(key: String, value: String)]) -> String {
         Secrets.scrubCredentials(Secrets.scrub(text, env: env))
     }
 }

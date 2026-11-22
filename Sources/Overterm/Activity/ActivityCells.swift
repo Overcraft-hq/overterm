@@ -4,26 +4,26 @@ import Foundation
 /// analysis.md, 6.5, 7.7): what `ActivityListView` draws as AppKit text
 /// (`ResourceTextCell`), compared with what the cell shows so an unchanged
 /// one isn't drawn again. Its colour a token, the theme's to resolve.
-struct ActivityCellText: Equatable, Sendable {
-    enum Tint: Equatable, Sendable { case text, text2, text3, signal }
+package struct ActivityCellText: Equatable, Sendable {
+    package enum Tint: Equatable, Sendable { case text, text2, text3, signal }
 
-    var text: String
-    var tint: Tint
+    package var text: String
+    package var tint: Tint
     /// A number: monospaced, against the trailing edge.
-    var number = false
-    var help: String? = nil
+    package var number = false
+    package var help: String? = nil
     /// A process row's: drawn dimmed once ended, tinted while new (6.7).
-    var ended = false
-    var isNew = false
+    package var ended = false
+    package var isNew = false
 }
 
 /// Which cells are plain and what they say. Pure.
-enum ActivityCells {
+package enum ActivityCells {
     /// `row`'s cell in `column` as words; nil where the list draws it with
     /// SwiftUI — a process's name and 15-minute strip, a container's name,
     /// a row laid across the columns. Nil depends only on the row's kind
     /// and the column (`ResourceTable.plainCell`'s rule).
-    static func plain(_ row: ActivityListRow, _ column: String) -> ActivityCellText? {
+    package static func plain(_ row: ActivityListRow, _ column: String) -> ActivityCellText? {
         switch row {
         case .process(let process):
             guard column != "name", column != "cpu15", var cell = processCell(process, column) else { return nil }
@@ -47,7 +47,7 @@ enum ActivityCells {
         number(value.map(ActivityRows.percent) ?? "—", (value ?? 0) >= 50 ? .signal : .text2)
     }
 
-    static func processCell(_ row: ActivityProcessRow, _ column: String) -> ActivityCellText? {
+    package static func processCell(_ row: ActivityProcessRow, _ column: String) -> ActivityCellText? {
         switch column {
         case "pid": number(String(row.identity.pid))
         case "cpu": cpu(row.cpu)
@@ -77,7 +77,7 @@ enum ActivityCells {
         }
     }
 
-    static func portCell(_ row: ActivityPortRow, _ column: String) -> ActivityCellText {
+    package static func portCell(_ row: ActivityPortRow, _ column: String) -> ActivityCellText {
         switch column {
         case "port":
             if row.kind == .unix { return text((row.address as NSString).abbreviatingWithTildeInPath, .text, help: row.address) }
@@ -103,7 +103,7 @@ enum ActivityCells {
         }
     }
 
-    static func containerCell(_ row: ActivityGroupRow, _ column: String) -> ActivityCellText {
+    package static func containerCell(_ row: ActivityGroupRow, _ column: String) -> ActivityCellText {
         switch column {
         case "cpu": cpu(row.cpu)
         case "memory": number(row.memory.map(ActivityRows.bytes) ?? "—")

@@ -4,20 +4,20 @@ import Foundation
 /// or wants another: an OpenAPI document, a Postman collection or a .http
 /// file in the checkout, and an API a tab is serving, found by asking its
 /// ports where frameworks publish their OpenAPI document.
-enum APIDiscovery {
-    enum Source: Equatable, Hashable, Identifiable, Sendable {
+package enum APIDiscovery {
+    package enum Source: Equatable, Hashable, Identifiable, Sendable {
         case file(URL, kind: Kind)
         /// `spec` answered with an OpenAPI document titled `title`; `base` is the server.
         case server(base: URL, spec: URL, title: String)
 
-        var id: String {
+        package var id: String {
             switch self {
             case .file(let url, _): url.path
             case .server(_, let spec, _): spec.absoluteString
             }
         }
 
-        var title: String {
+        package var title: String {
             switch self {
             case .file(let url, let kind): "\(kind.title): \(url.lastPathComponent)"
             case .server(let base, _, let title): "\(title) on \(base.host ?? "localhost"):\(base.port.map(String.init) ?? "")"
@@ -25,9 +25,9 @@ enum APIDiscovery {
         }
     }
 
-    enum Kind: String, Sendable {
+    package enum Kind: String, Sendable {
         case openAPI, postman, http
-        var title: String {
+        package var title: String {
             switch self {
             case .openAPI: "OpenAPI"
             case .postman: "Postman"
@@ -38,12 +38,12 @@ enum APIDiscovery {
 
     /// Where frameworks serve their document: FastAPI, Springdoc, NestJS,
     /// ASP.NET (Swashbuckle), Express's swagger-jsdoc setups, Rails' rswag.
-    static let specPaths = [
+    package static let specPaths = [
         "/openapi.json", "/v3/api-docs", "/swagger.json", "/api-docs", "/swagger/v1/swagger.json", "/api/openapi.json",
         "/docs/openapi.json", "/api-docs.json", "/openapi.yaml", "/api/swagger.json",
     ]
 
-    static func find(in root: URL, ports: [Int], probe: Bool) async -> [Source] {
+    package static func find(in root: URL, ports: [Int], probe: Bool) async -> [Source] {
         let files = await Task.detached(priority: .utility) { findFiles(in: root) }.value
         let servers = probe ? await probeServers(ports) : []
         return servers + files
@@ -51,7 +51,7 @@ enum APIDiscovery {
 
     /// Files in the checkout, at most `depth` folders down, not in
     /// dependency or build folders.
-    static func findFiles(in root: URL, depth: Int = 4) -> [Source] {
+    package static func findFiles(in root: URL, depth: Int = 4) -> [Source] {
         var found: [Source] = []
         let skipped: Set<String> = ["node_modules", "build", "dist", "target", "vendor", "Pods", "DerivedData", ".git", "bruno"]
         func walk(_ folder: URL, _ level: Int) {
@@ -80,7 +80,7 @@ enum APIDiscovery {
     }
 
     /// By name first; a JSON or YAML file only if its start says what it is.
-    static func kind(of url: URL) -> Kind? {
+    package static func kind(of url: URL) -> Kind? {
         let name = url.lastPathComponent.lowercased()
         let ext = url.pathExtension.lowercased()
         if ext == "http" || ext == "rest" { return .http }
@@ -95,7 +95,7 @@ enum APIDiscovery {
     }
 
     /// Each port asked at the usual paths, all at once, a second each.
-    static func probeServers(_ ports: [Int]) async -> [Source] {
+    package static func probeServers(_ ports: [Int]) async -> [Source] {
         let unique = Array(Set(ports)).sorted().prefix(12)
         guard !unique.isEmpty else { return [] }
         return await withTaskGroup(of: Source?.self) { group in
@@ -115,7 +115,7 @@ enum APIDiscovery {
     /// for a second and a half, three seconds in all — the first of
     /// `specPaths` that answers with one wins. `title` names it, else the
     /// document's own title does. Nothing is imported: it is offered.
-    static func probe(_ base: URL, title: String? = nil) async -> Source? {
+    package static func probe(_ base: URL, title: String? = nil) async -> Source? {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 1.5
         configuration.timeoutIntervalForResource = 3

@@ -10,49 +10,49 @@ import QuartzCore
 /// Everything here is in a **top-left origin** space the size of the
 /// terminal container, as `SplitTree.layout` is; the controller flips it
 /// into the container's own coordinates.
-enum TabPeek {
+package enum TabPeek {
     /// How far the gesture has gone: 0 closed, 1 the strip under the tab
     /// bar, 2 the full grid. In between the two are interpolated.
-    enum Stage: Int, Comparable {
+    package enum Stage: Int, Comparable {
         case closed = 0, peek = 1, overview = 2
 
-        static func < (a: Stage, b: Stage) -> Bool { a.rawValue < b.rawValue }
+        package static func < (a: Stage, b: Stage) -> Bool { a.rawValue < b.rawValue }
 
-        var progress: Double { Double(rawValue) }
+        package var progress: Double { Double(rawValue) }
     }
 
     /// One tab in the peek.
-    struct Card: Equatable {
-        let id: UUID
+    package struct Card: Equatable {
+        package let id: UUID
         /// The whole card: its header and the terminal under it.
-        let frame: CGRect
+        package let frame: CGRect
         /// Where the tab's full-size host has to land. Equal to `frame`
         /// while the selected tab is still the real terminal (stage 1):
         /// that one is pushed down, not turned into a card, so it has no
         /// title bar — which is how the chrome knows not to draw one.
-        let content: CGRect
-        let isSelected: Bool
+        package let content: CGRect
+        package let isSelected: Bool
 
-        var hasHeader: Bool { frame.height > content.height }
+        package var hasHeader: Bool { frame.height > content.height }
     }
 
-    enum Direction { case left, right, up, down }
+    package enum Direction { case left, right, up, down }
 
     // MARK: Metrics
 
     /// The card's title bar, above its terminal.
-    static let headerHeight: CGFloat = 22
-    static let gap: CGFloat = 14
-    static let margin: CGFloat = 16
+    package static let headerHeight: CGFloat = 22
+    package static let gap: CGFloat = 14
+    package static let margin: CGFloat = 16
     /// The group title ("overterm") above the grid.
-    static let groupHeight: CGFloat = 26
-    static let cornerRadius: CGFloat = 8
+    package static let groupHeight: CGFloat = 26
+    package static let cornerRadius: CGFloat = 8
     /// How much of the window the strip takes, and so how far the selected
     /// terminal is pushed down.
-    static let pushFraction: CGFloat = 0.42
+    package static let pushFraction: CGFloat = 0.42
     /// Panes rendered at full rate; past this they are drawn by hand at a
     /// slower cadence so twenty tabs don't all run at 60 fps.
-    static let liveLimit = 12
+    package static let liveLimit = 12
 
     // MARK: Placements
 
@@ -62,7 +62,7 @@ enum TabPeek {
     /// the others come in as a row above it; past 1 every card — the
     /// selected one included — travels to its grid cell. At exactly 1 both
     /// halves give the same answer, so the stages meet without a jump.
-    static func placements(
+    package static func placements(
         tabs: [UUID], selected: UUID?, progress: Double, in bounds: CGRect, stripScroll: CGFloat = 0
     ) -> [Card] {
         guard !tabs.isEmpty, bounds.width > 0, bounds.height > 0 else { return [] }
@@ -146,7 +146,7 @@ enum TabPeek {
     /// the strip. The same cards as the peek's first stage, so the chrome
     /// and the transforms are the ones already tested — only which tabs
     /// are in it differs.
-    static func row(tabs: [UUID], in bounds: CGRect) -> [Card] {
+    package static func row(tabs: [UUID], in bounds: CGRect) -> [Card] {
         guard !tabs.isEmpty, bounds.width > 0, bounds.height > 0 else { return [] }
         let push = (bounds.height * pushFraction).rounded()
         let cardHeight = max(push - margin * 2, headerHeight + 1)
@@ -165,7 +165,7 @@ enum TabPeek {
 
     /// How many columns fit `count` cards of `shape`'s proportions in
     /// `area` largest, and the scale that gets them there.
-    static func grid(count: Int, in area: CGSize, shape: CGSize) -> (columns: Int, scale: CGFloat) {
+    package static func grid(count: Int, in area: CGSize, shape: CGSize) -> (columns: Int, scale: CGFloat) {
         guard count > 0, area.width > 0, area.height > 0, shape.width > 0, shape.height > 0 else { return (1, 0) }
         var best = (columns: 1, scale: CGFloat(0))
         for columns in 1...count {
@@ -180,7 +180,7 @@ enum TabPeek {
     }
 
     /// The terminal's part of a card: everything under its title bar.
-    static func contentRect(in card: CGRect) -> CGRect {
+    package static func contentRect(in card: CGRect) -> CGRect {
         CGRect(x: card.minX, y: card.minY + headerHeight, width: card.width, height: max(card.height - headerHeight, 0))
     }
 
@@ -207,7 +207,7 @@ enum TabPeek {
     ///   superlayer's is not. So x is the top-left one the placements are
     ///   in, while y has to be mirrored — otherwise every card holds its
     ///   terminal upside down the page, mirrored about the middle.
-    static func transform(from bounds: CGRect, to target: CGRect) -> CATransform3D {
+    package static func transform(from bounds: CGRect, to target: CGRect) -> CATransform3D {
         guard bounds.width > 0, bounds.height > 0 else { return CATransform3DIdentity }
         return CATransform3DConcat(
             CATransform3DMakeScale(target.width / bounds.width, target.height / bounds.height, 1),
@@ -217,7 +217,7 @@ enum TabPeek {
     /// Where `transform` actually puts a point of the host, back in the
     /// top-left space the placements use. The views can't be asked in a
     /// unit test, so this is the arithmetic the tests check.
-    static func place(_ point: CGPoint, from bounds: CGRect, by t: CATransform3D) -> CGPoint {
+    package static func place(_ point: CGPoint, from bounds: CGRect, by t: CATransform3D) -> CGPoint {
         CGPoint(
             x: point.x * t.m11 + t.m41,
             y: bounds.height - ((bounds.maxY - point.y) * t.m22 + t.m42))
@@ -228,7 +228,7 @@ enum TabPeek {
     /// The card an arrow key lands on: the nearest one whose centre lies
     /// in that direction, measured with the across-axis distance weighted
     /// so a card in the next row never beats one in this one.
-    static func move(_ direction: Direction, from id: UUID, in cards: [Card]) -> UUID {
+    package static func move(_ direction: Direction, from id: UUID, in cards: [Card]) -> UUID {
         guard let current = cards.first(where: { $0.id == id }) else { return cards.first?.id ?? id }
         let origin = CGPoint(x: current.frame.midX, y: current.frame.midY)
         var best: (id: UUID, cost: CGFloat)?
@@ -250,7 +250,7 @@ enum TabPeek {
     }
 
     /// Tab / ⇧Tab: the next card in reading order, wrapping.
-    static func step(_ offset: Int, from id: UUID, in cards: [Card]) -> UUID {
+    package static func step(_ offset: Int, from id: UUID, in cards: [Card]) -> UUID {
         guard !cards.isEmpty else { return id }
         guard let i = cards.firstIndex(where: { $0.id == id }) else { return cards[0].id }
         let n = cards.count

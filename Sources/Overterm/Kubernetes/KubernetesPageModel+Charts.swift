@@ -15,19 +15,19 @@ import Foundation
 extension KubernetesPageModel {
     /// The ranges a subject's tab can pick: every one where Prometheus is
     /// found, else what was sampled while shown.
-    func metricsRanges(for subject: KubeMetricsSubject) -> [KubeMetricsRange] {
+    package func metricsRanges(for subject: KubeMetricsSubject) -> [KubeMetricsRange] {
         chartsFromPrometheus ? KubeMetricsRange.allCases : KubeMetricsRange.sampled
     }
 
     /// The detail's.
-    var metricsRanges: [KubeMetricsRange] { detail?.ref.metricsSubject.map(metricsRanges(for:)) ?? KubeMetricsRange.sampled }
+    package var metricsRanges: [KubeMetricsRange] { detail?.ref.metricsSubject.map(metricsRanges(for:)) ?? KubeMetricsRange.sampled }
 
     /// The range a subject's tab shows: the one picked, else Live where
     /// metrics-server answers (or an HPA's status), 1h where only
     /// Prometheus does (decision 7) — absent or down, never while
     /// discovery hasn't said (a context switch's first moment would ask a
     /// whole hour, then flip to Live); one it can't pick, Live.
-    func shownMetricsRange(for subject: KubeMetricsSubject) -> KubeMetricsRange {
+    package func shownMetricsRange(for subject: KubeMetricsSubject) -> KubeMetricsRange {
         let ranges = metricsRanges(for: subject)
         if !metricsRangePicked, metricsServerMissing, subject != .hpa, ranges.contains(.hour) { return .hour }
         return ranges.contains(metricsRange) ? metricsRange : .live
@@ -42,10 +42,10 @@ extension KubernetesPageModel {
     }
 
     /// The detail's.
-    var shownMetricsRange: KubeMetricsRange { detail?.ref.metricsSubject.map(shownMetricsRange(for:)) ?? metricsRange }
+    package var shownMetricsRange: KubeMetricsRange { detail?.ref.metricsSubject.map(shownMetricsRange(for:)) ?? metricsRange }
 
     /// Why a range can't be picked here, or what it shows.
-    func metricsRangeHelp(_ range: KubeMetricsRange) -> String {
+    package func metricsRangeHelp(_ range: KubeMetricsRange) -> String {
         if metricsRanges.contains(range) {
             let prometheus = metricsRanges.count > KubeMetricsRange.sampled.count
             switch range {
@@ -61,11 +61,11 @@ extension KubernetesPageModel {
     }
 
     /// Whether the Metrics tab is what shows.
-    var metricsTabShows: Bool { detailTab == .metrics && detail?.ref.hasMetrics == true }
+    package var metricsTabShows: Bool { detailTab == .metrics && detail?.ref.hasMetrics == true }
 
     /// `m`: the selected pod's Metrics tab.
     @discardableResult
-    func openMetrics() -> Bool {
+    package func openMetrics() -> Bool {
         if let detail, detail.ref.hasMetrics, selection.isEmpty || ref(for: selection.first ?? "") == detail.ref {
             showTab(.metrics)
             return true
@@ -80,7 +80,7 @@ extension KubernetesPageModel {
     /// `,` and `.`: the range before or after, while the Metrics tab shows;
     /// `.` past 7d opens Custom.
     @discardableResult
-    func stepMetricsRange(_ by: Int) -> Bool {
+    package func stepMetricsRange(_ by: Int) -> Bool {
         guard metricsTabShows else { return false }
         let shown = shownMetricsRange
         // From a window: the range it was over, then the step.
@@ -95,7 +95,7 @@ extension KubernetesPageModel {
     }
 
     /// A range picked; one that can't be, ignored.
-    func pickMetricsRange(_ range: KubeMetricsRange) {
+    package func pickMetricsRange(_ range: KubeMetricsRange) {
         guard metricsRanges.contains(range) else { return }
         let shown = shownMetricsRange
         if !metricsZoom.isEmpty { metricsZoom = [] }
@@ -118,7 +118,7 @@ extension KubernetesPageModel {
     /// A drag across a chart released: every chart of the tab moves to that
     /// window, one level more on the zoom stack — asked again at its own
     /// step from Prometheus, narrowed where the numbers were sampled.
-    func zoomMetrics(_ window: KubeChartWindow) {
+    package func zoomMetrics(_ window: KubeChartWindow) {
         guard metricsTabShows else { return }
         metricsZoom.append(window)
     }
@@ -126,7 +126,7 @@ extension KubernetesPageModel {
     /// A drag from `a` to `b` across a chart showing `data`: kept inside
     /// what it shows; sampled numbers narrowed from the tier they were
     /// drawn from (Live's raw samples inside Live). Narrower than a minute, nothing.
-    func zoomMetrics(from a: Date, to b: Date, of data: KubeChartData) {
+    package func zoomMetrics(from a: Date, to b: Date, of data: KubeChartData) {
         let tier = metricsWindow?.sampledTier ?? (shownMetricsRange == .live ? .live : .sixHours)
         guard let window = KubeChartWindow.zoom(from: a, to: b, within: data.start, data.end, sampledTier: tier) else { return }
         zoomMetrics(window)
@@ -134,7 +134,7 @@ extension KubernetesPageModel {
 
     /// Custom's dates applied: the window, or what is wrong with them.
     @discardableResult
-    func applyCustomRange(start: Date, end: Date, now: Date = Date()) -> String? {
+    package func applyCustomRange(start: Date, end: Date, now: Date = Date()) -> String? {
         switch KubeChartWindow.custom(start: start, end: end, now: now, retention: model.prometheus.profile?.retention) {
         case .failure(let invalid): return invalid.sentence
         case .success(let window):
@@ -145,12 +145,12 @@ extension KubernetesPageModel {
     }
 
     /// Whether Custom can be picked: only over Prometheus.
-    var offersCustomRange: Bool { metricsRanges.count > KubeMetricsRange.sampled.count }
+    package var offersCustomRange: Bool { metricsRanges.count > KubeMetricsRange.sampled.count }
 
     // MARK: Where the numbers come from
 
     /// The tab's source for `ref` (`KubeChartSource.pick`): nil, nothing to draw from.
-    func metricsSource(of ref: KubeObjectRef) -> KubeChartSource? {
+    package func metricsSource(of ref: KubeObjectRef) -> KubeChartSource? {
         guard let subject = ref.metricsSubject, model.selected?.settings.metrics != KubeMetricsSource.none else { return nil }
         return KubeChartSource.pick(
             subject: subject, range: shownMetricsRange(for: subject), window: metricsWindow, metricsServer: model.metrics.availability == .served,
@@ -159,7 +159,7 @@ extension KubernetesPageModel {
 
     /// Whose charts the detail's queries are: its object's facts, read once
     /// a version (a pod's CPU limits and network, a workload's HPA).
-    func tabSubject(of session: KubeDetailSession) -> KubeTabSubject? {
+    package func tabSubject(of session: KubeDetailSession) -> KubeTabSubject? {
         let ref = session.ref
         guard let object = session.object, let subject = ref.metricsSubject else { return nil }
         let hpa = chartLookups.hpa[ref] ?? nil
@@ -188,7 +188,7 @@ extension KubernetesPageModel {
     }
 
     /// What the detail's tab asks Prometheus now: nil, nothing.
-    func tabRequest(of session: KubeDetailSession) -> KubeTabRequest? {
+    package func tabRequest(of session: KubeDetailSession) -> KubeTabRequest? {
         guard let subject = session.ref.metricsSubject, let source = metricsSource(of: session.ref) else { return nil }
         var families = KubePromTabCharts.families(subject, source: source)
         // A node's top pods, its disks and network, only while their group is on screen (metrics.md 6.2).
@@ -205,19 +205,19 @@ extension KubernetesPageModel {
 
     /// A group read only while on screen (a node's top pods, its disks and
     /// network — by its title) appeared or went: what the tab asks follows.
-    func metricsGroupShown(_ group: String, _ shown: Bool) {
+    package func metricsGroupShown(_ group: String, _ shown: Bool) {
         guard metricsGroupsShown.contains(group) != shown else { return }
         if shown { metricsGroupsShown.insert(group) } else { metricsGroupsShown.remove(group) }
         updatePrometheusWanted()
     }
 
     /// The detail's tab's Prometheus answers, as last read.
-    func tabReading(of session: KubeDetailSession) -> KubeTabReading? {
+    package func tabReading(of session: KubeDetailSession) -> KubeTabReading? {
         tabRequest(of: session).flatMap { model.prometheus.tabs[$0] }
     }
 
     /// The detail's tab reads Prometheus now: on a page on screen, its Metrics tab, Live not paused.
-    var metricsTabWant: KubeTabRequest? {
+    package var metricsTabWant: KubeTabRequest? {
         guard chartsShown, section.listsKinds, metricsTabShows, !metricsLivePaused, let detail else { return nil }
         return tabRequest(of: detail)
     }
@@ -225,16 +225,16 @@ extension KubernetesPageModel {
     // MARK: Live's pause
 
     /// Live runs: its tab shows on a page on screen, no window over it.
-    var metricsLiveRuns: Bool { chartsShown && section.listsKinds && metricsTabShows && metricsWindow == nil && shownMetricsRange == .live }
+    package var metricsLiveRuns: Bool { chartsShown && section.listsKinds && metricsTabShows && metricsWindow == nil && shownMetricsRange == .live }
 
     /// Live paused: nothing it reads is read until Resume.
-    var metricsLivePaused: Bool { metricsPaused && metricsLiveRuns }
+    package var metricsLivePaused: Bool { metricsPaused && metricsLiveRuns }
 
     /// A key or a mouse move over the page: Live runs on.
-    func noteMetricsInput() { metricsLastInput = Date() }
+    package func noteMetricsInput() { metricsLastInput = Date() }
 
     /// Live counts its idle time while it runs; anything else ends the pause.
-    func updateMetricsPause() {
+    package func updateMetricsPause() {
         guard metricsLiveRuns else {
             metricsIdleTask?.cancel()
             metricsIdleTask = nil
@@ -260,7 +260,7 @@ extension KubernetesPageModel {
     }
 
     /// "Resume": Live reads again, its idle time from now.
-    func resumeMetrics() {
+    package func resumeMetrics() {
         noteMetricsInput()
         if metricsPaused { metricsPaused = false }
         updateMetricsPause()
@@ -274,7 +274,7 @@ extension KubernetesPageModel {
     /// has. Nil without the object or with nothing to draw from. Built only
     /// when what they are built from changes (`KubePodChartsKey`) — never
     /// for a row event or a list's poll that redraws the tab.
-    func podCharts(of ref: KubeObjectRef, object: KubeObject?) -> KubePodCharts? {
+    package func podCharts(of ref: KubeObjectRef, object: KubeObject?) -> KubePodCharts? {
         guard ref.isPod, ref.namespace != nil, let object, let source = metricsSource(of: ref) else { return nil }
         let reading = detail.flatMap { $0.ref == ref ? tabReading(of: $0) : nil }
         let metricsReading = ref.namespace.flatMap { model.metrics.reading(.pod(namespace: $0, name: ref.name)) }
@@ -292,7 +292,7 @@ extension KubernetesPageModel {
 
     /// Why the tab has no charts: metrics-server absent, refused, failing;
     /// Prometheus not found, refused, in agent mode.
-    func metricsTabProblem(of ref: KubeObjectRef) -> String? {
+    package func metricsTabProblem(of ref: KubeObjectRef) -> String? {
         if let session = detail, session.ref == ref, let source = metricsSource(of: ref), source != .sampled {
             if let reading = tabReading(of: session) {
                 if let unavailable = reading.unavailable { return unavailable }
@@ -311,13 +311,13 @@ extension KubernetesPageModel {
 
     /// The tab's words for a cluster without metrics-server: with
     /// Prometheus on, the charts are its, once it is found. Pure.
-    nonisolated static func metricsServerAbsent(prometheus: Bool) -> String {
+    package nonisolated static func metricsServerAbsent(prometheus: Bool) -> String {
         (prometheus ? KubeChartEmpty.noMetricsServerPrometheus : .noMetricsServer).sentence
     }
 
     /// "Logs from Here": the container's log from a minute before `time`
     /// (`sinceTime`) — a spike's first question is what it logged then.
-    func logsFromHere(container: String?, at time: Date) {
+    package func logsFromHere(container: String?, at time: Date) {
         guard let logs = detail?.logs else { return }
         logs.read(from: time.addingTimeInterval(-60), container: container)
         showTab(.logs)
@@ -325,25 +325,25 @@ extension KubernetesPageModel {
 }
 
 /// What a pod's Metrics tab's charts were built from: the same, the same charts. Pure.
-struct KubePodChartsKey: Equatable, Sendable {
-    var ref: KubeObjectRef
-    var resourceVersion: String?
+package struct KubePodChartsKey: Equatable, Sendable {
+    package var ref: KubeObjectRef
+    package var resourceVersion: String?
     /// The object's size: a fake or an API server without resourceVersions still changes it.
-    var bytes: Int
-    var now: Date
-    var range: KubeMetricsRange
-    var interval: TimeInterval
+    package var bytes: Int
+    package var now: Date
+    package var range: KubeMetricsRange
+    package var interval: TimeInterval
     /// What its markers were joined from.
-    var changes: Int
-    var window: KubeChartWindow?
-    var source: KubeChartSource = .sampled
+    package var changes: Int
+    package var window: KubeChartWindow?
+    package var source: KubeChartSource = .sampled
     /// Prometheus' answers' version (`KubeTabReading.version`).
-    var prometheus: Int?
+    package var prometheus: Int?
 
     /// A pod's charts from `cache` when built from the same, else built —
     /// the object's JSON parsed then, and only then — and kept there.
     @MainActor
-    static func charts(
+    package static func charts(
         ref: KubeObjectRef, object: KubeObject, ring: KubeUsageRing, range: KubeMetricsRange, now: Date, interval: TimeInterval,
         changes: KubeChartChanges = KubeChartChanges(), window: KubeChartWindow? = nil, source: KubeChartSource = .sampled, reading: KubeTabReading? = nil,
         cache: inout (key: KubePodChartsKey, charts: KubePodCharts?)?

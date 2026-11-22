@@ -7,7 +7,7 @@ extension KubernetesPageModel {
 
     /// The Ingress `o` opens: the detail's while it shows one, else the
     /// list's one selected row.
-    var ingressRef: KubeObjectRef? {
+    package var ingressRef: KubeObjectRef? {
         if let detail { return detail.ref.isIngress ? detail.ref : nil }
         guard selection.count == 1, let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id), ref.isIngress else {
             return nil
@@ -15,7 +15,7 @@ extension KubernetesPageModel {
         return ref
     }
 
-    func ingressVerb(for ref: KubeObjectRef) -> ResourceVerb? {
+    package func ingressVerb(for ref: KubeObjectRef) -> ResourceVerb? {
         guard ref.isIngress else { return nil }
         return ResourceVerb(title: "Open in Browser", label: "Open", symbol: "safari", place: .button, key: KubernetesKey.openForward.key, group: 5) {
             [weak self] in self?.openIngress(ref)
@@ -25,7 +25,7 @@ extension KubernetesPageModel {
     /// Where the Ingress is reached — its hosts, https where its TLS names
     /// them, else its address — in the default browser: the detail's
     /// object, else one GET. Several hosts: which one is asked.
-    func openIngress(_ ref: KubeObjectRef) {
+    package func openIngress(_ ref: KubeObjectRef) {
         commandProblem = nil
         if let detail, detail.ref == ref, let json = detail.object?.json { return openIngress(ref, KubeIngressLinks.urls(of: json)) }
         guard let client = model.client(for: ref.context) else {
@@ -66,7 +66,7 @@ extension KubernetesPageModel {
 
     /// The pod `d` acts on: the detail's while it shows a pod, else the
     /// list's one selected pod.
-    var databaseRef: KubeObjectRef? {
+    package var databaseRef: KubeObjectRef? {
         if let detail { return detail.ref.isPod ? detail.ref : nil }
         guard isPods, selection.count == 1, let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id), ref.isPod else {
             return nil
@@ -77,7 +77,7 @@ extension KubernetesPageModel {
     /// Open in Database Client, on a pod whose detail read it runs a
     /// database the client speaks — greyed with why while a forward can't
     /// start (`kubectl auth can-i create pods/portforward`).
-    func databaseVerb(for ref: KubeObjectRef) -> ResourceVerb? {
+    package func databaseVerb(for ref: KubeObjectRef) -> ResourceVerb? {
         guard ref.isPod, let detail, detail.ref == ref, let json = detail.object?.json, let target = KubeDatabase.detect(json),
             let context = model.contexts.context(named: ref.context), let namespace = ref.namespace
         else { return nil }
@@ -89,7 +89,7 @@ extension KubernetesPageModel {
 
     /// `d`: on `databaseRef`; false when there is none.
     @discardableResult
-    func openInDatabase() -> Bool {
+    package func openInDatabase() -> Bool {
         guard let ref = databaseRef else { return false }
         openInDatabase(ref)
         return true
@@ -107,7 +107,7 @@ extension KubernetesPageModel {
     /// password written in the spec, or one not read, is left to type.
     /// Nothing is saved or connected here: the form does that, and keeps a
     /// password in the keychain only.
-    func openInDatabase(_ ref: KubeObjectRef) {
+    package func openInDatabase(_ ref: KubeObjectRef) {
         commandProblem = nil
         guard let (context, namespace, _) = forwardable(ref) else { return }
         guard let client = model.client(for: ref.context) else {
@@ -235,14 +235,14 @@ extension KubernetesPageModel {
     // MARK: A forward's API: the API client
 
     /// A forward's server's OpenAPI document, into the API client — on a press.
-    func importForwardAPI(_ id: UUID) {
+    package func importForwardAPI(_ id: UUID) {
         guard let source = forwards.openAPI[id] else { return }
         actions?.importAPI(source)
     }
 
     /// The palette's New Port-forward…: the sheet on the object `f` would
     /// act on; with none, the Services list, saying what to pick.
-    func newForward() {
+    package func newForward() {
         if portForward() { return }
         if let services = model.catalog.kind(fullName: KubeResourceKind.services.fullName) { showKind(services) }
         commandProblem = "Pick a pod, a Service or a Deployment, then \(KubernetesKey.portForward.key)."
@@ -254,7 +254,7 @@ extension KubernetesPageModel {
     /// opens it as `o` does (the browser column), or shows it on the page
     /// while it doesn't forward — its Stop while it runs, and the API its
     /// server publishes, to import. `show` brings the page up.
-    func forwardPaletteItems(show: @escaping @MainActor () -> Void) -> [PaletteItem] {
+    package func forwardPaletteItems(show: @escaping @MainActor () -> Void) -> [PaletteItem] {
         var items = [
             PaletteItem(
                 id: "a.kubernetes.forward.new", group: .action, title: "Kubernetes: New Port-forward…",

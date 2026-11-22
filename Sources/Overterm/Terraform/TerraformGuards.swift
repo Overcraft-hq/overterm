@@ -8,9 +8,9 @@ import Foundation
 /// dead port so nothing leaves this Mac but what reaches 127.0.0.1 (the
 /// tests' `FakeTerraformBackend`), no provider fetched. Analysis 4.2, 4.5,
 /// 4.13, 5.7, 5.13 rule 8. Pure, but for `prepareScratch`.
-enum TerraformGuards {
+package enum TerraformGuards {
     /// Which terraform a run uses.
-    enum Binary: Equatable, Sendable {
+    package enum Binary: Equatable, Sendable {
         /// `OVERTERM_TERRAFORM`'s, in a guarded run only: a scenario's
         /// recording wrapper (`TerraformRecorder`), or a stand-in script —
         /// an absolute path to an executable, never a name a PATH search
@@ -29,7 +29,7 @@ enum TerraformGuards {
     /// Guarded, `OVERTERM_TERRAFORM` when it is an absolute path to an
     /// executable, else nothing; unguarded, the user's terraform, searched
     /// for, whatever the variable says.
-    static func binary(
+    package static func binary(
         variable: String?, guarded: Bool, isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
     ) -> Binary {
         guard guarded else { return .search }
@@ -47,7 +47,7 @@ enum TerraformGuards {
     /// (`KUBE_CONFIG_PATH` names a kubeconfig by absolute path, which a
     /// scratch HOME doesn't hide; `KUBE_CLIENT_KEY_DATA`, `KUBE_HOST`);
     /// `HELM_` helm's (its kube context, token, API server, repositories).
-    static let credentialPrefixes = [
+    package static let credentialPrefixes = [
         "AWS_", "GOOGLE_", "CLOUDSDK_", "ARM_", "AZURE_", "TF_TOKEN_", "TF_CLOUD_", "TF_VAR_", "TF_HTTP_", "VAULT_", "CONSUL_HTTP_", "TFE_",
         "OCI_", "ALICLOUD_", "CLOUDFLARE_", "DIGITALOCEAN_", "HCLOUD_", "LINODE_", "SCW_", "KUBE_", "HELM_",
     ]
@@ -55,16 +55,16 @@ enum TerraformGuards {
     /// backend), a provider attached by hand (it bypasses the lock file's
     /// hashes), GCP's key file, OpenTofu's state encryption keys, the pg
     /// backend's connection and password.
-    static let credentialNames: Set<String> = [
+    package static let credentialNames: Set<String> = [
         "KUBECONFIG", "TF_REATTACH_PROVIDERS", "GOOGLE_APPLICATION_CREDENTIALS", "TF_ENCRYPTION", "PG_CONN_STR", "PGPASSWORD", "PGPASSFILE",
         "PGSERVICEFILE",
     ]
     /// Name endings that say a credential whatever the tool
     /// (`GITHUB_TOKEN`, `DATADOG_API_KEY`, `MYSQL_PASSWORD`), and a part
     /// (`_SECRET`: `CLIENT_SECRET_ID`).
-    static let credentialSuffixes = ["_TOKEN", "_PASSWORD", "_PASSWD", "_API_KEY", "_APIKEY", "_ACCESS_KEY", "_PRIVATE_KEY", "_CREDENTIALS"]
+    package static let credentialSuffixes = ["_TOKEN", "_PASSWORD", "_PASSWD", "_API_KEY", "_APIKEY", "_ACCESS_KEY", "_PRIVATE_KEY", "_CREDENTIALS"]
 
-    static func isCredential(_ name: String) -> Bool {
+    package static func isCredential(_ name: String) -> Bool {
         let upper = name.uppercased()
         return credentialNames.contains(upper) || credentialPrefixes.contains { upper.hasPrefix($0) }
             || credentialSuffixes.contains { upper.hasSuffix($0) } || upper.contains("_SECRET") || upper.hasPrefix("SECRET")
@@ -72,7 +72,7 @@ enum TerraformGuards {
 
     /// The credential variables an environment carries, by name, sorted.
     /// Never their values.
-    static func credentials(in environment: [String: String]) -> [String] {
+    package static func credentials(in environment: [String: String]) -> [String] {
         environment.keys.filter(isCredential).sorted()
     }
 
@@ -80,19 +80,19 @@ enum TerraformGuards {
     /// runs"): the credential variables of its own environment, by name —
     /// its terminal panes would inherit them, and a later stage runs the
     /// real terraform there. Empty outside a scenario.
-    static func refusedCredentials(scenario: String?, environment: [String: String]) -> [String] {
+    package static func refusedCredentials(scenario: String?, environment: [String: String]) -> [String] {
         scenario == nil ? [] : credentials(in: environment)
     }
 
     /// Where the proxies point in a guarded run: the discard port on
     /// 127.0.0.1, where nothing listens — a registry, a cloud, HCP
     /// unreachable even should a test forget to say so.
-    static let deadProxy = "http://127.0.0.1:9"
+    package static let deadProxy = "http://127.0.0.1:9"
 
     /// The CLI config of a guarded run: providers only from `mirror`
     /// (when given), never fetched. A provider missing from the mirror
     /// fails `init` instead of being downloaded.
-    static func cliConfig(mirror: URL? = nil) -> String {
+    package static func cliConfig(mirror: URL? = nil) -> String {
         var text = "# Overterm's guarded run: no provider is downloaded.\nprovider_installation {\n"
         if let mirror {
             text += "  filesystem_mirror {\n    path    = \(hclString(mirror.path))\n    include = [\"*/*/*\"]\n  }\n"
@@ -108,12 +108,12 @@ enum TerraformGuards {
     /// `credentials` block: a private registry's provider fails there and
     /// is the person's Init…. A guarded run keeps `cliConfig`'s, nothing
     /// fetched.
-    static let worktreeInitCLIConfig = "# Overterm's init without a backend: providers from their registries, no credentials.\nprovider_installation {\n  direct {}\n}\n"
+    package static let worktreeInitCLIConfig = "# Overterm's init without a backend: providers from their registries, no credentials.\nprovider_installation {\n  direct {}\n}\n"
 
     /// The environment of every terraform a guarded run starts — the base
     /// `TerraformEnvironment` builds on there, in place of the user's
     /// shell's: nothing inherited.
-    static func guardedEnvironment(home: URL, cliConfig: URL) -> [String: String] {
+    package static func guardedEnvironment(home: URL, cliConfig: URL) -> [String: String] {
         [
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": home.path,
@@ -126,19 +126,19 @@ enum TerraformGuards {
     }
 
     /// A guarded run's own HOME and CLI config, inside `folder`.
-    struct Scratch: Equatable, Sendable {
-        var folder: URL
-        var home: URL { folder.appendingPathComponent("home", isDirectory: true) }
-        var cliConfig: URL { folder.appendingPathComponent("terraformrc") }
+    package struct Scratch: Equatable, Sendable {
+        package var folder: URL
+        package var home: URL { folder.appendingPathComponent("home", isDirectory: true) }
+        package var cliConfig: URL { folder.appendingPathComponent("terraformrc") }
         /// `worktreeInitCLIConfig`, beside it.
-        var worktreeInitConfig: URL { folder.appendingPathComponent("terraformrc-worktree-init") }
-        var environment: [String: String] { TerraformGuards.guardedEnvironment(home: home, cliConfig: cliConfig) }
+        package var worktreeInitConfig: URL { folder.appendingPathComponent("terraformrc-worktree-init") }
+        package var environment: [String: String] { TerraformGuards.guardedEnvironment(home: home, cliConfig: cliConfig) }
     }
 
     /// Makes `folder` (0700), its empty HOME and its CLI config, and
     /// returns them. The config is written again each time: a test may
     /// have changed it.
-    static func prepareScratch(at folder: URL, mirror: URL? = nil) throws -> Scratch {
+    package static func prepareScratch(at folder: URL, mirror: URL? = nil) throws -> Scratch {
         let scratch = Scratch(folder: folder)
         let manager = FileManager.default
         try manager.createDirectory(at: scratch.home, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -155,7 +155,7 @@ enum TerraformGuards {
     /// so the plugin cache is not offered (analysis 4.13). The file is
     /// checked for existence only, never opened: it can hold `credentials`
     /// blocks. A guarded run never looks.
-    static func userConfiguresCLI(environment: [String: String], home: URL, guarded: Bool, exists: (String) -> Bool) -> Bool {
+    package static func userConfiguresCLI(environment: [String: String], home: URL, guarded: Bool, exists: (String) -> Bool) -> Bool {
         guard !guarded else { return false }
         if !(environment["TF_CLI_CONFIG_FILE"] ?? "").isEmpty || !(environment["TF_PLUGIN_CACHE_DIR"] ?? "").isEmpty { return true }
         return exists(home.appendingPathComponent(".terraformrc").path)
@@ -163,7 +163,7 @@ enum TerraformGuards {
 
     /// A string as HCL writes it: quotes, backslashes and newlines
     /// escaped, `${` and `%{` doubled so nothing is a template.
-    static func hclString(_ text: String) -> String {
+    package static func hclString(_ text: String) -> String {
         let escaped =
             text
             .replacingOccurrences(of: "\\", with: "\\\\")

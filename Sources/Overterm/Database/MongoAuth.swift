@@ -6,17 +6,17 @@ import Foundation
 /// the form — pure. Hosts as written (a replica set's several), the user
 /// and password percent-decoded, the database from the path, and the
 /// options the form keeps: authSource, TLS and its CA bundle.
-struct MongoURL: Equatable {
-    var srv = false
+package struct MongoURL: Equatable {
+    package var srv = false
     /// `host` or `host:port`, IPv6 in brackets.
-    var hosts: [String] = []
-    var user = ""
-    var password: String?
-    var database = ""
+    package var hosts: [String] = []
+    package var user = ""
+    package var password: String?
+    package var database = ""
     /// Lowercased names, as the spec compares them.
-    var options: [String: String] = [:]
+    package var options: [String: String] = [:]
 
-    init?(_ text: String) {
+    package init?(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = text.lowercased()
         let rest: Substring
@@ -64,24 +64,24 @@ struct MongoURL: Equatable {
     }
 
     /// TLS as the string says it: `tls` or `ssl`; on for srv unless said off.
-    var tls: Bool {
+    package var tls: Bool {
         if let value = options["tls"] ?? options["ssl"] { return value.lowercased() == "true" }
         return srv
     }
 
     /// Asked not to check the certificate.
-    var insecure: Bool {
+    package var insecure: Bool {
         ["tlsinsecure", "tlsallowinvalidcertificates", "sslallowinvalidcertificates", "tlsallowinvalidhostnames"].contains {
             options[$0]?.lowercased() == "true"
         }
     }
 
     /// The spec's rule: authSource, else the path's database, else admin.
-    var authSource: String { options["authsource"] ?? (database.isEmpty ? "" : database) }
-    var caFile: String { options["tlscafile"] ?? options["sslca"] ?? "" }
+    package var authSource: String { options["authsource"] ?? (database.isEmpty ? "" : database) }
+    package var caFile: String { options["tlscafile"] ?? options["sslca"] ?? "" }
 
     /// `host`, `host:port`, `[::1]:port` → its parts.
-    static func split(_ hostPort: String) -> (host: String, port: Int?) {
+    package static func split(_ hostPort: String) -> (host: String, port: Int?) {
         if hostPort.hasPrefix("["), let close = hostPort.firstIndex(of: "]") {
             let host = String(hostPort[hostPort.index(after: hostPort.startIndex)..<close])
             let after = hostPort[hostPort.index(after: close)...]
@@ -96,24 +96,24 @@ struct MongoURL: Equatable {
 /// SCRAM as MongoDB signs in with it (RFC 5802, RFC 7677) — pure, so the
 /// RFCs' own examples test it. SHA-1's password is MongoDB's digest of
 /// `user:mongo:password`; SHA-256's the password itself, SASLprepped.
-struct MongoSCRAM {
-    enum Mechanism: String, Sendable {
+package struct MongoSCRAM {
+    package enum Mechanism: String, Sendable {
         case sha1 = "SCRAM-SHA-1"
         case sha256 = "SCRAM-SHA-256"
     }
 
-    struct Failure: LocalizedError {
-        let message: String
-        var errorDescription: String? { message }
+    package struct Failure: LocalizedError {
+        package let message: String
+        package var errorDescription: String? { message }
     }
 
-    let mechanism: Mechanism
-    let user: String
+    package let mechanism: Mechanism
+    package let user: String
     /// What PBKDF2 is given: the digest (SHA-1) or the prepared password.
-    let secret: String
-    let clientNonce: String
+    package let secret: String
+    package let clientNonce: String
 
-    init(mechanism: Mechanism, user: String, password: String, nonce: String? = nil) {
+    package init(mechanism: Mechanism, user: String, password: String, nonce: String? = nil) {
         self.mechanism = mechanism
         self.user = user
         switch mechanism {
@@ -127,7 +127,7 @@ struct MongoSCRAM {
     }
 
     /// For the RFCs' examples: the password as given, no MongoDB digest.
-    init(mechanism: Mechanism, user: String, rawSecret: String, nonce: String) {
+    package init(mechanism: Mechanism, user: String, rawSecret: String, nonce: String) {
         self.mechanism = mechanism
         self.user = user
         secret = rawSecret
@@ -135,12 +135,12 @@ struct MongoSCRAM {
     }
 
     private var escapedUser: String { user.replacingOccurrences(of: "=", with: "=3D").replacingOccurrences(of: ",", with: "=2C") }
-    var clientFirstBare: String { "n=\(escapedUser),r=\(clientNonce)" }
-    var clientFirst: String { "n,," + clientFirstBare }
+    package var clientFirstBare: String { "n=\(escapedUser),r=\(clientNonce)" }
+    package var clientFirst: String { "n,," + clientFirstBare }
 
     /// The proof for the server's challenge, and the signature the
     /// server must answer with.
-    func clientFinal(serverFirst: String) throws -> (message: String, serverSignature: Data) {
+    package func clientFinal(serverFirst: String) throws -> (message: String, serverSignature: Data) {
         var fields: [Character: String] = [:]
         for part in serverFirst.split(separator: ",") where part.count >= 2 && part.dropFirst().first == "=" {
             fields[part.first!] = String(part.dropFirst(2))
@@ -162,7 +162,7 @@ struct MongoSCRAM {
     }
 
     /// The server's last word: its signature, or why it refused.
-    static func verify(serverFinal: String, expected: Data) throws {
+    package static func verify(serverFinal: String, expected: Data) throws {
         if serverFinal.hasPrefix("e=") { throw Failure(message: "The server refused: \(serverFinal.dropFirst(2))") }
         guard serverFinal.hasPrefix("v="), let signature = Data(base64Encoded: String(serverFinal.dropFirst(2).prefix { $0 != "," })),
             signature == expected
@@ -199,7 +199,7 @@ struct MongoSCRAM {
 
     /// SASLprep (RFC 4013), as far as a password needs it: non-ASCII
     /// spaces as a space, what maps to nothing dropped, then NFKC.
-    static func saslPrep(_ password: String) -> String {
+    package static func saslPrep(_ password: String) -> String {
         guard !password.allSatisfy(\.isASCII) else { return password }
         var scalars = String.UnicodeScalarView()
         for scalar in password.unicodeScalars {

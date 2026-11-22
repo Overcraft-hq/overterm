@@ -5,18 +5,19 @@ import IOKit.pwr_mgt
 /// analysis.md, 6.5's Preventing Sleep, 3.8): `IOPMCopyAssertionsByProcess`,
 /// every user's, about 0.25 ms a read. Only the assertions' types are kept —
 /// never their names, which are whatever the process wrote (a file, a URL).
-struct ActivitySleepHold: OptionSet, Hashable, Sendable {
-    let rawValue: Int
+package struct ActivitySleepHold: OptionSet, Hashable, Sendable {
+    package let rawValue: Int
+    package init(rawValue: Int) { self.rawValue = rawValue }
 
     /// The Mac: `PreventUserIdleSystemSleep`, `PreventSystemSleep`,
     /// `NoIdleSleepAssertion`.
-    static let system = ActivitySleepHold(rawValue: 1)
+    package static let system = ActivitySleepHold(rawValue: 1)
     /// The display: `PreventUserIdleDisplaySleep`, `NoDisplaySleepAssertion`.
-    static let display = ActivitySleepHold(rawValue: 2)
+    package static let display = ActivitySleepHold(rawValue: 2)
 
     /// An assertion type's part; nil for one that keeps nothing awake for
     /// long (`UserIsActive`, a declared activity) or isn't known.
-    static func of(type: String) -> ActivitySleepHold? {
+    package static func of(type: String) -> ActivitySleepHold? {
         switch type {
         case "PreventUserIdleSystemSleep", "PreventSystemSleep", "NoIdleSleepAssertion": .system
         case "PreventUserIdleDisplaySleep", "NoDisplaySleepAssertion": .display
@@ -25,7 +26,7 @@ struct ActivitySleepHold: OptionSet, Hashable, Sendable {
     }
 
     /// The column's words: "System, Display", "System", "Display".
-    var text: String {
+    package var text: String {
         var words: [String] = []
         if contains(.system) { words.append("System") }
         if contains(.display) { words.append("Display") }
@@ -33,7 +34,7 @@ struct ActivitySleepHold: OptionSet, Hashable, Sendable {
     }
 
     /// The assertions by pid, their types read: pure, for the tests.
-    static func holds(_ assertions: [pid_t: [String]]) -> [pid_t: ActivitySleepHold] {
+    package static func holds(_ assertions: [pid_t: [String]]) -> [pid_t: ActivitySleepHold] {
         var found: [pid_t: ActivitySleepHold] = [:]
         for (pid, types) in assertions {
             let hold = types.reduce(into: ActivitySleepHold()) { $0.formUnion(of(type: $1) ?? []) }
@@ -43,7 +44,7 @@ struct ActivitySleepHold: OptionSet, Hashable, Sendable {
     }
 
     /// The system's answer now; nil when refused.
-    static func read() -> [pid_t: ActivitySleepHold]? {
+    package static func read() -> [pid_t: ActivitySleepHold]? {
         var raw: Unmanaged<CFDictionary>?
         guard IOPMCopyAssertionsByProcess(&raw) == kIOReturnSuccess, let dictionary = raw?.takeRetainedValue() as NSDictionary? else { return nil }
         var assertions: [pid_t: [String]] = [:]

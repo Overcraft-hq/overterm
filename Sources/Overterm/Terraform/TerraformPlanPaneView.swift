@@ -2,32 +2,32 @@ import AppKit
 import SwiftUI
 
 /// What the plan view's buttons do, the window's way.
-struct TerraformPlanActions {
-    var planAgain: (TerraformPlanRun, TerraformCommands.LockWait) -> Void
-    var discard: (TerraformPlanRun) -> Void
-    var copySummary: (TerraformPlanRun) -> Void
-    var askWhy: (TerraformPlanRun) -> Void
+package struct TerraformPlanActions {
+    package var planAgain: (TerraformPlanRun, TerraformCommands.LockWait) -> Void
+    package var discard: (TerraformPlanRun) -> Void
+    package var copySummary: (TerraformPlanRun) -> Void
+    package var askWhy: (TerraformPlanRun) -> Void
     /// Ask Why on a failed apply: the apply's diagnostics and log (6.4).
-    var askWhyApply: (TerraformApplyRun) -> Void = { _ in }
+    package var askWhyApply: (TerraformApplyRun) -> Void = { _ in }
     /// Plan Again after an apply, a reattached one's too.
-    var planAfterApply: (TerraformApplyRun) -> Void = { _ in }
+    package var planAfterApply: (TerraformApplyRun) -> Void = { _ in }
     /// An apply shown in the slot: its progress and Stop (4.7).
-    var showApply: (TerraformApplyRun) -> Void = { _ in }
+    package var showApply: (TerraformApplyRun) -> Void = { _ in }
     /// The root's var files chosen for its plans (Missing variables, 2.2).
-    var chooseVarFiles: (TerraformPlanRun, [String]) -> Void
+    package var chooseVarFiles: (TerraformPlanRun, [String]) -> Void
     /// A file of the checkout at a line.
-    var open: (URL, Int?) -> Void
-    var close: () -> Void
+    package var open: (URL, Int?) -> Void
+    package var close: () -> Void
     /// Apply… (6.4): the checks, the sheet, the detached apply.
-    var apply: (TerraformPlanRun) -> Void = { _ in }
+    package var apply: (TerraformPlanRun) -> Void = { _ in }
     /// Stop (`.`): asked the second time.
-    var stopApply: (TerraformApplyRun) -> Void = { _ in }
+    package var stopApply: (TerraformApplyRun) -> Void = { _ in }
     /// Plan again with a mode (2a): only this address, replacing it.
-    var planMode: (TerraformPlanRun, TerraformPlanMode) -> Void = { _, _ in }
+    package var planMode: (TerraformPlanRun, TerraformPlanMode) -> Void = { _, _ in }
     /// A `terraform test` run again, as it was asked (2d).
-    var testAgain: (TerraformTestRun) -> Void = { _ in }
+    package var testAgain: (TerraformTestRun) -> Void = { _ in }
     /// Force Unlock… (2e): the lock probed, the sheet, the root's name typed.
-    var forceUnlock: (TerraformPlanRun) -> Void = { _ in }
+    package var forceUnlock: (TerraformPlanRun) -> Void = { _ in }
 }
 
 /// The plan in the right slot (analysis 6.3): the header — root, branch @
@@ -37,14 +37,14 @@ struct TerraformPlanActions {
 /// cause chains, the same change ×N folded, moves and imports, data
 /// sources folded. While it runs, its progress and log. Values only as
 /// the masked model has them: a sensitive one is ••••••, never a value.
-struct TerraformPlanPaneView: View {
-    @ObservedObject var pane: TerraformPlanPaneModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: TerraformPlanActions
+package struct TerraformPlanPaneView: View {
+    @ObservedObject package var pane: TerraformPlanPaneModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: TerraformPlanActions
     /// The state view's (2c).
-    var stateActions: TerraformStateActions?
+    package var stateActions: TerraformStateActions?
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             TerraformGoingApplies(registry: .shared, pane: pane, theme: theme, show: actions.showApply)
             if let test = pane.test {
@@ -612,15 +612,15 @@ private struct TerraformPlanRowView: View, Equatable {
 /// takes the keyboard when a row is pressed — SwiftUI's own key handling
 /// is macOS 14. Letters reach it only while it is the first responder, so
 /// the terminal and the filter field keep theirs. Clicks pass through.
-struct TerraformPlanKeyCatcher: NSViewRepresentable {
+package struct TerraformPlanKeyCatcher: NSViewRepresentable {
     /// Bumped by a row's press: take the keyboard.
-    let request: Int
-    let press: (UInt16, String?) -> Bool
-    let copy: () -> String?
+    package let request: Int
+    package let press: (UInt16, String?) -> Bool
+    package let copy: () -> String?
 
-    func makeNSView(context: Context) -> TerraformPlanKeyView { TerraformPlanKeyView() }
+    package func makeNSView(context: Context) -> TerraformPlanKeyView { TerraformPlanKeyView() }
 
-    func updateNSView(_ view: TerraformPlanKeyView, context: Context) {
+    package func updateNSView(_ view: TerraformPlanKeyView, context: Context) {
         view.press = press
         view.copyText = copy
         guard request != view.request else { return }
@@ -632,20 +632,20 @@ struct TerraformPlanKeyCatcher: NSViewRepresentable {
     }
 }
 
-final class TerraformPlanKeyView: NSView {
-    var press: (UInt16, String?) -> Bool = { _, _ in false }
-    var copyText: () -> String? = { nil }
-    var request = 0
+package final class TerraformPlanKeyView: NSView {
+    package var press: (UInt16, String?) -> Bool = { _, _ in false }
+    package var copyText: () -> String? = { nil }
+    package var request = 0
 
-    override var acceptsFirstResponder: Bool { true }
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    package override var acceptsFirstResponder: Bool { true }
+    package override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    override func keyDown(with event: NSEvent) {
+    package override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option])
         guard modifiers.isEmpty, press(event.keyCode, event.charactersIgnoringModifiers) else { return super.keyDown(with: event) }
     }
 
-    @objc func copy(_ sender: Any?) {
+    @objc package func copy(_ sender: Any?) {
         guard let text = copyText() else { return NSSound.beep() }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

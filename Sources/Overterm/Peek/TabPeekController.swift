@@ -12,18 +12,18 @@ import QuartzCore
 /// ever resized and nothing reflows. Splits come along for free, since what
 /// is being scaled is the host that lays them out.
 @MainActor
-final class TabPeekController {
-    let model = TabPeekModel()
-    private(set) var stage: TabPeek.Stage = .closed
-    var isOpen: Bool { stage != .closed }
+package final class TabPeekController {
+    package let model = TabPeekModel()
+    package private(set) var stage: TabPeek.Stage = .closed
+    package var isOpen: Bool { stage != .closed }
     /// Closed, but the hosts are still flying back to their place. Until
     /// they land they all have to keep rendering, or the animation blinks.
-    private(set) var isSettling = false
+    package private(set) var isSettling = false
 
     private unowned let container: NSView
-    weak var owner: TerminalWindowController?
+    package weak var owner: TerminalWindowController?
     /// The dim, the group title and the cards' title bars, over the hosts.
-    weak var chrome: TabPeekHostingView<TabPeekView>?
+    package weak var chrome: TabPeekHostingView<TabPeekView>?
 
     private var gesture = TabPeekGesture()
     /// Panes past `TabPeek.liveLimit` stay occluded and are drawn by hand,
@@ -32,22 +32,22 @@ final class TabPeekController {
     private var slowDraw: Timer?
 
     /// How long the peek takes to settle after the fingers leave.
-    static let settle: TimeInterval = 0.18
+    package static let settle: TimeInterval = 0.18
     private static let slowFrameRate: TimeInterval = 1.0 / 6
 
-    init(container: NSView) {
+    package init(container: NSView) {
         self.container = container
     }
 
     // MARK: Opening and closing
 
     /// ⇧⌘E and the palette: straight to the grid, or back out.
-    func toggle() {
+    package func toggle() {
         guard let owner, owner.store.tabs.count > 1 || isOpen else { return }
         isOpen ? close() : open(.overview)
     }
 
-    func open(_ stage: TabPeek.Stage) {
+    package func open(_ stage: TabPeek.Stage) {
         guard stage != .closed else { return close() }
         guard let owner, !owner.store.tabs.isEmpty else { return }
         // The stage first: `begin` installs the key monitor, which only
@@ -59,7 +59,7 @@ final class TabPeekController {
         apply(progress: stage.progress, animated: true)
     }
 
-    func close() {
+    package func close() {
         guard isOpen else { return }
         stage = .closed
         isSettling = true
@@ -107,7 +107,7 @@ final class TabPeekController {
     // MARK: The gesture
 
     /// A terminal or the peek itself reporting the trackpad.
-    func touched(fingers: Int, y: CGFloat, ended: Bool) {
+    package func touched(fingers: Int, y: CGFloat, ended: Bool) {
         let required = Settings.shared.tabPeekGesture.count
         guard required > 0 else { return }
         let outcome = ended ? gesture.ended() : gesture.touched(count: fingers, y: y, required: required)
@@ -134,7 +134,7 @@ final class TabPeekController {
     /// Whether a swipe should be taken from the terminal rather than sent on
     /// to libghostty. Only the configured finger count is ours; two-finger
     /// scrolling stays the terminal's.
-    func wantsTouches(_ count: Int) -> Bool {
+    package func wantsTouches(_ count: Int) -> Bool {
         let required = Settings.shared.tabPeekGesture.count
         return required > 0 && (count == required || isOpen)
     }
@@ -142,7 +142,7 @@ final class TabPeekController {
     // MARK: The keyboard
 
     /// Returns true when the key was the peek's.
-    func handle(key event: NSEvent) -> Bool {
+    package func handle(key event: NSEvent) -> Bool {
         guard isOpen, let highlighted = model.highlighted else { return false }
         let direction: TabPeek.Direction?
         switch Int(event.keyCode) {
@@ -168,14 +168,14 @@ final class TabPeekController {
         }
     }
 
-    func choose(_ id: Tab.ID) {
+    package func choose(_ id: Tab.ID) {
         guard let tab = owner?.store.tabs.first(where: { $0.id == id }) else { return }
         close()
         owner?.store.select(tab)
         owner?.focusSelectedTerminal()
     }
 
-    func closeTab(_ id: Tab.ID) {
+    package func closeTab(_ id: Tab.ID) {
         guard let owner, let tab = owner.store.tabs.first(where: { $0.id == id }) else { return }
         // Closing may ask; the peek would be in the sheet's way.
         close()
@@ -186,7 +186,7 @@ final class TabPeekController {
 
     /// Hovering a collapsed group's chip shows that group's terminals as a
     /// row, live, without opening the full peek. Nil ends it.
-    func peekGroup(_ tabs: [Tab]?) {
+    package func peekGroup(_ tabs: [Tab]?) {
         guard stage == .closed || groupPeek != nil else { return }
         if let tabs, !tabs.isEmpty {
             if groupPeek == nil {
@@ -218,7 +218,7 @@ final class TabPeekController {
     }
 
     /// The tabs of the island being hovered, if any.
-    private(set) var groupPeek: [Tab.ID]?
+    package private(set) var groupPeek: [Tab.ID]?
 
     private func applyGroupPeek(animated: Bool) {
         guard let ids = groupPeek else { return }
@@ -243,7 +243,7 @@ final class TabPeekController {
     // MARK: Laying the hosts out
 
     /// Puts every host where `progress` says, by transform only.
-    func apply(progress: Double, animated: Bool) {
+    package func apply(progress: Double, animated: Bool) {
         guard let owner else { return }
         let bounds = container.bounds
         let cards = TabPeek.placements(
@@ -279,7 +279,7 @@ final class TabPeekController {
     }
 
     /// The window resized, or a tab came or went, while the peek is up.
-    func relayout() {
+    package func relayout() {
         guard isOpen else { return }
         refreshEntries()
         showPanes()

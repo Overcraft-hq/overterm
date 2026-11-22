@@ -1,11 +1,11 @@
 import Foundation
 
 /// A volume's detail's tabs.
-enum VolumeTab: String, CaseIterable, Identifiable {
+package enum VolumeTab: String, CaseIterable, Identifiable {
     case overview, files
 
-    var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    package var id: String { rawValue }
+    package var title: String { rawValue.capitalized }
 }
 
 /// A volume's Files tab: a folder at a time, listed through a helper
@@ -16,32 +16,32 @@ enum VolumeTab: String, CaseIterable, Identifiable {
 /// are opened, saved and downloaded by the window, through a helper made
 /// for each call (`DockerEngine.reaching`), which needs no shell.
 @MainActor
-final class VolumeFilesSession: ObservableObject, DockerFolderBrowsing {
-    let volume: String
-    let docker: DockerModel
-    @Published private(set) var folder: String?
-    @Published private(set) var entries: [DockerFiles.Entry] = []
-    @Published private(set) var filesError: String?
-    @Published private(set) var listing = false
+package final class VolumeFilesSession: ObservableObject, DockerFolderBrowsing {
+    package let volume: String
+    package let docker: DockerModel
+    @Published package private(set) var folder: String?
+    @Published package private(set) var entries: [DockerFiles.Entry] = []
+    @Published package private(set) var filesError: String?
+    @Published package private(set) var listing = false
     /// No image here has a shell: the tab offers to pull busybox.
-    @Published private(set) var needsImage = false
-    @Published private(set) var pulling = false
+    @Published package private(set) var needsImage = false
+    @Published package private(set) var pulling = false
 
     /// The helper, made or on its way: removed whichever it is.
     private var helper: (engine: DockerEngine, made: Task<String, Error>)?
     private var loading: Task<Void, Never>?
     private var shown = false
     /// The image that last made a helper that ran `sh`: tried first.
-    static var worked: String?
+    package static var worked: String?
 
-    init(volume: String, docker: DockerModel = .shared) {
+    package init(volume: String, docker: DockerModel = .shared) {
         self.volume = volume
         self.docker = docker
     }
 
     /// The tab shows, or stops showing: listed again, or its helper gone —
     /// the folder and what it held kept for its return.
-    func follow(shown: Bool) {
+    package func follow(shown: Bool) {
         guard shown != self.shown else { return }
         self.shown = shown
         if shown {
@@ -56,7 +56,7 @@ final class VolumeFilesSession: ObservableObject, DockerFolderBrowsing {
     /// A folder of the volume. Listed only while the tab shows: a session
     /// that doesn't makes nothing. Another folder's entries go at once, as
     /// a container's do (`ContainerSession.open`).
-    func open(_ folder: String) {
+    package func open(_ folder: String) {
         if folder != self.folder { entries = [] }
         self.folder = folder
         guard shown else { return }
@@ -65,7 +65,7 @@ final class VolumeFilesSession: ObservableObject, DockerFolderBrowsing {
         loading = Task { [weak self] in await self?.list(folder) }
     }
 
-    func reload() { open(folder ?? "/") }
+    package func reload() { open(folder ?? "/") }
 
     private func list(_ folder: String) async {
         guard let engine = docker.engine else {
@@ -170,7 +170,7 @@ final class VolumeFilesSession: ObservableObject, DockerFolderBrowsing {
     }
 
     /// busybox down, asked for by the tab's button — never on its own.
-    func pullShellImage() {
+    package func pullShellImage() {
         guard let engine = docker.engine, !pulling else { return }
         pulling = true
         Task {
@@ -190,7 +190,7 @@ final class VolumeFilesSession: ObservableObject, DockerFolderBrowsing {
     /// Its helper removed: the removal, for a caller that must wait till
     /// the volume is free (Remove, Clean Up).
     @discardableResult
-    func close() -> Task<Void, Never>? {
+    package func close() -> Task<Void, Never>? {
         loading?.cancel()
         loading = nil
         shown = false

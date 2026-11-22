@@ -7,8 +7,8 @@ import TreeSitterKit
 /// in YAML needs no parser of its own. Anchors and aliases resolve; tags
 /// are ignored. A document the grammar can't read whole is nil, not a
 /// guess.
-enum YAMLReader {
-    static func parse(_ text: String) -> Any? {
+package enum YAMLReader {
+    package static func parse(_ text: String) -> Any? {
         guard let documents = read(text, all: false) else { return nil }
         return documents.first ?? NSNull()
     }
@@ -16,7 +16,7 @@ enum YAMLReader {
     /// Every document of a stream (`---` between them), in order — a
     /// manifest file's objects; an empty one is NSNull. Nil when the
     /// grammar can't read the text whole.
-    static func documents(_ text: String) -> [Any]? { read(text, all: true) }
+    package static func documents(_ text: String) -> [Any]? { read(text, all: true) }
 
     private static func read(_ text: String, all: Bool) -> [Any]? {
         guard let language = EditorLanguage.named("yaml") else { return nil }
@@ -164,7 +164,7 @@ enum YAMLReader {
         }
     }
 
-    static func unescapeDouble(_ text: String) -> String {
+    package static func unescapeDouble(_ text: String) -> String {
         var out = ""
         var iterator = text.makeIterator()
         while let char = iterator.next() {
@@ -195,7 +195,7 @@ enum YAMLReader {
 
     /// `|` keeps line breaks, `>` folds them; `-` strips the final one, `+`
     /// keeps them all. The indent is the first content line's.
-    static func blockScalar(_ text: String) -> String {
+    package static func blockScalar(_ text: String) -> String {
         var lines = text.components(separatedBy: "\n")
         guard !lines.isEmpty else { return "" }
         let header = lines.removeFirst().trimmingCharacters(in: .whitespaces)

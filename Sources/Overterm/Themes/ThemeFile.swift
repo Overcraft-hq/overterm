@@ -4,7 +4,7 @@ import Foundation
 /// rewritten (or added), every other line — comments, keys Overterm doesn't
 /// read — kept as it was. Pure. The theme editor writes through this, so a
 /// theme duplicated from Ghostty's keeps all of what made it.
-enum ThemeFile {
+package enum ThemeFile {
     /// A key's identity: `palette` is one per index.
     private static func slot(of line: Substring) -> String? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -17,7 +17,7 @@ enum ThemeFile {
     }
 
     /// `changes` by key ("background", "palette 3"); each value a colour.
-    static func set(_ changes: [String: ThemeColor], in text: String) -> String {
+    package static func set(_ changes: [String: ThemeColor], in text: String) -> String {
         var remaining = changes
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         if lines.last == "" { lines.removeLast() }

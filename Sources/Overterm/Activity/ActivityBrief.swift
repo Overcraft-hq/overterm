@@ -14,29 +14,29 @@ import Foundation
 /// name — "yours" or "another user's". An agent outside the process's
 /// checkout (8.4) gets `outside`: its name, pid, ports and usage, never
 /// its command, folder, tab title or branch (`audience`). Pure.
-struct ActivityBrief: Equatable, Sendable {
-    var message: String
-    var subject: String
-    var text: String
-    var parts: [AskAgentModel.Part]
+package struct ActivityBrief: Equatable, Sendable {
+    package var message: String
+    package var subject: String
+    package var text: String
+    package var parts: [AskAgentModel.Part]
     /// What an agent outside the process's checkout is given (8.4).
-    var outsideText = ""
-    var outsideParts: [AskAgentModel.Part] = []
+    package var outsideText = ""
+    package var outsideParts: [AskAgentModel.Part] = []
 
     /// This brief as an agent outside the process's checkout reads it.
-    var outside: ActivityBrief {
+    package var outside: ActivityBrief {
         ActivityBrief(message: message, subject: subject, text: outsideText, parts: outsideParts, outsideText: outsideText, outsideParts: outsideParts)
     }
 
     /// The most of the program's own text a brief carries.
-    static let programTextLimit = 2_000
+    package static let programTextLimit = 2_000
     /// The children it names before "and N more".
-    static let childLimit = 12
+    package static let childLimit = 12
     /// CPU from which the question asks why it is that busy.
-    static let busy = 50.0
+    package static let busy = 50.0
 
     /// The brief of `detail`'s process. `home`: the folder said as `~`.
-    static func make(_ detail: ActivityDetail, home: String = ActivityText.home) -> ActivityBrief {
+    package static func make(_ detail: ActivityDetail, home: String = ActivityText.home) -> ActivityBrief {
         let row = detail.row
         let pid = row.identity.pid
         let name = ActivityText.forAgents(row.name, home: home)
@@ -55,7 +55,7 @@ struct ActivityBrief: Equatable, Sendable {
 
     /// The header's line without the account's name (9.4: the home folder
     /// is `~` for the same reason): pid, whose, state, started.
-    static func stateLine(_ row: ActivityProcessRow) -> String {
+    package static func stateLine(_ row: ActivityProcessRow) -> String {
         var words = ["pid \(row.identity.pid)", row.isOwn ? "yours" : "another user's"]
         switch row.state {
         case .running: words.append("running")
@@ -139,7 +139,7 @@ struct ActivityBrief: Equatable, Sendable {
     /// Overterm, never as samples): CPU over the last 15 minutes and the
     /// hour, least, mean and most; the footprint's trend over the hour; an
     /// agent's subtree's CPU the same.
-    static func historyLines(_ history: ActivityDetailHistory?) -> [String] {
+    package static func historyLines(_ history: ActivityDetailHistory?) -> [String] {
         let none = ["Overterm has no history of it yet: these are this moment's numbers."]
         guard let history else { return none }
         func span(_ span: ActivityDetailHistory.Span, _ over: String) -> String {
@@ -166,7 +166,7 @@ struct ActivityBrief: Equatable, Sendable {
     /// given the whole brief, a new agent opening there; a process in no
     /// checkout nor tab: every agent, given `outside`. `agents`: each
     /// agent tab with its checkout, in the window's order.
-    static func audience(tab: UUID?, checkout: String?, agents: [(id: UUID, checkout: String?)]) -> (targets: [UUID], inside: Bool) {
+    package static func audience(tab: UUID?, checkout: String?, agents: [(id: UUID, checkout: String?)]) -> (targets: [UUID], inside: Bool) {
         guard tab != nil || checkout != nil else { return (agents.map(\.id), false) }
         let own = agents.filter { $0.id == tab }.map(\.id)
         let theirs = agents.filter { agent in agent.id != tab && checkout != nil && agent.checkout == checkout }.map(\.id)
@@ -176,7 +176,7 @@ struct ActivityBrief: Equatable, Sendable {
     /// Its own words: its name, a script's label, its executable, its
     /// command — each masked as it was read (9.3), the home folder `~`,
     /// cut at `programTextLimit`.
-    static func programText(_ row: ActivityProcessRow, home: String = ActivityText.home) -> String {
+    package static func programText(_ row: ActivityProcessRow, home: String = ActivityText.home) -> String {
         var lines = ["name: \(ActivityText.forAgents(row.name, home: home))"]
         if let label = row.label { lines.append("label: \(ActivityText.forAgents(label, home: home))") }
         if let path = row.path { lines.append("executable: \(ActivityText.forAgents(path, home: home, limit: nil))") }
@@ -192,7 +192,7 @@ struct ActivityBrief: Equatable, Sendable {
 
     /// `text` in a fence longer than any run of backticks inside it, so
     /// nothing in it closes the block early.
-    static func fenced(_ text: String) -> String {
+    package static func fenced(_ text: String) -> String {
         var longest = 0
         var run = 0
         for character in text {

@@ -9,8 +9,8 @@ import NIOSSL
 /// keys (SCAN, capped) as its tables, no columns. A console line is a
 /// command, as redis-cli takes it; `VIEW key` is Overterm's own, a key's
 /// value whatever its type — what a key in the tree opens with.
-actor RedisDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor RedisDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let password: String?
     private var channel: Channel?
     private var replies: RedisReplyHandler?
@@ -25,20 +25,20 @@ actor RedisDriver: DatabaseDriver {
     private var queue: [CheckedContinuation<Void, Never>] = []
 
     /// Keys a database lists in the tree at most: SCAN stops there.
-    static let keyLimit = 1000
+    package static let keyLimit = 1000
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
     }
 
     /// The database a connection names: "3", "db3" or nothing (0).
-    static func database(_ text: String) -> Int {
+    package static func database(_ text: String) -> Int {
         let digits = text.lowercased().hasPrefix("db") ? String(text.dropFirst(2)) : text
         return Int(digits.trimmingCharacters(in: .whitespaces)) ?? 0
     }
 
-    var database: Int { current }
+    package var database: Int { current }
 
     private func exclusive<T: Sendable>(_ work: () async throws -> T) async throws -> T {
         if busy {
@@ -51,7 +51,7 @@ actor RedisDriver: DatabaseDriver {
         return try await work()
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         try await exclusive { try await open(handler: RedisReplyHandler()) }
     }
 
@@ -94,7 +94,7 @@ actor RedisDriver: DatabaseDriver {
     /// TLS as Redis has it: none, or from the first byte (rediss). Prefer
     /// can't be offered — Redis doesn't negotiate — so it is plain; require
     /// encrypts without checking the certificate, verify-full checks it.
-    static func tls(_ mode: DatabaseSSLMode, serverName: String) throws -> NIOSSLClientHandler? {
+    package static func tls(_ mode: DatabaseSSLMode, serverName: String) throws -> NIOSSLClientHandler? {
         switch mode {
         case .disable, .prefer: return nil
         case .require:
@@ -106,7 +106,7 @@ actor RedisDriver: DatabaseDriver {
         }
     }
 
-    func close() async { await drop() }
+    package func close() async { await drop() }
 
     private func drop() async {
         try? await channel?.close().get()
@@ -142,11 +142,11 @@ actor RedisDriver: DatabaseDriver {
 
     /// A command on a database (nil: the console's), for the key browser
     /// and the server's page.
-    func command(_ arguments: [String], db: Int? = nil) async throws -> RedisValue {
+    package func command(_ arguments: [String], db: Int? = nil) async throws -> RedisValue {
         try await pipeline([arguments], db: db)[0]
     }
 
-    func pipeline(_ commands: [[String]], db: Int? = nil) async throws -> [RedisValue] {
+    package func pipeline(_ commands: [[String]], db: Int? = nil) async throws -> [RedisValue] {
         if channel == nil { try await connect() }
         return try await exclusive {
             try await select(db ?? current)
@@ -154,7 +154,7 @@ actor RedisDriver: DatabaseDriver {
         }
     }
 
-    func execute(_ command: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ command: String, limit: Int) async throws -> QueryResult {
         if channel == nil { try await connect() }
         let started = Date()
         let words: [String]
@@ -199,7 +199,7 @@ actor RedisDriver: DatabaseDriver {
     }
 
     /// The databases that have keys — and the one connected to, keys or not.
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         var databases: Set<Int> = [current]
         if case .bulk(let data?) = try await command(["INFO", "keyspace"]) {
             for entry in RedisResult.keyspace(RedisValue.string(data)) where entry.keys > 0 { databases.insert(entry.db) }
@@ -208,7 +208,7 @@ actor RedisDriver: DatabaseDriver {
     }
 
     /// A database's keys, by SCAN — at most `keyLimit`, sorted.
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         let db = Self.database(schema)
         var keys: [String] = []
         var cursor = "0"
@@ -221,7 +221,7 @@ actor RedisDriver: DatabaseDriver {
     }
 
     /// One SCAN step: the keys it found and where the next starts ("0": done).
-    func scan(db: Int, cursor: String, pattern: String, count: Int, type: String? = nil) async throws -> (keys: [String], cursor: String) {
+    package func scan(db: Int, cursor: String, pattern: String, count: Int, type: String? = nil) async throws -> (keys: [String], cursor: String) {
         var command = ["SCAN", cursor, "MATCH", pattern.isEmpty ? "*" : pattern, "COUNT", String(count)]
         if let type { command += ["TYPE", type] }
         let reply = try await self.command(command, db: db)
@@ -230,20 +230,20 @@ actor RedisDriver: DatabaseDriver {
         return (found.compactMap(\.text), parts[0].text ?? "0")
     }
 
-    func columns(in schema: String) async throws -> [CatalogColumn] { [] }
+    package func columns(in schema: String) async throws -> [CatalogColumn] { [] }
 
     // MARK: Listening
 
     /// Another connection to the same server — through the same tunnel,
     /// with the same password — for a listener to take over.
-    func listener() -> RedisDriver {
+    package func listener() -> RedisDriver {
         RedisDriver(config, password: password)
     }
 
     /// A connection of its own that only listens — SUBSCRIBE and MONITOR
     /// take theirs over — each message handed to `onMessage` on its event
     /// loop's thread.
-    func listen(_ commands: [[String]], onMessage: @escaping @Sendable (RedisValue) -> Void) async throws {
+    package func listen(_ commands: [[String]], onMessage: @escaping @Sendable (RedisValue) -> Void) async throws {
         let handler = RedisReplyHandler()
         try await exclusive { try await open(handler: handler) }
         guard let channel else { throw DatabaseError.notConnected }
@@ -256,21 +256,21 @@ actor RedisDriver: DatabaseDriver {
     }
 
     /// More for a listening connection: another channel, or UNSUBSCRIBE.
-    func tell(_ command: [String]) async throws {
+    package func tell(_ command: [String]) async throws {
         guard let channel else { throw DatabaseError.notConnected }
         try await channel.writeAndFlush(channel.allocator.buffer(bytes: RedisProtocol.encode(command))).get()
     }
 }
 
 /// What a key is, and how each type's value is read.
-enum RedisKeyInfo {
-    static func ttlText(_ value: RedisValue) -> String {
+package enum RedisKeyInfo {
+    package static func ttlText(_ value: RedisValue) -> String {
         guard case .integer(let seconds) = value else { return "" }
         return seconds < 0 ? "no expiry" : "expires in \(duration(seconds))"
     }
 
     /// Seconds as a person reads them: 45 s, 12 min, 3 h 20 min, 2 d 4 h.
-    static func duration(_ seconds: Int) -> String {
+    package static func duration(_ seconds: Int) -> String {
         if seconds < 60 { return "\(seconds) s" }
         if seconds < 3600 { return "\(seconds / 60) min" }
         if seconds < 86400 { return "\(seconds / 3600) h" + (seconds % 3600 >= 60 ? " \(seconds % 3600 / 60) min" : "") }
@@ -278,7 +278,7 @@ enum RedisKeyInfo {
     }
 
     /// The command that reads a key of this type, nil for one Overterm doesn't read.
-    static func readCommand(type: String, key: String, limit: Int) -> [String]? {
+    package static func readCommand(type: String, key: String, limit: Int) -> [String]? {
         switch type {
         case "string": ["GET", key]
         case "hash": ["HGETALL", key]
@@ -294,17 +294,17 @@ enum RedisKeyInfo {
 
 /// The pipeline's end: bytes in, one RESP value out per command sent, in
 /// order. Touched only on its channel's event loop.
-final class RedisReplyHandler: ChannelInboundHandler, @unchecked Sendable {
-    typealias InboundIn = ByteBuffer
+package final class RedisReplyHandler: ChannelInboundHandler, @unchecked Sendable {
+    package typealias InboundIn = ByteBuffer
 
     private var bytes: [UInt8] = []
     private var waiting: [EventLoopPromise<RedisValue>] = []
     /// A listening connection's: every value, as it comes.
-    var onPush: (@Sendable (RedisValue) -> Void)?
+    package var onPush: (@Sendable (RedisValue) -> Void)?
 
-    func expect(_ promise: EventLoopPromise<RedisValue>) { waiting.append(promise) }
+    package func expect(_ promise: EventLoopPromise<RedisValue>) { waiting.append(promise) }
 
-    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    package func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         var buffer = unwrapInboundIn(data)
         bytes += buffer.readBytes(length: buffer.readableBytes) ?? []
         do {
@@ -322,12 +322,12 @@ final class RedisReplyHandler: ChannelInboundHandler, @unchecked Sendable {
         }
     }
 
-    func errorCaught(context: ChannelHandlerContext, error: Error) {
+    package func errorCaught(context: ChannelHandlerContext, error: Error) {
         fail(error)
         context.close(promise: nil)
     }
 
-    func channelInactive(context: ChannelHandlerContext) {
+    package func channelInactive(context: ChannelHandlerContext) {
         fail(DatabaseError.failed("Redis closed the connection."))
         context.fireChannelInactive()
     }

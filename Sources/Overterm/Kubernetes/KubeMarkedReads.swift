@@ -10,25 +10,25 @@ import Foundation
 
 /// What one object's read by Argo CD's rule said (a GET: M1b, M2, M3b):
 /// the allow-listed object, its generation then, when it was read.
-struct KubeMarkedSettled: Equatable, Sendable {
-    var wire: KubeMarkedWorkloadWire
-    var generation: Int?
-    var at: Date
+package struct KubeMarkedSettled: Equatable, Sendable {
+    package var wire: KubeMarkedWorkloadWire
+    package var generation: Int?
+    package var at: Date
 
-    init(_ wire: KubeMarkedWorkloadWire, at: Date) {
+    package init(_ wire: KubeMarkedWorkloadWire, at: Date) {
         self.wire = wire
         generation = wire.metadata?.generation
         self.at = at
     }
 
     /// Argo CD's word for it, as read.
-    var status: KubeMarkedHealth.Status? { KubeMarkedHealth.object(wire)?.status }
+    package var status: KubeMarkedHealth.Status? { KubeMarkedHealth.object(wire)?.status }
 
     /// Whether it still says what its row says now: the same generation,
     /// and — when the row reads not ready since — not older than that change.
     /// An HPA's object stands only while a target still reads `<unknown>`:
     /// every target read again, its row says Healthy.
-    func describes(_ row: KubeRow, kind: KubeMarkedKind, columns: [KubeColumn], changedAt: Date?, now: Date) -> Bool {
+    package func describes(_ row: KubeRow, kind: KubeMarkedKind, columns: [KubeColumn], changedAt: Date?, now: Date) -> Bool {
         if let generation, let rowGeneration = row.marks?.generation, generation != rowGeneration { return false }
         if kind == .horizontalPodAutoscaler { return KubeMarkedHealth.row(kind, row, columns: columns, marks: row.marks, now: now)?.unread == true }
         guard let changedAt, changedAt > at else { return true }
@@ -46,39 +46,39 @@ struct KubeMarkedSettled: Equatable, Sendable {
 /// `KubeMarkedLedger` keeps it across a hide, a drop (the page hidden or
 /// closed), another context and back — none of them gives the minute's 60
 /// again. Pure.
-struct KubeMarkedMinute: Equatable, Sendable {
-    struct Place: Equatable, Sendable {
-        var id: KubeMarkedMember.ID
+package struct KubeMarkedMinute: Equatable, Sendable {
+    package struct Place: Equatable, Sendable {
+        package var id: KubeMarkedMember.ID
         /// When it was taken; once answered, when the answer came (or the
         /// GET was given up).
-        var at: Date
-        var answered = false
+        package var at: Date
+        package var answered = false
     }
 
-    private(set) var places: [Place] = []
-    private(set) var lastAsked: [KubeMarkedMember.ID: Date] = [:]
+    package private(set) var places: [Place] = []
+    package private(set) var lastAsked: [KubeMarkedMember.ID: Date] = [:]
 
     /// Nothing held, nothing asked lately: forgotten.
-    var isEmpty: Bool { places.isEmpty && lastAsked.isEmpty }
+    package var isEmpty: Bool { places.isEmpty && lastAsked.isEmpty }
 
     /// The places held at `now`: every GET unanswered, and each answered in
     /// the minute before.
-    func held(at now: Date) -> Int { places.count { !$0.answered || now.timeIntervalSince($0.at) < 60 } }
+    package func held(at now: Date) -> Int { places.count { !$0.answered || now.timeIntervalSince($0.at) < 60 } }
 
     /// What is spent forgotten: a place a minute past its answer, an object
     /// last asked for a minute ago or more.
-    mutating func prune(now: Date) {
+    package mutating func prune(now: Date) {
         places.removeAll { $0.answered && now.timeIntervalSince($0.at) >= 60 }
         lastAsked = lastAsked.filter { now.timeIntervalSince($0.value) < 60 }
     }
 
     /// Whether `id` may be asked for again: 15 s since it last was.
-    func due(_ id: KubeMarkedMember.ID, now: Date) -> Bool {
+    package func due(_ id: KubeMarkedMember.ID, now: Date) -> Bool {
         lastAsked[id].map { now.timeIntervalSince($0) >= KubeMarkedRefetch.perObject } ?? true
     }
 
     /// A GET of `id` taken at `now`: a place held.
-    mutating func took(_ id: KubeMarkedMember.ID, at now: Date) {
+    package mutating func took(_ id: KubeMarkedMember.ID, at now: Date) {
         places.append(Place(id: id, at: now))
         lastAsked[id] = now
     }
@@ -86,7 +86,7 @@ struct KubeMarkedMinute: Equatable, Sendable {
     /// A GET of `id` answered at `at` — or given up then (hidden while in
     /// flight: it may have reached the server): its place a minute more
     /// from then, never earlier than its take.
-    mutating func answered(_ id: KubeMarkedMember.ID, at: Date) {
+    package mutating func answered(_ id: KubeMarkedMember.ID, at: Date) {
         guard let index = places.firstIndex(where: { $0.id == id && !$0.answered }) else { return }
         places[index].answered = true
         places[index].at = max(places[index].at, at)
@@ -94,7 +94,7 @@ struct KubeMarkedMinute: Equatable, Sendable {
 
     /// A GET of `id` taken and never sent (hidden while it waited its
     /// turn): its place given back.
-    mutating func unsent(_ id: KubeMarkedMember.ID) {
+    package mutating func unsent(_ id: KubeMarkedMember.ID) {
         guard let index = places.lastIndex(where: { $0.id == id && !$0.answered }) else { return }
         places.remove(at: index)
     }
@@ -129,18 +129,18 @@ struct KubeMarkedMinute: Equatable, Sendable {
 /// most once every 15 s, never twice at once (`busy`), at most 20 a flush
 /// and 60 a minute — a GET's place held until a minute after its answer.
 /// Pure.
-struct KubeMarkedRefetch: Equatable, Sendable {
-    static let perObject: TimeInterval = 15
-    static let perFlush = 20
-    static let perMinute = 60
-    static let inProgressEvery: TimeInterval = 60
-    static let degradedEvery: TimeInterval = 300
+package struct KubeMarkedRefetch: Equatable, Sendable {
+    package static let perObject: TimeInterval = 15
+    package static let perFlush = 20
+    package static let perMinute = 60
+    package static let inProgressEvery: TimeInterval = 60
+    package static let degradedEvery: TimeInterval = 300
     /// A workload Argo CD changed (else made) this recently may hide what
     /// its cells can't say: a sync's rollout stuck behind its old pod, or
     /// paused (D-4).
-    static let recentlyChanged: TimeInterval = 3_600
+    package static let recentlyChanged: TimeInterval = 3_600
 
-    enum Priority: Int, Comparable, Sendable {
+    package enum Priority: Int, Comparable, Sendable {
         /// Its generation moved, or it is new since shown (M2).
         case moved
         /// In progress (60 s) or Degraded (5 min): the tick's look.
@@ -150,24 +150,24 @@ struct KubeMarkedRefetch: Equatable, Sendable {
         /// the most recently changed first.
         case settle
 
-        static func < (lhs: Priority, rhs: Priority) -> Bool { lhs.rawValue < rhs.rawValue }
+        package static func < (lhs: Priority, rhs: Priority) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
-    private(set) var pending: [KubeMarkedMember.ID: Priority] = [:]
+    package private(set) var pending: [KubeMarkedMember.ID: Priority] = [:]
     /// A settle's order: when Argo CD last changed it (else its creation).
-    private(set) var changed: [KubeMarkedMember.ID: Date] = [:]
+    package private(set) var changed: [KubeMarkedMember.ID: Date] = [:]
     /// Those waiting whose rows may hide a problem (`doubtful(_:kind:…)`):
     /// taken before the rest of their priority.
-    private(set) var doubts: Set<KubeMarkedMember.ID> = []
+    package private(set) var doubts: Set<KubeMarkedMember.ID> = []
     /// How many of each priority were taken since made: the tests' count
     /// (M2's moves among them), never a clock's.
-    private(set) var takenBy: [Priority: Int] = [:]
+    package private(set) var takenBy: [Priority: Int] = [:]
 
-    var isEmpty: Bool { pending.isEmpty }
+    package var isEmpty: Bool { pending.isEmpty }
 
     /// `doubtful`: what its row says now (`doubtful(_:kind:columns:changed:now:)`)
     /// — asked again, the newest row decides.
-    mutating func ask(_ id: KubeMarkedMember.ID, _ priority: Priority, changed at: Date? = nil, doubtful: Bool = false) {
+    package mutating func ask(_ id: KubeMarkedMember.ID, _ priority: Priority, changed at: Date? = nil, doubtful: Bool = false) {
         pending[id] = min(pending[id] ?? priority, priority)
         if let at { changed[id] = at }
         if doubtful { doubts.insert(id) } else { doubts.remove(id) }
@@ -180,7 +180,7 @@ struct KubeMarkedRefetch: Equatable, Sendable {
     /// replica stuck behind its old pod reads `1/1`, a paused rollout its
     /// last counts. A Deployment scaled to 0 long ago is Healthy by its
     /// cells: never one.
-    static func doubtful(_ row: KubeRow, kind: KubeMarkedKind, columns: [KubeColumn], changed: Date?, now: Date) -> Bool {
+    package static func doubtful(_ row: KubeRow, kind: KubeMarkedKind, columns: [KubeColumn], changed: Date?, now: Date) -> Bool {
         if KubeMarkedHealth.row(kind, row, columns: columns, marks: row.marks, now: now)?.status != .healthy { return true }
         guard kind.cellsMayHide, let changed else { return false }
         return now.timeIntervalSince(changed) < recentlyChanged
@@ -191,7 +191,7 @@ struct KubeMarkedRefetch: Equatable, Sendable {
     /// tick's, then — `through` the settle — the settle by its order (what
     /// may be a problem before the rest, each the most recently changed
     /// first), within the places the context's minute has free.
-    mutating func take(
+    package mutating func take(
         now: Date, limit: Int = perFlush, busy: Set<KubeMarkedMember.ID> = [], through: Priority = .settle, minute: inout KubeMarkedMinute
     ) -> [KubeMarkedMember.ID] {
         minute.prune(now: now)
@@ -217,7 +217,7 @@ struct KubeMarkedRefetch: Equatable, Sendable {
         return chosen.map(\.key)
     }
 
-    mutating func forget(_ id: KubeMarkedMember.ID) {
+    package mutating func forget(_ id: KubeMarkedMember.ID) {
         pending[id] = nil
         changed[id] = nil
         doubts.remove(id)
@@ -227,7 +227,7 @@ struct KubeMarkedRefetch: Equatable, Sendable {
     /// what was taken in it and when each object was last read still count
     /// (the section hidden and shown again, another scope: its 60 aren't
     /// given again).
-    mutating func forgetPending() {
+    package mutating func forgetPending() {
         pending = [:]
         changed = [:]
         doubts = []
@@ -236,7 +236,7 @@ struct KubeMarkedRefetch: Equatable, Sendable {
     /// Why a marked object is read by a GET now; nil when it isn't. `old`:
     /// its row before (nil: new, or first listed); `listing`: a first list
     /// (nothing is new in it); `settled`: its last GET.
-    static func reason(old: KubeRow?, new: KubeRow, kind: KubeMarkedKind, columns: [KubeColumn], settled: KubeMarkedSettled?, listing: Bool, now: Date) -> Priority? {
+    package static func reason(old: KubeRow?, new: KubeRow, kind: KubeMarkedKind, columns: [KubeColumn], settled: KubeMarkedSettled?, listing: Bool, now: Date) -> Priority? {
         if !listing, old == new { return nil }
         switch kind {
         case .deployment, .statefulSet, .daemonSet, .rollout:
@@ -262,11 +262,11 @@ struct KubeMarkedRefetch: Equatable, Sendable {
 }
 
 /// One derived app as the section ranks it: the app and its health.
-struct KubeMarkedRanked: Equatable, Sendable, Identifiable {
-    var app: KubeMarkedApp
-    var health: KubeMarkedHealth.AppVerdict
+package struct KubeMarkedRanked: Equatable, Sendable, Identifiable {
+    package var app: KubeMarkedApp
+    package var health: KubeMarkedHealth.AppVerdict
 
-    var id: String { app.id }
+    package var id: String { app.id }
 }
 
 /// The members and apps read from marks, kept as rows come and go: each
@@ -276,43 +276,43 @@ struct KubeMarkedRanked: Equatable, Sendable, Identifiable {
 /// again for those alone, and every app ranked — problems first, as the
 /// section shows them. Run off the main thread, once a flush (gitops.md
 /// 14.4.6): the main thread only swaps what it made.
-struct KubeMarkedBook: Sendable {
+package struct KubeMarkedBook: Sendable {
     /// One member to make again.
-    struct Change: Sendable {
-        enum Source: Sendable {
+    package struct Change: Sendable {
+        package enum Source: Sendable {
             /// A row, its health from its cells unless `settled` still says it.
             case row(KubeRow, columns: [KubeColumn])
         }
 
-        var id: KubeMarkedMember.ID
-        var source: Source
-        var settled: KubeMarkedSettled?
+        package var id: KubeMarkedMember.ID
+        package var source: Source
+        package var settled: KubeMarkedSettled?
         /// When its row was first read or last changed, as the session saw it.
-        var changedAt: Date?
+        package var changedAt: Date?
     }
 
-    private(set) var apps = KubeMarkedApps()
-    private(set) var verdicts: [KubeTrackingID.AppKey: KubeMarkedHealth.AppVerdict] = [:]
-    private(set) var ranked: [KubeMarkedRanked] = []
+    package private(set) var apps = KubeMarkedApps()
+    package private(set) var verdicts: [KubeTrackingID.AppKey: KubeMarkedHealth.AppVerdict] = [:]
+    package private(set) var ranked: [KubeMarkedRanked] = []
     /// Each app's section row, as `KubeMarkedSection.base` makes it.
-    private(set) var rows: [KubeTrackingID.AppKey: KubeGitOpsRow] = [:]
+    package private(set) var rows: [KubeTrackingID.AppKey: KubeGitOpsRow] = [:]
     /// Those rows in the section's order (`KubeGitOpsSection.ordered`):
     /// what the main thread lays among the rest, sorted already.
-    private(set) var shownRows: [KubeGitOpsRow] = []
+    package private(set) var shownRows: [KubeGitOpsRow] = []
     /// The apps' keys: what the mode is decided from.
-    private(set) var keys: Set<KubeTrackingID.AppKey> = []
+    package private(set) var keys: Set<KubeTrackingID.AppKey> = []
     /// When each member's row was first read not ready, kept while it
     /// stays so: its state's `since` — "0/3 ready", the Age column 2h.
-    private(set) var notReadySince: [KubeMarkedMember.ID: Date] = [:]
+    package private(set) var notReadySince: [KubeMarkedMember.ID: Date] = [:]
     /// How many rows every apply made: what a flush costs, counted (the
     /// tests' bound on it, never a clock's).
-    private(set) var rowsMade = 0
+    package private(set) var rowsMade = 0
 
-    init() {}
+    package init() {}
 
     /// The changes and the members gone applied; whether anything shown changed.
     @discardableResult
-    mutating func apply(_ changes: [Change], removed: [KubeMarkedMember.ID], now: Date) -> Bool {
+    package mutating func apply(_ changes: [Change], removed: [KubeMarkedMember.ID], now: Date) -> Bool {
         guard !changes.isEmpty || !removed.isEmpty else { return false }
         var members: [KubeMarkedMember] = []
         members.reserveCapacity(changes.count)
@@ -370,7 +370,7 @@ struct KubeMarkedBook: Sendable {
     }
 
     /// Problems first (the state's order), then by name.
-    static func ordered(_ a: KubeMarkedRanked, _ b: KubeMarkedRanked) -> Bool {
+    package static func ordered(_ a: KubeMarkedRanked, _ b: KubeMarkedRanked) -> Bool {
         if a.health.state != b.health.state { return a.health.state < b.health.state }
         if a.app.said != b.app.said { return a.app.said < b.app.said }
         return a.app.key < b.app.key
@@ -383,7 +383,7 @@ struct KubeMarkedBook: Sendable {
 /// which an agent reading English takes for two. Written as a string, a
 /// count interpolated as `\(count: n)`; two are the same when they read
 /// the same plainly, however they were written. Pure.
-struct KubeCountedText: Equatable, Hashable, Sendable, ExpressibleByStringInterpolation {
+package struct KubeCountedText: Equatable, Hashable, Sendable, ExpressibleByStringInterpolation {
     fileprivate enum Piece: Equatable, Hashable, Sendable {
         case text(String)
         case count(Int)
@@ -392,20 +392,20 @@ struct KubeCountedText: Equatable, Hashable, Sendable, ExpressibleByStringInterp
     /// Text and counts in turn, two texts never side by side.
     fileprivate var pieces: [Piece]
 
-    static func == (a: KubeCountedText, b: KubeCountedText) -> Bool { a.said(plain: true) == b.said(plain: true) }
-    func hash(into hasher: inout Hasher) { hasher.combine(said(plain: true)) }
+    package static func == (a: KubeCountedText, b: KubeCountedText) -> Bool { a.said(plain: true) == b.said(plain: true) }
+    package func hash(into hasher: inout Hasher) { hasher.combine(said(plain: true)) }
 
-    init(_ text: String) { pieces = text.isEmpty ? [] : [.text(text)] }
-    init(stringLiteral text: String) { self.init(text) }
-    init(stringInterpolation: StringInterpolation) { pieces = stringInterpolation.pieces }
+    package init(_ text: String) { pieces = text.isEmpty ? [] : [.text(text)] }
+    package init(stringLiteral text: String) { self.init(text) }
+    package init(stringInterpolation: StringInterpolation) { pieces = stringInterpolation.pieces }
 
-    struct StringInterpolation: StringInterpolationProtocol {
+    package struct StringInterpolation: StringInterpolationProtocol {
         fileprivate var pieces: [Piece] = []
-        init(literalCapacity: Int, interpolationCount: Int) {}
-        mutating func appendLiteral(_ literal: String) { KubeCountedText.append(literal, to: &pieces) }
+        package init(literalCapacity: Int, interpolationCount: Int) {}
+        package mutating func appendLiteral(_ literal: String) { KubeCountedText.append(literal, to: &pieces) }
         /// A count: grouped as the person's locale writes it on the page, plain to an agent.
-        mutating func appendInterpolation(count: Int) { pieces.append(.count(count)) }
-        mutating func appendInterpolation(_ text: some CustomStringConvertible) { KubeCountedText.append(text.description, to: &pieces) }
+        package mutating func appendInterpolation(count: Int) { pieces.append(.count(count)) }
+        package mutating func appendInterpolation(_ text: some CustomStringConvertible) { KubeCountedText.append(text.description, to: &pieces) }
     }
 
     fileprivate static func append(_ text: String, to pieces: inout [Piece]) {
@@ -418,7 +418,7 @@ struct KubeCountedText: Equatable, Hashable, Sendable, ExpressibleByStringInterp
     }
 
     /// As the page says it, or (`plain`) as an agent reads it.
-    func said(plain: Bool = false) -> String {
+    package func said(plain: Bool = false) -> String {
         pieces.map { piece in
             switch piece {
             case .text(let text): text
@@ -428,10 +428,10 @@ struct KubeCountedText: Equatable, Hashable, Sendable, ExpressibleByStringInterp
     }
 
     /// A count as the page writes it (`2,000`), or plainly (`2000`).
-    static func number(_ count: Int, plain: Bool) -> String { plain ? String(count) : count.formatted() }
+    package static func number(_ count: Int, plain: Bool) -> String { plain ? String(count) : count.formatted() }
 
     /// The parts one after the other, `separator` between them.
-    static func joined(_ parts: [KubeCountedText], separator: String) -> KubeCountedText {
+    package static func joined(_ parts: [KubeCountedText], separator: String) -> KubeCountedText {
         var joined = KubeCountedText("")
         for (index, part) in parts.enumerated() {
             if index > 0 { append(separator, to: &joined.pieces) }
@@ -452,46 +452,46 @@ struct KubeCountedText: Equatable, Hashable, Sendable, ExpressibleByStringInterp
 /// then; a refused, cut or unfinished read says what couldn't be read.
 /// Its counts are kept as numbers: the page groups them as the person's
 /// locale does, an agent reads them plain (`plain`). Pure.
-struct KubeMarkedReading: Equatable, Sendable {
+package struct KubeMarkedReading: Equatable, Sendable {
     /// The workloads' kinds read for marks (M1), by title: "Deployments".
-    var kinds: [String] = []
+    package var kinds: [String] = []
     /// Those whose rows came.
-    var listed: Set<String> = []
+    package var listed: Set<String> = []
     /// Refused where: a namespace each, or — refused across the cluster
     /// with nowhere known to read it — `acrossTheCluster`.
-    var refused: [String: [String]] = [:]
+    package var refused: [String: [String]] = [:]
     /// Refused across the cluster, read in these namespaces with no watch.
-    var fallback: [String: [String]] = [:]
+    package var fallback: [String: [String]] = [:]
     /// The rows of a kind cut short: its marks a floor.
-    var rowCuts: [String: KubeCountedText] = [:]
+    package var rowCuts: [String: KubeCountedText] = [:]
     /// Not read, and why.
-    var failed: [String: String] = [:]
+    package var failed: [String: String] = [:]
     /// Everything else said: M3's cuts and refusals.
-    var notes: [String: KubeCountedText] = [:]
+    package var notes: [String: KubeCountedText] = [:]
     /// M1b's progress: objects checked by Argo CD's rule, of how many.
-    var checked: Int?
-    var checking: Int?
+    package var checked: Int?
+    package var checking: Int?
     /// Argo Rollouts are served here, and read for their apps' health.
-    var rolloutsServed = false
+    package var rolloutsServed = false
     /// A kind refused across the cluster is read again where it may be
     /// every 5 min (the section's); an agent's read is once.
-    var rereads = true
+    package var rereads = true
 
-    static let acrossTheCluster = "across the cluster"
+    package static let acrossTheCluster = "across the cluster"
 
     /// Every kind's rows came, none refused, cut or failed.
-    var isWhole: Bool { !kinds.isEmpty && listed.isSuperset(of: kinds) && refused.isEmpty && fallback.isEmpty && rowCuts.isEmpty && failed.isEmpty }
+    package var isWhole: Bool { !kinds.isEmpty && listed.isSuperset(of: kinds) && refused.isEmpty && fallback.isEmpty && rowCuts.isEmpty && failed.isEmpty }
 
     /// Still waiting for a kind's first rows.
-    var isReading: Bool { !Set(kinds).subtracting(listed).subtracting(failed.keys).subtracting(refused.keys).isEmpty }
+    package var isReading: Bool { !Set(kinds).subtracting(listed).subtracting(failed.keys).subtracting(refused.keys).isEmpty }
 
     /// What couldn't be read, said: "Deployments refused in 3 namespaces
     /// (a, b, c)"; a kind refused across the cluster and read where it may
     /// be, where — what a count "at least" and an empty sentence name.
-    var unread: [String] { unread(plain: false) }
+    package var unread: [String] { unread(plain: false) }
 
     /// The same, its counts plain (`plain`: an agent's) or grouped as the page writes them.
-    func unread(plain: Bool) -> [String] {
+    package func unread(plain: Bool) -> [String] {
         var said: [String] = []
         for kind in kinds {
             if let places = fallback[kind], !places.isEmpty {
@@ -513,10 +513,10 @@ struct KubeMarkedReading: Equatable, Sendable {
 
     /// Every line for the header's notes: refusals and where it read
     /// instead, cuts, M1b's progress.
-    var said: [String] { said(plain: false) }
+    package var said: [String] { said(plain: false) }
 
     /// The same, its counts plain (`plain`: an agent's) or grouped as the page writes them.
-    func said(plain: Bool) -> [String] {
+    package func said(plain: Bool) -> [String] {
         var lines = unread(plain: plain)
         lines += notes.sorted { $0.key < $1.key }.map { $0.value.said(plain: plain) }
         if let checking, let checked, checked < checking {
@@ -527,7 +527,7 @@ struct KubeMarkedReading: Equatable, Sendable {
 
     /// The count said: exact when the read was whole, a floor when it
     /// wasn't, none while the first rows come.
-    func count(_ apps: Int) -> String? {
+    package func count(_ apps: Int) -> String? {
         if isReading { return nil }
         let noun = apps == 1 ? "app" : "apps"
         if isWhole { return "\(apps.formatted()) \(noun)" }
@@ -536,7 +536,7 @@ struct KubeMarkedReading: Equatable, Sendable {
 
     /// The section's sentence when no app was found: "carries no marks"
     /// only from a whole read (`plain`: an agent's counts).
-    func empty(context: String, scope: KubeScope, served: Bool, plain: Bool = false) -> String {
+    package func empty(context: String, scope: KubeScope, served: Bool, plain: Bool = false) -> String {
         let workloads = kinds.isEmpty ? "Deployments, StatefulSets and DaemonSets" : Self.joined(kinds)
         if isReading { return "Reading the marks on \(workloads)…" }
         guard isWhole else { return "No Argo CD marks found in what could be read: \(unread(plain: plain).joined(separator: "; "))" }
@@ -547,13 +547,13 @@ struct KubeMarkedReading: Equatable, Sendable {
     /// Each kind read, one of a kind: "no Deployment, StatefulSet,
     /// DaemonSet or Rollout in all namespaces carries Argo CD's marks." —
     /// said only of a whole read.
-    func carriers(scope: KubeScope) -> String {
+    package func carriers(scope: KubeScope) -> String {
         let one = (kinds.isEmpty ? ["Deployments", "StatefulSets", "DaemonSets"] : kinds).map { $0.hasSuffix("s") ? String($0.dropLast()) : $0 }
         let named = one.count > 1 ? one.dropLast().joined(separator: ", ") + " or " + one.last! : one.first ?? ""
         return "no \(named) in \(scope.said) carries Argo CD's marks."
     }
 
-    static func joined(_ names: [String]) -> String {
+    package static func joined(_ names: [String]) -> String {
         guard names.count > 1 else { return names.first ?? "" }
         return names.dropLast().joined(separator: ", ") + " and " + names.last!
     }

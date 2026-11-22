@@ -2,7 +2,7 @@ import Foundation
 
 /// What a terraform Overterm starts does (analysis 5.3): the one place the
 /// verbs-by-class table lives. Pure.
-enum TerraformVerb: String, CaseIterable, Sendable {
+package enum TerraformVerb: String, CaseIterable, Sendable {
     // Reads: started on any class.
     case version, format, validate, show, workspaceList, stateList
     /// Downloads code, changes no infrastructure: the person's click.
@@ -33,8 +33,8 @@ enum TerraformVerb: String, CaseIterable, Sendable {
 /// Whether Overterm may start `verb` in a root (5.3, 5.13 rule 5): the
 /// analogue of `KubeProcessCheck`. A plan-only root is one whose
 /// `terraform.roots` entry says `writable: false`, whatever its class. Pure.
-enum TerraformProcessCheck {
-    static let neverBuilt: Set<TerraformVerb> = [
+package enum TerraformProcessCheck {
+    package static let neverBuilt: Set<TerraformVerb> = [
         .stateSurgery, .cliImport, .taint, .statePush, .applyWithoutPlan, .autoApprove, .lockFalse, .workspaceNew, .workspaceDelete, .initUpgrade,
     ]
 
@@ -43,20 +43,20 @@ enum TerraformProcessCheck {
     /// replaced production's session switch. Production's applies are
     /// still asked, its name typed (`TerraformApplySheet`); that is a
     /// confirmation, not a lock.
-    static func isWritable(_ rootClass: TerraformClass, writable: Bool) -> Bool {
+    package static func isWritable(_ rootClass: TerraformClass, writable: Bool) -> Bool {
         writable
     }
 
     /// The backends whose runs happen in HCP Terraform (2.8, D-20): a
     /// `plan -out` there starts a remote, or saved cloud, run in the team's
     /// workspace. Stages 1–2 give them the guards, the editor and a link.
-    static let remoteExecution: Set<String> = ["cloud", "remote"]
-    static let remoteExecutionRefusal = "HCP runs remotely: plan it in HCP (stage 3)"
+    package static let remoteExecution: Set<String> = ["cloud", "remote"]
+    package static let remoteExecutionRefusal = "HCP runs remotely: plan it in HCP (stage 3)"
 
     /// Why `verb` may not start in a root whose backend is `backendType`
     /// — plan and init, never on an HCP root; force unlock, never on the
     /// local backend nor HCP's (2e) — or nil.
-    static func refused(_ verb: TerraformVerb, backendType: String) -> String? {
+    package static func refused(_ verb: TerraformVerb, backendType: String) -> String? {
         if verb == .forceUnlock {
             if backendType == "local" { return localUnlockRefusal }
             if remoteExecution.contains(backendType) { return "An HCP workspace's lock is HCP's: unlock it in HCP Terraform." }
@@ -69,12 +69,12 @@ enum TerraformProcessCheck {
     /// The local backend's lock is an OS lock that went with its process
     /// (4.10): one held is a terraform still running, and Terraform itself
     /// refuses to force it ("Local state cannot be unlocked by another process").
-    static let localUnlockRefusal =
+    package static let localUnlockRefusal =
         "A local state's lock is the operating system's: it goes with its process. Held, it is a terraform still running on this Mac — stop that one; there is nothing to force."
 
 
     /// Why `verb` may not start in a root of `rootClass`, or nil.
-    static func refused(_ verb: TerraformVerb, rootClass: TerraformClass, writable: Bool = true) -> String? {
+    package static func refused(_ verb: TerraformVerb, rootClass: TerraformClass, writable: Bool = true) -> String? {
         if neverBuilt.contains(verb) {
             return "Overterm never runs this: state changes go through moved, removed and import blocks, planned and applied; the rest is typed in a terminal"
         }
@@ -96,12 +96,12 @@ enum TerraformProcessCheck {
 /// a workspace that doesn't is silently created by `plan`, `init` and
 /// `state pull` — named by `TF_WORKSPACE` or by `.terraform/environment`
 /// (spikes 13, 14) — and its plan creates everything again. Pure.
-enum TerraformWorkspaceCheck {
+package enum TerraformWorkspaceCheck {
     /// Why a run in `workspace` is refused, or nil. `local`: the local
     /// backend's `terraform.tfstate.d` folders (`default` always exists);
     /// `listed`: a remote backend's last `workspace list`, nil when none
     /// was read (the caller lists, then asks again).
-    static func refusal(workspace: String, backend: TerraformConfigFacts.Backend, localWorkspaces: [String], listed: [String]?) -> String? {
+    package static func refusal(workspace: String, backend: TerraformConfigFacts.Backend, localWorkspaces: [String], listed: [String]?) -> String? {
         guard TerraformCommands.isWorkspaceName(workspace) else { return "“\(workspace)” isn't a workspace's name" }
         let summary = TerraformStateIdentity.summary(of: backend, workspace: "default")
         if backend.type == "local" {
@@ -118,7 +118,7 @@ enum TerraformWorkspaceCheck {
     }
 
     /// `workspace list`'s names: `  default`, `* acme-stage`.
-    static func parseList(_ output: String) -> [String] {
+    package static func parseList(_ output: String) -> [String] {
         output.split(separator: "\n").compactMap { line in
             var name = line.trimmingCharacters(in: .whitespaces)
             if name.hasPrefix("*") { name = String(name.dropFirst()).trimmingCharacters(in: .whitespaces) }

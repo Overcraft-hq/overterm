@@ -12,40 +12,40 @@ import os
 /// merged. In memory only, dropped on a context or kubeconfig change and
 /// 10 minutes after the page hides (`KubePrometheusMonitor`). Pure, but
 /// for the counts below: a version no cache repeats, and where merges ran.
-struct KubeChartCache: Sendable {
-    struct Key: Hashable, Sendable {
-        var query: String
+package struct KubeChartCache: Sendable {
+    package struct Key: Hashable, Sendable {
+        package var query: String
         /// The range's name (`1h`), or a window's start and end.
-        var range: String
-        var step: TimeInterval
+        package var range: String
+        package var step: TimeInterval
     }
 
-    struct Entry: Sendable {
-        var series: [KubeSeries]
-        var start: Date
+    package struct Entry: Sendable {
+        package var series: [KubeSeries]
+        package var start: Date
         /// The last answer's end: a refresh asks from a few steps before it.
-        var end: Date
-        var bytes: Int
-        var used: UInt64
+        package var end: Date
+        package var bytes: Int
+        package var used: UInt64
     }
 
-    static let maxEntries = 96
-    static let maxBytes = 12 << 20
+    package static let maxEntries = 96
+    package static let maxBytes = 12 << 20
 
-    private(set) var entries: [Key: Entry] = [:]
+    package private(set) var entries: [Key: Entry] = [:]
     private var clock: UInt64 = 0
     /// Each query's last change — a put, an eviction, a drop — from a
     /// count no cache ever repeats: a query untouched since `version` was
     /// read is as it was then, in this cache or a new one.
     private var versions: [String: UInt64] = [:]
 
-    var count: Int { entries.count }
-    var bytes: Int { entries.values.reduce(0) { $0 + $1.bytes } }
+    package var count: Int { entries.count }
+    package var bytes: Int { entries.values.reduce(0) { $0 + $1.bytes } }
 
     /// What to ask for `span`: all of it with nothing kept; from `overlap`
     /// steps before the kept answer's end otherwise; nil when the kept
     /// answer already reaches the span's end (asked again within a step).
-    func ask(_ key: Key, span: KubePromSpan, scrape: TimeInterval) -> (start: Date, end: Date)? {
+    package func ask(_ key: Key, span: KubePromSpan, scrape: TimeInterval) -> (start: Date, end: Date)? {
         guard let entry = entries[key] else { return (span.start, span.end) }
         guard entry.end < span.end else { return nil }
         let back = TimeInterval(KubeMetricsSpan.overlap(step: span.step, scrape: scrape)) * span.step
@@ -56,7 +56,7 @@ struct KubeChartCache: Sendable {
     }
 
     /// What changed `query` last (0: nothing since this cache was made).
-    func version(_ query: String) -> UInt64 { versions[query] ?? 0 }
+    package func version(_ query: String) -> UInt64 { versions[query] ?? 0 }
 
     /// What an entry merged off the main thread from what `key` held at
     /// `version` is now: kept as it is (nothing of the query changed
@@ -65,13 +65,13 @@ struct KubeChartCache: Sendable {
     /// (another range of the query kept, the cache dropped or the entry
     /// evicted), where a tail asked from the old entry's end would be
     /// kept as if it covered the whole span, or put over the new range.
-    enum Keeping: Sendable {
+    package enum Keeping: Sendable {
         case keep
         case again(Entry)
         case gone
     }
 
-    func keeping(_ key: Key, since version: UInt64) -> Keeping {
+    package func keeping(_ key: Key, since version: UInt64) -> Keeping {
         guard self.version(key.query) != version else { return .keep }
         guard let entry = entries[key] else { return .gone }
         return .again(entry)
@@ -80,14 +80,14 @@ struct KubeChartCache: Sendable {
     /// An answer over `asked` merged: each series' points from the asked
     /// start replaced by the answer's (a series the answer doesn't have
     /// keeps what it had before), then everything before `start` dropped.
-    mutating func merge(_ key: Key, series answer: [KubeSeries], asked: (start: Date, end: Date), start: Date) {
+    package mutating func merge(_ key: Key, series answer: [KubeSeries], asked: (start: Date, end: Date), start: Date) {
         put(key, Self.merged(entries[key], series: answer, asked: asked, start: start))
     }
 
     /// What `merge` keeps for a key that held `old`: pure, so the monitor
     /// makes it off the main thread — a thousand series of 300 points is
     /// tens of milliseconds — and only `put`s it there (metrics.md 5.3).
-    static func merged(_ old: Entry?, series answer: [KubeSeries], asked: (start: Date, end: Date), start: Date) -> Entry {
+    package static func merged(_ old: Entry?, series answer: [KubeSeries], asked: (start: Date, end: Date), start: Date) -> Entry {
         mergeThreads.count(onMain: pthread_main_np() != 0)
         var merged: [KubeSeries] = []
         var byLabels: [[String: String]: Int] = [:]
@@ -111,7 +111,7 @@ struct KubeChartCache: Sendable {
 
     /// A merged entry kept: the most recently used, the query's other
     /// ranges gone at once (never drawn again), then the bounds.
-    mutating func put(_ key: Key, _ entry: Entry) {
+    package mutating func put(_ key: Key, _ entry: Entry) {
         clock += 1
         changed(key.query)
         var entry = entry
@@ -121,17 +121,17 @@ struct KubeChartCache: Sendable {
         evict()
     }
 
-    func entry(_ key: Key) -> Entry? { entries[key] }
+    package func entry(_ key: Key) -> Entry? { entries[key] }
 
-    func series(_ key: Key) -> [KubeSeries]? { entries[key]?.series }
+    package func series(_ key: Key) -> [KubeSeries]? { entries[key]?.series }
 
     /// Marked used: the last to be evicted.
-    mutating func touch(_ key: Key) {
+    package mutating func touch(_ key: Key) {
         clock += 1
         entries[key]?.used = clock
     }
 
-    mutating func removeAll() {
+    package mutating func removeAll() {
         for query in Set(entries.keys.map(\.query)) { changed(query) }
         entries = [:]
     }
@@ -139,7 +139,7 @@ struct KubeChartCache: Sendable {
     private mutating func changed(_ query: String) { versions[query] = Self.changes.next() }
 
     /// About what its points and labels take: 16 bytes a point.
-    static func size(_ series: [KubeSeries]) -> Int {
+    package static func size(_ series: [KubeSeries]) -> Int {
         series.reduce(0) { total, one in total + one.points.count * 16 + one.labels.reduce(48) { $0 + $1.key.utf8.count + $1.value.utf8.count + 32 } }
     }
 
@@ -171,9 +171,9 @@ extension KubeChartCache {
     /// Where `merged` ran, every call: the scenarios check none ran on
     /// the main thread (metrics.md 5.3) — where it runs, not where a
     /// caller meant it to.
-    static let mergeThreads = MergeThreads()
+    package static let mergeThreads = MergeThreads()
 
-    final class MergeThreads: Sendable {
+    package final class MergeThreads: Sendable {
         private let counts = OSAllocatedUnfairLock(initialState: (all: 0, onMain: 0))
         fileprivate func count(onMain: Bool) {
             counts.withLock {
@@ -182,6 +182,6 @@ extension KubeChartCache {
             }
         }
         /// How many merges ran, and how many of them on the main thread.
-        var counted: (all: Int, onMain: Int) { counts.withLock { $0 } }
+        package var counted: (all: Int, onMain: Int) { counts.withLock { $0 } }
     }
 }

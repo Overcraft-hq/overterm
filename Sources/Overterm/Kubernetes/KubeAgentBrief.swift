@@ -4,7 +4,7 @@ import Foundation
 
 /// What is wrong with a pod or a Deployment, as its object says it — what
 /// Ask Why asks about (docs/design/kubernetes/analysis.md, 3.4). Pure.
-enum KubeTrouble: Equatable, Sendable {
+package enum KubeTrouble: Equatable, Sendable {
     /// Its container keeps exiting and the kubelet backs off restarting it.
     case crashLoop(container: String, exit: Int?)
     /// The kernel killed a container over its memory limit — now, or the
@@ -24,12 +24,12 @@ enum KubeTrouble: Equatable, Sendable {
     /// A Deployment with fewer available replicas than it wants.
     case unavailable(available: Int, desired: Int)
 
-    static let imagePullReasons: Set<String> = ["ImagePullBackOff", "ErrImagePull", "ErrImageNeverPull", "InvalidImageName"]
-    static let configReasons: Set<String> = ["CreateContainerConfigError", "CreateContainerError"]
-    static let failedReasons: Set<String> = ["RunContainerError", "ContainerCannotRun", "StartError", "PreStartHookError", "PostStartHookError"]
+    package static let imagePullReasons: Set<String> = ["ImagePullBackOff", "ErrImagePull", "ErrImageNeverPull", "InvalidImageName"]
+    package static let configReasons: Set<String> = ["CreateContainerConfigError", "CreateContainerError"]
+    package static let failedReasons: Set<String> = ["RunContainerError", "ContainerCannotRun", "StartError", "PreStartHookError", "PostStartHookError"]
 
     /// As kubectl says it: `CrashLoopBackOff`, `OOMKilled`, `Pending`.
-    var reason: String {
+    package var reason: String {
         switch self {
         case .crashLoop: "CrashLoopBackOff"
         case .outOfMemory: "OOMKilled"
@@ -41,7 +41,7 @@ enum KubeTrouble: Equatable, Sendable {
     }
 
     /// The container it is about, when it is one's.
-    var container: String? {
+    package var container: String? {
         switch self {
         case .crashLoop(let container, _), .outOfMemory(let container), .imagePull(let container, _), .configError(let container, _): container
         case .failed(let container, _, _): container
@@ -50,7 +50,7 @@ enum KubeTrouble: Equatable, Sendable {
     }
 
     /// The question an agent is started with; `object` is `pod shop/web-7d9`.
-    func question(_ object: String) -> String {
+    package func question(_ object: String) -> String {
         switch self {
         case .crashLoop: "Why does \(object) keep crashing (CrashLoopBackOff)?"
         case .outOfMemory: "Why does \(object) run out of memory (OOMKilled)?"
@@ -66,7 +66,7 @@ enum KubeTrouble: Equatable, Sendable {
     /// What a pod's object says is wrong with it: its containers (init
     /// first, as they run first), then its phase. Nil for a pod that runs,
     /// or finished.
-    static func of(pod: [String: Any]) -> KubeTrouble? {
+    package static func of(pod: [String: Any]) -> KubeTrouble? {
         let status = pod["status"] as? [String: Any] ?? [:]
         let containers = (status["initContainerStatuses"] as? [[String: Any]] ?? []) + (status["containerStatuses"] as? [[String: Any]] ?? [])
         for container in containers {
@@ -100,7 +100,7 @@ enum KubeTrouble: Equatable, Sendable {
 
     /// What a Deployment's object says: stuck past its progress deadline
     /// (`KubeRollout`), else fewer available replicas than it wants.
-    static func of(deployment: [String: Any]) -> KubeTrouble? {
+    package static func of(deployment: [String: Any]) -> KubeTrouble? {
         let name = (deployment["metadata"] as? [String: Any])?["name"] as? String ?? ""
         if KubeRollout.deployment(deployment, name: name).state == .stuck { return .stuckRollout }
         let spec = deployment["spec"] as? [String: Any] ?? [:]
@@ -111,7 +111,7 @@ enum KubeTrouble: Equatable, Sendable {
     }
 
     /// A pod's or a Deployment's, by its `kind`; nil for any other kind.
-    static func of(object: [String: Any]) -> KubeTrouble? {
+    package static func of(object: [String: Any]) -> KubeTrouble? {
         switch (object["kind"] as? String, object["apiVersion"] as? String ?? "") {
         case ("Pod", "v1"): of(pod: object)
         case ("Deployment", let version) where version.hasPrefix("apps/"): of(deployment: object)
@@ -122,7 +122,7 @@ enum KubeTrouble: Equatable, Sendable {
     /// Why a pod's list row offers no Ask Why: nil when its Status is a
     /// failure (`KubePodSummary.isFailing`) or Pending — the object read
     /// says which.
-    static func notFailing(_ summary: KubePodSummary) -> String? {
+    package static func notFailing(_ summary: KubePodSummary) -> String? {
         if summary.isFailing || summary.status == "Pending" { return nil }
         return "pod/\(summary.id.name) isn't failing: \(summary.status)" + (summary.ready.map { ", \($0)/\(summary.containers ?? $0) ready" } ?? "") + "."
     }
@@ -130,13 +130,13 @@ enum KubeTrouble: Equatable, Sendable {
     /// Why a Deployment's list row offers none: nil while it isn't
     /// Available (rolling out, unavailable, not ready) — whether it is stuck
     /// is in its conditions, which a row hasn't — or unknown.
-    static func notFailing(_ hint: KubeDeploymentHint?, name: String) -> String? {
+    package static func notFailing(_ hint: KubeDeploymentHint?, name: String) -> String? {
         guard let hint, hint.isDone else { return nil }
         return "deploy/\(name) is \(hint.text.lowercased()): nothing to ask about."
     }
 
     /// Why an object read offers none: nil when `of(object:)` finds trouble.
-    static func notFailing(object: [String: Any]) -> String? {
+    package static func notFailing(object: [String: Any]) -> String? {
         guard of(object: object) == nil else { return nil }
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         let name = metadata["name"] as? String ?? ""
@@ -153,15 +153,15 @@ enum KubeTrouble: Equatable, Sendable {
 // MARK: The brief
 
 /// The context a brief is about, as it says it.
-struct KubeBriefContext: Equatable, Sendable {
-    var name: String
-    var production: Bool
-    var writable: Bool
+package struct KubeBriefContext: Equatable, Sendable {
+    package var name: String
+    package var production: Bool
+    package var writable: Bool
 
     /// `context fake-dev (read-only for Overterm)`; production says how
     /// an agent treats it: read, change nothing — whatever Overterm's own
     /// writes there are, which the person makes, each asked.
-    var said: String {
+    package var said: String {
         if production { return "PRODUCTION context \(name) (read only: change nothing there)" }
         return "context \(name)" + (writable ? "" : " (read-only for Overterm)")
     }
@@ -170,34 +170,34 @@ struct KubeBriefContext: Equatable, Sendable {
 /// What the Ask Agent sheet opens with for a failing pod or a stuck
 /// rollout: the question, what the fixed chip calls it, the text always
 /// sent, the rest a chip each. Every word in it has been scrubbed.
-struct KubeAgentBrief: Equatable {
-    var message: String
-    var subject: String
-    var text: String
-    var parts: [AskAgentModel.Part]
+package struct KubeAgentBrief: Equatable {
+    package var message: String
+    package var subject: String
+    package var text: String
+    package var parts: [AskAgentModel.Part]
     /// The bound checkout's deployed commit (3.2), with the binding (3.1):
     /// nil while no checkout is bound to the brief's namespace; a part of
     /// its own then (`KubeAgentBriefing.withDeployedCommit`).
-    var deployedCommit: String? = nil
-    var production: Bool
+    package var deployedCommit: String? = nil
+    package var production: Bool
     /// Where it is about: the context and namespace — which checkout's
     /// agent it goes to first.
-    var context: String = ""
-    var namespace: String? = nil
+    package var context: String = ""
+    package var namespace: String? = nil
     /// The pod's (or template's) images: what the deployed commit is read from.
-    var images: [String] = []
+    package var images: [String] = []
     /// The checkout bound there whose deployed commit it says.
-    var checkout: String? = nil
+    package var checkout: String? = nil
 }
 
 /// Why no brief was made.
-enum KubeBriefProblem: Error, Equatable, CustomStringConvertible {
+package enum KubeBriefProblem: Error, Equatable, CustomStringConvertible {
     /// The object isn't failing: nothing to ask about.
     case notFailing(String)
     /// Not a pod or a Deployment.
     case unsupported(String)
 
-    var description: String {
+    package var description: String {
         switch self {
         case .notFailing(let why), .unsupported(let why): why
         }
@@ -206,27 +206,27 @@ enum KubeBriefProblem: Error, Equatable, CustomStringConvertible {
 
 /// The brief's words, from the API's JSON. Pure; bounded — it is typed
 /// into a terminal, and an agent reads it whole.
-enum KubeAgentText {
-    static let maxEvents = 15
+package enum KubeAgentText {
+    package static let maxEvents = 15
     /// A container's last lines, asked of the API (`tailLines`).
-    static let logLines = 60
-    static let maxLogBytes = 8 << 10
+    package static let logLines = 60
+    package static let maxLogBytes = 8 << 10
     /// What a log's read may bring at most (`limitBytes`), and how much of
     /// its end is scrubbed: sixty lines can be megabytes of JSON.
-    static let logReadBytes = 256 << 10
-    static let logKeepBytes = 64 << 10
+    package static let logReadBytes = 256 << 10
+    package static let logKeepBytes = 64 << 10
     /// A line is cut to this before it is scrubbed: more than `logs` shows
     /// of it, so what it shows was scrubbed whole.
-    static let maxLineBytes = maxLogBytes + (1 << 10)
+    package static let maxLineBytes = maxLogBytes + (1 << 10)
     /// At most this many containers' logs: the failing one first.
-    static let maxLogContainers = 2
-    static let maxTemplateBytes = 8 << 10
-    static let maxDiffBytes = 6 << 10
-    static let maxNodes = 20
-    static let maxPods = 10
-    static let maxEnv = 40
+    package static let maxLogContainers = 2
+    package static let maxTemplateBytes = 8 << 10
+    package static let maxDiffBytes = 6 << 10
+    package static let maxNodes = 20
+    package static let maxPods = 10
+    package static let maxEnv = 40
     /// An event's or a condition's message, at most.
-    static let maxMessage = 600
+    package static let maxMessage = 600
 
     // MARK: Exit codes
 
@@ -234,7 +234,7 @@ enum KubeAgentText {
     /// 127, 128 + a signal's number (137 SIGKILL — the OOM killer when
     /// `OOMKilled` — 143 SIGTERM, 139 SIGSEGV), 1 and 2. Nil for 0 and
     /// codes that only the program knows.
-    static func exitMeaning(_ code: Int, reason: String? = nil) -> String? {
+    package static func exitMeaning(_ code: Int, reason: String? = nil) -> String? {
         switch code {
         case 1: return "a general error: the program itself exited with 1 (its log says why)"
         case 2: return "a usage error: a shell builtin misused, or the program refused its arguments"
@@ -261,22 +261,22 @@ enum KubeAgentText {
 
     // MARK: Reading the JSON
 
-    static func map(_ value: Any?) -> [String: Any] { value as? [String: Any] ?? [:] }
-    static func list(_ value: Any?) -> [[String: Any]] { value as? [[String: Any]] ?? [] }
-    static func string(_ value: Any?) -> String? {
+    package static func map(_ value: Any?) -> [String: Any] { value as? [String: Any] ?? [:] }
+    package static func list(_ value: Any?) -> [[String: Any]] { value as? [[String: Any]] ?? [] }
+    package static func string(_ value: Any?) -> String? {
         guard let text = value as? String, !text.isEmpty else { return nil }
         return text
     }
-    static func name(_ object: [String: Any]) -> String { string(map(object["metadata"])["name"]) ?? "?" }
+    package static func name(_ object: [String: Any]) -> String { string(map(object["metadata"])["name"]) ?? "?" }
 
     /// A message, on one line and bounded.
-    static func short(_ text: String, _ limit: Int = maxMessage) -> String {
+    package static func short(_ text: String, _ limit: Int = maxMessage) -> String {
         let flat = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
         return flat.count > limit ? String(flat.prefix(limit)) + " …" : flat
     }
 
     /// The owner that controls it: `ReplicaSet web-7d9f`.
-    static func controller(of object: [String: Any]) -> (apiVersion: String, kind: String, name: String, uid: String?)? {
+    package static func controller(of object: [String: Any]) -> (apiVersion: String, kind: String, name: String, uid: String?)? {
         let owners = list(map(object["metadata"])["ownerReferences"])
         guard let owner = owners.first(where: { $0["controller"] as? Bool == true }) ?? owners.first, let kind = string(owner["kind"]),
             let name = string(owner["name"])
@@ -288,7 +288,7 @@ enum KubeAgentText {
     /// its node, its images' repositories, its owners — kept out of what
     /// scrubbing takes out (`Secrets.values`): `POSTGRES_PASSWORD=postgres`
     /// would blank the image `postgres:16` and every line naming it.
-    static func names(of object: [String: Any], owners: [String] = []) -> Set<String> {
+    package static func names(of object: [String: Any], owners: [String] = []) -> Set<String> {
         let metadata = map(object["metadata"])
         var names = Set([string(metadata["name"]), string(metadata["namespace"])].compactMap { $0 } + owners)
         let spec = map(object["spec"])
@@ -316,7 +316,7 @@ enum KubeAgentText {
     /// each container's state and how it last ended, what its exit code
     /// means, its resources, probes and env (secret-looking values masked,
     /// a Secret's values named — never read), its owners.
-    static func pod(_ pod: [String: Any], trouble: KubeTrouble?, context: KubeBriefContext, owners: [String]) -> String {
+    package static func pod(_ pod: [String: Any], trouble: KubeTrouble?, context: KubeBriefContext, owners: [String]) -> String {
         let metadata = map(pod["metadata"])
         let spec = map(pod["spec"])
         let status = map(pod["status"])
@@ -363,7 +363,7 @@ enum KubeAgentText {
     /// One container: its image, its state now, its restarts, how it last
     /// ended and what the exit code means, its resources, probes, command
     /// and env.
-    static func container(_ container: [String: Any], status: [String: Any]?, role: String = "Container") -> [String] {
+    package static func container(_ container: [String: Any], status: [String: Any]?, role: String = "Container") -> [String] {
         let name = string(container["name"]) ?? "?"
         var lines = ["\(role) \(name) (image \(string(container["image"]) ?? "?")):"]
         if let status {
@@ -392,7 +392,7 @@ enum KubeAgentText {
     }
 
     /// `Error, exit 1 at 2026-11-05T10:00:00Z: a general error …`.
-    static func ended(_ terminated: [String: Any]) -> String {
+    package static func ended(_ terminated: [String: Any]) -> String {
         let reason = string(terminated["reason"])
         let code = KubeRollout.int(terminated["exitCode"])
         var said = "terminated — \(reason ?? "?")"
@@ -406,7 +406,7 @@ enum KubeAgentText {
     }
 
     /// `requests cpu 100m, memory 128Mi; limits memory 256Mi`.
-    static func resources(_ container: [String: Any]) -> String? {
+    package static func resources(_ container: [String: Any]) -> String? {
         let resources = map(container["resources"])
         let said = ["requests", "limits"].compactMap { key -> String? in
             let values = map(resources[key])
@@ -417,7 +417,7 @@ enum KubeAgentText {
     }
 
     /// `HTTP GET :8080/healthz, every 10s, timeout 1s, 3 failures`.
-    static func probe(_ probe: [String: Any]) -> String {
+    package static func probe(_ probe: [String: Any]) -> String {
         var said: String
         if let http = probe["httpGet"] as? [String: Any] {
             said = "HTTP GET :\(http["port"].map { "\($0)" } ?? "?")\(string(http["path"]) ?? "/")"
@@ -443,7 +443,7 @@ enum KubeAgentText {
     /// its name — `from Secret web-db, key password (not read)` — a
     /// ConfigMap's or a field's by theirs; `envFrom` by the Secret's or the
     /// ConfigMap's name. No Secret is ever read for it.
-    static func env(_ container: [String: Any]) -> [String] {
+    package static func env(_ container: [String: Any]) -> [String] {
         var said: [String] = []
         let entries = list(container["env"])
         for entry in entries.prefix(maxEnv) {
@@ -484,7 +484,7 @@ enum KubeAgentText {
     /// container that restarted ran before, one that crashed once and
     /// wasn't restarted is its current log. A container waiting to be
     /// created has none.
-    static func logTargets(_ pod: [String: Any], trouble: KubeTrouble?) -> [(container: String, previous: Bool)] {
+    package static func logTargets(_ pod: [String: Any], trouble: KubeTrouble?) -> [(container: String, previous: Bool)] {
         let status = map(pod["status"])
         var targets: [(container: String, previous: Bool, first: Bool)] = []
         for item in list(status["initContainerStatuses"]) + list(status["containerStatuses"]) {
@@ -509,7 +509,7 @@ enum KubeAgentText {
     /// that fit in `maxLogBytes`, saying when earlier ones were left out.
     /// The newest alone too long is cut, not dropped: it is the crash. Nil
     /// for none.
-    static func logs(_ lines: [String], container: String, previous: Bool, stopped: Bool = false) -> (count: Int, text: String)? {
+    package static func logs(_ lines: [String], container: String, previous: Bool, stopped: Bool = false) -> (count: Int, text: String)? {
         guard !lines.isEmpty else { return nil }
         var kept: [String] = []
         var size = 0
@@ -533,7 +533,7 @@ enum KubeAgentText {
 
     /// A line bounded before it is scrubbed (`maxLineBytes`): cut back to
     /// its last whitespace, so no word is kept in part.
-    static func bounded(_ line: String) -> String {
+    package static func bounded(_ line: String) -> String {
         guard line.utf8.count > maxLineBytes else { return line }
         var text = DockerAgentText.cut(line, bytes: maxLineBytes)
         if let space = text.lastIndex(where: \.isWhitespace) { text = String(text[..<space]) }
@@ -543,7 +543,7 @@ enum KubeAgentText {
     // MARK: Events
 
     /// Its events, newest first: a warning marked, how often, how long ago.
-    static func events(_ events: [KubeEvent], about: String, now: Date = Date()) -> String? {
+    package static func events(_ events: [KubeEvent], about: String, now: Date = Date()) -> String? {
         guard !events.isEmpty else { return nil }
         let shown = events.prefix(maxEvents).map { event -> String in
             var line = "\(event.isWarning ? "Warning" : "Normal") \(event.reason)"
@@ -562,13 +562,13 @@ enum KubeAgentText {
     /// A pod template as YAML, as `kubectl get -o yaml` writes it: the
     /// controller's `pod-template-hash` label out, what looks secret masked
     /// (`masked`); bounded.
-    static func templateYAML(_ template: [String: Any]) -> String {
+    package static func templateYAML(_ template: [String: Any]) -> String {
         KubeYAML.text(masked(stripped(template)))
     }
 
     /// A template without what its controller adds: the `pod-template-hash`
     /// label, an empty `creationTimestamp`.
-    static func stripped(_ template: [String: Any]) -> [String: Any] {
+    package static func stripped(_ template: [String: Any]) -> [String: Any] {
         var template = template
         var metadata = map(template["metadata"])
         var labels = map(metadata["labels"])
@@ -580,7 +580,7 @@ enum KubeAgentText {
     }
 
     /// The lists of a pod spec's containers.
-    static let containerLists = ["initContainers", "containers", "ephemeralContainers"]
+    package static let containerLists = ["initContainers", "containers", "ephemeralContainers"]
 
     /// A template as an agent may read it: env values whose names look
     /// secret masked (`KubeObjectStrip.maskingEnv`, a Secret's keys only
@@ -588,7 +588,7 @@ enum KubeAgentText {
     /// line, its probes' and hooks' `exec` commands, through
     /// `Secrets.maskArguments` (`--requirepass` then its value, one list
     /// item each, as the pod's own Command line is).
-    static func masked(_ template: [String: Any]) -> [String: Any] {
+    package static func masked(_ template: [String: Any]) -> [String: Any] {
         var template = KubeObjectStrip.maskingEnv(template) as? [String: Any] ?? template
         guard var spec = template["spec"] as? [String: Any] else { return template }
         for key in containerLists {
@@ -624,7 +624,7 @@ enum KubeAgentText {
         return container
     }
 
-    static func template(_ template: [String: Any], of owner: String) -> String? {
+    package static func template(_ template: [String: Any], of owner: String) -> String? {
         guard !template.isEmpty else { return nil }
         var text = templateYAML(template)
         if text.utf8.count > maxTemplateBytes { text = DockerAgentText.cut(text, bytes: maxTemplateBytes) + "\n… the rest left out" }
@@ -634,14 +634,14 @@ enum KubeAgentText {
     /// The mark on a masked value that changed: its value isn't shown, but
     /// that it changed is — a rotated password is the change most likely
     /// to break a pod.
-    static let changedMark = " (changed)"
+    package static let changedMark = " (changed)"
 
     /// What changed between the previous ReplicaSet's template and the
     /// current one's, as a unified diff of their YAML (two lines of context);
     /// nil when there is no previous one. Bounded. Whether they differ is
     /// asked of the templates themselves, not their masked YAML: a masked
     /// value that changed (`markingChanged`) is marked, and named.
-    static func templateDiff(current: [String: Any], previous: [String: Any], currentName: String, previousName: String) -> String {
+    package static func templateDiff(current: [String: Any], previous: [String: Any], currentName: String, previousName: String) -> String {
         let rawOld = stripped(previous)
         let rawNew = stripped(current)
         guard !NSDictionary(dictionary: rawOld).isEqual(to: rawNew) else {
@@ -665,7 +665,7 @@ enum KubeAgentText {
     /// the previous one's did but isn't the same marked `changedMark` — an
     /// env value, a word of a container's command and args — and what each
     /// was: "DB_PASSWORD's value (container app)".
-    static func markingChanged(
+    package static func markingChanged(
         _ masked: [String: Any], raw: [String: Any], previous: [String: Any], previousMasked: [String: Any]
     ) -> (template: [String: Any], changed: [String]) {
         guard var spec = masked["spec"] as? [String: Any] else { return (masked, []) }
@@ -720,7 +720,7 @@ enum KubeAgentText {
 
     /// `old` to `new` as diff lines (`-`, `+`, ` `), unchanged runs cut to
     /// `context` lines either side, `@@` between hunks.
-    static func lineDiff(_ old: [String], _ new: [String], context: Int = 2) -> [String] {
+    package static func lineDiff(_ old: [String], _ new: [String], context: Int = 2) -> [String] {
         let difference = new.difference(from: old)
         var removed = Set<Int>()
         var inserted = Set<Int>()
@@ -765,7 +765,7 @@ enum KubeAgentText {
     /// (its containers' requests, the largest init container's if larger,
     /// its node selector and tolerations) against each node's allocatable —
     /// the node's whole room for pods, not what is left of it.
-    static func scheduling(_ pod: [String: Any], nodes: [[String: Any]]?, nodesProblem: String? = nil) -> String {
+    package static func scheduling(_ pod: [String: Any], nodes: [[String: Any]]?, nodesProblem: String? = nil) -> String {
         let spec = map(pod["spec"])
         var lines = ["Scheduling:"]
         let scheduled = list(map(pod["status"])["conditions"]).first { $0["type"] as? String == "PodScheduled" }
@@ -799,7 +799,7 @@ enum KubeAgentText {
 
     /// A node: ready, cordoned, taints, allocatable, and whether the pod's
     /// requests are more than it has at all.
-    static func node(_ node: [String: Any], wanted: (cpu: Double?, memory: Double?)) -> String {
+    package static func node(_ node: [String: Any], wanted: (cpu: Double?, memory: Double?)) -> String {
         let status = map(node["status"])
         let spec = map(node["spec"])
         let ready = list(status["conditions"]).first { $0["type"] as? String == "Ready" }?["status"] as? String
@@ -822,7 +822,7 @@ enum KubeAgentText {
 
     /// What a pod asks for: its containers' requests summed, or its largest
     /// init container's if that is more (they run one at a time, first).
-    static func requests(_ pod: [String: Any]) -> (cpu: Double?, memory: Double?) {
+    package static func requests(_ pod: [String: Any]) -> (cpu: Double?, memory: Double?) {
         let spec = map(pod["spec"])
         func asked(_ containers: [[String: Any]], _ key: String, sum: Bool) -> Double? {
             let values = containers.compactMap { (map(map($0["resources"])["requests"])[key] as? String).flatMap(KubeQuantity.value) }
@@ -840,11 +840,11 @@ enum KubeAgentText {
         return (both("cpu"), both("memory"))
     }
 
-    static func cpuSaid(_ cores: Double) -> String {
+    package static func cpuSaid(_ cores: Double) -> String {
         cores < 1 || cores != cores.rounded() ? "\(Int((cores * 1000).rounded()))m" : "\(Int(cores))"
     }
 
-    static func memorySaid(_ bytes: Double) -> String {
+    package static func memorySaid(_ bytes: Double) -> String {
         let gi = bytes / Double(1 << 30)
         if gi >= 1 { return gi == gi.rounded() ? "\(Int(gi))Gi" : String(format: "%.1fGi", gi) }
         return "\(Int((bytes / Double(1 << 20)).rounded()))Mi"
@@ -855,7 +855,7 @@ enum KubeAgentText {
     /// What is always sent about a Deployment: where it is, its rollout as
     /// `kubectl rollout status` reads it, its replicas, strategy and
     /// deadline, its conditions, its ReplicaSets.
-    static func deployment(
+    package static func deployment(
         _ deployment: [String: Any], trouble: KubeTrouble?, context: KubeBriefContext, current: [String: Any]?, previous: [String: Any]?
     ) -> String {
         let metadata = map(deployment["metadata"])
@@ -891,7 +891,7 @@ enum KubeAgentText {
     }
 
     /// `web-7d9f, revision 3: 1 wanted, 0 ready, 0 available`.
-    static func replicaSet(_ set: [String: Any]) -> String {
+    package static func replicaSet(_ set: [String: Any]) -> String {
         let status = map(set["status"])
         let revision = string(map(map(set["metadata"])["annotations"])["deployment.kubernetes.io/revision"])
         return "\(name(set))" + (revision.map { ", revision \($0)" } ?? "")
@@ -900,7 +900,7 @@ enum KubeAgentText {
     }
 
     /// The pods of a ReplicaSet, as the list's rows say them.
-    static func pods(_ pods: [KubePodSummary], of owner: String) -> String? {
+    package static func pods(_ pods: [KubePodSummary], of owner: String) -> String? {
         guard !pods.isEmpty else { return nil }
         var lines = pods.prefix(maxPods).map { pod in
             "\(pod.id.name): \(pod.exitReason ?? pod.status)" + (pod.ready.map { ", \($0)/\(pod.containers ?? $0) ready" } ?? "")
@@ -913,14 +913,14 @@ enum KubeAgentText {
     // MARK: ReplicaSets
 
     /// The revision a ReplicaSet's annotation says.
-    static func revision(_ set: [String: Any]) -> Int? {
+    package static func revision(_ set: [String: Any]) -> Int? {
         Int(string(map(map(set["metadata"])["annotations"])["deployment.kubernetes.io/revision"]) ?? "")
     }
 
     /// Of a Deployment's ReplicaSets (those it controls), the current one —
     /// the revision the Deployment says, else the highest — and the one
     /// before it.
-    static func currentAndPrevious(_ sets: [[String: Any]], of deployment: [String: Any]) -> (current: [String: Any]?, previous: [String: Any]?) {
+    package static func currentAndPrevious(_ sets: [[String: Any]], of deployment: [String: Any]) -> (current: [String: Any]?, previous: [String: Any]?) {
         let metadata = map(deployment["metadata"])
         let uid = string(metadata["uid"])
         let deploymentName = string(metadata["name"])

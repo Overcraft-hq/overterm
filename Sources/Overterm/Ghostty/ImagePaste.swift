@@ -8,14 +8,14 @@ import GhosttyKit
 /// just did nothing. In a pane an agent has the keyboard of, the paste key
 /// with only an image on the clipboard is handed over as ⌃V. Anywhere else
 /// it is left alone: ⌃V in a shell is quoted-insert.
-enum ImagePaste {
+package enum ImagePaste {
     /// The clipboard a paste reads — the terminal's own, which an isolated
     /// run keeps away from the user's — unless a scenario hands in another.
-    nonisolated(unsafe) static var override: NSPasteboard?
-    @MainActor static var pasteboard: NSPasteboard { override ?? GhosttyRuntime.pasteboard(GHOSTTY_CLIPBOARD_STANDARD) ?? .general }
+    package nonisolated(unsafe) static var override: NSPasteboard?
+    @MainActor package static var pasteboard: NSPasteboard { override ?? GhosttyRuntime.pasteboard(GHOSTTY_CLIPBOARD_STANDARD) ?? .general }
 
     /// An image and nothing a paste would type — no text, no file.
-    @MainActor static func clipboardHasOnlyImage(_ pasteboard: NSPasteboard? = nil) -> Bool {
+    @MainActor package static func clipboardHasOnlyImage(_ pasteboard: NSPasteboard? = nil) -> Bool {
         let pasteboard = pasteboard ?? Self.pasteboard
         let types = Set(pasteboard.types ?? [])
         guard !types.contains(.string), !types.contains(.fileURL) else { return false }
@@ -38,7 +38,7 @@ enum ImagePaste {
     /// first word alone, unmasked, at most `argumentReads` of them a paste
     /// — a shell's, vim's or a build's group reads none. At most `limit`
     /// members are looked at.
-    nonisolated static func agentHasKeyboard(
+    package nonisolated static func agentHasKeyboard(
         foreground group: pid_t?, kernel: some ActivityKernel = LiveActivityKernel(), limit: Int = 64, argumentReads: Int = 4
     ) -> Bool {
         guard let group, group > 0, let members = kernel.groupMembers(group, limit: limit) else { return false }
@@ -52,7 +52,7 @@ enum ImagePaste {
     /// file, or under an interpreter by the script it runs (`Agent.of`'s
     /// rule: Gemini CLI under `node`); nil for one gone, a zombie, or one not
     /// running as the user alone.
-    nonisolated static func agent(_ pid: pid_t, kernel: some ActivityKernel, argumentReads: inout Int) -> Agent? {
+    package nonisolated static func agent(_ pid: pid_t, kernel: some ActivityKernel, argumentReads: inout Int) -> Agent? {
         guard let process = kernel.process(pid), !process.isZombie, process.isWhollyOwn(by: kernel.uid),
             let name = kernel.name(of: pid)
         else { return nil }
@@ -68,7 +68,7 @@ enum ImagePaste {
     /// CLI, runs as `node`), a name that starts with an agent's (a platform build of
     /// Codex), or a version's (Claude Code's native install runs its
     /// `versions/<x.y.z>` file). Pure.
-    nonisolated static func mayHost(_ name: String) -> Bool {
+    package nonisolated static func mayHost(_ name: String) -> Bool {
         if Agent.interpreters.contains(name) || name.hasPrefix("node") { return true }
         if Agent.allCases.contains(where: { name.hasPrefix($0.rawValue) }) { return true }
         return name.contains(where: \.isNumber) && name.allSatisfy { $0.isASCII && ($0.isNumber || $0 == ".") }
@@ -76,14 +76,14 @@ enum ImagePaste {
 
     /// The foreground process group of `surface`'s terminal; nil when it
     /// has none.
-    @MainActor static func foregroundGroup(of surface: ghostty_surface_t) -> pid_t? {
+    @MainActor package static func foregroundGroup(of surface: ghostty_surface_t) -> pid_t? {
         let group = ghostty_surface_foreground_pid(surface)
         guard group > 0, group <= UInt64(Int32.max) else { return nil }
         return pid_t(group)
     }
 
     /// The ⌃V an agent reads the clipboard on, for `window`.
-    static func controlV(like event: NSEvent, _ type: NSEvent.EventType) -> NSEvent? {
+    package static func controlV(like event: NSEvent, _ type: NSEvent.EventType) -> NSEvent? {
         NSEvent.keyEvent(
             with: type, location: event.locationInWindow, modifierFlags: [.control], timestamp: event.timestamp,
             windowNumber: event.windowNumber, context: nil, characters: "\u{16}", charactersIgnoringModifiers: "v",

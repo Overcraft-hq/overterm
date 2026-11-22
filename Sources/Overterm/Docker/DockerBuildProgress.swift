@@ -4,75 +4,75 @@ import Foundation
 /// client/graph.go's json tags write it — Go's encoder, so `[]byte` is
 /// base64 and times are RFC 3339 with up to nine fraction digits. Fields
 /// a newer BuildKit adds are ignored. Pure.
-struct DockerSolveStatus: Decodable, Sendable {
-    struct Vertex: Decodable, Sendable {
-        var digest: String
-        var inputs: [String]?
-        var name: String?
-        var started: Date?
-        var completed: Date?
-        var cached: Bool?
-        var error: String?
+package struct DockerSolveStatus: Decodable, Sendable {
+    package struct Vertex: Decodable, Sendable {
+        package var digest: String
+        package var inputs: [String]?
+        package var name: String?
+        package var started: Date?
+        package var completed: Date?
+        package var cached: Bool?
+        package var error: String?
     }
 
     /// A step's sub-progress: a layer pulled, the context sent, an image named.
-    struct Status: Decodable, Sendable {
-        var id: String
-        var vertex: String?
-        var name: String?
-        var total: Int64?
-        var current: Int64?
-        var timestamp: Date?
-        var started: Date?
-        var completed: Date?
+    package struct Status: Decodable, Sendable {
+        package var id: String
+        package var vertex: String?
+        package var name: String?
+        package var total: Int64?
+        package var current: Int64?
+        package var timestamp: Date?
+        package var started: Date?
+        package var completed: Date?
     }
 
-    struct Log: Decodable, Sendable {
-        var vertex: String?
+    package struct Log: Decodable, Sendable {
+        package var vertex: String?
         /// 1 stdout, 2 stderr.
-        var stream: Int?
-        var data: Data
-        var timestamp: Date?
+        package var stream: Int?
+        package var data: Data
+        package var timestamp: Date?
     }
 
     /// A Dockerfile check's (BuildKit's lint): `short` and `detail` are bytes.
-    struct Warning: Decodable, Sendable {
-        var vertex: String?
-        var level: Int?
-        var short: Data?
-        var detail: [Data]?
-        var url: String?
-        var sourceInfo: SourceInfo?
-        var range: [Range]?
+    package struct Warning: Decodable, Sendable {
+        package var vertex: String?
+        package var level: Int?
+        package var short: Data?
+        package var detail: [Data]?
+        package var url: String?
+        package var sourceInfo: SourceInfo?
+        package var range: [Range]?
     }
 
-    struct SourceInfo: Decodable, Sendable {
-        var filename: String?
-        var data: Data?
-        var language: String?
+    package struct SourceInfo: Decodable, Sendable {
+        package var filename: String?
+        package var data: Data?
+        package var language: String?
     }
 
-    struct Range: Decodable, Sendable {
-        var start: Position?
-        var end: Position?
+    package struct Range: Decodable, Sendable {
+        package var start: Position?
+        package var end: Position?
     }
 
-    struct Position: Decodable, Sendable {
-        var line: Int?
-        var character: Int?
+    package struct Position: Decodable, Sendable {
+        package var line: Int?
+        package var character: Int?
     }
 
-    var vertexes: [Vertex]?
-    var statuses: [Status]?
-    var logs: [Log]?
-    var warnings: [Warning]?
+    package var vertexes: [Vertex]?
+    package var statuses: [Status]?
+    package var logs: [Log]?
+    package var warnings: [Warning]?
 
     /// Go's RFC3339Nano: `10:00:00Z`, `10:00:00.01Z`, `10:00:00.123456789Z`,
     /// an offset instead of Z. The fraction is added to the whole second,
     /// so its digits are never cut to what a formatter reads. Go's zero
     /// time (`0001-01-01T00:00:00Z`, a time that was never set) is
     /// `distantPast`, which the fold reads as no time.
-    static func date(_ text: String) -> Date? {
+    package static func date(_ text: String) -> Date? {
         if text.hasPrefix("0001-01-01T00:00:00") { return .distantPast }
         var whole = text
         var fraction = 0.0
@@ -87,7 +87,7 @@ struct DockerSolveStatus: Decodable, Sendable {
     /// Thread-safe, and parsing runs off the main thread at high rates.
     nonisolated(unsafe) private static let wholeSeconds = ISO8601DateFormatter()
 
-    static func decode(_ data: Data) throws -> DockerSolveStatus {
+    package static func decode(_ data: Data) throws -> DockerSolveStatus {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let text = try decoder.singleValueContainer().decode(String.self)
@@ -104,53 +104,53 @@ struct DockerSolveStatus: Decodable, Sendable {
 /// (`--progress plain`) folds them: a step numbered when it first starts,
 /// its time its intervals merged, its output in lines. The same for a
 /// running build and a finished record's replay. Pure.
-struct DockerBuildProgress: Sendable {
-    enum Update: Sendable {
+package struct DockerBuildProgress: Sendable {
+    package enum Update: Sendable {
         case status(DockerSolveStatus)
         /// A line that isn't one: what buildx said (an error, mostly).
         case said(String)
     }
 
     /// Off the main thread: a line → what it says; nil for an empty line.
-    static func decode(_ line: String) -> Update? {
+    package static func decode(_ line: String) -> Update? {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         if trimmed.hasPrefix("{"), let status = try? DockerSolveStatus.decode(Data(trimmed.utf8)) { return .status(status) }
         return .said(trimmed)
     }
 
-    struct Step: Identifiable, Equatable, Sendable {
+    package struct Step: Identifiable, Equatable, Sendable {
         /// `unknown`: still open when the stream broke off — it may have
         /// ended since, or still run; nothing here says which.
-        enum State: Equatable, Sendable { case running, done, cached, failed, canceled, unknown }
+        package enum State: Equatable, Sendable { case running, done, cached, failed, canceled, unknown }
 
-        let digest: String
-        var id: String { digest }
+        package let digest: String
+        package var id: String { digest }
         /// `#N`: the order steps first started, as plain progress numbers
         /// them; 0 for one not started yet.
-        fileprivate(set) var number: Int
-        var name: String
-        var cached: Bool
-        var error: String?
+        package fileprivate(set) var number: Int
+        package var name: String
+        package var cached: Bool
+        package var error: String?
         /// Start → stop, by start: a later copy of the same interval
         /// replaces it, as BuildKit's map does.
-        var intervals: [Date: Date?]
+        package var intervals: [Date: Date?]
         /// By id, in the order they started; each replaced on its update.
-        var statuses: [Status]
-        var log: [LogLine]
-        var logBytes: Int
-        var clipped: Bool
-        var warnings: [Warning]
+        package var statuses: [Status]
+        package var log: [LogLine]
+        package var logBytes: Int
+        package var clipped: Bool
+        package var warnings: [Warning]
         /// Its last log's timestamp.
-        var lastOutput: Date?
+        package var lastOutput: Date?
 
         /// `[internal]` and `[auth]`: BuildKit's own work, drawn dimmer.
-        var isInternal: Bool { name.hasPrefix("[internal]") || name.hasPrefix("[auth]") }
+        package var isInternal: Bool { name.hasPrefix("[internal]") || name.hasPrefix("[auth]") }
 
         /// What it is now. An interval still open once the build has ended
         /// is a step stopped with it; once the stream was `lost`, one whose
         /// end isn't known.
-        func state(ended: Bool, lost: Bool = false) -> State {
+        package func state(ended: Bool, lost: Bool = false) -> State {
             if let error { return error.hasSuffix("context canceled") ? .canceled : .failed }
             if cached { return .cached }
             if merged.last.map({ $0.stop == nil }) == true { return ended ? .canceled : lost ? .unknown : .running }
@@ -158,13 +158,13 @@ struct DockerBuildProgress: Sendable {
         }
 
         /// Its intervals merged, summed; an open one stops at `until`.
-        func duration(until: Date) -> TimeInterval {
+        package func duration(until: Date) -> TimeInterval {
             merged.reduce(0) { $0 + max(0, ($1.stop ?? until).timeIntervalSince($1.start)) }
         }
 
         /// Overlapping intervals as one, by start; an open one takes in
         /// every one after it (progressui's `mergeIntervals`).
-        var merged: [(start: Date, stop: Date?)] {
+        package var merged: [(start: Date, stop: Date?)] {
             let sorted = intervals.map { (start: $0.key, stop: $0.value) }.sorted { $0.start < $1.start }
             guard var current = sorted.first else { return [] }
             var out: [(start: Date, stop: Date?)] = []
@@ -185,27 +185,27 @@ struct DockerBuildProgress: Sendable {
         }
 
         /// Where its output's offsets count from: its most recent start.
-        var lastStart: Date? { merged.last?.start }
+        package var lastStart: Date? { merged.last?.start }
 
-        var startedAt: Date? { intervals.keys.min() }
+        package var startedAt: Date? { intervals.keys.min() }
 
-        static func == (a: Step, b: Step) -> Bool {
+        package static func == (a: Step, b: Step) -> Bool {
             a.digest == b.digest && a.number == b.number && a.name == b.name && a.cached == b.cached && a.error == b.error && a.intervals == b.intervals
                 && a.statuses == b.statuses && a.logBytes == b.logBytes && a.log.count == b.log.count && a.clipped == b.clipped
                 && a.warnings == b.warnings && a.lastOutput == b.lastOutput
         }
     }
 
-    struct Status: Equatable, Sendable {
-        var id: String
-        var current: Int64
-        var total: Int64?
-        var started: Date?
-        var completed: Date?
-        var timestamp: Date?
+    package struct Status: Equatable, Sendable {
+        package var id: String
+        package var current: Int64
+        package var total: Int64?
+        package var started: Date?
+        package var completed: Date?
+        package var timestamp: Date?
 
         /// As plain progress prints it, after `#N `: `sha256:… 3.64MB / 3.64MB 0.4s done`.
-        var plain: String {
+        package var plain: String {
             var text = id
             if let total, total != 0 {
                 text += " " + DockerBuildProgress.bytes(current) + " / " + DockerBuildProgress.bytes(total)
@@ -221,50 +221,50 @@ struct DockerBuildProgress: Sendable {
         }
     }
 
-    struct LogLine: Equatable, Sendable {
+    package struct LogLine: Equatable, Sendable {
         /// Seconds since its step's most recent start.
-        var offset: Double
-        var text: String
-        var stderr: Bool
+        package var offset: Double
+        package var text: String
+        package var stderr: Bool
 
         /// As plain progress prints it: three decimals under 10 s, two
         /// under 100, then one.
-        var offsetText: String {
+        package var offsetText: String {
             String(format: offset < 10 ? "%.3f" : offset < 100 ? "%.2f" : "%.1f", offset)
         }
     }
 
-    struct Warning: Equatable, Sendable {
-        var short: String
-        var detail: [String]
-        var url: String?
-        var file: String?
-        var line: Int?
+    package struct Warning: Equatable, Sendable {
+        package var short: String
+        package var detail: [String]
+        package var url: String?
+        package var file: String?
+        package var line: Int?
         /// That line of the Dockerfile.
-        var source: String?
+        package var source: String?
         /// The step's digest.
-        var step: String?
+        package var step: String?
 
         /// buildx's dedup ignores the vertex: a warning said again is one.
-        func same(_ other: Warning) -> Bool { short == other.short && file == other.file && line == other.line }
+        package func same(_ other: Warning) -> Bool { short == other.short && file == other.file && line == other.line }
     }
 
     /// `logLimit`: bytes of output kept a step — BuildKit's own default.
-    init(logLimit: Int = 2 << 20) {
+    package init(logLimit: Int = 2 << 20) {
         self.logLimit = logLimit
     }
 
-    let logLimit: Int
-    private(set) var steps: [Step] = []
+    package let logLimit: Int
+    package private(set) var steps: [Step] = []
     /// Deduped, as buildx dedups them.
-    private(set) var warnings: [Warning] = []
+    package private(set) var warnings: [Warning] = []
     /// The last 20 lines that weren't a SolveStatus: what buildx said.
-    private(set) var said: [String] = []
-    private(set) var ended = false
+    package private(set) var said: [String] = []
+    package private(set) var ended = false
     /// The stream broke off before the build's end (`lose`).
-    private(set) var lost = false
+    package private(set) var lost = false
     /// The newest timestamp in the stream.
-    private(set) var lastSeen: Date?
+    package private(set) var lastSeen: Date?
 
     private var index: [String: Int] = [:]
     /// Vertexes seen before they started: not a step yet, but what is said
@@ -273,7 +273,7 @@ struct DockerBuildProgress: Sendable {
     /// A step's half line: its bytes, and the offset of the log that began it.
     private var partial: [String: (data: Data, offset: Double, stderr: Bool)] = [:]
 
-    mutating func apply(_ update: Update) {
+    package mutating func apply(_ update: Update) {
         switch update {
         case .said(let line):
             said = Array((said + [line]).suffix(20))
@@ -286,12 +286,12 @@ struct DockerBuildProgress: Sendable {
     }
 
     /// Decode and apply, for tests.
-    mutating func add(_ line: String) {
+    package mutating func add(_ line: String) {
         if let update = Self.decode(line) { apply(update) }
     }
 
     /// The stream is over: each half line is a last line.
-    mutating func end() {
+    package mutating func end() {
         flushPartials()
         ended = true
     }
@@ -299,7 +299,7 @@ struct DockerBuildProgress: Sendable {
     /// The stream broke off before the build's end: each half line is a
     /// last line, and a step still open is no longer drawn as running —
     /// nothing here would say when it stops.
-    mutating func lose() {
+    package mutating func lose() {
         flushPartials()
         lost = true
     }
@@ -311,18 +311,18 @@ struct DockerBuildProgress: Sendable {
         }
     }
 
-    func step(_ digest: String) -> Step? { index[digest].map { steps[$0] } }
+    package func step(_ digest: String) -> Step? { index[digest].map { steps[$0] } }
 
-    func state(of step: Step) -> Step.State { step.state(ended: ended, lost: lost) }
+    package func state(of step: Step) -> Step.State { step.state(ended: ended, lost: lost) }
 
     /// The first that failed.
-    var failedStep: Step? { steps.first { state(of: $0) == .failed } }
+    package var failedStep: Step? { steps.first { state(of: $0) == .failed } }
 
     /// The step a detail shows unless one is picked: the first that failed;
     /// else the running one that wrote last (a running one that wrote
     /// nothing after those that did, the higher number first); else the
     /// last that wrote anything; else the last.
-    var automaticStep: Step? {
+    package var automaticStep: Step? {
         if let failedStep { return failedStep }
         let running = steps.filter { state(of: $0) == .running }
         if let writing = running.max(by: { a, b in
@@ -338,19 +338,19 @@ struct DockerBuildProgress: Sendable {
         return steps.last { !$0.log.isEmpty } ?? steps.last
     }
 
-    struct Summary: Equatable, Sendable {
-        var steps = 0
-        var running = 0
-        var done = 0
-        var cached = 0
-        var failed = 0
-        var canceled = 0
-        var unknown = 0
-        var started: Date?
-        var finished: Date?
+    package struct Summary: Equatable, Sendable {
+        package var steps = 0
+        package var running = 0
+        package var done = 0
+        package var cached = 0
+        package var failed = 0
+        package var canceled = 0
+        package var unknown = 0
+        package var started: Date?
+        package var finished: Date?
     }
 
-    var summary: Summary {
+    package var summary: Summary {
         var summary = Summary(steps: steps.count)
         for step in steps {
             switch state(of: step) {
@@ -369,7 +369,7 @@ struct DockerBuildProgress: Sendable {
 
     /// The earliest start to the latest stop — or to `now`, while the
     /// stream goes on. Never below 0 (a clock that is off).
-    func elapsed(now: Date) -> TimeInterval? {
+    package func elapsed(now: Date) -> TimeInterval? {
         let summary = summary
         guard let started = summary.started else { return nil }
         let end = ended || lost ? (summary.finished ?? started) : max(now, summary.finished ?? now)
@@ -378,7 +378,7 @@ struct DockerBuildProgress: Sendable {
 
     /// The steps as `--progress plain` groups them, each once, in its last
     /// state; `secrets` taken out.
-    func plainText(redacting secrets: [String] = []) -> String {
+    package func plainText(redacting secrets: [String] = []) -> String {
         let blocks = steps.map { step -> String in
             let mark = "#\(step.number) "
             var lines = [mark + step.name]
@@ -399,7 +399,7 @@ struct DockerBuildProgress: Sendable {
 
     /// As plain progress (go-units, decimal): `214B`, `3.64MB`. Not
     /// localized: a log is read as BuildKit wrote it.
-    static func bytes(_ count: Int64) -> String {
+    package static func bytes(_ count: Int64) -> String {
         guard count >= 1000 else { return "\(count)B" }
         var value = Double(count)
         var unit = 0

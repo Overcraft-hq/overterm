@@ -2,7 +2,7 @@ import Foundation
 
 /// What an agent is asked about a container: why it failed, or lines
 /// picked out of a log — a container's, or a compose project's merged.
-enum DockerAgentQuestion {
+package enum DockerAgentQuestion {
     case failure(ContainerSummary)
     case logLines(String, ContainerSummary)
     case projectLogLines(String, ComposeProject)
@@ -12,28 +12,28 @@ enum DockerAgentQuestion {
 /// question already typed, what the fixed chip calls the text, the text
 /// always sent, what else goes as a chip each, and where a new agent tab
 /// opens. Every word in it has been scrubbed (`DockerSecrets.scrub`).
-struct DockerAgentBrief: Equatable {
-    var message: String
-    var subject: String?
-    var text: String
-    var parts: [AskAgentModel.Part]
-    var folder: String?
+package struct DockerAgentBrief: Equatable {
+    package var message: String
+    package var subject: String?
+    package var text: String
+    package var parts: [AskAgentModel.Part]
+    package var folder: String?
 }
 
 /// The brief's words, from what the engine and Compose said. Pure.
-enum DockerAgentText {
+package enum DockerAgentText {
     /// The log lines a failure brings: read fresh from the engine, not the
     /// Logs tab's feed, so they are there when the tab never opened.
-    static let logLines = 80
+    package static let logLines = 80
     /// What goes into a prompt typed into a terminal: bounded.
-    static let maxLogBytes = 12 << 10
-    static let maxServiceBytes = 8 << 10
-    static let maxEnv = 50
-    static let maxCheckOutput = 2_000
+    package static let maxLogBytes = 12 << 10
+    package static let maxServiceBytes = 8 << 10
+    package static let maxEnv = 50
+    package static let maxCheckOutput = 2_000
 
     /// What an exit code means, when it says more than "it failed": the
     /// shell's 126 and 127, and 128 + a signal's number.
-    static func exitMeaning(_ code: Int, outOfMemory: Bool = false) -> String? {
+    package static func exitMeaning(_ code: Int, outOfMemory: Bool = false) -> String? {
         switch code {
         case 126: return "the command couldn't be run (not executable)"
         case 127: return "a command wasn't found (its entrypoint, or one its script ran)"
@@ -65,7 +65,7 @@ enum DockerAgentText {
     /// secret can be — the error, the command, the health check and its
     /// output, the env's values; the names, the paths and the states come
     /// from the engine and Compose's labels, and are said as they are.
-    static func about(
+    package static func about(
         _ container: ContainerSummary, _ detail: ContainerDetail, trouble: DockerAttention.Trouble?, ports: [PublishedPort], project: ComposeProject?,
         engine: String, memoryTotal: Int?, logs: Int? = nil
     ) -> String {
@@ -201,7 +201,7 @@ enum DockerAgentText {
     /// its image's repository — kept out of what scrubbing takes out
     /// (`DockerSecrets.values`): `POSTGRES_PASSWORD=postgres` would blank
     /// `shop-postgres-1`, `postgres:16` and every line of its log.
-    static func names(of container: ContainerSummary, image: String? = nil) -> Set<String> {
+    package static func names(of container: ContainerSummary, image: String? = nil) -> Set<String> {
         var names: Set<String> = [container.name]
         if let project = container.composeProject { names.insert(project) }
         if let service = container.composeService { names.insert(service) }
@@ -230,7 +230,7 @@ enum DockerAgentText {
     }
 
     /// Nanoseconds, as a person says them: `30s`, `1.5s`, `2m`.
-    static func duration(_ nanoseconds: Int) -> String {
+    package static func duration(_ nanoseconds: Int) -> String {
         let seconds = Double(nanoseconds) / 1_000_000_000
         if seconds >= 60, seconds.truncatingRemainder(dividingBy: 60) == 0 { return "\(Int(seconds / 60))m" }
         if seconds == seconds.rounded() { return "\(Int(seconds))s" }
@@ -247,7 +247,7 @@ enum DockerAgentText {
     /// earlier ones were left out. The newest alone too long (a stack
     /// trace in one JSON line) is cut, not dropped: it is the crash. Nil
     /// for none.
-    static func logs(
+    package static func logs(
         _ lines: [LogLine], env: [(key: String, value: String)], keeping names: Set<String> = []
     ) -> (count: Int, text: String)? {
         guard !lines.isEmpty else { return nil }
@@ -275,7 +275,7 @@ enum DockerAgentText {
     /// A secret-looking key's value masked (a `${VAR}` it names kept), an
     /// `environment` or `args` entry by its key, every URL's password;
     /// then scrubbed and bounded. Nil when it isn't there.
-    static func service(
+    package static func service(
         _ name: String, inConfig json: Data, env: [(key: String, value: String)], keeping names: Set<String> = []
     ) -> String? {
         guard let model = try? JSONSerialization.jsonObject(with: json) as? [String: Any], let services = model["services"] as? [String: Any],
@@ -325,7 +325,7 @@ enum DockerAgentText {
     }
 
     /// At most `bytes` of UTF-8, cut between characters.
-    static func cut(_ text: String, bytes: Int) -> String {
+    package static func cut(_ text: String, bytes: Int) -> String {
         guard text.utf8.count > bytes else { return text }
         var end = text.startIndex
         var size = 0
@@ -342,10 +342,10 @@ enum DockerAgentText {
 /// lines, its compose service — once, when asked. A brief that can't be
 /// scrubbed (no engine, no inspect: no env to take out) isn't made.
 @MainActor
-enum DockerAgentBriefing {
+package enum DockerAgentBriefing {
     /// `composeConfig`: the project's `docker compose config` JSON (a
     /// test's canned one); `composeConfig(of:endpoint:)` by default.
-    static func brief(
+    package static func brief(
         _ question: DockerAgentQuestion, docker: DockerModel, composeConfig: ((ComposeProject, DockerEndpoint?) async -> Data?)? = nil
     ) async throws -> DockerAgentBrief {
         guard let engine = docker.engine else { throw DockerError.unreachable("Docker isn't answering, so its secrets can't be taken out.") }
@@ -422,7 +422,7 @@ enum DockerAgentBriefing {
     /// Compose knows it), so a `.env` password never comes in. Nil when
     /// Compose can't be asked here — no docker, its files not on this Mac,
     /// an isolated run without a stub — or doesn't answer in 5 s.
-    static func composeConfig(of project: ComposeProject, endpoint: DockerEndpoint?) async -> Data? {
+    package static func composeConfig(of project: ComposeProject, endpoint: DockerEndpoint?) async -> Data? {
         guard DockerPageModel.mayAskCompose, let cli = DockerCLI(endpoint: endpoint) else { return nil }
         let files = ComposePortStore.shared.files(for: project)
         guard !files.isEmpty, files.allSatisfy({ FileManager.default.fileExists(atPath: $0) }) else { return nil }

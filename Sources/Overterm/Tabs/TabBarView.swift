@@ -3,69 +3,69 @@ import SwiftUI
 
 /// What the strip asks its window to do. Closures rather than a reference to
 /// the controller, so the hosting view does not retain it.
-struct TabBarActions {
-    var select: (Tab) -> Void
-    var close: (Tab) -> Void
-    var newTab: () -> Void
-    var newAgentTab: (Agent) -> Void
-    var newTask: () -> Void
+package struct TabBarActions {
+    package var select: (Tab) -> Void
+    package var close: (Tab) -> Void
+    package var newTab: () -> Void
+    package var newAgentTab: (Agent) -> Void
+    package var newTask: () -> Void
     /// The ± badge: open the changes pane on the scope the badge counts,
     /// or hide it.
-    var toggleDiff: () -> Void
+    package var toggleDiff: () -> Void
     /// The PR chip: the right pane on the checkout's pull request.
-    var showPullRequest: () -> Void
+    package var showPullRequest: () -> Void
     /// The gauge: the right pane on what the agents have spent.
-    var showUsage: () -> Void
+    package var showUsage: () -> Void
     /// The update chip: Settings ▸ About.
-    var showUpdate: () -> Void
+    package var showUpdate: () -> Void
     /// A page's tab (Settings, Docker): show it, close it.
-    var showOverlay: (WorkspaceOverlay) -> Void
-    var closeOverlay: (WorkspaceOverlay) -> Void
+    package var showOverlay: (WorkspaceOverlay) -> Void
+    package var closeOverlay: (WorkspaceOverlay) -> Void
     /// A review's tab: show it, close it.
-    var showReview: (ReviewModel) -> Void = { _ in }
-    var closeReview: (ReviewModel) -> Void = { _ in }
+    package var showReview: (ReviewModel) -> Void = { _ in }
+    package var closeReview: (ReviewModel) -> Void = { _ in }
     /// Editing a name ended (committed or cancelled): give the keyboard back
     /// to the terminal.
-    var renameEnded: () -> Void
-    var setPinned: (Tab, Bool) -> Void
+    package var renameEnded: () -> Void
+    package var setPinned: (Tab, Bool) -> Void
     /// The globe: the browser column, shown or hidden.
-    var toggleBrowser: () -> Void = {}
+    package var toggleBrowser: () -> Void = {}
     /// The phone beside it: the same column, showing the simulator.
-    var toggleSimulator: () -> Void = {}
+    package var toggleSimulator: () -> Void = {}
     /// The suspended chip: one tab, or every one, carried on.
-    var resume: (Tab) -> Void = { _ in }
-    var resumeAll: () -> Void = {}
+    package var resume: (Tab) -> Void = { _ in }
+    package var resumeAll: () -> Void = {}
     /// A press, drag or release on a tab (`StripPressView`).
-    var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
+    package var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
 }
 
 /// What the title bar's globe shows: whether there is a browser (Settings
 /// ▸ Browser) and whether its column is open.
 @MainActor
-final class BrowserButtonState: ObservableObject {
-    @Published var isEnabled = true
+package final class BrowserButtonState: ObservableObject {
+    @Published package var isEnabled = true
     /// The phone beside it (Settings ▸ Browser ▸ Simulator): each has its own switch.
-    @Published var isSimulatorEnabled = true
+    @Published package var isSimulatorEnabled = true
     /// The column is open — on the browser, or on the simulator.
-    @Published var isOpen = false
+    @Published package var isOpen = false
     /// What it is open on: the simulator rather than the browser.
-    @Published var isSimulator = false
+    @Published package var isSimulator = false
 }
 
 /// Chrome-style tab strip, living in the window's title bar.
-struct TabBarView: View {
-    @ObservedObject var store: TabStore
-    @ObservedObject var diff: DiffModel
+package struct TabBarView: View {
+    @ObservedObject package var store: TabStore
+    @ObservedObject package var diff: DiffModel
     /// For the checkout's pull request, next to the ± badge.
-    @ObservedObject var worktrees: WorktreeModel
+    @ObservedObject package var worktrees: WorktreeModel
     /// A newer release, as a chip.
-    @ObservedObject var updates: UpdateChecker
-    @ObservedObject var usage: UsageModel
-    @ObservedObject var theme: ChromeTheme
+    @ObservedObject package var updates: UpdateChecker
+    @ObservedObject package var usage: UsageModel
+    @ObservedObject package var theme: ChromeTheme
     /// The globe beside the ± badge.
-    @ObservedObject var browser: BrowserButtonState
-    let actions: TabBarActions
-    let groupActions: TabGroupActions
+    @ObservedObject package var browser: BrowserButtonState
+    package let actions: TabBarActions
+    package let groupActions: TabGroupActions
 
     /// The branch of the checkout the selected tab works in.
     private var selectedBranch: String? {
@@ -74,7 +74,7 @@ struct TabBarView: View {
         return Worktree.containing(directory, in: worktrees.worktrees)?.branch
     }
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 0) {
             // The tabs scroll in what is left over. Laid out plainly, a
             // strip of eight tabs is wider than the window and SwiftUI
@@ -237,10 +237,10 @@ struct TabBarView: View {
 /// window's event monitor can tell which chip a context click landed on.
 /// The strip is in the title bar, which eats right-clicks before SwiftUI
 /// sees them, so `.contextMenu` there does nothing (docs/debugging.md).
-struct GroupChipFramesKey: PreferenceKey {
-    static let defaultValue: [TabGroup.ID: CGRect] = [:]
+package struct GroupChipFramesKey: PreferenceKey {
+    package static let defaultValue: [TabGroup.ID: CGRect] = [:]
 
-    static func reduce(value: inout [TabGroup.ID: CGRect], nextValue: () -> [TabGroup.ID: CGRect]) {
+    package static func reduce(value: inout [TabGroup.ID: CGRect], nextValue: () -> [TabGroup.ID: CGRect]) {
         value.merge(nextValue()) { $1 }
     }
 }
@@ -257,44 +257,44 @@ struct GroupChipFramesKey: PreferenceKey {
 ///
 /// They were 36, 30 and 28 picked separately, which is why a group sat
 /// taller than the tab beside it.
-enum TabCard {
+package enum TabCard {
     /// Settings ▸ Appearance ▸ Density moves it (ChromeMetrics).
-    static var height: CGFloat { ChromeMetrics.tabHeight }
-    static let inset: CGFloat = 3
-    static var nested: CGFloat { height - inset * 2 }
-    static let radius: CGFloat = 11
-    static let nestedRadius: CGFloat = 8
+    package static var height: CGFloat { ChromeMetrics.tabHeight }
+    package static let inset: CGFloat = 3
+    package static var nested: CGFloat { height - inset * 2 }
+    package static let radius: CGFloat = 11
+    package static let nestedRadius: CGFloat = 8
 }
 
 /// Each tab's frame in the strip, top-left origin.
-struct TabFramesKey: PreferenceKey {
-    static let space = "tabStrip"
-    static let defaultValue: [Tab.ID: CGRect] = [:]
+package struct TabFramesKey: PreferenceKey {
+    package static let space = "tabStrip"
+    package static let defaultValue: [Tab.ID: CGRect] = [:]
 
-    static func reduce(value: inout [Tab.ID: CGRect], nextValue: () -> [Tab.ID: CGRect]) {
+    package static func reduce(value: inout [Tab.ID: CGRect], nextValue: () -> [Tab.ID: CGRect]) {
         value.merge(nextValue()) { $1 }
     }
 }
 
 /// One tab in the strip. Not private: the group islands draw their
 /// members with it too (Groups/TabGroupViews).
-struct TabItemView: View {
+package struct TabItemView: View {
     /// The checkout the *selected* tab is in. Only it shows a branch — it is
     /// what you need while you are in the tab, and on the others it would
     /// crowd out the title — so the strip resolves one and passes it down.
-    var branch: String?
+    package var branch: String?
 
-    @ObservedObject var tab: Tab
-    @ObservedObject var store: TabStore
-    @ObservedObject var theme: ChromeTheme
-    let actions: TabBarActions
+    @ObservedObject package var tab: Tab
+    @ObservedObject package var store: TabStore
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: TabBarActions
     /// Inside a group's island, which is inset around it: the tab is
     /// then the island's height less that inset, so the two cards end
     /// up the same size as a loose tab beside them.
-    var nested = false
+    package var nested = false
     /// The copy that follows the pointer while the tab is dragged: drawn
     /// only — no frame reported, no press taken.
-    var ghost = false
+    package var ghost = false
     @State private var hovering = false
 
     /// Not while a page (Settings, Docker, a review) shows: it covers this one.
@@ -448,7 +448,7 @@ struct TabItemView: View {
     private var height: CGFloat { nested ? TabCard.nested : TabCard.height }
     private var radius: CGFloat { nested ? TabCard.nestedRadius : TabCard.radius }
 
-    var body: some View {
+    package var body: some View {
         Group {
             if tab.isPinned { pinnedContent } else { fullContent }
         }
@@ -659,22 +659,22 @@ private struct TabRenameField: View {
 /// answering alike for a review's tab, the island's + and the empty space
 /// after the last tab — where macOS 26 had the clip view answer for the
 /// space alone.
-final class StripExtentNSView: NSView {
-    enum Role { case scroller, row }
-    var role: Role = .row
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+package final class StripExtentNSView: NSView {
+    package enum Role { case scroller, row }
+    package var role: Role = .row
+    package override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-struct StripExtent: NSViewRepresentable {
-    let role: StripExtentNSView.Role
+package struct StripExtent: NSViewRepresentable {
+    package let role: StripExtentNSView.Role
 
-    func makeNSView(context: Context) -> StripExtentNSView {
+    package func makeNSView(context: Context) -> StripExtentNSView {
         let view = StripExtentNSView()
         view.role = role
         return view
     }
 
-    func updateNSView(_ view: StripExtentNSView, context: Context) { view.role = role }
+    package func updateNSView(_ view: StripExtentNSView, context: Context) { view.role = role }
 }
 
 /// Empty strip space drags the window, as a title bar should.
@@ -733,13 +733,13 @@ private struct DiffBadge: View {
 
 /// The browser column's switch in the title bar, beside the ± badge: lit
 /// while the column is open.
-struct BrowserButton: View {
-    let isOpen: Bool
-    @ObservedObject var theme: ChromeTheme
-    let action: () -> Void
+package struct BrowserButton: View {
+    package let isOpen: Bool
+    @ObservedObject package var theme: ChromeTheme
+    package let action: () -> Void
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         Button(action: action) {
             // The icon alone, as the phone beside it: the word took room
             // the tabs wanted, and said nothing the globe doesn't.
@@ -759,13 +759,13 @@ struct BrowserButton: View {
 
 /// The simulator's switch, beside the browser's: the same column, showing
 /// the booted simulator's screen. Lit while that is what it shows.
-struct SimulatorButton: View {
-    let isOpen: Bool
-    @ObservedObject var theme: ChromeTheme
-    let action: () -> Void
+package struct SimulatorButton: View {
+    package let isOpen: Bool
+    @ObservedObject package var theme: ChromeTheme
+    package let action: () -> Void
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         Button(action: action) {
             Image(systemName: "iphone").font(.system(size: ChromeMetrics.text(12), weight: .medium))
                 .foregroundStyle(isOpen ? theme.text : theme.text2)
@@ -814,44 +814,44 @@ private struct PullRequestChip: View {
 /// The tab strip, which lives in the title bar.
 /// Under the title bar, beside the strip: the strip's colour, so the
 /// traffic lights stand on the same panel as the tabs.
-struct TitleBand: View {
-    @ObservedObject var theme: ChromeTheme
-    var body: some View { theme.card.ignoresSafeArea() }
+package struct TitleBand: View {
+    @ObservedObject package var theme: ChromeTheme
+    package var body: some View { theme.card.ignoresSafeArea() }
 }
 
 /// The strip's host, whatever its SwiftUI content: the window sets the
 /// width the title bar leaves it.
 @MainActor
-protocol TitleBarStrip: AnyObject {
+package protocol TitleBarStrip: AnyObject {
     var barWidth: CGFloat { get set }
 }
 
-final class TabStripHostingView<Content: View>: NSHostingView<Content>, TitleBarStrip {
+package final class TabStripHostingView<Content: View>: NSHostingView<Content>, TitleBarStrip {
     /// How tall the strip is.
     ///
     /// The unified toolbar's title bar measures 66 pt, but AppKit does not
     /// centre the traffic lights in all of it: it puts them 19 pt from the
     /// top, centred in the top 52. The strip is that row, so a tab lines up
     /// with the lights; the 14 pt below is title bar the cards take.
-    static var height: CGFloat { 52 }
+    package static var height: CGFloat { 52 }
 
-    override var mouseDownCanMoveWindow: Bool { false }
+    package override var mouseDownCanMoveWindow: Bool { false }
 
     /// The width the title bar leaves it (the window sets it); its item's
     /// constraints stretch it to that.
-    var barWidth: CGFloat = 600
+    package var barWidth: CGFloat = 600
 
     /// Small and fixed, never its tabs' width: the toolbar places an item
     /// by this. Every tab's width, wider than the bar, put the strip in the
     /// overflow menu — a lone »; no width, or the bar's whole width, and
     /// the bar didn't place it at all. The item's constraints then stretch
     /// it across the bar (`TerminalWindowController.installToolbar`).
-    override var intrinsicContentSize: NSSize { NSSize(width: 200, height: Self.height) }
+    package override var intrinsicContentSize: NSSize { NSSize(width: 200, height: Self.height) }
 
     /// The strip IS the title bar. With the title bar's inset (which
     /// `.ignoresSafeArea()` doesn't undo here) SwiftUI laid it out in the top
     /// 28 pt of its 38, leaving an empty band under the tabs.
-    override var safeAreaInsets: NSEdgeInsets { NSEdgeInsetsZero }
+    package override var safeAreaInsets: NSEdgeInsets { NSEdgeInsetsZero }
 
     /// The empty strip belongs to the drag area, whatever is over it.
     ///
@@ -865,7 +865,7 @@ final class TabStripHostingView<Content: View>: NSHostingView<Content>, TitleBar
     /// scroll view but off the tabs' row (`StripExtent`). A tab or a chip
     /// answers with its own press view (`StripPressView`), a chip from this
     /// host.
-    override func hitTest(_ point: NSPoint) -> NSView? {
+    package override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
         let extents = self.extents()
         guard Self.isEmptyStrip(hit, at: point, scroller: extents.scroller, row: extents.row) else { return hit }
@@ -877,7 +877,7 @@ final class TabStripHostingView<Content: View>: NSHostingView<Content>, TitleBar
     /// as `hitTest` takes it), has nothing of the strip's own under it:
     /// the scroll machinery itself, or anything but a press view or a
     /// control inside the scroll view (`scroller`) and off the tabs' row.
-    static func isEmptyStrip(_ view: NSView?, at point: NSPoint = .zero, scroller: NSRect? = nil, row: NSRect? = nil) -> Bool {
+    package static func isEmptyStrip(_ view: NSView?, at point: NSPoint = .zero, scroller: NSRect? = nil, row: NSRect? = nil) -> Bool {
         guard let view, !(view is WindowDragView), !(view is StripPressNSView), !(view is NSControl) else { return false }
         if view is NSClipView || view is NSScrollView { return true }
         guard let scroller, let row else { return false }
@@ -918,8 +918,8 @@ final class TabStripHostingView<Content: View>: NSHostingView<Content>, TitleBar
 
 /// Behind the tab strip: pressing empty strip space drags (or, double-clicked,
 /// zooms) the window.
-final class WindowDragView: NSView {
-    override func mouseDown(with event: NSEvent) {
+package final class WindowDragView: NSView {
+    package override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
             window?.performZoom(nil)
         } else {

@@ -4,7 +4,7 @@ import Combine
 // MARK: A review's Terraform section (docs/design/terraform/analysis.md 2.2, 2.9, 5.5; stage 2f)
 
 extension TerminalWindowController {
-    var terraformReviewActions: TerraformReviewActions {
+    package var terraformReviewActions: TerraformReviewActions {
         TerraformReviewActions(
             plan: { [weak self] review, root in self?.planTerraformFromReview(review, root) },
             initialize: { [weak self] review, root in
@@ -23,7 +23,7 @@ extension TerminalWindowController {
     /// Its section is read each time the review loads (opened, Reload)
     /// while it is the one on screen — never while another shows; one
     /// that loaded hidden is read when it shows (`showTerraformReview`).
-    func watchTerraformReview(_ review: ReviewModel) {
+    package func watchTerraformReview(_ review: ReviewModel) {
         // @Published emits before the change lands: the emitted phase is used,
         // the rest read once it has.
         review.$phase
@@ -42,7 +42,7 @@ extension TerminalWindowController {
     }
 
     /// A review shown: its section read if it loaded while hidden.
-    func showTerraformReview(_ review: ReviewModel) {
+    package func showTerraformReview(_ review: ReviewModel) {
         guard review.phase == .loaded, review.terraform.missed else { return }
         readTerraformReview(review)
     }
@@ -50,7 +50,7 @@ extension TerminalWindowController {
     /// The roots the review touches, read in the checkout with its head
     /// (else its own). Nothing for a review whose checkout has no roots
     /// and which changes no Terraform file; nothing with Terraform off.
-    func readTerraformReview(_ review: ReviewModel) {
+    package func readTerraformReview(_ review: ReviewModel) {
         let model = review.terraform
         guard Settings.shared.terraformEnabled, review.phase == .loaded, !review.files.isEmpty else { return model.clear() }
         let changed = TerraformReview.changedPaths(review.files)
@@ -76,7 +76,7 @@ extension TerminalWindowController {
     }
 
     /// `ref` as a commit of `checkout`'s repository, or nil.
-    nonisolated static func commit(of ref: String, in checkout: URL) async -> String? {
+    package nonisolated static func commit(of ref: String, in checkout: URL) async -> String? {
         guard !ref.hasPrefix("-") else { return nil }
         let sha = (try? await Git.run(["rev-parse", "--verify", "--quiet", ref + "^{commit}"], in: checkout))?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -87,7 +87,7 @@ extension TerminalWindowController {
     /// whether the files differ from it — a tracked file changed, or an
     /// untracked one under the root that Terraform loads (`untrackedLoaded`)
     /// — read without taking git's lock.
-    nonisolated static func plannedCommit(_ checkout: URL, root: URL) async -> (String?, Bool) {
+    package nonisolated static func plannedCommit(_ checkout: URL, root: URL) async -> (String?, Bool) {
         let head = await commit(of: "HEAD", in: checkout)
         let status = try? await Git.run(["--no-optional-locks", "status", "--porcelain", "--untracked-files=no"], in: checkout)
         let tracked = status.map { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? true
@@ -99,7 +99,7 @@ extension TerminalWindowController {
     /// a `.tf`, `.tf.json`, `.tofu` or var file (`.tfvars`, `*.auto.tfvars`):
     /// an agent's or the person's scratch file is part of the plan, not of
     /// any commit. Git's ignores apply; "?" when git couldn't say.
-    nonisolated static func untrackedLoaded(under root: URL) async -> String? {
+    package nonisolated static func untrackedLoaded(under root: URL) async -> String? {
         guard
             let listed = try? await Git.run(
                 ["--no-optional-locks", "status", "--porcelain", "-z", "--untracked-files=all", "--", "."], in: root, outputLimit: 1 << 20)
@@ -112,12 +112,12 @@ extension TerminalWindowController {
     }
 
     /// A file name Terraform reads into a plan of its folder.
-    nonisolated static func loadsWithRoot(_ name: String) -> Bool {
+    package nonisolated static func loadsWithRoot(_ name: String) -> Bool {
         let lower = name.lowercased()
         return TerraformRootGuess.isConfigFile(lower) || lower.hasSuffix(".tfvars") || lower.hasSuffix(".tfvars.json")
     }
 
-    nonisolated static func samePath(_ a: URL, _ b: URL) -> Bool {
+    package nonisolated static func samePath(_ a: URL, _ b: URL) -> Bool {
         a.resolvingSymlinksInPath().standardizedFileURL.path == b.resolvingSymlinksInPath().standardizedFileURL.path
     }
 
@@ -133,7 +133,7 @@ extension TerminalWindowController {
 
     /// The pull request a comment goes to: the review's, else the open one
     /// of the reviewed branch.
-    func terraformReviewPullRequest(_ review: ReviewModel) -> Int? { reviewPullRequest(review)?.number }
+    package func terraformReviewPullRequest(_ review: ReviewModel) -> Int? { reviewPullRequest(review)?.number }
 
     /// That pull request's number, head commit and branch, as gh said them.
     private func reviewPullRequest(_ review: ReviewModel) -> (number: Int, head: String?, branch: String?)? {
@@ -159,7 +159,7 @@ extension TerminalWindowController {
     /// checkout may have been pulled, edited or committed to since the
     /// review loaded —, and a checkout no longer at the reviewed commit
     /// isn't planned as the review's.
-    func planTerraformFromReview(_ review: ReviewModel, _ root: TerraformReview.Root) {
+    package func planTerraformFromReview(_ review: ReviewModel, _ root: TerraformReview.Root) {
         let model = review.terraform
         guard Settings.shared.terraformEnabled, let head = model.head, model.cards[root.path] != nil else { return NSSound.beep() }
         if let note = head.note { return alert("Not the reviewed code", note) }
@@ -194,7 +194,7 @@ extension TerminalWindowController {
 
     /// What the reviewed code's risks and changed lines are read against:
     /// the review's own base, as a commit of the head's checkout. Nil: HEAD.
-    static func reviewBase(_ source: ReviewSource, base prBase: String?, in checkout: URL) async -> String? {
+    package static func reviewBase(_ source: ReviewSource, base prBase: String?, in checkout: URL) async -> String? {
         func verified(_ ref: String) async -> String? { await commit(of: ref, in: checkout) }
         func mergeBase(_ ref: String) async -> String? {
             guard await verified(ref) != nil else { return nil }
@@ -221,7 +221,7 @@ extension TerminalWindowController {
     /// `terraform show`'s text —, only plans of the pull request's head
     /// commit (others left out, said), the whole comment shown before `gh
     /// pr comment` posts it.
-    func postTerraformPlans(_ review: ReviewModel) {
+    package func postTerraformPlans(_ review: ReviewModel) {
         guard let pr = reviewPullRequest(review), let head = review.terraform.head else { return NSSound.beep() }
         if let note = head.note { return alert("Not the reviewed code", note) }
         guard let prHead = pr.head, TerraformReview.isCommit(prHead) else {
@@ -279,7 +279,7 @@ extension TerminalWindowController {
     /// made; a worktree left half made is removed. Nothing is planned by
     /// it; its roots are prepared as New Task's are (2b: the workspace
     /// another worktree selects named, `init -backend=false` where allowed).
-    func checkOutForTerraform(_ review: ReviewModel) {
+    package func checkOutForTerraform(_ review: ReviewModel) {
         let model = review.terraform
         guard model.head == nil, !model.checkingOut else { return }
         Task { @MainActor [weak self] in

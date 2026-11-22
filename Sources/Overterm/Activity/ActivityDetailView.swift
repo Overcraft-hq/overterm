@@ -5,20 +5,20 @@ import SwiftUI
 /// the list's right-click menu's, one list (`ActivityPageModel.verbs`) —,
 /// the masked command, where and why, its tree, its listeners, its usage.
 /// Every number through `Text(verbatim:)`.
-struct ActivityDetailView: View {
-    let detail: ActivityDetail
-    @ObservedObject var theme: ChromeTheme
-    @ObservedObject var page: ActivityPageModel
+package struct ActivityDetailView: View {
+    package let detail: ActivityDetail
+    @ObservedObject package var theme: ChromeTheme
+    @ObservedObject package var page: ActivityPageModel
     /// The selection's verbs: buttons here, the same as its menu.
-    let verbs: [ResourceVerb]
+    package let verbs: [ResourceVerb]
     /// A chart's Copy Values as CSV.
-    var copy: ((String) -> Void)? = nil
+    package var copy: ((String) -> Void)? = nil
     /// The crosshair its charts share.
     @StateObject private var cursor = TimeChartCursor()
 
     private var row: ActivityProcessRow { detail.row }
 
-    var body: some View {
+    package var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header

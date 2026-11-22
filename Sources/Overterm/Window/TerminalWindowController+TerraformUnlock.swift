@@ -1,7 +1,7 @@
 import AppKit
 
 /// What Force Unlock came to: the scenario reads it.
-enum TerraformUnlockOutcome: Equatable {
+package enum TerraformUnlockOutcome: Equatable {
     case refused(String)
     case cancelled
     case unlocked(String)
@@ -12,10 +12,10 @@ enum TerraformUnlockOutcome: Equatable {
 extension TerminalWindowController {
     /// A scenario's: the force-unlock sheet answered here — what was
     /// typed, or nil for Cancel — instead of on the window.
-    static var terraformUnlockQuestionRecorder: ((TerraformUnlock.Sheet) -> String?)?
+    package static var terraformUnlockQuestionRecorder: ((TerraformUnlock.Sheet) -> String?)?
 
     /// Force Unlock…, under a lock a plan of this window couldn't take.
-    func forceUnlockTerraform(_ run: TerraformPlanRun) {
+    package func forceUnlockTerraform(_ run: TerraformPlanRun) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let outcome = await self.forceUnlock(run)
@@ -27,7 +27,7 @@ extension TerminalWindowController {
     /// before the sheet and again just before it runs; the sheet naming
     /// the holder, the root's name typed on every class (5.4). Never a
     /// plan as the probe, never a lock Overterm's own run may hold.
-    func forceUnlock(_ run: TerraformPlanRun) async -> TerraformUnlockOutcome {
+    package func forceUnlock(_ run: TerraformPlanRun) async -> TerraformUnlockOutcome {
         let unlocks = TerraformUnlockModel.shared
         guard !unlocks.going.contains(run.id) else { return .refused("A force unlock of this lock is going already.") }
         unlocks.began(run.id)
@@ -138,13 +138,13 @@ extension TerminalWindowController {
     /// credentials: the backend needs them) but read now — and refused when
     /// the root no longer says what the plan did, or the binary or
     /// environment changed between the sheet's two reads.
-    struct TerraformUnlockPlace: Sendable, Equatable {
-        var root: URL
-        var binary: URL
-        var environment: [String: String]
+    package struct TerraformUnlockPlace: Sendable, Equatable {
+        package var root: URL
+        package var binary: URL
+        package var environment: [String: String]
     }
 
-    enum TerraformUnlockPlaceRead: Sendable {
+    package enum TerraformUnlockPlaceRead: Sendable {
         case ready(TerraformUnlockPlace)
         case refused(String)
     }

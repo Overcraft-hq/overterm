@@ -6,37 +6,37 @@ import Foundation
 /// names, and the `TF_WORKSPACE` or `TF_DATA_DIR` assigned before it. A
 /// line read through `ShellCommandLine`, as Kubernetes' and a tab's kind
 /// are; never run. Pure.
-struct TerraformCommandLine: Equatable, Sendable {
-    static let tools: Set<String> = ["terraform", "tofu", "terragrunt"]
+package struct TerraformCommandLine: Equatable, Sendable {
+    package static let tools: Set<String> = ["terraform", "tofu", "terragrunt"]
     /// What probably runs Terraform when a root is all the files settle (3.2).
-    static let probableTools: Set<String> = ["tf", "make", "just", "task", "atlantis"]
-    static let shells: Set<String> = ["sh", "bash", "zsh", "dash", "ksh"]
+    package static let probableTools: Set<String> = ["tf", "make", "just", "task", "atlantis"]
+    package static let shells: Set<String> = ["sh", "bash", "zsh", "dash", "ksh"]
 
-    var tool: String
+    package var tool: String
     /// `apply`, `plan`, `state rm`, `workspace select`, `run --all apply`; nil: none given.
-    var operation: String?
+    package var operation: String?
     /// `-chdir=…`'s folder.
-    var chdir: String?
+    package var chdir: String?
     /// `TF_WORKSPACE=…` or `TF_DATA_DIR=…` before the command.
-    var workspace: String?
-    var dataDir: String?
+    package var workspace: String?
+    package var dataDir: String?
     /// The var files the run names (`-var-file=prod.tfvars`, `-var-file
     /// prod.tfvars`) and its backend-config files (`-backend-config=
     /// backend/prod.s3.tfbackend`) — a file's path only, never a `-backend-config=key=value`
     /// pair, whose value may be a credential: 5.1's signal 4, by name.
-    var varFiles: [String] = []
-    var backendConfigFiles: [String] = []
-    var autoApprove = false
+    package var varFiles: [String] = []
+    package var backendConfigFiles: [String] = []
+    package var autoApprove = false
     /// `init -migrate-state` or `-force-copy`: state copied to a new backend.
-    var migratesState = false
+    package var migratesState = false
     /// `make apply`, `./deploy-prod.sh`: not terraform's own word.
-    var probably = false
+    package var probably = false
 
     /// Subcommands whose next word is part of what they do.
     private static let grouped: Set<String> = ["state", "workspace", "providers"]
 
     /// What changes infrastructure, state or the workspaces (3.3's list).
-    var isWrite: Bool {
+    package var isWrite: Bool {
         guard let operation else { return autoApprove || migratesState }
         if autoApprove || migratesState { return true }
         let first = operation.split(separator: " ").first.map(String.init) ?? operation
@@ -54,7 +54,7 @@ struct TerraformCommandLine: Equatable, Sendable {
 
     /// The first terraform-family command of a line, else (`probable`) a
     /// command that probably runs one.
-    static func parse(_ line: String, probable: Bool = true) -> TerraformCommandLine? {
+    package static func parse(_ line: String, probable: Bool = true) -> TerraformCommandLine? {
         let commands = ShellCommandLine.commands(in: line)
         if let first = all(in: commands).first { return first }
         guard probable else { return nil }
@@ -66,7 +66,7 @@ struct TerraformCommandLine: Equatable, Sendable {
 
     /// Every terraform-family command of a line, in order: `terraform plan
     /// && terraform apply` is a plan and an apply (3.3 reads them all).
-    static func all(in line: String) -> [TerraformCommandLine] { all(in: ShellCommandLine.commands(in: line)) }
+    package static func all(in line: String) -> [TerraformCommandLine] { all(in: ShellCommandLine.commands(in: line)) }
 
     private static func all(in commands: [ShellCommandLine.Command]) -> [TerraformCommandLine] {
         commands.filter { tools.contains($0.tool) }.map { command in
@@ -77,14 +77,14 @@ struct TerraformCommandLine: Equatable, Sendable {
         }
     }
 
-    static func isProbable(_ tool: String) -> Bool {
+    package static func isProbable(_ tool: String) -> Bool {
         probableTools.contains(tool) || (tool.hasPrefix("deploy") && tool.hasSuffix(".sh"))
     }
 
     /// A process's argv: `terraform apply`, `/opt/homebrew/bin/tofu plan`,
     /// or a script run by its shell (`bash /…/terraform plan`, the
     /// recording wrapper before it `exec`s).
-    static func parse(arguments argv: [String]) -> TerraformCommandLine? {
+    package static func parse(arguments argv: [String]) -> TerraformCommandLine? {
         guard var tool = argv.first.map({ ($0 as NSString).lastPathComponent }) else { return nil }
         var rest = Array(argv.dropFirst())
         if shells.contains(tool) {
@@ -110,7 +110,7 @@ struct TerraformCommandLine: Equatable, Sendable {
     }
 
     /// Every file the run names, for the class's signals.
-    var namedFiles: [String] { varFiles + backendConfigFiles }
+    package var namedFiles: [String] { varFiles + backendConfigFiles }
 
     private static func make(tool: String, arguments: [String]) -> TerraformCommandLine {
         var line = TerraformCommandLine(tool: tool)

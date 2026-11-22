@@ -5,13 +5,13 @@ import Foundation
 /// Cloudflare R2, Backblaze B2, Wasabi, GCS's interoperability — over REST,
 /// each request signed with SigV4 (`S3Signer`). Bucket names in the host
 /// (virtual-hosted) or the path, as the provider wants.
-actor S3Client: StorageClient {
+package actor S3Client: StorageClient {
     private let config: DatabaseConnection
     private let secret: String?
     private let session: URLSession
     private let progress = UploadProgress()
 
-    init(_ connection: DatabaseConnection, secret: String?) {
+    package init(_ connection: DatabaseConnection, secret: String?) {
         config = connection
         self.secret = secret
         let configuration = URLSessionConfiguration.ephemeral
@@ -35,7 +35,7 @@ actor S3Client: StorageClient {
     }
 
     /// `scheme://host[:port]/bucket/key`, or `scheme://bucket.host/key`.
-    func url(bucket: String?, key: String = "", query: [(String, String)] = []) -> URL? {
+    package func url(bucket: String?, key: String = "", query: [(String, String)] = []) -> URL? {
         var components = URLComponents()
         components.scheme = config.sslMode == .disable ? "http" : "https"
         let virtual = !config.pathStyle && bucket != nil
@@ -73,7 +73,7 @@ actor S3Client: StorageClient {
     }
 
     /// S3's `<Error><Code>…<Message>…</Error>`, said plainly.
-    static func failure(_ data: Data, _ response: HTTPURLResponse) -> DatabaseError {
+    package static func failure(_ data: Data, _ response: HTTPURLResponse) -> DatabaseError {
         let tree = XMLTree.parse(data)
         let code = tree?.value("Code") ?? ""
         var message = tree?.value("Message") ?? HTTPURLResponse.localizedString(forStatusCode: response.statusCode).capitalized
@@ -89,7 +89,7 @@ actor S3Client: StorageClient {
 
     // MARK: StorageClient
 
-    func connect() async throws {
+    package func connect() async throws {
         // A key may list one bucket and not the others: the default one tried first.
         if !config.database.isEmpty {
             _ = try await list(bucket: config.database, prefix: "", after: nil)
@@ -98,7 +98,7 @@ actor S3Client: StorageClient {
         }
     }
 
-    func buckets() async throws -> [StorageBucket] {
+    package func buckets() async throws -> [StorageBucket] {
         do {
             let (data, _) = try await request("GET", url(bucket: nil))
             let formatter = ISO8601DateFormatter()
@@ -120,7 +120,7 @@ actor S3Client: StorageClient {
     }
 
     /// PUT /bucket — in the connection's region (us-east-1 takes no body).
-    func createBucket(_ name: String) async throws {
+    package func createBucket(_ name: String) async throws {
         let region = try signer().region
         var body: Data?
         if region != "us-east-1", region != "auto", config.provider == .aws || config.provider == .custom {
@@ -131,7 +131,7 @@ actor S3Client: StorageClient {
         _ = try await request("PUT", url(bucket: name), body: body)
     }
 
-    func list(bucket: String, prefix: String, after token: String?) async throws -> StorageListing {
+    package func list(bucket: String, prefix: String, after token: String?) async throws -> StorageListing {
         var query = [("list-type", "2"), ("delimiter", "/"), ("prefix", prefix), ("max-keys", "1000")]
         if let token { query.append(("continuation-token", token)) }
         let (data, _) = try await request("GET", url(bucket: bucket, query: query))
@@ -139,7 +139,7 @@ actor S3Client: StorageClient {
     }
 
     /// ListObjectsV2's answer: its folders and files, the page's end.
-    static func listing(_ data: Data, prefix: String) -> StorageListing {
+    package static func listing(_ data: Data, prefix: String) -> StorageListing {
         guard let tree = XMLTree.parse(data) else { return StorageListing() }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -157,7 +157,7 @@ actor S3Client: StorageClient {
         return listing
     }
 
-    func keys(bucket: String, prefix: String) async throws -> [String] {
+    package func keys(bucket: String, prefix: String) async throws -> [String] {
         var keys: [String] = []
         var token: String?
         repeat {
@@ -171,13 +171,13 @@ actor S3Client: StorageClient {
         return keys
     }
 
-    func read(bucket: String, key: String, range: ClosedRange<Int64>?) async throws -> Data {
+    package func read(bucket: String, key: String, range: ClosedRange<Int64>?) async throws -> Data {
         var headers: [String: String] = [:]
         if let range { headers["Range"] = "bytes=\(range.lowerBound)-\(range.upperBound)" }
         return try await request("GET", url(bucket: bucket, key: key), headers: headers).0
     }
 
-    func head(bucket: String, key: String) async throws -> StorageMetadata {
+    package func head(bucket: String, key: String) async throws -> StorageMetadata {
         let (_, response) = try await request("HEAD", url(bucket: bucket, key: key))
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -189,7 +189,7 @@ actor S3Client: StorageClient {
             etag: response.value(forHTTPHeaderField: "ETag")?.trimmingCharacters(in: CharacterSet(charactersIn: "\"")))
     }
 
-    func download(bucket: String, key: String, to destination: URL) async throws {
+    package func download(bucket: String, key: String, to destination: URL) async throws {
         guard let url = url(bucket: bucket, key: key) else { throw DatabaseError.failed("The endpoint isn't a valid address.") }
         var request = URLRequest(url: url)
         for (name, value) in try signer().sign(method: "GET", url: url, headers: [:], payloadHash: S3Signer.sha256(Data()), date: Date()) {
@@ -203,7 +203,7 @@ actor S3Client: StorageClient {
         try FileManager.default.moveItem(at: file, to: destination)
     }
 
-    func upload(bucket: String, key: String, file: URL, contentType: String?, progress report: @escaping @Sendable (Double) -> Void) async throws {
+    package func upload(bucket: String, key: String, file: URL, contentType: String?, progress report: @escaping @Sendable (Double) -> Void) async throws {
         guard let url = url(bucket: bucket, key: key) else { throw DatabaseError.failed("The endpoint isn't a valid address.") }
         // The file's hash, read in pieces: a large file isn't held in memory.
         let hash = try Self.sha256(of: file)
@@ -223,13 +223,13 @@ actor S3Client: StorageClient {
         }
     }
 
-    func put(bucket: String, key: String, data: Data, contentType: String?) async throws {
+    package func put(bucket: String, key: String, data: Data, contentType: String?) async throws {
         var headers: [String: String] = [:]
         if let contentType { headers["Content-Type"] = contentType }
         _ = try await request("PUT", url(bucket: bucket, key: key), headers: headers, body: data)
     }
 
-    func delete(bucket: String, keys: [String]) async throws {
+    package func delete(bucket: String, keys: [String]) async throws {
         var remaining = keys[...]
         while !remaining.isEmpty {
             let batch = Array(remaining.prefix(1000))
@@ -256,18 +256,18 @@ actor S3Client: StorageClient {
         return message.contains("NotImplemented") || message.contains("not implemented") || message.contains("MalformedXML")
     }
 
-    func link(bucket: String, key: String, expires: TimeInterval) async throws -> URL? {
+    package func link(bucket: String, key: String, expires: TimeInterval) async throws -> URL? {
         guard let url = url(bucket: bucket, key: key) else { return nil }
         return try signer().presign(url: url, expires: expires, date: Date())
     }
 
-    nonisolated func path(bucket: String, key: String) -> String { "s3://\(bucket)/\(key)" }
+    package nonisolated func path(bucket: String, key: String) -> String { "s3://\(bucket)/\(key)" }
 
-    static func escape(_ text: String) -> String {
+    package static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
     }
 
-    static func sha256(of file: URL) throws -> String {
+    package static func sha256(of file: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
         var hasher = SHA256()
@@ -277,13 +277,13 @@ actor S3Client: StorageClient {
 }
 
 /// An upload's progress, from URLSession's delegate to whoever asked.
-final class UploadProgress: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, @unchecked Sendable {
+package final class UploadProgress: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var reports: [Int: @Sendable (Double) -> Void] = [:]
     private var bodies: [Int: Data] = [:]
     private var waiting: [Int: CheckedContinuation<(Data, URLResponse), Error>] = [:]
 
-    func run(_ task: URLSessionUploadTask, report: @escaping @Sendable (Double) -> Void) async throws -> (Data, URLResponse) {
+    package func run(_ task: URLSessionUploadTask, report: @escaping @Sendable (Double) -> Void) async throws -> (Data, URLResponse) {
         try await withCheckedThrowingContinuation { continuation in
             lock.withLock {
                 reports[task.taskIdentifier] = report
@@ -293,16 +293,16 @@ final class UploadProgress: NSObject, URLSessionTaskDelegate, URLSessionDataDele
         }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData sent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+    package func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData sent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
         let report = lock.withLock { reports[task.taskIdentifier] }
         if totalBytesExpectedToSend > 0 { report?(Double(totalBytesSent) / Double(totalBytesExpectedToSend)) }
     }
 
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+    package func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         lock.withLock { bodies[dataTask.taskIdentifier, default: Data()].append(data) }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+    package func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         let (continuation, body) = lock.withLock { () -> (CheckedContinuation<(Data, URLResponse), Error>?, Data) in
             reports[task.taskIdentifier] = nil
             return (waiting.removeValue(forKey: task.taskIdentifier), bodies.removeValue(forKey: task.taskIdentifier) ?? Data())

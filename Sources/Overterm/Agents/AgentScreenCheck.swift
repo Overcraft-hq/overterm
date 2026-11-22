@@ -24,17 +24,17 @@ import Foundation
 ///   Terraform ask's does. A tab in front of you is read only while a
 ///   mark from here stands, to see the question go.
 /// Pure.
-enum AgentScreenCheck {
-    static let interval: Duration = .seconds(3)
+package enum AgentScreenCheck {
+    package static let interval: Duration = .seconds(3)
     /// How long a pane's agent, read off its processes, is believed.
-    static let agentRecheck: TimeInterval = 10
+    package static let agentRecheck: TimeInterval = 10
     /// The screen's last lines read: a question is the newest thing there.
-    static let window = 40
+    package static let window = 40
 
     /// Whether a pane is looked at this round: something runs in it, it
     /// hasn't signalled, and its tab isn't in front of you — or a question
     /// read there earlier still stands (to see it go).
-    static func looks(running: Bool, signalled: Bool, visible: Bool, standing: Bool) -> Bool {
+    package static func looks(running: Bool, signalled: Bool, visible: Bool, standing: Bool) -> Bool {
         if standing { return true }
         return running && !signalled && !visible
     }
@@ -47,7 +47,7 @@ enum AgentScreenCheck {
     /// - opencode's dialog, `△ Permission required` with its Allow once /
     ///   Reject buttons (no numbers: nothing to answer with, only to say).
     /// pi asks nothing (no approvals, by design).
-    static func question(in text: String) -> String? {
+    package static func question(in text: String) -> String? {
         let lines = text.components(separatedBy: "\n").suffix(window)
         let tail = lines.joined(separator: "\n")
         if let prompt = AgentPrompt.parse(tail), prompt.isApproval {
@@ -58,7 +58,7 @@ enum AgentScreenCheck {
 
     /// opencode's permission dialog: the header, and its buttons below it.
     /// Its `$ <command>` line, when a shell command is asked about.
-    static func opencodePermission(in lines: [String]) -> String? {
+    package static func opencodePermission(in lines: [String]) -> String? {
         let clean = lines.map { AgentPrompt.unboxed($0).trimmingCharacters(in: .whitespaces) }
         guard let header = clean.lastIndex(where: { $0.contains("Permission required") }) else { return nil }
         let below = clean[header...]

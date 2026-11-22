@@ -3,24 +3,24 @@ import SwiftUI
 /// A container, at the side of the list: what it is, how it ended, how to
 /// reach it, what it was given — and its logs, its inspect data, its use.
 /// The same on the page and in the right-hand pane.
-struct ContainerDetailView: View {
-    let container: ContainerSummary
-    @ObservedObject var session: ContainerSession
+package struct ContainerDetailView: View {
+    package let container: ContainerSummary
+    @ObservedObject package var session: ContainerSession
     /// Which tab; the model that owns the session follows it with the
     /// streams (`ContainerSession.follow`), not this view's appearing —
     /// SwiftUI swaps a view's instances, and one leaving stopped what the
     /// next had started.
-    @Binding var tab: ContainerTab
+    @Binding package var tab: ContainerTab
     /// Its image's platform: emulated or not.
-    @ObservedObject var docker: DockerModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+    @ObservedObject package var docker: DockerModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
     /// What can be done to it — the page's, or the panel's (`DockerPageModel.verbs(for:)`):
     /// asked as it draws, so its inspect arriving can add one (an image
     /// listed by its ID, named there).
-    let verbs: () -> [ResourceVerb]
+    package let verbs: () -> [ResourceVerb]
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             tabs
@@ -277,7 +277,7 @@ struct ContainerDetailView: View {
     }
 
     /// `2026-10-27T10:00:00.123456789Z` → a date as the Mac writes one.
-    static func date(_ text: String) -> String {
+    package static func date(_ text: String) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let trimmed = text.replacingOccurrences(of: #"(\.\d{3})\d+"#, with: "$1", options: .regularExpression)

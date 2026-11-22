@@ -3,15 +3,15 @@ import SwiftUI
 /// `N`: a new namespace's name — the context said, the name checked as a
 /// DNS label as it is typed. Create goes on to the write's own
 /// confirmation (`KubernetesPageModel.write`); nothing is made here.
-struct KubeNamespaceSheetView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
+package struct KubeNamespaceSheetView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
 
     /// The name field's placeholder — how the scenario finds the field
     /// that has the keyboard.
-    static let placeholder = "namespace name"
+    package static let placeholder = "namespace name"
 
-    var body: some View {
+    package var body: some View {
         if let draft = page.namespaceDraft {
             ZStack(alignment: .top) {
                 Color.black.opacity(0.001).onTapGesture { page.closeNamespaceSheet() }

@@ -6,8 +6,8 @@ import Foundation
 /// the window around it (metrics.md, 3.2). `KubeChartMarkers` joins them
 /// from what the detail already holds: a workload's History, the detail's
 /// events, its pods' `lastState` and the restarts seen between reads.
-struct KubeChartMarker: Equatable, Sendable, Identifiable {
-    enum Kind: String, Sendable, CaseIterable {
+package struct KubeChartMarker: Equatable, Sendable, Identifiable {
+    package enum Kind: String, Sendable, CaseIterable {
         /// A new pod template, a rollout restart, a rollback: blue.
         case rollout
         /// A Helm revision: blue.
@@ -22,7 +22,7 @@ struct KubeChartMarker: Equatable, Sendable, Identifiable {
         case warning
 
         /// What the popover calls it.
-        var label: String {
+        package var label: String {
             switch self {
             case .rollout: "Rollout"
             case .helm: "Helm revision"
@@ -35,7 +35,7 @@ struct KubeChartMarker: Equatable, Sendable, Identifiable {
     }
 
     /// What a click on it opens.
-    enum Opens: Equatable, Sendable {
+    package enum Opens: Equatable, Sendable {
         /// A container's previous instance's log: the pod shown's (`pod` nil), or a workload's pod's.
         case previousLog(pod: String?, container: String)
         /// A History entry, and the diff it has.
@@ -44,7 +44,7 @@ struct KubeChartMarker: Equatable, Sendable, Identifiable {
         case event(String)
 
         /// What the popover's button says.
-        var title: String {
+        package var title: String {
             switch self {
             case .previousLog(let pod, _): pod == nil ? "Previous Log" : "Open Pod's Previous Log"
             case .history(_, let change): change == nil ? "Show in History" : "Show Diff"
@@ -53,14 +53,14 @@ struct KubeChartMarker: Equatable, Sendable, Identifiable {
         }
     }
 
-    var id: String
-    var kind: Kind
-    var time: Date
+    package var id: String
+    package var kind: Kind
+    package var time: Date
     /// What hover says: "OOMKilled at 14:11 (exit 137)".
-    var title: String
+    package var title: String
     /// The container it is of, where it is one's: a click opens its previous log.
-    var container: String?
+    package var container: String?
     /// The popover's second line: what changed, the event's message.
-    var detail: String?
-    var opens: Opens?
+    package var detail: String?
+    package var opens: Opens?
 }

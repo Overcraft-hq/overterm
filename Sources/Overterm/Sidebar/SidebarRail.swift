@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// A type rather than two buttons written into the view, so what sits at
 /// the foot of the rail can be read (and checked) without drawing it.
-enum SidebarRailAction: String, CaseIterable, Identifiable {
+package enum SidebarRailAction: String, CaseIterable, Identifiable {
     /// The Activity page (⌥⌘A): a page over the body like Settings, so its
     /// button sits beside the gear rather than among the panels — there is
     /// no Activity panel to switch the sidebar to.
@@ -15,9 +15,9 @@ enum SidebarRailAction: String, CaseIterable, Identifiable {
     /// Put the sidebar away — what the ✕ in the old icon bar did.
     case hide
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .activity: "cpu"
         case .settings: "gearshape"
@@ -25,7 +25,7 @@ enum SidebarRailAction: String, CaseIterable, Identifiable {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .activity: "Activity"
         case .settings: "Settings"
@@ -34,7 +34,7 @@ enum SidebarRailAction: String, CaseIterable, Identifiable {
     }
 
     /// The key that does the same thing, for the tooltip.
-    var shortcut: String {
+    package var shortcut: String {
         switch self {
         case .activity: "⌥⌘A"
         case .settings: "⌘,"
@@ -42,10 +42,10 @@ enum SidebarRailAction: String, CaseIterable, Identifiable {
         }
     }
 
-    var help: String { "\(title) (\(shortcut))" }
+    package var help: String { "\(title) (\(shortcut))" }
 
     /// The buttons the rail draws: Activity's only while Settings has it on.
-    @MainActor static var shown: [SidebarRailAction] {
+    @MainActor package static var shown: [SidebarRailAction] {
         allCases.filter { $0 != .activity || Settings.shared.activityEnabled }
     }
 }
@@ -58,28 +58,28 @@ enum SidebarRailAction: String, CaseIterable, Identifiable {
 /// panel was open. Down the side they are a fixture: the panel below the
 /// header is all panel, and the foot is somewhere for the things that
 /// belong to no panel to live.
-struct SidebarRail: View {
+package struct SidebarRail: View {
     /// Settings' "Rail icons" is Compact: smaller icons, a narrower rail.
-    @MainActor static var isCompact: Bool { Settings.shared.string("general.sidebarRail") == "compact" }
+    @MainActor package static var isCompact: Bool { Settings.shared.string("general.sidebarRail") == "compact" }
 
     /// The rail is a fixed width at every sidebar width: it is chrome, not
     /// content.
-    @MainActor static var width: CGFloat { isCompact ? 36 : 44 }
+    @MainActor package static var width: CGFloat { isCompact ? 36 : 44 }
     /// What the panel beside the rail must keep — a file name is unreadable
     /// much under this.
-    static let minimumPanelWidth: CGFloat = 176
+    package static let minimumPanelWidth: CGFloat = 176
     /// So the sidebar column's minimum is the two of them, not the panel's
     /// alone: a rail taking its width out of the old minimum truncated
     /// every row.
-    @MainActor static var minimumSidebarWidth: CGFloat { width + minimumPanelWidth }
+    @MainActor package static var minimumSidebarWidth: CGFloat { width + minimumPanelWidth }
 
-    @ObservedObject var sidebar: SidebarModel
-    @ObservedObject var theme: ChromeTheme
+    @ObservedObject package var sidebar: SidebarModel
+    @ObservedObject package var theme: ChromeTheme
     /// What a button at the foot does: the window's
     /// (`TerminalWindowController.performRailAction`).
-    let perform: (SidebarRailAction) -> Void
+    package let perform: (SidebarRailAction) -> Void
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 2) {
             let shown = SidebarPanel.shown
             ForEach(shown) { item in

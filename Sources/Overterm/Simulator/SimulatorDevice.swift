@@ -2,21 +2,21 @@ import Foundation
 
 /// One simulator this Mac has, as `simctl list devices --json` describes
 /// it. Pure: the parsing is all here, so the tests need no Xcode.
-struct SimulatorDevice: Equatable, Identifiable, Sendable {
-    let udid: String
-    let name: String
+package struct SimulatorDevice: Equatable, Identifiable, Sendable {
+    package let udid: String
+    package let name: String
     /// "iOS 26.2" — read from the runtime's identifier.
-    let runtime: String
-    let isBooted: Bool
+    package let runtime: String
+    package let isBooted: Bool
 
-    var id: String { udid }
-    var label: String { "\(name) — \(runtime)" }
+    package var id: String { udid }
+    package var label: String { "\(name) — \(runtime)" }
 }
 
-enum SimulatorList {
+package enum SimulatorList {
     /// The available devices, booted first, then the newest runtime, then
     /// by name — the order the picker shows and `first` is what we mirror.
-    static func devices(fromJSON data: Data) -> [SimulatorDevice] {
+    package static func devices(fromJSON data: Data) -> [SimulatorDevice] {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
             let byRuntime = root["devices"] as? [String: Any]
         else { return [] }
@@ -48,7 +48,7 @@ enum SimulatorList {
     }
 
     /// `com.apple.CoreSimulator.SimRuntime.iOS-26-2` → `iOS 26.2`.
-    static func runtimeName(_ identifier: String) -> String {
+    package static func runtimeName(_ identifier: String) -> String {
         let tail = identifier.components(separatedBy: "SimRuntime.").last ?? identifier
         let parts = tail.split(separator: "-")
         guard let platform = parts.first, parts.count > 1 else { return tail }

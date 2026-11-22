@@ -1,31 +1,31 @@
 import SwiftUI
 
 /// What the review's Terraform section asks the window to do.
-struct TerraformReviewActions {
+package struct TerraformReviewActions {
     /// Plan a touched root in the checkout with the head: always asked (5.5).
-    var plan: (ReviewModel, TerraformReview.Root) -> Void = { _, _ in }
-    var initialize: (ReviewModel, TerraformReview.Root) -> Void = { _, _ in }
+    package var plan: (ReviewModel, TerraformReview.Root) -> Void = { _, _ in }
+    package var initialize: (ReviewModel, TerraformReview.Root) -> Void = { _, _ in }
     /// The plan in the right slot, the review page put aside.
-    var show: (TerraformPlanRun) -> Void = { _ in }
+    package var show: (TerraformPlanRun) -> Void = { _ in }
     /// "Post to Pull Request…": the comment shown first.
-    var post: (ReviewModel) -> Void = { _ in }
+    package var post: (ReviewModel) -> Void = { _ in }
     /// The head in a new worktree, when no checkout has it.
-    var checkOut: (ReviewModel) -> Void = { _ in }
+    package var checkOut: (ReviewModel) -> Void = { _ in }
     /// Whether the review has a pull request to post to.
-    var pullRequest: (ReviewModel) -> Int? = { _ in nil }
+    package var pullRequest: (ReviewModel) -> Int? = { _ in nil }
 }
 
 /// The review's Terraform section (stage 2f): "what will this change do in
 /// the cloud", above its diff — the roots it touches, their class, why,
 /// and each one's latest plan in the checkout with the head.
-struct TerraformReviewSectionView: View {
-    @ObservedObject var review: ReviewModel
-    @ObservedObject var model: TerraformReviewModel
-    @ObservedObject var registry = TerraformRunRegistry.shared
-    @ObservedObject var theme: ChromeTheme
-    let actions: TerraformReviewActions
+package struct TerraformReviewSectionView: View {
+    @ObservedObject package var review: ReviewModel
+    @ObservedObject package var model: TerraformReviewModel
+    @ObservedObject package var registry = TerraformRunRegistry.shared
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: TerraformReviewActions
 
-    var body: some View {
+    package var body: some View {
         if !model.roots.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 header

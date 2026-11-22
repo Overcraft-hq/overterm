@@ -9,42 +9,42 @@ import Foundation
 /// roots' files), and it never plans by itself (5.5): Plan is a press,
 /// and always asks.
 @MainActor
-final class TerraformReviewModel: ObservableObject {
-    enum State: Equatable {
+package final class TerraformReviewModel: ObservableObject {
+    package enum State: Equatable {
         case idle, reading, read
     }
 
-    @Published private(set) var state = State.idle
-    @Published private(set) var roots: [TerraformReview.Root] = []
+    @Published package private(set) var state = State.idle
+    @Published package private(set) var roots: [TerraformReview.Root] = []
     /// The checkout with the reviewed head, when one has it: where Plan runs.
-    @Published private(set) var head: TerraformReview.Head?
+    @Published package private(set) var head: TerraformReview.Head?
     /// The checkout read: the head's, else the review's own.
-    @Published private(set) var readCheckout: URL?
+    @Published package private(set) var readCheckout: URL?
     /// The section open or folded — the review tab's own.
-    @Published var expanded = true
+    @Published package var expanded = true
     /// A worktree being made for it ("Check Out in a New Worktree…").
-    @Published var checkingOut = false
+    @Published package var checkingOut = false
     /// The read checkout's cards, by path — what Plan is given, the head's only.
-    private(set) var cards: [String: TerraformRootCard] = [:]
+    package private(set) var cards: [String: TerraformRootCard] = [:]
     /// Each touched root's local modules' risks (`TerraformReview.moduleRisks`).
-    private(set) var moduleRisks: [String: [TerraformRunRisk]] = [:]
+    package private(set) var moduleRisks: [String: [TerraformRunRisk]] = [:]
     /// Each touched root's modules whose code wasn't read.
-    private(set) var unreadModules: [String: Int] = [:]
+    package private(set) var unreadModules: [String: Int] = [:]
     /// What the review's head is (a commit when known): Plan checks the
     /// head's checkout is still at it.
-    private(set) var wanted: TerraformReview.Wanted?
+    package private(set) var wanted: TerraformReview.Wanted?
     /// The paths read: Plan reads them again, the checkout's files as they are then.
-    private(set) var changed: [String] = []
+    package private(set) var changed: [String] = []
     /// The review loaded while another showed: read when it shows.
-    var missed = false
+    package var missed = false
     /// How many times it was read: a scenario checks it reads only while shown.
-    private(set) var reads = 0
-    var cancellables: Set<AnyCancellable> = []
+    package private(set) var reads = 0
+    package var cancellables: Set<AnyCancellable> = []
     private var reading: Task<Void, Never>?
 
     /// Reads `changed`'s roots in `checkout` — the head's when `head` says
     /// one has it. Bounded as the panel's read is (`assemble`).
-    func read(changed: [String], checkout: URL, head: TerraformReview.Head?, wanted: TerraformReview.Wanted? = nil) {
+    package func read(changed: [String], checkout: URL, head: TerraformReview.Head?, wanted: TerraformReview.Wanted? = nil) {
         reads += 1
         missed = false
         reading?.cancel()
@@ -64,7 +64,7 @@ final class TerraformReviewModel: ObservableObject {
     /// The read checkout's roots and modules as they are now — what Plan
     /// asks with, never what was read when the review loaded (a pull, an
     /// edit, an agent's commit since).
-    func reread() async -> Read? {
+    package func reread() async -> Read? {
         guard let checkout = readCheckout else { return nil }
         let read = await Self.fresh(changed: changed, checkout: checkout)
         land(read)
@@ -91,13 +91,13 @@ final class TerraformReviewModel: ObservableObject {
     /// Post to Pull Request is pressable: the head is what is reviewed and
     /// a touched root has a plan there (which of them may be posted is
     /// weighed at the press, `TerraformReview.postable`).
-    func canPost(_ registry: TerraformRunRegistry) -> Bool {
+    package func canPost(_ registry: TerraformRunRegistry) -> Bool {
         guard let head, head.isReviewed else { return false }
         return roots.contains { registry.latest(checkout: head.checkout.url, root: $0.path)?.plan != nil }
     }
 
     /// Nothing to show: Terraform off, or a review with no files.
-    func clear() {
+    package func clear() {
         reading?.cancel()
         roots = []
         cards = [:]
@@ -108,19 +108,19 @@ final class TerraformReviewModel: ObservableObject {
         state = .idle
     }
 
-    struct Read: Sendable {
-        var roots: [TerraformReview.Root] = []
-        var cards: [TerraformRootCard] = []
-        var moduleRisks: [String: [TerraformRunRisk]] = [:]
-        var unreadModules: [String: Int] = [:]
+    package struct Read: Sendable {
+        package var roots: [TerraformReview.Root] = []
+        package var cards: [TerraformRootCard] = []
+        package var moduleRisks: [String: [TerraformRunRisk]] = [:]
+        package var unreadModules: [String: Int] = [:]
     }
 
     /// How many modules' code is read for a review's risks, at most.
-    nonisolated static let maxModules = 200
+    package nonisolated static let maxModules = 200
 
     /// The touched roots of `checkout`'s listing with the reviewed files
     /// added: blocking file reads, the panel's bounds.
-    nonisolated static func assemble(
+    package nonisolated static func assemble(
         checkout: URL, listing: TerraformRootScan.Listing?, changed: [String], settings: TerraformClassSettings,
         identities: Set<TerraformStateIdentity>, awsProfile: String?
     ) -> Read {

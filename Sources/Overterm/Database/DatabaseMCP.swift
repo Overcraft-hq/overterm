@@ -8,8 +8,8 @@ import AppKit
 /// No secret is ever in an answer: the tools name connections, never
 /// their passwords or keys.
 @MainActor
-enum DatabaseMCP {
-    static func call(_ name: String, _ arguments: [String: Any], model: DatabaseModel) async throws -> [String: Any] {
+package enum DatabaseMCP {
+    package static func call(_ name: String, _ arguments: [String: Any], model: DatabaseModel) async throws -> [String: Any] {
         func string(_ key: String) -> String? { (arguments[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         func connection(storage: Bool) throws -> DatabaseConnection {
             let candidates = model.store.connections.filter { $0.kind.isStorage == storage }
@@ -114,7 +114,7 @@ enum DatabaseMCP {
     /// The Server page's reads, as text: Markdown tables, statements cut to
     /// a line. Reads only — no tool cancels a session, edits a row or
     /// changes a user — and never a password or its hash (none is read).
-    static func monitor(_ tool: String, on connection: DatabaseConnection, model: DatabaseModel, arguments: [String: Any]) async throws -> String {
+    package static func monitor(_ tool: String, on connection: DatabaseConnection, model: DatabaseModel, arguments: [String: Any]) async throws -> String {
         guard connection.kind.features.contains(.monitoring) else {
             let kinds = DatabaseKind.allCases.filter { $0.features.contains(.monitoring) }.map(\.title)
             throw BrowserMCP.ToolError(message: "\(connection.kind.title) has no server page here — \(tool) reads \(kinds.joined(separator: ", ")).")
@@ -160,7 +160,7 @@ enum DatabaseMCP {
 
     /// A write an agent wants, put to the user in the window. Nothing runs
     /// unless they say so.
-    static func allow(_ statement: String, on connection: DatabaseConnection) async -> Bool {
+    package static func allow(_ statement: String, on connection: DatabaseConnection) async -> Bool {
         if let answer = askOverride { return answer(statement) }
         // The one confirmation every write is asked with: all of the
         // statement, every character visible, and who asks (MCPAsker) —
@@ -175,11 +175,11 @@ enum DatabaseMCP {
     }
 
     /// Set by tests and the E2E runner: answers instead of the alert.
-    static var askOverride: ((String) -> Bool)?
+    package static var askOverride: ((String) -> Bool)?
 
     // MARK: Answers
 
-    static func describe(_ connections: [DatabaseConnection], storage: Bool) -> String {
+    package static func describe(_ connections: [DatabaseConnection], storage: Bool) -> String {
         guard !connections.isEmpty else {
             return storage ? "No storage connections — the user adds them in the Database panel (⌥⌘B)." : "No database connections — the user adds them in the Database panel (⌥⌘B)."
         }
@@ -191,7 +191,7 @@ enum DatabaseMCP {
         }.joined(separator: "\n")
     }
 
-    static func describeSchema(_ schema: String, session: DatabaseSession) -> String {
+    package static func describeSchema(_ schema: String, session: DatabaseSession) -> String {
         let tables = session.tables[schema] ?? []
         if session.connection.kind.isObservability {
             let what = session.connection.kind == .prometheus ? "Metrics" : session.connection.kind == .loki ? "Labels" : "Tags"
@@ -243,7 +243,7 @@ enum DatabaseMCP {
     }
 
     /// A result as an agent reads it best: a Markdown table, bounded.
-    static func report(_ result: QueryResult, maxChars: Int = 60_000) -> String {
+    package static func report(_ result: QueryResult, maxChars: Int = 60_000) -> String {
         guard result.hasRows else {
             return [result.affected.map { "\($0) row\($0 == 1 ? "" : "s") affected." }, result.message].compactMap { $0 }.joined(separator: " ")
                 .nonEmpty ?? "Done."
@@ -254,7 +254,7 @@ enum DatabaseMCP {
         return text + "\n\(result.rows.count) row\(result.rows.count == 1 ? "" : "s")\(more)."
     }
 
-    static func describe(_ page: StorageListing, bucket: String, prefix: String) -> String {
+    package static func describe(_ page: StorageListing, bucket: String, prefix: String) -> String {
         var lines = ["\(bucket)/\(prefix)"]
         lines += page.folders.map { "- \($0)" }
         lines += page.objects.map { "- \($0.key)  \(FilePreview.size($0.size))" }
@@ -265,7 +265,7 @@ enum DatabaseMCP {
 
     // MARK: Tools
 
-    static let tools: [[String: Any]] = [
+    package static let tools: [[String: Any]] = [
         tool("db_connections", "The user's saved database connections (Overterm's Database panel): name, kind, database, read-only.", [:]),
         tool(
             "db_schema",
@@ -349,19 +349,19 @@ extension String {
 
 /// The Server page's reads as an agent reads them: Markdown tables
 /// (`ResultExport`), every statement on one line and cut. Pure.
-enum ServerText {
-    static let statementLimit = 300
+package enum ServerText {
+    package static let statementLimit = 300
 
-    static func gap(_ gap: MonitorGap) -> String {
+    package static func gap(_ gap: MonitorGap) -> String {
         gap.reason + (gap.fix.map { "\nTo turn it on: \($0)" } ?? "")
     }
 
-    static func overview(_ overview: ServerOverview) -> String {
+    package static func overview(_ overview: ServerOverview) -> String {
         let rows = overview.facts.map { [$0.title, $0.value, $0.detail] as [String?] }
         return ResultExport.text(.markdown, columns: ["", "value", "detail"], rows: rows) + overview.notes.map { "\n\($0)" }.joined()
     }
 
-    static func sizes(_ sizes: DatabaseSizes, limit: Int) -> String {
+    package static func sizes(_ sizes: DatabaseSizes, limit: Int) -> String {
         var parts: [String] = []
         for (title, entries) in [("Databases", sizes.databases), ("Biggest tables", sizes.tables), ("Biggest indexes", sizes.indexes)] where !entries.isEmpty {
             let rows = entries.prefix(limit).map { entry -> [String?] in
@@ -373,7 +373,7 @@ enum ServerText {
         return parts.joined(separator: "\n\n")
     }
 
-    static func activity(_ sessions: [DatabaseActivity], of total: Int, limit: Int) -> String {
+    package static func activity(_ sessions: [DatabaseActivity], of total: Int, limit: Int) -> String {
         guard !sessions.isEmpty else { return "Nothing running: \(total) session\(total == 1 ? "" : "s"), all idle (“idle”: true lists them)." }
         let rows = sessions.prefix(limit).map { session -> [String?] in
             [
@@ -386,7 +386,7 @@ enum ServerText {
             + "\n\(sessions.count) of \(total) sessions." + more
     }
 
-    static func slowQueries(_ queries: [SlowQuery], byMean: Bool, limit: Int) -> String {
+    package static func slowQueries(_ queries: [SlowQuery], byMean: Bool, limit: Int) -> String {
         guard !queries.isEmpty else { return "No statements recorded yet." }
         let sorted = byMean ? queries.sorted { $0.mean > $1.mean } : queries.sorted { $0.total > $1.total }
         // What else the record says (BigQuery's bytes and slots), when it says it.
@@ -401,7 +401,7 @@ enum ServerText {
             + "\nBy \(byMean ? "mean" : "total") time; \(min(limit, sorted.count)) of \(sorted.count)."
     }
 
-    static func locks(_ waits: [LockWait]) -> String {
+    package static func locks(_ waits: [LockWait]) -> String {
         guard !waits.isEmpty else { return "Nobody is waiting on a lock." }
         let rows = waits.map { wait -> [String?] in
             [

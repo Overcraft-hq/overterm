@@ -18,49 +18,49 @@ import Foundation
 /// in effect until a window's banner Keeps the new one, or Revert writes
 /// the old one back (docs/design/terraform/analysis.md 5.8, D-7).
 @MainActor
-final class Settings: ObservableObject {
-    static let shared = Settings(url: sharedURL, legacy: AppEnvironment.defaults)
+package final class Settings: ObservableObject {
+    package static let shared = Settings(url: sharedURL, legacy: AppEnvironment.defaults)
 
     /// settings.json in the support folder — an isolated run's own, a unit
     /// test's included: a test that sets a value must never write, or turn
     /// off, what the running Overterm reads.
-    static var sharedURL: URL { AppEnvironment.supportDirectory.appendingPathComponent("settings.json") }
+    package static var sharedURL: URL { AppEnvironment.supportDirectory.appendingPathComponent("settings.json") }
 
-    enum NewTabDirectory: String, CaseIterable, Identifiable {
+    package enum NewTabDirectory: String, CaseIterable, Identifiable {
         /// The selected tab's directory.
         case current
         case home
-        var id: String { rawValue }
+        package var id: String { rawValue }
     }
 
-    enum CloseConfirmation: String, CaseIterable, Identifiable {
+    package enum CloseConfirmation: String, CaseIterable, Identifiable {
         case always
         /// Only when something runs in what closes.
         case whenRunning
-        var id: String { rawValue }
+        package var id: String { rawValue }
     }
 
     /// Where New Task puts a worktree.
-    enum WorktreeLocation: String, CaseIterable, Identifiable {
+    package enum WorktreeLocation: String, CaseIterable, Identifiable {
         /// Next to the repository: `<repo>-wt-<branch>`.
         case sibling
         /// Inside it: `<repo>/.worktrees/<branch>`, locally ignored.
         case inside
-        var id: String { rawValue }
+        package var id: String { rawValue }
     }
 
-    let url: URL
+    package let url: URL
     /// What the file sets, each value valid for its setting.
-    @Published private(set) var values: [String: SettingValue] = [:]
+    @Published package private(set) var values: [String: SettingValue] = [:]
     /// What is wrong with the file: it doesn't parse (and nothing in it
     /// applies), or a setting's value can't be used (that one doesn't).
-    @Published private(set) var problems: [String] = []
+    @Published package private(set) var problems: [String] = []
     /// The keys whose values changed, as they change — from the page, or
     /// from the file edited by hand.
-    let changes = PassthroughSubject<Set<String>, Never>()
+    package let changes = PassthroughSubject<Set<String>, Never>()
     /// The security settings the file changed outside the page, by key:
     /// waiting for Keep or Revert, the value before still in effect.
-    @Published private(set) var held: [String: HeldSetting] = [:]
+    @Published package private(set) var held: [String: HeldSetting] = [:]
     /// The file's own values of the security settings, not fitted, as
     /// last taken: what Revert writes back. Kept on disk too
     /// (`confirmedURL`), so a change made while Overterm isn't running —
@@ -71,13 +71,13 @@ final class Settings: ObservableObject {
     /// The security settings' values last confirmed, beside settings.json
     /// in the support folder (an isolated run's own): no secret, only what
     /// a later launch holds the file against.
-    var confirmedURL: URL { url.deletingLastPathComponent().appendingPathComponent("settings-confirmed.json") }
+    package var confirmedURL: URL { url.deletingLastPathComponent().appendingPathComponent("settings-confirmed.json") }
 
     /// The file as last read or written, to tell an outside edit from our own.
     private var knownText: String?
     private var watcher: DirectoryWatcher?
 
-    init(url: URL, legacy: UserDefaults? = nil, watch: Bool = true) {
+    package init(url: URL, legacy: UserDefaults? = nil, watch: Bool = true) {
         self.url = url
         if let legacy { Self.migrate(from: legacy, to: url) }
         load()
@@ -96,7 +96,7 @@ final class Settings: ObservableObject {
     // MARK: Reading
 
     /// The setting's value: the file's, else its default.
-    func value(_ key: String) -> SettingValue? {
+    package func value(_ key: String) -> SettingValue? {
         values[key] ?? SettingsSchema.byKey[key]?.defaultValue
     }
 
@@ -109,7 +109,7 @@ final class Settings: ObservableObject {
     /// before while one is held, never one the watcher hasn't seen yet: an
     /// edit made in the app builds on what is in effect, never on an
     /// agent's change it would then write as the app's own.
-    func fileValue(_ key: String) -> SettingValue? {
+    package func fileValue(_ key: String) -> SettingValue? {
         guard let object = try? SettingsJSON.object(from: fileText) else { return nil }
         if SettingsSchema.byKey[key]?.heldWhenEditedOutside == true { return taken[key] ?? SettingsSchema.byKey[key]?.defaultValue }
         guard let raw = object[key] else { return SettingsSchema.byKey[key]?.defaultValue }
@@ -117,16 +117,16 @@ final class Settings: ObservableObject {
     }
 
     /// Whether the file sets it (Settings shows a reset for those).
-    func isSet(_ key: String) -> Bool { values[key] != nil }
+    package func isSet(_ key: String) -> Bool { values[key] != nil }
 
-    func bool(_ key: String) -> Bool { value(key)?.bool ?? false }
-    func string(_ key: String) -> String { value(key)?.string ?? "" }
-    func number(_ key: String) -> Double? { value(key)?.number }
+    package func bool(_ key: String) -> Bool { value(key)?.bool ?? false }
+    package func string(_ key: String) -> String { value(key)?.string ?? "" }
+    package func number(_ key: String) -> Double? { value(key)?.number }
 
     /// Whether a setting another one `requires` is in effect: a toggle on,
     /// a file or a text chosen, a number moved off its default (an opacity
     /// below 1).
-    func isInEffect(_ key: String) -> Bool {
+    package func isInEffect(_ key: String) -> Bool {
         switch value(key) {
         case .bool(let flag): flag
         case .string(let text): !text.isEmpty
@@ -139,13 +139,13 @@ final class Settings: ObservableObject {
     }
 
     /// The file's text, for the JSON view; a fresh one when there is none.
-    var fileText: String { (try? String(contentsOf: url, encoding: .utf8)) ?? "{\n}\n" }
+    package var fileText: String { (try? String(contentsOf: url, encoding: .utf8)) ?? "{\n}\n" }
 
     // MARK: Writing
 
     /// Sets `key` (nil: back to its default), editing the file in place.
     /// The app's own edit: a held `key` takes this value, not the file's.
-    func set(_ key: String, _ value: SettingValue?) {
+    package func set(_ key: String, _ value: SettingValue?) {
         guard let spec = SettingsSchema.byKey[key] else { return }
         // An outside edit the watcher hasn't reported yet is held first:
         // this write must not carry it in as the app's own.
@@ -170,7 +170,7 @@ final class Settings: ObservableObject {
     /// included, so saving it as it was — a typo fixed elsewhere, another
     /// setting changed — isn't a Keep; that change is held as any outside
     /// edit, against the value in effect.
-    func save(text: String) {
+    package func save(text: String) {
         reloadIfChanged()
         let before = try? SettingsJSON.object(from: knownText ?? "")
         write(text)
@@ -179,13 +179,13 @@ final class Settings: ObservableObject {
 
     /// Re-reads the file now, as the watcher does on its own: an edit
     /// made outside the page, its security settings held.
-    func reload() { reloadIfChanged() }
+    package func reload() { reloadIfChanged() }
 
     // MARK: Held security settings
 
     /// Keep: the held settings take the file's values. Only what the
     /// banner showed — a file changed again since is shown again first.
-    func keep(_ shown: [String: HeldSetting]) {
+    package func keep(_ shown: [String: HeldSetting]) {
         reloadIfChanged()
         guard !shown.isEmpty, shown == held else { return }
         var next = values
@@ -203,7 +203,7 @@ final class Settings: ObservableObject {
     /// Revert: the values before written back into the file, in place,
     /// as `set` writes. Nothing while the file doesn't parse (the page
     /// says so); the values before stay in effect meanwhile.
-    func revert(_ shown: [String: HeldSetting]) {
+    package func revert(_ shown: [String: HeldSetting]) {
         reloadIfChanged()
         guard !shown.isEmpty, shown == held, !problemsParsing else { return }
         var text: String? = fileText
@@ -356,7 +356,7 @@ final class Settings: ObservableObject {
 
     /// Carries the UserDefaults settings of earlier versions into
     /// settings.json — once: a flag keeps a deleted file from coming back.
-    static func migrate(from defaults: UserDefaults, to url: URL) {
+    package static func migrate(from defaults: UserDefaults, to url: URL) {
         let flag = "settings.movedToFile"
         guard !defaults.bool(forKey: flag) else { return }
         defaults.set(true, forKey: flag)
@@ -378,19 +378,19 @@ final class Settings: ObservableObject {
 
     // MARK: Typed, for the rest of the app
 
-    var restoreTabs: Bool { bool("general.restoreTabs") }
-    var restoreScrollback: Bool { restoreTabs && bool("general.restoreScrollback") }
-    var scrollbackLines: Int { Int(number("general.scrollbackLines") ?? 2000) }
-    var newTabDirectory: NewTabDirectory { NewTabDirectory(rawValue: string("general.newTabDirectory")) ?? .current }
-    var confirmClose: CloseConfirmation { CloseConfirmation(rawValue: string("general.confirmClose")) ?? .always }
-    var tabPeekGesture: TabPeekGesture.Fingers { TabPeekGesture.Fingers(rawValue: string("general.tabPeekGesture")) ?? .three }
-    var checkForUpdates: Bool { bool("updates.checkDaily") }
+    package var restoreTabs: Bool { bool("general.restoreTabs") }
+    package var restoreScrollback: Bool { restoreTabs && bool("general.restoreScrollback") }
+    package var scrollbackLines: Int { Int(number("general.scrollbackLines") ?? 2000) }
+    package var newTabDirectory: NewTabDirectory { NewTabDirectory(rawValue: string("general.newTabDirectory")) ?? .current }
+    package var confirmClose: CloseConfirmation { CloseConfirmation(rawValue: string("general.confirmClose")) ?? .always }
+    package var tabPeekGesture: TabPeekGesture.Fingers { TabPeekGesture.Fingers(rawValue: string("general.tabPeekGesture")) ?? .three }
+    package var checkForUpdates: Bool { bool("updates.checkDaily") }
 
-    var notifications: Bool { bool("notifications.enabled") }
-    var dockBadge: Bool { bool("notifications.dockBadge") }
+    package var notifications: Bool { bool("notifications.enabled") }
+    package var dockBadge: Bool { bool("notifications.dockBadge") }
 
     /// Whether a mark of this kind sends a notification.
-    func notifies(_ mark: TabActivity.Mark) -> Bool {
+    package func notifies(_ mark: TabActivity.Mark) -> Bool {
         guard notifications else { return false }
         switch mark {
         case .waiting: return bool("notifications.waiting")
@@ -401,175 +401,175 @@ final class Settings: ObservableObject {
     }
 
     /// What New Task starts: an agent's raw value, or "shell".
-    var taskAgent: String { string("agents.newTaskAgent") }
-    var defaultTaskAgent: Agent? { Agent(rawValue: taskAgent) }
-    var worktreeLocation: WorktreeLocation { WorktreeLocation(rawValue: string("agents.worktreeLocation")) ?? .sibling }
+    package var taskAgent: String { string("agents.newTaskAgent") }
+    package var defaultTaskAgent: Agent? { Agent(rawValue: taskAgent) }
+    package var worktreeLocation: WorktreeLocation { WorktreeLocation(rawValue: string("agents.worktreeLocation")) ?? .sibling }
     /// New Task's "From"; empty is the main worktree's branch.
-    var taskBase: String { string("agents.newTaskBase") }
+    package var taskBase: String { string("agents.newTaskBase") }
 
     /// Settings ▸ Agents' extra arguments for `agent`, as typed.
-    func userArguments(for agent: Agent) -> String { string(agent.argumentsKey) }
+    package func userArguments(for agent: Agent) -> String { string(agent.argumentsKey) }
 
     /// What a launch of `agent` adds to its command wherever it starts or
     /// resumes: the arguments above, then the bridge for a pane made now —
     /// each agent the way it takes one (`AgentLaunch`) — and its attention
     /// signal where it has a switch for one launch.
-    func launch(for agent: Agent) -> AgentLaunch {
+    package func launch(for agent: Agent) -> AgentLaunch {
         AgentLaunch.make(agent, AgentLaunchFiles.facts(for: agent, arguments: userArguments(for: agent), serving: BrowserBridge.shared.isServing))
     }
 
     /// The arguments part of it (`launch(for:)`).
-    func arguments(for agent: Agent) -> String { launch(for: agent).arguments }
+    package func arguments(for agent: Agent) -> String { launch(for: agent).arguments }
 
     /// The quota gauge at the right of the tab strip.
-    var usageChip: Bool { bool("general.usageChip") }
+    package var usageChip: Bool { bool("general.usageChip") }
     /// Whether the usage pane runs the agents' own usage command to keep
     /// its numbers current.
-    var usageAsk: Bool { bool("general.usageAsk") }
+    package var usageAsk: Bool { bool("general.usageAsk") }
     /// Whether the usage pane puts a price on the tokens it counts.
-    var usageCost: Bool { bool("general.usageCost") }
+    package var usageCost: Bool { bool("general.usageCost") }
 
     /// How many commits Overgit's history and graph read.
-    var overgitCommits: Int { Int(number("general.overgitCommits") ?? 300) }
+    package var overgitCommits: Int { Int(number("general.overgitCommits") ?? 300) }
     /// Whether that history is every branch's or only the one checked out.
-    var overgitAllRefs: Bool { bool("general.overgitAllRefs") }
+    package var overgitAllRefs: Bool { bool("general.overgitAllRefs") }
 
     /// Whether the terminal follows macOS between two themes.
-    var followsSystemAppearance: Bool { bool("appearance.followSystemAppearance") }
+    package var followsSystemAppearance: Bool { bool("appearance.followSystemAppearance") }
 
     /// The theme in force for an appearance: the pair's half while it
     /// follows macOS, else the one theme. Empty when Settings sets none and
     /// the user's own Ghostty config decides.
-    func themeName(dark: Bool) -> String {
+    package func themeName(dark: Bool) -> String {
         followsSystemAppearance && !dark ? string("appearance.themeLight") : string("appearance.theme")
     }
 
     /// How much the panes without the keyboard are dimmed, 0…0.7.
-    var unfocusedPaneDim: Double { number("appearance.unfocusedPaneDim") ?? 0.35 }
-    var editorFontSize: Double { number("editor.fontSize") ?? 13 }
-    var editorFontFamily: String { string("editor.fontFamily") }
+    package var unfocusedPaneDim: Double { number("appearance.unfocusedPaneDim") ?? 0.35 }
+    package var editorFontSize: Double { number("editor.fontSize") ?? 13 }
+    package var editorFontFamily: String { string("editor.fontFamily") }
     /// Times the font's own height.
-    var editorLineHeight: CGFloat {
+    package var editorLineHeight: CGFloat {
         switch string("editor.lineHeight") {
         case "compact": 1.2
         case "standard": 1.4
         default: 1.618
         }
     }
-    var editorSoftWrap: String { string("editor.softWrap") }
-    var editorTabSize: Int { Int(number("editor.tabSize") ?? 4) }
-    var editorIndentGuides: Bool { bool("editor.indentGuides") }
-    var editorOpenZoomed: Bool { bool("editor.openZoomed") }
-    var editorGitGutter: Bool { bool("editor.gitGutter") }
-    var editorLanguageServers: Bool { bool("editor.languageServers") }
-    var editorCompletions: Bool { bool("editor.completions") }
-    var editorFormatOnSave: Bool { bool("editor.formatOnSave") }
-    var terraformFormatOnSave: Bool { bool("terraform.formatOnSave") }
-    var terraformEnabled: Bool { bool("terraform.enabled") }
+    package var editorSoftWrap: String { string("editor.softWrap") }
+    package var editorTabSize: Int { Int(number("editor.tabSize") ?? 4) }
+    package var editorIndentGuides: Bool { bool("editor.indentGuides") }
+    package var editorOpenZoomed: Bool { bool("editor.openZoomed") }
+    package var editorGitGutter: Bool { bool("editor.gitGutter") }
+    package var editorLanguageServers: Bool { bool("editor.languageServers") }
+    package var editorCompletions: Bool { bool("editor.completions") }
+    package var editorFormatOnSave: Bool { bool("editor.formatOnSave") }
+    package var terraformFormatOnSave: Bool { bool("terraform.formatOnSave") }
+    package var terraformEnabled: Bool { bool("terraform.enabled") }
     /// `terraform.path`, trimmed; empty: mise's or the PATH's (`TerraformCLI`).
-    var terraformPath: String { string("terraform.path").trimmingCharacters(in: .whitespaces) }
-    var terraformProductionPattern: String { string("terraform.productionPattern") }
-    var terraformProductionAccounts: [String] {
+    package var terraformPath: String { string("terraform.path").trimmingCharacters(in: .whitespaces) }
+    package var terraformProductionPattern: String { string("terraform.productionPattern") }
+    package var terraformProductionAccounts: [String] {
         (value("terraform.productionAccounts")?.list ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
     /// Each root's own settings, by its path in the repository.
-    var terraformRoots: [String: TerraformRootSettings] { TerraformRootSettings.all(from: value("terraform.roots")) }
+    package var terraformRoots: [String: TerraformRootSettings] { TerraformRootSettings.all(from: value("terraform.roots")) }
     /// Agents started with Terraform's writes denied (analysis 3.4, D-8).
-    var terraformAgentWriteGuard: Bool { terraformEnabled && bool("terraform.agentWriteGuard") }
+    package var terraformAgentWriteGuard: Bool { terraformEnabled && bool("terraform.agentWriteGuard") }
     /// New Task initialises a new worktree's roots without their backend (stage 2b).
-    var terraformNewWorktreeInit: Bool { terraformEnabled && bool("terraform.newWorktreeInit") }
+    package var terraformNewWorktreeInit: Bool { terraformEnabled && bool("terraform.newWorktreeInit") }
     /// Agents' `tf_` tools (`TerraformMCP`).
-    var terraformAgentAccess: Bool { terraformEnabled && bool("terraform.agentAccess") }
-    var editorVimMode: Bool { bool("editor.vimMode") }
-    var editorRelativeLineNumbers: Bool { bool("editor.relativeLineNumbers") }
-    var browserEnabled: Bool { bool("browser.enabled") }
-    var simulatorEnabled: Bool { bool("browser.simulator") }
-    var browserLinks: BrowserLinks.Policy { browserEnabled ? BrowserLinks.Policy(rawValue: string("browser.openLinks")) ?? .local : .none }
-    var browserReloadOnSave: Bool { browserEnabled && bool("browser.reloadOnSave") }
-    var browserAgentControl: Bool { browserEnabled && bool("browser.agentControl") }
-    var apiEnabled: Bool { bool("api.enabled") }
-    var apiTimeout: Int { Int(number("api.timeout") ?? 30) }
-    var apiFollowRedirects: Bool { bool("api.followRedirects") }
-    var apiVerifyTLS: Bool { bool("api.verifyTLS") }
-    var apiDiscoverServers: Bool { bool("api.discoverServers") }
-    var apiAgentControl: Bool { apiEnabled && bool("api.agentControl") }
-    var notesEnabled: Bool { bool("notes.enabled") }
-    var notesVaultPath: String { string("notes.vaultPath") }
-    var notesAgentAccess: Bool { notesEnabled && bool("notes.agentAccess") }
-    var notesAgentDrawings: Bool { notesAgentAccess && bool("notes.agentDrawings") }
-    var databaseEnabled: Bool { bool("database.enabled") }
-    var sessionsEnabled: Bool { bool("general.sessions") }
-    var snippetsEnabled: Bool { bool("general.snippets") }
-    var databaseRowLimit: Int { Int(number("database.rowLimit") ?? 500) }
-    var databaseConfirmDestructive: Bool { databaseEnabled && bool("database.confirmDestructive") }
-    var databaseAgentAccess: Bool { databaseEnabled && bool("database.agentAccess") }
-    var databaseAgentWrites: Bool { databaseAgentAccess && bool("database.agentWrites") }
-    var notesLivePreview: Bool { notesEnabled && bool("notes.livePreview") }
-    var dockerEnabled: Bool { bool("docker.enabled") }
-    var dockerEndpoint: String { string("docker.endpoint").trimmingCharacters(in: .whitespaces) }
-    var dockerContext: String { string("docker.context").trimmingCharacters(in: .whitespaces) }
-    var dockerDebugImage: String { string("docker.debugImage").trimmingCharacters(in: .whitespaces).nonEmptyOr("nicolaka/netshoot") }
-    var dockerNotifyOnExit: Bool { dockerEnabled && bool("docker.notifyOnExit") }
-    var dockerCheckPorts: Bool { dockerEnabled && bool("docker.checkPorts") }
-    var dockerAgentAccess: Bool { dockerEnabled && bool("docker.agentAccess") }
-    var dockerAgentWrites: Bool { dockerAgentAccess && bool("docker.agentWrites") }
+    package var terraformAgentAccess: Bool { terraformEnabled && bool("terraform.agentAccess") }
+    package var editorVimMode: Bool { bool("editor.vimMode") }
+    package var editorRelativeLineNumbers: Bool { bool("editor.relativeLineNumbers") }
+    package var browserEnabled: Bool { bool("browser.enabled") }
+    package var simulatorEnabled: Bool { bool("browser.simulator") }
+    package var browserLinks: BrowserLinks.Policy { browserEnabled ? BrowserLinks.Policy(rawValue: string("browser.openLinks")) ?? .local : .none }
+    package var browserReloadOnSave: Bool { browserEnabled && bool("browser.reloadOnSave") }
+    package var browserAgentControl: Bool { browserEnabled && bool("browser.agentControl") }
+    package var apiEnabled: Bool { bool("api.enabled") }
+    package var apiTimeout: Int { Int(number("api.timeout") ?? 30) }
+    package var apiFollowRedirects: Bool { bool("api.followRedirects") }
+    package var apiVerifyTLS: Bool { bool("api.verifyTLS") }
+    package var apiDiscoverServers: Bool { bool("api.discoverServers") }
+    package var apiAgentControl: Bool { apiEnabled && bool("api.agentControl") }
+    package var notesEnabled: Bool { bool("notes.enabled") }
+    package var notesVaultPath: String { string("notes.vaultPath") }
+    package var notesAgentAccess: Bool { notesEnabled && bool("notes.agentAccess") }
+    package var notesAgentDrawings: Bool { notesAgentAccess && bool("notes.agentDrawings") }
+    package var databaseEnabled: Bool { bool("database.enabled") }
+    package var sessionsEnabled: Bool { bool("general.sessions") }
+    package var snippetsEnabled: Bool { bool("general.snippets") }
+    package var databaseRowLimit: Int { Int(number("database.rowLimit") ?? 500) }
+    package var databaseConfirmDestructive: Bool { databaseEnabled && bool("database.confirmDestructive") }
+    package var databaseAgentAccess: Bool { databaseEnabled && bool("database.agentAccess") }
+    package var databaseAgentWrites: Bool { databaseAgentAccess && bool("database.agentWrites") }
+    package var notesLivePreview: Bool { notesEnabled && bool("notes.livePreview") }
+    package var dockerEnabled: Bool { bool("docker.enabled") }
+    package var dockerEndpoint: String { string("docker.endpoint").trimmingCharacters(in: .whitespaces) }
+    package var dockerContext: String { string("docker.context").trimmingCharacters(in: .whitespaces) }
+    package var dockerDebugImage: String { string("docker.debugImage").trimmingCharacters(in: .whitespaces).nonEmptyOr("nicolaka/netshoot") }
+    package var dockerNotifyOnExit: Bool { dockerEnabled && bool("docker.notifyOnExit") }
+    package var dockerCheckPorts: Bool { dockerEnabled && bool("docker.checkPorts") }
+    package var dockerAgentAccess: Bool { dockerEnabled && bool("docker.agentAccess") }
+    package var dockerAgentWrites: Bool { dockerAgentAccess && bool("docker.agentWrites") }
     /// Activity's page, switcher and ⌘K items (docs/design/activity/analysis.md, 6.13).
-    var activityEnabled: Bool { bool("activity.enabled") }
+    package var activityEnabled: Bool { bool("activity.enabled") }
     /// How often the census reads (`ActivityMonitor.interval`): 1, 2 or 5 s.
-    var activityInterval: Duration {
+    package var activityInterval: Duration {
         switch string("activity.interval") {
         case "1": .seconds(1)
         case "5": .seconds(5)
         default: .seconds(2)
         }
     }
-    var activityEveryone: Bool { activityEnabled && bool("activity.everyone") }
-    var activityAppServices: Bool { activityEnabled && bool("activity.appServices") }
+    package var activityEveryone: Bool { activityEnabled && bool("activity.everyone") }
+    package var activityAppServices: Bool { activityEnabled && bool("activity.appServices") }
     /// Every user's listeners from nettop (D-25), while Listening shows.
-    var activityOtherListeners: Bool { activityEnabled && bool("activity.otherListeners") }
+    package var activityOtherListeners: Bool { activityEnabled && bool("activity.otherListeners") }
     /// The user's unix-socket listeners in Listening (D-32).
-    var activityUnixSockets: Bool { activityEnabled && bool("activity.unixSockets") }
+    package var activityUnixSockets: Bool { activityEnabled && bool("activity.unixSockets") }
     /// A tab's note when an agent left processes running (6.9, D-17).
-    var activityLeftBehindNotice: Bool { bool("activity.leftBehindNotice") }
+    package var activityLeftBehindNotice: Bool { bool("activity.leftBehindNotice") }
     /// Agents' `port_` and `proc_` reads (ActivityMCP, 8.2): held when
     /// edited outside the page.
-    var activityAgentAccess: Bool { activityEnabled && bool("activity.agentAccess") }
-    var kubernetesEnabled: Bool { bool("kubernetes.enabled") }
+    package var activityAgentAccess: Bool { activityEnabled && bool("activity.agentAccess") }
+    package var kubernetesEnabled: Bool { bool("kubernetes.enabled") }
     /// Agents' `k8s_` read tools (KubeMCP).
-    var kubernetesAgentAccess: Bool { kubernetesEnabled && bool("kubernetes.agentAccess") }
+    package var kubernetesAgentAccess: Bool { kubernetesEnabled && bool("kubernetes.agentAccess") }
     /// The setting's extra kubeconfig files and folders, as written (`~` unexpanded).
-    var kubernetesKubeconfigs: [String] { value("kubernetes.kubeconfigs")?.list ?? [] }
+    package var kubernetesKubeconfigs: [String] { value("kubernetes.kubeconfigs")?.list ?? [] }
     /// Each context's own settings, by its name.
-    var kubernetesContexts: [String: KubeContextSettings] { KubeContextSettings.all(from: value("kubernetes.contexts")) }
-    var kubernetesPinnedContexts: [String] { value("kubernetes.pinnedContexts")?.list ?? [] }
-    var kubernetesAgentWrites: [String] {
+    package var kubernetesContexts: [String: KubeContextSettings] { KubeContextSettings.all(from: value("kubernetes.contexts")) }
+    package var kubernetesPinnedContexts: [String] { value("kubernetes.pinnedContexts")?.list ?? [] }
+    package var kubernetesAgentWrites: [String] {
         (value("kubernetes.agentWrites")?.list ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
-    var kubernetesDebugImage: String { string("kubernetes.debugImage").trimmingCharacters(in: .whitespaces).nonEmptyOr("busybox:1.36") }
-    var kubernetesMaxProxies: Int { Int(number("kubernetes.maxProxies") ?? 4) }
-    var kubernetesProxyIdleMinutes: Int { Int(number("kubernetes.proxyIdleMinutes") ?? 10) }
+    package var kubernetesDebugImage: String { string("kubernetes.debugImage").trimmingCharacters(in: .whitespaces).nonEmptyOr("busybox:1.36") }
+    package var kubernetesMaxProxies: Int { Int(number("kubernetes.maxProxies") ?? 4) }
+    package var kubernetesProxyIdleMinutes: Int { Int(number("kubernetes.proxyIdleMinutes") ?? 10) }
     /// How many containers a merged log follows at once.
-    var kubernetesLogStreams: Int { max(Int(number("kubernetes.logStreams") ?? 10), 1) }
+    package var kubernetesLogStreams: Int { max(Int(number("kubernetes.logStreams") ?? 10), 1) }
     /// The helm `helm template` runs, as written; empty: found (`KubeHelmLocator`).
-    var kubernetesHelmPath: String { string("kubernetes.helmPath").trimmingCharacters(in: .whitespaces) }
+    package var kubernetesHelmPath: String { string("kubernetes.helmPath").trimmingCharacters(in: .whitespaces) }
     /// The attention watches (3.13): a bound checkout's tab marked when its pods or rollouts fail.
-    var kubernetesNotifyOnFailure: Bool { kubernetesEnabled && bool("kubernetes.notifyOnFailure") }
+    package var kubernetesNotifyOnFailure: Bool { kubernetesEnabled && bool("kubernetes.notifyOnFailure") }
     /// How many bound namespaces the attention watches follow at once.
-    var kubernetesBackgroundWatches: Int { max(Int(number("kubernetes.backgroundWatches") ?? 4), 1) }
+    package var kubernetesBackgroundWatches: Int { max(Int(number("kubernetes.backgroundWatches") ?? 4), 1) }
     /// The kubectl the proxies run, as written; empty: found (`KubectlLocator`).
-    var kubernetesKubectlPath: String { string("kubernetes.kubectlPath").trimmingCharacters(in: .whitespaces) }
+    package var kubernetesKubectlPath: String { string("kubernetes.kubectlPath").trimmingCharacters(in: .whitespaces) }
 
     // MARK: Ghostty overrides
 
     /// Loaded after the user's Ghostty config: only what Settings sets.
-    static var ghosttyOverridesFile: URL { AppEnvironment.supportDirectory.appendingPathComponent("ghostty-overrides.conf") }
+    package static var ghosttyOverridesFile: URL { AppEnvironment.supportDirectory.appendingPathComponent("ghostty-overrides.conf") }
 
     /// The Ghostty lines for what is set, then `keybindings`' lines.
-    func ghosttyOverrides(keybindings: [String] = []) -> String {
+    package func ghosttyOverrides(keybindings: [String] = []) -> String {
         Self.ghosttyOverrides(values: values, keybindings: keybindings)
     }
 
-    nonisolated static func ghosttyOverrides(values: [String: SettingValue], keybindings: [String] = []) -> String {
+    package nonisolated static func ghosttyOverrides(values: [String: SettingValue], keybindings: [String] = []) -> String {
         var lines = ["# Written by Overterm ▸ Settings (settings.json). Loaded after your Ghostty config; edits here are overwritten."]
         lines += themeLines(values: values)
         lines += windowLines(values: values)
@@ -585,7 +585,7 @@ final class Settings: ObservableObject {
     /// does — `light:A,dark:B`. The pair can't be quoted (the comma and the
     /// colon are the syntax), and doesn't need to be: Ghostty reads the rest
     /// of the line, so a name with spaces in it arrives whole.
-    nonisolated static func themeLines(values: [String: SettingValue]) -> [String] {
+    package nonisolated static func themeLines(values: [String: SettingValue]) -> [String] {
         let dark = values["appearance.theme"]?.string ?? ""
         let light = values["appearance.themeLight"]?.string ?? ""
         if values["appearance.followSystemAppearance"]?.bool == true, !dark.isEmpty, !light.isEmpty {
@@ -596,14 +596,14 @@ final class Settings: ObservableObject {
     }
 
     /// Written together, by `windowLines`, not one setting at a time.
-    nonisolated static let windowOptions: Set<String> = [
+    package nonisolated static let windowOptions: Set<String> = [
         "theme", "background-opacity", "background-blur", "background-image", "background-image-opacity", "background-image-fit",
     ]
 
     /// Translucency and the background image, which depend on each other.
     /// The surfaces draw at the opacity; the window's ground is cut away
     /// under them (WindowGroundView), so nothing stacks.
-    nonisolated static func windowLines(values: [String: SettingValue]) -> [String] {
+    package nonisolated static func windowLines(values: [String: SettingValue]) -> [String] {
         var lines: [String] = []
         if let opacity = values["appearance.backgroundOpacity"]?.number, opacity < 1 {
             lines.append("background-opacity = \(String(format: "%g", opacity))")
@@ -619,7 +619,7 @@ final class Settings: ObservableObject {
         return lines
     }
 
-    nonisolated static func ghosttyLines(option: String, value: SettingValue) -> [String] {
+    package nonisolated static func ghosttyLines(option: String, value: SettingValue) -> [String] {
         switch (option, value) {
         // Off is three features; on is the font's own.
         case ("font-feature", .bool(let on)): on ? [] : ["font-feature = -calt", "font-feature = -liga", "font-feature = -dlig"]
@@ -641,7 +641,7 @@ final class Settings: ObservableObject {
     /// Writes the overrides file (none when there is nothing to override).
     /// Returns whether it changed — Ghostty reloads only then.
     @discardableResult
-    func writeGhosttyOverrides(keybindings: [String] = []) -> Bool {
+    package func writeGhosttyOverrides(keybindings: [String] = []) -> Bool {
         let url = Self.ghosttyOverridesFile
         let text = ghosttyOverrides(keybindings: keybindings)
         let current = try? String(contentsOf: url, encoding: .utf8)

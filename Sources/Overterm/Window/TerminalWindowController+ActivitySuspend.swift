@@ -12,7 +12,7 @@ import AppKit
 extension TerminalWindowController {
     /// `rule` taken here when it is one of these verbs' (from `ask`, the
     /// process read fresh as its sheet would open): true when it was.
-    func askHeld(_ verb: ActivityVerb, _ rule: ActivityRule, _ subject: ActivityVerbSubject) -> Bool {
+    package func askHeld(_ verb: ActivityVerb, _ rule: ActivityRule, _ subject: ActivityVerbSubject) -> Bool {
         switch rule {
         case .allowed(.suspend, let confirm, _): askSuspend(verb, rule, subject, confirm: confirm)
         case .allowed(.resume, let confirm, _): askResume(verb, rule, subject, confirm: confirm)
@@ -190,7 +190,7 @@ extension TerminalWindowController {
 
     /// The header's Resume All: every process Activity stopped, asked when
     /// more than one, each listed.
-    func activityResumeAll() {
+    package func activityResumeAll() {
         let held = ActivityHeld.shared
         let members = held.suspensions.flatMap { suspension in suspension.members.map { (target: $0, name: suspension.names[$0.identity] ?? suspension.name) } }
         guard !members.isEmpty else { return }
@@ -242,7 +242,7 @@ extension TerminalWindowController {
     /// `n`: which step of Lower Priority, then its question. Its nice read
     /// first: a step that gives nothing is greyed with why, as in the row
     /// menu; none that does, and nothing is asked.
-    func activityChooseLower(_ identity: ActivityProcessID) {
+    package func activityChooseLower(_ identity: ActivityProcessID) {
         Task { @MainActor [weak self] in
             guard let self, let window = self.window else { return }
             guard let subject = await self.activitySubject(identity) else {
@@ -281,7 +281,7 @@ extension TerminalWindowController {
 
     /// Lower Priority ▸ `step`: read again, asked every time, read again at
     /// the button, then the nice raised by `ProcessSignals`.
-    func activityLower(_ identity: ActivityProcessID, _ step: ActivityNiceStep) {
+    package func activityLower(_ identity: ActivityProcessID, _ step: ActivityNiceStep) {
         Task { @MainActor [weak self] in
             guard let self, let window = self.window else { return }
             guard let subject = await self.activitySubject(identity) else {
@@ -316,7 +316,7 @@ extension TerminalWindowController {
     /// The quit question (6.10): nil when nothing Activity suspended is
     /// still stopped, read now — each member's structure, microseconds.
     /// Resume and Quit (the default), Quit, Cancel.
-    static func activityQuitAlert(kernel: any ActivityKernel = LiveActivityKernel()) -> NSAlert? {
+    package static func activityQuitAlert(kernel: any ActivityKernel = LiveActivityKernel()) -> NSAlert? {
         guard let question = ActivityHeld.quitQuestion(stopped: ActivityHeld.shared.stillStopped(kernel: kernel).count) else { return nil }
         let alert = NSAlert()
         alert.messageText = question.title
@@ -331,7 +331,7 @@ extension TerminalWindowController {
     /// — on the main thread, since the quit waits on it. Nil when each was
     /// continued (or ended); else the question that asks again, those not
     /// continued still held and listed.
-    static func activityResumeAtQuit() -> NSAlert? {
+    package static func activityResumeAtQuit() -> NSAlert? {
         let held = ActivityHeld.shared
         let failed = held.resumeAll().map {
             (pid: $0.target.identity.pid, name: held.name(of: $0.target.identity), why: ActivityPortFree.answer($0.answer, pid: $0.target.identity.pid) ?? "not continued")

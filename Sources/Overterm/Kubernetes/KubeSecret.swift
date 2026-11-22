@@ -2,19 +2,19 @@ import Foundation
 
 /// One key of a Secret Show read: its name and how long its value is,
 /// never the value — that stays in the session (`KubeSecretSession`).
-struct KubeSecretEntry: Equatable, Sendable, Identifiable {
-    var key: String
+package struct KubeSecretEntry: Equatable, Sendable, Identifiable {
+    package var key: String
     /// The value's length in bytes, decoded.
-    var length: Int
+    package var length: Int
     /// A TLS Secret's `tls.key`: never decoded, revealed or copied.
-    var isPrivateKey = false
+    package var isPrivateKey = false
     /// Not text (or not valid base64): revealed as base64.
-    var isBinary = false
+    package var isBinary = false
 
-    var id: String { key }
+    package var id: String { key }
 
     /// What a masked value says: its length, never its content.
-    var masked: String {
+    package var masked: String {
         if isPrivateKey { return "private key · never shown" }
         return "•••••••• · \(length) byte\(length == 1 ? "" : "s")" + (isBinary ? ", binary" : "")
     }
@@ -25,35 +25,35 @@ struct KubeSecretEntry: Equatable, Sendable, Identifiable {
 /// values — what the Overview and the YAML show — the keys with their
 /// lengths, and the values, decoded, for the session alone. A TLS
 /// Secret's `tls.key` is counted from its base64 and never decoded. Pure.
-struct KubeSecretRead: Sendable {
+package struct KubeSecretRead: Sendable {
     /// The object as JSON, `data` and `stringData` each value `***`, the
     /// last-applied annotation (which can hold every value) gone.
-    var stripped: Data
-    var type: String
+    package var stripped: Data
+    package var type: String
     /// By key.
-    var entries: [KubeSecretEntry]
+    package var entries: [KubeSecretEntry]
     /// Decoded, by key; no private key's.
-    var values: [String: Data]
+    package var values: [String: Data]
 }
 
 extension KubeSecretRead: CustomStringConvertible {
     /// Never a value: a read printed (a check's detail, a log) says only
     /// what it holds.
-    var description: String { "Secret (\(type)): \(entries.map(\.key).joined(separator: ", "))" }
+    package var description: String { "Secret (\(type)): \(entries.map(\.key).joined(separator: ", "))" }
 }
 
-enum KubeSecret {
-    static let tlsType = "kubernetes.io/tls"
+package enum KubeSecret {
+    package static let tlsType = "kubernetes.io/tls"
 
     /// An answer that isn't a Secret. Never says what came: that could be
     /// any of its values.
-    struct Unreadable: Error, Equatable, LocalizedError {
-        var errorDescription: String? { "The server's answer isn't a Secret." }
+    package struct Unreadable: Error, Equatable, LocalizedError {
+        package var errorDescription: String? { "The server's answer isn't a Secret." }
     }
 
-    static func isPrivateKey(_ key: String, type: String) -> Bool { type == tlsType && key == "tls.key" }
+    package static func isPrivateKey(_ key: String, type: String) -> Bool { type == tlsType && key == "tls.key" }
 
-    static func read(_ body: Data) throws -> KubeSecretRead {
+    package static func read(_ body: Data) throws -> KubeSecretRead {
         guard var object = try? JSONSerialization.jsonObject(with: body) as? [String: Any], KubeObjectStrip.isSecret(object),
             (object["metadata"] as? [String: Any])?["name"] is String
         else { throw Unreadable() }
@@ -99,7 +99,7 @@ enum KubeSecret {
     }
 
     /// How many bytes a base64 text decodes to, without decoding it.
-    static func decodedLength(ofBase64 text: String) -> Int {
+    package static func decodedLength(ofBase64 text: String) -> Int {
         let characters = text.utf8.filter { $0 != 0x0A && $0 != 0x0D && $0 != 0x20 }
         guard !characters.isEmpty else { return 0 }
         let padding = characters.reversed().prefix { $0 == UInt8(ascii: "=") }.count
@@ -108,7 +108,7 @@ enum KubeSecret {
 
     /// Valid UTF-8 without control characters but newlines and tabs —
     /// checked without making a String of the value.
-    static func isText(_ data: Data) -> Bool {
+    package static func isText(_ data: Data) -> Bool {
         var iterator = data.makeIterator()
         var decoder = UTF8()
         while true {
@@ -128,10 +128,10 @@ enum KubeSecret {
 /// answer is kept in memory until the app quits, never written. The
 /// app's, as `KubernetesModel` is.
 @MainActor
-final class KubeSecretConsent {
+package final class KubeSecretConsent {
     private var granted: Set<String> = []
 
-    func needsAsking(_ context: String, production: Bool) -> Bool { production && !granted.contains(context) }
-    func grant(_ context: String) { granted.insert(context) }
-    func forget() { granted = [] }
+    package func needsAsking(_ context: String, production: Bool) -> Bool { production && !granted.contains(context) }
+    package func grant(_ context: String) { granted.insert(context) }
+    package func forget() { granted = [] }
 }

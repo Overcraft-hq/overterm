@@ -15,11 +15,11 @@ import Foundation
 /// a Secret's value: it names objects and selectors, nothing read from one,
 /// and a Secret's own command is `describe`, which prints its keys' sizes
 /// as the masked detail does, not `-o yaml`, which would print them. Pure.
-enum KubectlLine {
+package enum KubectlLine {
     /// The list: `kubectl --context C get deploy -n NS -l app=web --field-selector status.phase=Running`.
     /// Several namespaces are a command each, a line each: kubectl's `-n`
     /// takes one.
-    static func list(
+    package static func list(
         context: String, kind: KubeResourceKind, scope: KubeScope, selectors: KubeListSelectors = KubeListSelectors(), wide: Bool = false,
         discovery: KubeDiscovery? = nil
     ) -> String {
@@ -40,7 +40,7 @@ enum KubectlLine {
     /// One object as the detail's YAML shows it:
     /// `kubectl --context C -n NS get deploy NAME -o yaml` — a Secret
     /// `describe`d instead, its values left out.
-    static func object(_ ref: KubeObjectRef, discovery: KubeDiscovery? = nil) -> String {
+    package static func object(_ ref: KubeObjectRef, discovery: KubeDiscovery? = nil) -> String {
         var words = ["kubectl", "--context", quoted(ref.context)]
         if let namespace = ref.namespace { words += ["-n", quoted(namespace)] }
         if ref.isSecret {
@@ -56,7 +56,7 @@ enum KubectlLine {
     /// object's (a node's) are in whichever namespace reported them: `-A`,
     /// after `events` — it is that command's flag, not a global one like
     /// `--context` and `-n`, and kubectl refuses it before the subcommand.
-    static func events(for ref: KubeObjectRef, discovery: KubeDiscovery? = nil) -> String {
+    package static func events(for ref: KubeObjectRef, discovery: KubeDiscovery? = nil) -> String {
         var words = ["kubectl", "--context", quoted(ref.context)]
         if let namespace = ref.namespace { words += ["-n", quoted(namespace)] }
         words.append("events")
@@ -68,7 +68,7 @@ enum KubectlLine {
     /// A pod's log, as its Logs tab shows it:
     /// `kubectl --context C -n NS logs POD -c CONTAINER --previous --since=1h --timestamps`.
     /// From a time on (`sinceTime`, "Logs from here"): `--since-time=` in place of `--since`.
-    static func logs(
+    package static func logs(
         context: String, namespace: String, pod: String, container: String?, previous: Bool, since: KubeLogSince, timestamps: Bool, sinceTime: Date? = nil
     ) -> String {
         var words = ["kubectl", "--context", quoted(context), "-n", quoted(namespace), "logs", quoted(pod)]
@@ -85,7 +85,7 @@ enum KubectlLine {
 
     /// The Metrics tab of a node, a namespace or a workload, as `kubectl top`
     /// says it: the node; the namespace's pods; the workload's pods by its selector.
-    static func top(_ ref: KubeObjectRef, selector: String?) -> String? {
+    package static func top(_ ref: KubeObjectRef, selector: String?) -> String? {
         let context = ["kubectl", "--context", quoted(ref.context)]
         switch ref.metricsSubject {
         case .node: return (context + ["top", "node", quoted(ref.name)]).joined(separator: " ")
@@ -99,14 +99,14 @@ enum KubectlLine {
 
     /// A pod's usage as its Metrics tab samples it:
     /// `kubectl --context C -n NS top pod POD --containers`.
-    static func top(context: String, namespace: String, pod: String) -> String {
+    package static func top(context: String, namespace: String, pod: String) -> String {
         ["kubectl", "--context", quoted(context), "-n", quoted(namespace), "top", "pod", quoted(pod), "--containers"].joined(separator: " ")
     }
 
     /// A merged log as kubectl reads it: the pods a selector picks, every
     /// container, each line prefixed with its pod and container, at most
     /// `streams` at once.
-    static func mergedLogs(context: String, namespace: String, selector: String, streams: Int, since: KubeLogSince, timestamps: Bool) -> String {
+    package static func mergedLogs(context: String, namespace: String, selector: String, streams: Int, since: KubeLogSince, timestamps: Bool) -> String {
         var words = ["kubectl", "--context", quoted(context), "-n", quoted(namespace), "logs", "-l", quoted(selector), "--all-containers", "--prefix"]
         words.append("--max-log-requests=\(streams)")
         if since != .all { words.append("--since=\(since.rawValue)") }
@@ -120,7 +120,7 @@ enum KubectlLine {
     /// (`deploy`, `cronjobs`); else `plural.group`, which can mean only
     /// one (`events.events.k8s.io` beside the core's events, every CRD's —
     /// `widgets.example.com`).
-    static func resource(_ kind: KubeResourceKind, in discovery: KubeDiscovery?) -> String {
+    package static func resource(_ kind: KubeResourceKind, in discovery: KubeDiscovery?) -> String {
         if kind.group.isEmpty { return kind.shortNames.first ?? kind.resource }
         guard KubeKindCatalog.isBuiltIn(group: kind.group) else { return kind.fullName }
         let others = (discovery?.kinds ?? []).filter { $0.fullName != kind.fullName }
@@ -130,7 +130,7 @@ enum KubectlLine {
     }
 
     /// A word as zsh reads it back unchanged.
-    static func quoted(_ word: String) -> String {
+    package static func quoted(_ word: String) -> String {
         guard !word.isEmpty else { return "''" }
         let bare = word.unicodeScalars.allSatisfy { safe.contains($0) } && !word.hasPrefix("=") && !word.hasPrefix("-")
         if bare { return word }

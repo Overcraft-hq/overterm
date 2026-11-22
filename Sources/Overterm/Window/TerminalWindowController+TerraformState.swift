@@ -3,7 +3,7 @@ import AppKit
 // MARK: A root's state and outputs in the right slot (docs/design/terraform/analysis.md 2.4, 5.6, stage 2c)
 
 extension TerminalWindowController {
-    var terraformStateActions: TerraformStateActions {
+    package var terraformStateActions: TerraformStateActions {
         TerraformStateActions(
             refresh: { [weak self] read in self?.showTerraformState(read.card, checkout: read.checkout) },
             offer: { [weak self] offer, output, read in self?.openTerraformOutput(offer, output: output, read: read) },
@@ -20,7 +20,7 @@ extension TerminalWindowController {
     /// root and workspace still going is shown again, never started twice:
     /// the card's State, its menu's and Read Again all come here.
     @discardableResult
-    func showTerraformState(_ card: TerraformRootCard, checkout: URL? = nil) -> TerraformStateRead? {
+    package func showTerraformState(_ card: TerraformRootCard, checkout: URL? = nil) -> TerraformStateRead? {
         guard let checkout = checkout ?? terraformPanel.checkout else {
             NSSound.beep()
             return nil
@@ -49,7 +49,7 @@ extension TerminalWindowController {
     /// What an output opens (2.4): never a sensitive one's (it offers
     /// nothing), never a password read from an output. An isolated run
     /// records it (`TerraformStateReads.offerRecorder`).
-    func openTerraformOutput(_ offer: TerraformOutputLinks.Offer, output: TerraformState.Output, read: TerraformStateRead) {
+    package func openTerraformOutput(_ offer: TerraformOutputLinks.Offer, output: TerraformState.Output, read: TerraformStateRead) {
         guard !output.sensitive else { return }
         if let recorder = TerraformStateReads.shared.offerRecorder { return recorder(offer) }
         switch offer {
@@ -72,7 +72,7 @@ extension TerminalWindowController {
     /// Add to API environment: the variable written into the picked
     /// environment's `.bru` of the checkout's collection — asked first,
     /// every other block of the file kept byte for byte (`BruFile`).
-    func addTerraformOutputToAPI(name: String, value: String, read: TerraformStateRead) {
+    package func addTerraformOutputToAPI(name: String, value: String, read: TerraformStateRead) {
         guard Settings.shared.apiEnabled else { return openSettings(.api) }
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -111,7 +111,7 @@ extension TerminalWindowController {
     /// Open in Kubernetes: the page on the kubeconfig context whose server
     /// or name is the cluster's; none is said, with the command that adds
     /// one — to run in a terminal, never typed by Overterm.
-    func openTerraformCluster(_ cluster: TerraformOutputLinks.Cluster) {
+    package func openTerraformCluster(_ cluster: TerraformOutputLinks.Cluster) {
         guard Settings.shared.kubernetesEnabled else { return openSettings(.kubernetes) }
         showKubernetesPage()
         Task { @MainActor [weak self] in
@@ -129,7 +129,7 @@ extension TerminalWindowController {
     }
 
     /// A notice on the window; an isolated run's goes nowhere.
-    func terraformNotice(_ title: String, _ detail: String) {
+    package func terraformNotice(_ title: String, _ detail: String) {
         guard !AppEnvironment.isIsolated, let window else { return }
         let alert = NSAlert()
         alert.messageText = title

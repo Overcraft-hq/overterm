@@ -1,43 +1,43 @@
 import Foundation
 
 /// A syntax token in one diff line: a UTF-16 range in the line's text.
-struct DiffToken: Equatable {
-    let range: NSRange
-    let kind: SyntaxHighlighter.Kind
+package struct DiffToken: Equatable {
+    package let range: NSRange
+    package let kind: SyntaxHighlighter.Kind
 }
 
 /// How a diff line is drawn besides its text and its green/red tint.
-struct DiffLineStyle: Equatable {
+package struct DiffLineStyle: Equatable {
     /// Syntax colours: in order, not overlapping, UTF-16 in the line's text.
-    var tokens: [DiffToken] = []
+    package var tokens: [DiffToken] = []
     /// The part that changed against the line it is paired with — a removed
     /// line's against the added line that replaced it, and back — UTF-16,
     /// whole characters. nil: unpaired, too unlike its pair to say, or the
     /// side of an insertion (or deletion) with nothing of its own.
-    var changed: NSRange?
+    package var changed: NSRange?
 
-    var isEmpty: Bool { tokens.isEmpty && changed == nil }
+    package var isEmpty: Bool { tokens.isEmpty && changed == nil }
 }
 
 /// What makes a diff read like code, as the Claude Code desktop app shows
 /// one: syntax colours, and in a line that was edited rather than replaced
 /// the part that changed. Worked out once per file as its diff loads
 /// (`DiffModel.FileDiff`, off the main thread), never while drawing.
-enum DiffHighlight {
+package enum DiffHighlight {
     /// A removed and an added line sharing less than this (percent of the
     /// longer, in characters) were replaced, not edited: no mark.
-    static let minSharedPercent = 40
+    package static let minSharedPercent = 40
     /// Lines longer than this (UTF-16) aren't compared: minified code, where
     /// a mark says nothing.
-    static let maxComparedLength = 10_000
+    package static let maxComparedLength = 10_000
     /// A hunk side longer than this (UTF-16) isn't tokenized — the editor's
     /// limit (SyntaxHighlighter.maxLength).
-    static let maxTokenizedLength = SyntaxHighlighter.maxLength
+    package static let maxTokenizedLength = SyntaxHighlighter.maxLength
 
     /// Each line's style, by `DiffLine.id`; lines with nothing to draw are
     /// left out. `language` nil (a file the highlighter doesn't know): no
     /// colours, changed parts still.
-    static func styles(for lines: [DiffLine], language: SyntaxHighlighter.Language?) -> [Int: DiffLineStyle] {
+    package static func styles(for lines: [DiffLine], language: SyntaxHighlighter.Language?) -> [Int: DiffLineStyle] {
         var styles: [Int: DiffLineStyle] = [:]
         if let language {
             for (index, tokens) in syntaxTokens(for: lines, language: language) {
@@ -63,7 +63,7 @@ enum DiffHighlight {
     /// new (context and added lines) — a comment or string spanning lines is
     /// one token, as in the file. Context lines take the new side's: they
     /// read as the file does now.
-    static func syntaxTokens(for lines: [DiffLine], language: SyntaxHighlighter.Language) -> [Int: [DiffToken]] {
+    package static func syntaxTokens(for lines: [DiffLine], language: SyntaxHighlighter.Language) -> [Int: [DiffToken]] {
         var tokens: [Int: [DiffToken]] = [:]
         var old: [Int] = []
         var new: [Int] = []
@@ -138,7 +138,7 @@ enum DiffHighlight {
     /// hunk, a run of removed lines and the run of added lines right after
     /// it, paired in order (git writes a change as its removals, then its
     /// additions). What is left of the longer run has no pair.
-    static func pairs(in lines: [DiffLine]) -> [(removed: Int, added: Int)] {
+    package static func pairs(in lines: [DiffLine]) -> [(removed: Int, added: Int)] {
         var pairs: [(removed: Int, added: Int)] = []
         var removed: [Int] = []
         var added: [Int] = []
@@ -171,7 +171,7 @@ enum DiffHighlight {
     /// when nothing changed, or the two share under `minSharedPercent` of
     /// the longer — a line replaced rather than edited, where a mark over
     /// nearly all of both would be noise.
-    static func changedRanges(old: String, new: String) -> (old: NSRange, new: NSRange)? {
+    package static func changedRanges(old: String, new: String) -> (old: NSRange, new: NSRange)? {
         let a = Array(old)
         let b = Array(new)
         let longest = max(a.count, b.count)

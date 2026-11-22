@@ -2,48 +2,48 @@ import AppKit
 import SwiftUI
 
 /// What the Database panel asks the window to do.
-struct DatabaseActions {
+package struct DatabaseActions {
     /// New Connection… (a kind preset), Edit Connection… (nil: new).
-    var edit: (DatabaseConnection?, DatabaseKind?) -> Void
-    var delete: (DatabaseConnection) -> Void
+    package var edit: (DatabaseConnection?, DatabaseKind?) -> Void
+    package var delete: (DatabaseConnection) -> Void
     /// The connection's console in the editor.
-    var console: (DatabaseConnection) -> Void
+    package var console: (DatabaseConnection) -> Void
     /// A query in the connection's console, run.
-    var run: (DatabaseConnection, String) -> Void
+    package var run: (DatabaseConnection, String) -> Void
     /// A stored file in the right-hand pane.
-    var openObject: (StorageSession, String, StorageObject) -> Void = { _, _, _ in }
+    package var openObject: (StorageSession, String, StorageObject) -> Void = { _, _, _ in }
     /// Asks for a name (title, what it is for), then does it.
-    var prompt: (_ title: String, _ detail: String, _ done: @escaping (String) -> Void) -> Void = { _, _, _ in }
+    package var prompt: (_ title: String, _ detail: String, _ done: @escaping (String) -> Void) -> Void = { _, _, _ in }
     /// Asks before deleting these keys, then deletes them.
-    var deleteObjects: (StorageSession, String, [String], _ refreshing: String) -> Void = { _, _, _, _ in }
+    package var deleteObjects: (StorageSession, String, [String], _ refreshing: String) -> Void = { _, _, _, _ in }
     /// Files picked in an open panel, uploaded to bucket/prefix.
-    var upload: (StorageSession, String, String) -> Void = { _, _, _ in }
-    var download: (StorageSession, String, StorageObject) -> Void = { _, _, _ in }
-    var copyLink: (StorageSession, String, String) -> Void = { _, _, _ in }
+    package var upload: (StorageSession, String, String) -> Void = { _, _, _ in }
+    package var download: (StorageSession, String, StorageObject) -> Void = { _, _, _ in }
+    package var copyLink: (StorageSession, String, String) -> Void = { _, _, _ in }
     /// A Redis key's page in the right-hand pane.
-    var openRedisKey: (DatabaseSession, Int, String) -> Void = { _, _, _ in }
+    package var openRedisKey: (DatabaseSession, Int, String) -> Void = { _, _, _ in }
     /// The new-key page, for a database.
-    var newRedisKey: (DatabaseSession, Int) -> Void = { _, _ in }
+    package var newRedisKey: (DatabaseSession, Int) -> Void = { _, _ in }
     /// The server's page.
-    var redisServer: (DatabaseSession) -> Void = { _ in }
+    package var redisServer: (DatabaseSession) -> Void = { _ in }
     /// A SQL connection's Server page (monitoring), and its Users page.
-    var server: (DatabaseConnection) -> Void = { _ in }
-    var users: (DatabaseConnection) -> Void = { _ in }
+    package var server: (DatabaseConnection) -> Void = { _ in }
+    package var users: (DatabaseConnection) -> Void = { _ in }
     /// Asks, then deletes the key.
-    var deleteRedisKey: (DatabaseSession, Int, String) -> Void = { _, _, _ in }
+    package var deleteRedisKey: (DatabaseSession, Int, String) -> Void = { _, _, _ in }
     /// Asks for a new name (title, the current one), then gives it.
-    var rename: (_ title: String, _ current: String, _ done: @escaping (String) -> Void) -> Void = { _, _, _ in }
+    package var rename: (_ title: String, _ current: String, _ done: @escaping (String) -> Void) -> Void = { _, _, _ in }
 }
 
 /// The sidebar's Database panel: the saved connections, and under each one
 /// its schemas, their tables and views, their columns — read as each opens.
-struct DatabasePanelView: View {
-    @ObservedObject var model: DatabaseModel
-    @ObservedObject var store: DatabaseStore
-    @ObservedObject var theme: ChromeTheme
-    let actions: DatabaseActions
+package struct DatabasePanelView: View {
+    @ObservedObject package var model: DatabaseModel
+    @ObservedObject package var store: DatabaseStore
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DatabaseActions
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             header
             if store.connections.isEmpty {
@@ -316,20 +316,20 @@ private struct ConnectionTree: View {
 }
 
 /// One row of the tree: its chevron (nil: a leaf), glyph, name, a detail.
-struct TreeRow: View {
-    let depth: Int
-    let open: Bool?
-    let symbol: String
-    let title: String
-    let detail: String?
-    let dot: Color?
-    @ObservedObject var theme: ChromeTheme
+package struct TreeRow: View {
+    package let depth: Int
+    package let open: Bool?
+    package let symbol: String
+    package let title: String
+    package let detail: String?
+    package let dot: Color?
+    @ObservedObject package var theme: ChromeTheme
     /// Files from Finder held over it.
-    var targeted = false
-    let action: () -> Void
+    package var targeted = false
+    package let action: () -> Void
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 4) {
             Image(systemName: open == true ? "chevron.down" : "chevron.right")
                 .font(.system(size: ChromeMetrics.text(8), weight: .semibold)).frame(width: 10).opacity(open == nil ? 0 : 1)

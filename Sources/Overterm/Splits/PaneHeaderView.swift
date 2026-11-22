@@ -4,24 +4,24 @@ import SwiftUI
 /// What a pane's header can do. Every action names its own pane, so a
 /// button works on the pane you clicked rather than on whichever one
 /// happens to have the keyboard.
-struct PaneHeaderActions {
-    var copyOutput: (TerminalView) -> Void
+package struct PaneHeaderActions {
+    package var copyOutput: (TerminalView) -> Void
     /// Free… a pill's port, in its pane (docs/design/activity/analysis.md,
     /// 6.12): asked, and checked against the process the census listed —
     /// its owner's Stop for a container's or a forward's.
-    var freePort: (ListeningPort, TerminalView) -> Void
-    var rerun: (TerminalView) -> Void
-    var splitRight: (TerminalView) -> Void
-    var splitDown: (TerminalView) -> Void
-    var zoom: (TerminalView) -> Void
-    var close: (TerminalView) -> Void
+    package var freePort: (ListeningPort, TerminalView) -> Void
+    package var rerun: (TerminalView) -> Void
+    package var splitRight: (TerminalView) -> Void
+    package var splitDown: (TerminalView) -> Void
+    package var zoom: (TerminalView) -> Void
+    package var close: (TerminalView) -> Void
     /// Opens its URL where Settings ▸ Browser says (`openLink`): the
     /// browser column, or the default browser.
-    var openPort: (ListeningPort) -> Void
+    package var openPort: (ListeningPort) -> Void
     /// A Kubernetes forward's: the page's Forwards section.
-    var showForwards: () -> Void = {}
+    package var showForwards: () -> Void = {}
     /// Show in Activity (6.12): Listening with the port selected.
-    var showInActivity: (ListeningPort) -> Void = { _ in }
+    package var showInActivity: (ListeningPort) -> Void = { _ in }
 }
 
 /// The bar across the top of every terminal pane: what is running here,
@@ -31,14 +31,14 @@ struct PaneHeaderActions {
 /// whole tab, and a split said nothing at all. The cost is 38 pt a pane,
 /// which is the trade: four panes of a 2×2 split can now be told apart,
 /// and split, zoom and close stop being keyboard-only.
-struct PaneHeaderView: View {
-    @ObservedObject var tab: Tab
-    let pane: TerminalView
-    @ObservedObject var store: TabStore
+package struct PaneHeaderView: View {
+    @ObservedObject package var tab: Tab
+    package let pane: TerminalView
+    @ObservedObject package var store: TabStore
     /// What this pane has run — the failure it is showing, if any.
-    @ObservedObject var blocks: PaneBlocks
-    @ObservedObject var theme: ChromeTheme
-    let actions: PaneHeaderActions
+    @ObservedObject package var blocks: PaneBlocks
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: PaneHeaderActions
 
     private var isFocused: Bool { tab.terminal === pane }
     private var isSplit: Bool { tab.terminals.count > 1 }
@@ -51,7 +51,7 @@ struct PaneHeaderView: View {
         return Tab.shortened(own)
     }
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 8) {
             Text(title)
                 .font(.system(size: ChromeMetrics.text(12), weight: .semibold))
@@ -442,15 +442,15 @@ private struct KubePinLostLabel: View {
 /// it runs, else ran last, against what Overterm can know of its context —
 /// `⎈ acme-prod` in the page's red, "probably" when only the kubeconfig's
 /// current context says so (`KubePaneWarning`).
-struct KubeRunWarningLabel: View {
-    @ObservedObject var blocks: PaneBlocks
+package struct KubeRunWarningLabel: View {
+    @ObservedObject package var blocks: PaneBlocks
     /// The pane's own `KUBECONFIG`: where a `--context` in a pinned pane is looked up.
-    let kubeconfig: String?
-    let pin: KubeTerminalPin?
-    let lost: Bool
-    @ObservedObject var ambient: KubeAmbientContexts = .shared
+    package let kubeconfig: String?
+    package let pin: KubeTerminalPin?
+    package let lost: Bool
+    @ObservedObject package var ambient: KubeAmbientContexts = .shared
 
-    var body: some View {
+    package var body: some View {
         if let warning = ambient.warning(command: blocks.latestCommand, cwd: blocks.commandFolder, kubeconfig: kubeconfig, pin: pin, lost: lost),
             warning.shown
         {
@@ -477,16 +477,16 @@ struct KubeRunWarningLabel: View {
 /// operation, white on red on production; amber when `TF_WORKSPACE` or
 /// `TF_DATA_DIR` in its environment decides silently. A pane opened as
 /// Terminal in this root says its root while nothing runs.
-struct TerraformRunWarningLabel: View {
-    let tag: String
-    let pinnedRoot: String?
+package struct TerraformRunWarningLabel: View {
+    package let tag: String
+    package let pinnedRoot: String?
     /// How the agent started here was guarded (3.4): "not guarded" said beside a warning.
-    var agentGuard: TerraformAgentGuard.Launch = .none
-    @ObservedObject var monitor: TerraformPaneMonitor = .shared
+    package var agentGuard: TerraformAgentGuard.Launch = .none
+    @ObservedObject package var monitor: TerraformPaneMonitor = .shared
 
     private var notGuarded: String? { if case .notGuarded(let why) = agentGuard { why } else { nil } }
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 6) {
             said
             // An agent with no deny flag in a checkout with a production

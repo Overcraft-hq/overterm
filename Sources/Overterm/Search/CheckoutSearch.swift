@@ -1,25 +1,25 @@
 import Foundation
 
 /// A line in a file that matched a content search.
-struct ContentMatch: Hashable {
-    let path: String
-    let line: Int
-    let text: String
+package struct ContentMatch: Hashable {
+    package let path: String
+    package let line: Int
+    package let text: String
 }
 
 /// Searches a checkout: file names (fuzzy) and file contents (git grep).
 /// Both respect .gitignore — node_modules and build output never show up —
 /// and include untracked files.
-enum CheckoutSearch {
+package enum CheckoutSearch {
     /// Tracked plus untracked-but-not-ignored files, relative to `root`.
-    static func files(in root: URL) async -> [String] {
+    package static func files(in root: URL) async -> [String] {
         let output = (try? await Git.run(["ls-files", "-z", "--cached", "--others", "--exclude-standard"], in: root)) ?? ""
         return Array(Set(output.split(separator: "\0").map(String.init))).sorted()
     }
 
     /// Best name matches for `query`: the file name counts more than the
     /// folders above it.
-    static func rank(_ files: [String], query: String, limit: Int = 12) -> [String] {
+    package static func rank(_ files: [String], query: String, limit: Int = 12) -> [String] {
         guard !query.isEmpty else { return [] }
         return
             files
@@ -39,9 +39,9 @@ enum CheckoutSearch {
     /// git grep has no overall limit: a two-letter query in a big repo
     /// printed a few lines of nearly every file (~0.8 s, megabytes) to show
     /// 50. Past this much output it is stopped.
-    static let grepOutputLimit = 256 * 1024
+    package static let grepOutputLimit = 256 * 1024
 
-    static func grep(_ query: String, in root: URL, perFile: Int = 3, limit: Int = 50) async -> [ContentMatch] {
+    package static func grep(_ query: String, in root: URL, perFile: Int = 3, limit: Int = 50) async -> [ContentMatch] {
         guard query.count >= 2 else { return [] }
         // -z: NUL between path, line and text, so any file name survives;
         // exit 1 means no matches. Cancelling the task stops git.
@@ -55,7 +55,7 @@ enum CheckoutSearch {
     }
 
     /// `git grep -z -n` output: path NUL line NUL text NEWLINE.
-    static func parse(grep output: String) -> [ContentMatch] {
+    package static func parse(grep output: String) -> [ContentMatch] {
         output.split(separator: "\n").compactMap { record in
             let parts = record.split(separator: "\0", maxSplits: 2, omittingEmptySubsequences: false)
             guard parts.count == 3, let line = Int(parts[1]) else { return nil }

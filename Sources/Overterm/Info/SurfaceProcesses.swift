@@ -4,12 +4,12 @@ import Foundation
 /// `login` comes with one. `TerminalView`'s; the tests' stand-ins, since a
 /// unit test has no surface (it never calls `ghostty_init`).
 @MainActor
-protocol PairedSurface: AnyObject {
+package protocol PairedSurface: AnyObject {
     var hasSurface: Bool { get }
 }
 
 extension TerminalView: PairedSurface {
-    var hasSurface: Bool { surface != nil }
+    package var hasSurface: Bool { surface != nil }
 }
 
 /// Which `login` process belongs to which terminal.
@@ -23,8 +23,8 @@ extension TerminalView: PairedSurface {
 /// each pane's tree by (docs/design/activity/analysis.md, 7.1). A surface
 /// coming or going, and a pairing made or over, rebuild that context.
 @MainActor
-final class SurfaceProcesses {
-    static let shared = SurfaceProcesses(monitor: .shared)
+package final class SurfaceProcesses {
+    package static let shared = SurfaceProcesses(monitor: .shared)
 
     private final class Entry {
         weak var terminal: (any PairedSurface)?
@@ -43,18 +43,18 @@ final class SurfaceProcesses {
     /// app's; none for the tests' own.
     private let monitor: ActivityMonitor?
 
-    init(monitor: ActivityMonitor? = nil) {
+    package init(monitor: ActivityMonitor? = nil) {
         self.monitor = monitor
     }
 
     /// Call right after the terminal's surface is created.
-    func register(_ terminal: some PairedSurface, at created: UInt64 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) {
+    package func register(_ terminal: some PairedSurface, at created: UInt64 = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) {
         entries.append(Entry(terminal, created: created))
         monitor?.contextChanged()
     }
 
     /// Its surface was freed: the pane is gone from the census's context.
-    func closed(_ terminal: some PairedSurface) {
+    package func closed(_ terminal: some PairedSurface) {
         let count = entries.count
         entries.removeAll { $0.terminal == nil || $0.terminal === terminal }
         if entries.count != count { monitor?.contextChanged() }
@@ -66,18 +66,18 @@ final class SurfaceProcesses {
     /// asks it, for a pane younger than the latest census, at a close it
     /// must answer now; everything else asks `pairedLoginPID` after
     /// `pairWaiting` or the census paired it.
-    func loginPID(of terminal: some PairedSurface) -> pid_t? {
+    package func loginPID(of terminal: some PairedSurface) -> pid_t? {
         if let pid = pairedLoginPID(of: terminal) { return pid }
         let listedAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         return loginPID(of: terminal, children: ProcessInspector.children(of: getpid()), listedAt: listedAt)
     }
 
     /// The terminal's `login` pid if it is paired already: no scan.
-    func pairedLoginPID(of terminal: some PairedSurface) -> pid_t? { login(of: terminal)?.pid }
+    package func pairedLoginPID(of terminal: some PairedSurface) -> pid_t? { login(of: terminal)?.pid }
 
     /// The terminal's `login` as the census names it, pid and start, if it
     /// is paired already: no scan.
-    func login(of terminal: some PairedSurface) -> ActivityProcessID? {
+    package func login(of terminal: some PairedSurface) -> ActivityProcessID? {
         entries.removeAll { $0.terminal == nil }
         return entries.first { $0.terminal === terminal }?.login
     }
@@ -85,21 +85,21 @@ final class SurfaceProcesses {
     /// The same, pairing with `children` — ProcessInspector.children(of:
     /// getpid()), listed off the main thread at `listedAt`
     /// (`CLOCK_UPTIME_RAW`, ns, read before the list).
-    func loginPID(of terminal: some PairedSurface, children: [(pid: pid_t, start: UInt64, name: String)], listedAt: UInt64) -> pid_t? {
+    package func loginPID(of terminal: some PairedSurface, children: [(pid: pid_t, start: UInt64, name: String)], listedAt: UInt64) -> pid_t? {
         if let pid = pairedLoginPID(of: terminal) { return pid }
         if pair(children, listedAt: listedAt) { monitor?.contextChanged() }
         return pairedLoginPID(of: terminal)
     }
 
     /// Whether a surface waits for its `login`.
-    var hasWaiting: Bool { entries.contains { $0.login == nil && $0.terminal?.hasSurface == true } }
+    package var hasWaiting: Bool { entries.contains { $0.login == nil && $0.terminal?.hasSurface == true } }
 
     /// Pairs the surfaces still waiting from the app's children listed now
     /// — off the main thread: a read of the whole table never runs on it
     /// (docs/design/activity/analysis.md, 7.7) — the main actor pairing
     /// what was listed, as `TerminalView.lookAtProgram` does; the census is
     /// told when a pairing changed. Nothing is read while none waits.
-    func pairWaiting(kernel: some ActivityKernel = LiveActivityKernel()) async {
+    package func pairWaiting(kernel: some ActivityKernel = LiveActivityKernel()) async {
         guard hasWaiting else { return }
         let app = getpid()
         let (listedAt, children) = await withCheckedContinuation { continuation in
@@ -127,7 +127,7 @@ final class SurfaceProcesses {
     /// exited): one `children` doesn't list is read again by its pid, so a
     /// list older than the pairing never ends it.
     @discardableResult
-    func pair(
+    package func pair(
         _ children: [(pid: pid_t, start: UInt64, name: String)], listedAt: UInt64, kernel: some ActivityKernel = LiveActivityKernel()
     ) -> Bool {
         pair(children, unclaimed: Self.unclaimedLogins(children, claimed: []), listedAt: listedAt, kernel: kernel)
@@ -139,7 +139,7 @@ final class SurfaceProcesses {
     /// actor only hands them out, in microseconds, by the rules above. A
     /// zombie `login` is in neither: it never pairs (7.10).
     @discardableResult
-    func pair(_ snapshot: ActivitySnapshot, kernel: some ActivityKernel = LiveActivityKernel()) -> Bool {
+    package func pair(_ snapshot: ActivitySnapshot, kernel: some ActivityKernel = LiveActivityKernel()) -> Bool {
         pair(snapshot.appChildren, unclaimed: snapshot.unclaimedLogins, listedAt: snapshot.time, kernel: kernel)
     }
 
@@ -177,7 +177,7 @@ final class SurfaceProcesses {
     /// has, oldest first. Only logins — the app's git and gh are its
     /// children too, and a surface created while one ran was paired with
     /// it: its tab's processes, agent and "still running" were git's.
-    nonisolated static func unclaimedLogins(_ children: [(pid: pid_t, start: UInt64, name: String)], claimed: Set<ActivityProcessID>)
+    package nonisolated static func unclaimedLogins(_ children: [(pid: pid_t, start: UInt64, name: String)], claimed: Set<ActivityProcessID>)
         -> [ActivityProcessID]
     {
         children.map { (identity: ActivityProcessID(pid: $0.pid, start: $0.start), name: $0.name) }

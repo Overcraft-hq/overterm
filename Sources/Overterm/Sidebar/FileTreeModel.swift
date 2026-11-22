@@ -1,14 +1,14 @@
 import Foundation
 
-struct FileEntry: Hashable {
-    let url: URL
-    let isDirectory: Bool
+package struct FileEntry: Hashable {
+    package let url: URL
+    package let isDirectory: Bool
     /// Stored, not derived: URL.lastPathComponent is slow enough that
     /// sorting a 1000-entry folder (twice per comparison) took ~90 ms on
     /// the main thread.
-    let name: String
+    package let name: String
 
-    init(url: URL, isDirectory: Bool) {
+    package init(url: URL, isDirectory: Bool) {
         self.url = url
         self.isDirectory = isDirectory
         name = url.lastPathComponent
@@ -17,23 +17,23 @@ struct FileEntry: Hashable {
 
 /// One visible line of the tree: the outline flattened, so the view is a
 /// plain list and expanding a folder is an array splice, not a view rebuild.
-struct FileRow: Identifiable, Hashable {
-    let entry: FileEntry
-    let depth: Int
-    let isExpanded: Bool
+package struct FileRow: Identifiable, Hashable {
+    package let entry: FileEntry
+    package let depth: Int
+    package let isExpanded: Bool
     /// Matched by .gitignore — shown dimmed, not hidden.
-    let isIgnored: Bool
-    var id: URL { entry.url }
+    package let isIgnored: Bool
+    package var id: URL { entry.url }
 }
 
 /// The file tree for one root directory. Folders are listed lazily, when
 /// first expanded, and cached; a watcher on the root drops the cached
 /// listing of any folder that changes, so the tree stays live.
 @MainActor
-final class FileTreeModel: ObservableObject {
-    @Published private(set) var root: URL?
-    @Published private(set) var rows: [FileRow] = []
-    @Published var selection: URL?
+package final class FileTreeModel: ObservableObject {
+    @Published package private(set) var root: URL?
+    @Published package private(set) var rows: [FileRow] = []
+    @Published package var selection: URL?
 
     private var expanded: Set<URL> = []
     private var listings: [URL: [FileEntry]] = [:]
@@ -63,12 +63,12 @@ final class FileTreeModel: ObservableObject {
         let gitignore: Date?
     }
     /// `check-ignore` runs started — what the tests count.
-    private(set) var ignoreChecks = 0
+    package private(set) var ignoreChecks = 0
 
     /// Noise that is never what you are looking for in a tree.
     private static let hiddenNames: Set<String> = [".git", ".DS_Store"]
 
-    func setRoot(_ url: URL?) {
+    package func setRoot(_ url: URL?) {
         guard url != root else { return }
         if let root { expandedByRoot[root] = expanded }
         root = url
@@ -88,14 +88,14 @@ final class FileTreeModel: ObservableObject {
     /// Forgets the cached listings of `directories` and rebuilds, if any of
     /// them was listed. Changes under .git (constant while git works) and in
     /// folders never opened cost nothing.
-    func invalidate(_ directories: [URL]) {
+    package func invalidate(_ directories: [URL]) {
         invalidate(paths: directories.map(\.path))
     }
 
     /// The watcher's form: FSEvents paths, possibly with a trailing slash.
     /// Only a listed folder costs more than a dictionary lookup — .git and
     /// its insides are never listed, so they drop out here too.
-    func invalidate(paths: [String]) {
+    package func invalidate(paths: [String]) {
         let stale = Set(
             paths.compactMap { path -> URL? in
                 if let dir = listedByRealPath[path] { return dir }
@@ -113,7 +113,7 @@ final class FileTreeModel: ObservableObject {
         rebuild()
     }
 
-    func toggle(_ row: FileRow) {
+    package func toggle(_ row: FileRow) {
         guard row.entry.isDirectory else { return }
         if expanded.contains(row.entry.url) {
             expanded.remove(row.entry.url)
@@ -123,13 +123,13 @@ final class FileTreeModel: ObservableObject {
         rebuild()
     }
 
-    func collapseAll() {
+    package func collapseAll() {
         expanded = []
         rebuild()
     }
 
     /// Re-reads every listed folder (keeping what is expanded).
-    func reload() {
+    package func reload() {
         listings = [:]
         listedByRealPath = [:]
         ignoreChecked = []
@@ -186,21 +186,21 @@ final class FileTreeModel: ObservableObject {
 
     /// The path FSEvents reports for `dir`: symlinks resolved, /var as
     /// /private/var (URL.resolvingSymlinksInPath drops that /private).
-    nonisolated static func realPath(_ dir: URL) -> String {
+    package nonisolated static func realPath(_ dir: URL) -> String {
         guard let resolved = realpath(dir.path, nil) else { return dir.path }
         defer { free(resolved) }
         return String(cString: resolved)
     }
 
     /// A file's modification date, nil when there is none.
-    nonisolated static func modified(_ file: URL) -> Date? {
+    package nonisolated static func modified(_ file: URL) -> Date? {
         var info = stat()
         guard stat(file.path, &info) == 0 else { return nil }
         return Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec) + TimeInterval(info.st_mtimespec.tv_nsec) / 1_000_000_000)
     }
 
     /// Paths per `check-ignore`, well under Git.maxArguments.
-    static let ignoreBatch = 1000
+    package static let ignoreBatch = 1000
 
     /// Asks git which of a folder's entries are ignored — one
     /// `check-ignore` per folder listing — then redraws. Outside a
@@ -236,7 +236,7 @@ final class FileTreeModel: ObservableObject {
     /// checkout's top level (a worktree's `.git` is a file, which counts), or
     /// the cwd itself outside of one. Home is never promoted to a root — a
     /// dotfiles repo in ~ would otherwise capture every tab.
-    nonisolated static func treeRoot(for cwd: String) -> URL {
+    package nonisolated static func treeRoot(for cwd: String) -> URL {
         let start = URL(fileURLWithPath: cwd).standardizedFileURL
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
         var dir = start

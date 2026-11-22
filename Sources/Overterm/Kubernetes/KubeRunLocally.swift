@@ -6,17 +6,17 @@ import Foundation
 /// Images section's Vulnerabilities tab. Pure: the object is what one GET
 /// answered (never a Secret's, never a ConfigMap's — those are named,
 /// not read).
-enum KubeRunLocally {
+package enum KubeRunLocally {
     /// The kinds whose objects carry a pod spec: a pod, a workload's
     /// template, a CronJob's Job's.
-    static func offers(_ kind: KubeResourceKind) -> Bool {
+    package static func offers(_ kind: KubeResourceKind) -> Bool {
         guard let root = KubeTree.Root.of(kind) else { return false }
         return [.pod, .deployment, .statefulSet, .daemonSet, .replicaSet, .job, .cronJob].contains(root)
     }
 
     /// What its pods are, as a pod reads: a pod as it is; a workload's
     /// template's metadata and spec (no status — nothing ran yet).
-    static func podLike(_ object: [String: Any], kind: KubeResourceKind) -> [String: Any]? {
+    package static func podLike(_ object: [String: Any], kind: KubeResourceKind) -> [String: Any]? {
         guard offers(kind), let root = KubeTree.Root.of(kind) else { return nil }
         if root == .pod { return object }
         let template = KubeTree.podTemplate(root, object)
@@ -26,7 +26,7 @@ enum KubeRunLocally {
 
     /// The pod spec's container by `name` (its containers only — an init
     /// container runs before, not instead).
-    static func container(_ pod: [String: Any], named name: String) -> [String: Any]? {
+    package static func container(_ pod: [String: Any], named name: String) -> [String: Any]? {
         KubeAgentText.list(KubeAgentText.map(pod["spec"])["containers"]).first { $0["name"] as? String == name }
     }
 
@@ -34,12 +34,12 @@ enum KubeRunLocally {
 
     /// The image to scan: the spec's name, and the digest the kubelet ran
     /// (`status.containerStatuses[].imageID`, `…@sha256:…`) when it says one.
-    struct Image: Equatable, Sendable {
-        var name: String
-        var digest: String?
+    package struct Image: Equatable, Sendable {
+        package var name: String
+        package var digest: String?
     }
 
-    static func image(_ pod: [String: Any], container name: String) -> Image? {
+    package static func image(_ pod: [String: Any], container name: String) -> Image? {
         guard let spec = container(pod, named: name), let image = spec["image"] as? String, !image.isEmpty else { return nil }
         let statuses = KubeAgentText.list(KubeAgentText.map(pod["status"])["containerStatuses"])
         let ran = statuses.first { $0["name"] as? String == name }?["imageID"] as? String
@@ -68,7 +68,7 @@ enum KubeRunLocally {
     ///   `$(VAR)` expanded in them too — an asked one as `"$VAR"`, and a
     ///   secret flag's value (`--requirepass x`) asked, never copied;
     /// - what can't come along (volumes, probes' and resources' limits) said.
-    static func plan(
+    package static func plan(
         _ pod: [String: Any], container name: String, context: String, namespace: String, object: String
     ) -> DockerRunSpec? {
         guard let spec = container(pod, named: name), let image = spec["image"] as? String, !image.isEmpty else { return nil }
@@ -205,7 +205,7 @@ enum KubeRunLocally {
 
     /// `$(VAR)` as the kubelet expands it: from a value defined before,
     /// else left as written; `$$` is a `$`.
-    static func expand(_ value: String, with defined: [(key: String, value: String)]) -> String {
+    package static func expand(_ value: String, with defined: [(key: String, value: String)]) -> String {
         parts(value, with: defined, asked: []).map { part in
             switch part {
             case .text(let text): text
@@ -215,7 +215,7 @@ enum KubeRunLocally {
     }
 
     /// A command's word: text, and the values asked in the tab it names.
-    enum Part: Equatable, Sendable {
+    package enum Part: Equatable, Sendable {
         case text(String)
         /// `"$KEY"` in the shell that runs it.
         case ask(String)
@@ -223,7 +223,7 @@ enum KubeRunLocally {
 
     /// `value` expanded as the kubelet does: a value copied put in, an
     /// asked one (`asked`) left for the tab's shell to put in.
-    static func parts(_ value: String, with defined: [(key: String, value: String)], asked: Set<String>) -> [Part] {
+    package static func parts(_ value: String, with defined: [(key: String, value: String)], asked: Set<String>) -> [Part] {
         var parts: [Part] = []
         var text = ""
         func flush() {
@@ -259,14 +259,14 @@ enum KubeRunLocally {
     }
 
     /// The asked value a command's secret word becomes: `OVERTERM_ARG_1`.
-    static func argumentKey(_ number: Int) -> String { "OVERTERM_ARG_\(number)" }
+    package static func argumentKey(_ number: Int) -> String { "OVERTERM_ARG_\(number)" }
 
     /// The container's command and args, expanded (`parts`), each word
     /// a secret flag gives (`Secrets.maskArguments`: `--requirepass x`,
     /// `--db-password=x`, `-px`) made an ask of its own — the flag's name
     /// back for each, in order. Nil when one word holds more than one
     /// secret, or an asked value is part of one: then nothing is copied.
-    static func words(_ raw: [String], copied: [(key: String, value: String)], asked: Set<String>) -> ([[Part]], [String])? {
+    package static func words(_ raw: [String], copied: [(key: String, value: String)], asked: Set<String>) -> ([[Part]], [String])? {
         var words = raw.map { parts($0, with: copied, asked: asked) }
         // An asked value as a reference, which masking keeps as written.
         let shown = words.map(Self.shown)
@@ -325,7 +325,7 @@ enum KubeRunLocally {
     }
 
     /// The word as typed: its text alone, nothing asked.
-    static func plain(_ word: [Part]) -> String? {
+    package static func plain(_ word: [Part]) -> String? {
         var text = ""
         for part in word {
             guard case .text(let piece) = part else { return nil }
@@ -336,7 +336,7 @@ enum KubeRunLocally {
 
     /// The word as the shell takes it: text quoted, an asked value
     /// `"$KEY"` — the tab's shell puts it in, never the command line.
-    static func render(_ word: [Part]) -> String {
+    package static func render(_ word: [Part]) -> String {
         let rendered = word.map { part in
             switch part {
             case .text(let text): DockerCommands.quote(text)

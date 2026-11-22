@@ -11,7 +11,7 @@ extension TerminalWindowController {
     /// window's list when it already has the new one (CLAUDE.md: never
     /// asked twice); else — the window's list follows the selected tab and
     /// may still be another repository's — one `git worktree list` there.
-    func prepareTerraformWorktree(_ path: URL) async {
+    package func prepareTerraformWorktree(_ path: URL) async {
         guard Settings.shared.terraformEnabled else { return }
         var listed = worktrees.worktrees
         if TerraformWorktree.others(listed, of: path).isEmpty {

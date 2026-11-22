@@ -16,7 +16,7 @@ extension DockerTar.Plan {
     /// and so do sockets, pipes, devices, and links that point above the
     /// drop (the engine refuses the whole archive for one). Reads the
     /// disk: called off the main thread.
-    static func make(_ urls: [URL]) throws -> DockerTar.Plan {
+    package static func make(_ urls: [URL]) throws -> DockerTar.Plan {
         let files = FileManager.default
         var plan = DockerTar.Plan()
         for url in urls {
@@ -81,7 +81,7 @@ extension DockerTar.Plan {
     /// and mode to a folder it merges into — node's `/home/node/app` would
     /// be root's after a drop of `app`, and npm couldn't write in it. A
     /// folder under one is made by the engine as it unpacks. Pure.
-    func merging(into folders: Set<String>) -> DockerTar.Plan {
+    package func merging(into folders: Set<String>) -> DockerTar.Plan {
         var plan = self
         plan.items.removeAll { item in
             guard item.kind == .directory, item.name.hasSuffix("/") else { return false }
@@ -96,16 +96,16 @@ extension DockerTar.Plan {
 /// item's headers, a file's bytes read as they go, its padding, then the
 /// end blocks — exactly `plan.length` bytes. One request pulls it, a piece
 /// after another, so it needs no lock.
-final class DockerTarWriter: @unchecked Sendable {
+package final class DockerTarWriter: @unchecked Sendable {
     /// At most this much a piece.
-    static let piece = 1 << 20
+    package static let piece = 1 << 20
 
     private let plan: DockerTar.Plan
     private var index = 0
     private var file: (handle: FileHandle, name: String, left: Int, padding: Int)?
     private var ended = false
 
-    init(_ plan: DockerTar.Plan) {
+    package init(_ plan: DockerTar.Plan) {
         self.plan = plan
     }
 
@@ -113,7 +113,7 @@ final class DockerTarWriter: @unchecked Sendable {
 
     /// The next piece; nil after the end. A file whose size isn't the
     /// one planned throws: the request's length was said already.
-    func next() throws -> Data? {
+    package func next() throws -> Data? {
         var out = Data()
         while out.count < Self.piece {
             if var open = file {
@@ -172,16 +172,16 @@ final class DockerTarWriter: @unchecked Sendable {
 /// without following a link. Modes and times are kept, owners never; a
 /// folder's mode is set last, deepest first, so one that can't be written
 /// still gets what is in it.
-final class DockerTarExtractor {
-    struct Summary: Equatable, Sendable {
-        var files = 0
-        var bytes = 0
+package final class DockerTarExtractor {
+    package struct Summary: Equatable, Sendable {
+        package var files = 0
+        package var bytes = 0
         /// Left out, by their names in the archive.
-        var skipped: [String] = []
+        package var skipped: [String] = []
     }
 
-    let destination: URL
-    let folder: Bool
+    package let destination: URL
+    package let folder: Bool
     private var summary = Summary()
     private var ready = false
     /// The destination wasn't there: made here, and removed by `discard`.
@@ -192,7 +192,7 @@ final class DockerTarExtractor {
     private var written: [String: URL] = [:]
     private var wroteFile = false
 
-    init(destination: URL, folder: Bool) {
+    package init(destination: URL, folder: Bool) {
         self.destination = destination
         self.folder = folder
     }
@@ -201,14 +201,14 @@ final class DockerTarExtractor {
     /// nil, left out. A folder's archive starts with the folder's own
     /// name, dropped: `nginx/conf.d/a` → `conf.d/a`, `nginx` → the
     /// destination itself. Pure.
-    static func place(_ name: String, folder: Bool) -> [String]? {
+    package static func place(_ name: String, folder: Bool) -> [String]? {
         guard !name.hasPrefix("/") else { return nil }
         let parts = name.split(separator: "/").map(String.init).filter { $0 != "." }
         guard !parts.contains("..") else { return nil }
         return folder ? Array(parts.dropFirst()) : parts
     }
 
-    func apply(_ event: DockerTar.Reader.Event) throws {
+    package func apply(_ event: DockerTar.Reader.Event) throws {
         switch event {
         case .entry(let header): try begin(header)
         case .data(let data): try writing?.handle.write(contentsOf: data)
@@ -218,7 +218,7 @@ final class DockerTarExtractor {
 
     /// The last entry closed and the folders' modes and times set: what
     /// was written.
-    func finish() throws -> Summary {
+    package func finish() throws -> Summary {
         try end()
         if folder {
             if !ready { try prepare() }
@@ -237,7 +237,7 @@ final class DockerTarExtractor {
 
     /// Gone again, if it wasn't there before: a copy that failed leaves
     /// nothing half written.
-    func discard() {
+    package func discard() {
         try? writing?.handle.close()
         writing = nil
         if made { try? FileManager.default.removeItem(at: destination) }
@@ -245,7 +245,7 @@ final class DockerTarExtractor {
 
     /// Whether each of `parts` under `root` is, where it exists, a real
     /// folder — never a link (lstat).
-    static func onlyFolders(between root: URL, and parts: some Collection<String>) -> Bool {
+    package static func onlyFolders(between root: URL, and parts: some Collection<String>) -> Bool {
         var url = root
         for part in parts {
             url.appendPathComponent(part)
@@ -374,7 +374,7 @@ extension DockerEngine {
     /// file. No `copyUIDGID`: the files are root's, as `docker cp` without
     /// `-a` makes them, and engines before moby 29 fail it for a numeric
     /// `USER`.
-    func copyIn(_ plan: DockerTar.Plan, into folder: String, of id: String, sent: @escaping @Sendable (Int) -> Void = { _ in }) async throws {
+    package func copyIn(_ plan: DockerTar.Plan, into folder: String, of id: String, sent: @escaping @Sendable (Int) -> Void = { _ in }) async throws {
         let stat = try await stat(id, path: folder)
         guard stat.isDirectory || stat.isSymlink else { throw DockerError(status: 400, message: "\(folder) isn't a folder.") }
         let writer = DockerTarWriter(plan)
@@ -390,7 +390,7 @@ extension DockerEngine {
     /// held in memory. `progress` hears the file bytes written and, for a
     /// file, its size (a folder's isn't known before), every 256 KB and at
     /// the end. What it made is removed when it fails.
-    func copyOut(
+    package func copyOut(
         _ path: String, of id: String, to destination: URL, progress: @escaping @Sendable (_ done: Int, _ total: Int?) -> Void = { _, _ in }
     ) async throws -> DockerTarExtractor.Summary {
         let stat = try await stat(id, path: path)
@@ -433,38 +433,38 @@ extension DockerEngine {
 /// (`DockerEngine.reaching`), so the tab's own coming and going can't
 /// take it away under one.
 @MainActor
-final class DockerFileTransfers: ObservableObject {
-    static let shared = DockerFileTransfers()
+package final class DockerFileTransfers: ObservableObject {
+    package static let shared = DockerFileTransfers()
 
-    struct Transfer: Identifiable, Equatable {
-        enum Direction: Equatable, Sendable { case into, out }
+    package struct Transfer: Identifiable, Equatable {
+        package enum Direction: Equatable, Sendable { case into, out }
 
-        let id = UUID()
-        var source: DockerFileSource
-        var direction: Direction
+        package let id = UUID()
+        package var source: DockerFileSource
+        package var direction: Direction
         /// What goes: `site`, `index.html and site`, `nginx.conf`.
-        var name: String
+        package var name: String
         /// Where: a folder in the container or the volume, or on the Mac
         /// (`~/Desktop`).
-        var place: String
-        var done = 0
+        package var place: String
+        package var done = 0
         /// Bytes in all, when known: a folder's copied out isn't.
-        var total: Int?
-        var error: String?
-        var finished = false
+        package var total: Int?
+        package var error: String?
+        package var finished = false
         /// Left on the Mac (or out of what came), by name.
-        var skipped: [String] = []
+        package var skipped: [String] = []
 
-        var running: Bool { !finished && error == nil }
+        package var running: Bool { !finished && error == nil }
     }
 
-    @Published private(set) var transfers: [Transfer] = []
+    @Published package private(set) var transfers: [Transfer] = []
     private var tasks: [UUID: Task<Void, Never>] = [:]
     private var shown: [UUID: ContinuousClock.Instant] = [:]
     private let engine: @MainActor () -> DockerEngine?
     private let linger: Duration
 
-    init(engine: @escaping @MainActor () -> DockerEngine? = { DockerModel.shared.engine }, linger: Duration = .seconds(3)) {
+    package init(engine: @escaping @MainActor () -> DockerEngine? = { DockerModel.shared.engine }, linger: Duration = .seconds(3)) {
         self.engine = engine
         self.linger = linger
     }
@@ -472,13 +472,13 @@ final class DockerFileTransfers: ObservableObject {
     /// A pane's rows: a container's by its id, so a rename (its name in
     /// the source is the old one) keeps them in its strip, to be stopped
     /// or read.
-    func transfers(for source: DockerFileSource) -> [Transfer] { transfers.filter { $0.source.target == source.target } }
+    package func transfers(for source: DockerFileSource) -> [Transfer] { transfers.filter { $0.source.target == source.target } }
 
     /// What of the names dropped a folder has already, and which of those
     /// are folders.
-    struct Present: Equatable, Sendable {
-        var names: [String] = []
-        var folders: Set<String> = []
+    package struct Present: Equatable, Sendable {
+        package var names: [String] = []
+        package var folders: Set<String> = []
     }
 
     /// `urls` into `folder`: planned off the main thread; what is there
@@ -486,7 +486,7 @@ final class DockerFileTransfers: ObservableObject {
     /// Replace button), from `listed` when it is the folder shown, else
     /// looked at, at most 20. A folder there already is merged into
     /// (`Plan.merging`). Then sent, and `done` once it is in.
-    func copyIn(
+    package func copyIn(
         _ urls: [URL], into folder: String, of source: DockerFileSource, listed: [DockerFiles.Entry]?,
         confirm: @escaping (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void,
         done: @escaping @MainActor () -> Void = {}
@@ -515,14 +515,14 @@ final class DockerFileTransfers: ObservableObject {
     }
 
     /// The names dropped that the folder has already. Pure.
-    nonisolated static func collisions(_ names: [String], listed: [DockerFiles.Entry]) -> Present {
+    package nonisolated static func collisions(_ names: [String], listed: [DockerFiles.Entry]) -> Present {
         let kinds = Dictionary(listed.map { ($0.name, $0.kind) }, uniquingKeysWith: { first, _ in first })
         let there = names.filter { kinds[$0] != nil }
         return Present(names: there, folders: Set(there.filter { kinds[$0] == .folder }))
     }
 
     /// What the question says. Pure.
-    nonisolated static func replacing(_ names: [String], in folder: String) -> (title: String, detail: String) {
+    package nonisolated static func replacing(_ names: [String], in folder: String) -> (title: String, detail: String) {
         let how = "A file of the same name is replaced; what a folder holds goes into the one there."
         guard names.count > 1 else { return ("Replace “\(names.first ?? "")” in \(folder)?", "It is there already. \(how)") }
         return ("Replace \(names.count) items in \(folder)?", "\(DockerTar.Plan.summary(names)) are there already. \(how)")
@@ -532,7 +532,7 @@ final class DockerFileTransfers: ObservableObject {
     /// user said to replace what is there (a save panel), so it is
     /// written beside it first and swapped in once whole. `finished`
     /// hears how it went, on the main thread.
-    func copyOut(
+    package func copyOut(
         _ path: String, of source: DockerFileSource, to destination: URL, replacing: Bool = false,
         finished: @escaping @Sendable ((any Error)?) -> Void = { _ in }
     ) {
@@ -560,19 +560,19 @@ final class DockerFileTransfers: ObservableObject {
     }
 
     /// Stopped: what is half sent may be in the container already.
-    func cancel(_ id: UUID) {
+    package func cancel(_ id: UUID) {
         tasks[id]?.cancel()
         tasks[id] = nil
         transfers.removeAll { $0.id == id }
     }
 
-    func dismiss(_ id: UUID) {
+    package func dismiss(_ id: UUID) {
         guard transfers.first(where: { $0.id == id })?.running == false else { return }
         transfers.removeAll { $0.id == id }
     }
 
     /// `~/Desktop` for a file written there.
-    nonisolated static func place(of destination: URL) -> String {
+    package nonisolated static func place(of destination: URL) -> String {
         (destination.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath
     }
 
@@ -686,16 +686,16 @@ final class DockerFileTransfers: ObservableObject {
 
 /// A row dragged out of a Files tab: whose, which, and what Finder is
 /// told it is.
-struct DockerFileItem: Equatable, Sendable {
-    var source: DockerFileSource
-    var path: String
-    var isFolder: Bool
+package struct DockerFileItem: Equatable, Sendable {
+    package var source: DockerFileSource
+    package var path: String
+    package var isFolder: Bool
 
-    var name: String { (path as NSString).lastPathComponent }
+    package var name: String { (path as NSString).lastPathComponent }
 
     /// A promise must be data or a folder: a folder's, else its
     /// extension's when that is data, else plain data.
-    var fileType: String {
+    package var fileType: String {
         if isFolder { return UTType.folder.identifier }
         let ext = (name as NSString).pathExtension
         if !ext.isEmpty, let type = UTType(filenameExtension: ext, conformingTo: .data), type.conforms(to: .data) { return type.identifier }
@@ -709,15 +709,15 @@ struct DockerFileItem: Equatable, Sendable {
 /// to write on its own queue, and Swift traps a main-actor closure called
 /// there (CLAUDE.md). The provider holds its delegate weakly, so each is
 /// kept here until it has written, or its drag ended with nothing taken.
-final class DockerFilePromise: NSObject, NSFilePromiseProviderDelegate, @unchecked Sendable {
-    let item: DockerFileItem
+package final class DockerFilePromise: NSObject, NSFilePromiseProviderDelegate, @unchecked Sendable {
+    package let item: DockerFileItem
     private let transfers: DockerFileTransfers
     private let queue: OperationQueue
 
     nonisolated(unsafe) private static var kept: [ObjectIdentifier: DockerFilePromise] = [:]
     private static let lock = NSLock()
 
-    init(item: DockerFileItem, transfers: DockerFileTransfers) {
+    package init(item: DockerFileItem, transfers: DockerFileTransfers) {
         self.item = item
         self.transfers = transfers
         queue = OperationQueue()
@@ -726,16 +726,16 @@ final class DockerFilePromise: NSObject, NSFilePromiseProviderDelegate, @uncheck
         super.init()
     }
 
-    static func keep(_ promise: DockerFilePromise) { lock.withLock { kept[ObjectIdentifier(promise)] = promise } }
-    static func release(_ promise: DockerFilePromise) { lock.withLock { kept[ObjectIdentifier(promise)] = nil } }
+    package static func keep(_ promise: DockerFilePromise) { lock.withLock { kept[ObjectIdentifier(promise)] = promise } }
+    package static func release(_ promise: DockerFilePromise) { lock.withLock { kept[ObjectIdentifier(promise)] = nil } }
     /// How many wait to be written, for a test.
-    static var waiting: Int { lock.withLock { kept.count } }
+    package static var waiting: Int { lock.withLock { kept.count } }
 
-    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, fileNameForType fileType: String) -> String { item.name }
+    package func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, fileNameForType fileType: String) -> String { item.name }
 
-    func operationQueue(for filePromiseProvider: NSFilePromiseProvider) -> OperationQueue { queue }
+    package func operationQueue(for filePromiseProvider: NSFilePromiseProvider) -> OperationQueue { queue }
 
-    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, writePromiseTo url: URL, completionHandler: @escaping ((any Error)?) -> Void) {
+    package func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider, writePromiseTo url: URL, completionHandler: @escaping ((any Error)?) -> Void) {
         nonisolated(unsafe) let done = completionHandler
         let item = item
         let transfers = transfers

@@ -3,7 +3,7 @@ import Foundation
 /// The editor's text as the vim engine sees it. The text view adapter
 /// implements it; the engine never touches AppKit.
 @MainActor
-protocol VimBuffer: AnyObject {
+package protocol VimBuffer: AnyObject {
     /// The live text. Read again after every edit: it may be the storage itself.
     var text: NSString { get }
     /// Normal mode: a 0-length range at the cursor's character. Visual
@@ -32,12 +32,12 @@ protocol VimBuffer: AnyObject {
     var clipboard: String? { get set }
 }
 
-enum VimScroll: Equatable, Sendable {
+package enum VimScroll: Equatable, Sendable {
     case cursorToCenter, cursorToTop, cursorToBottom
     case lines(Int)
 }
 
-enum VimMode: Equatable, Sendable {
+package enum VimMode: Equatable, Sendable {
     case normal, insert, visual, visualLine
     /// `R`: typed characters overwrite.
     case replace
@@ -46,33 +46,34 @@ enum VimMode: Equatable, Sendable {
 }
 
 /// One key press as the text view got it.
-struct VimKey: Equatable, Sendable {
-    enum Named: Equatable, Sendable {
+package struct VimKey: Equatable, Sendable {
+    package enum Named: Equatable, Sendable {
         case escape, enter, backspace, delete, tab, left, right, up, down, home, end, pageUp, pageDown
     }
 
-    struct Modifiers: OptionSet, Equatable, Sendable {
-        let rawValue: Int
-        static let control = Modifiers(rawValue: 1)
-        static let option = Modifiers(rawValue: 2)
-        static let command = Modifiers(rawValue: 4)
-        static let shift = Modifiers(rawValue: 8)
+    package struct Modifiers: OptionSet, Equatable, Sendable {
+        package let rawValue: Int
+        package init(rawValue: Int) { self.rawValue = rawValue }
+        package static let control = Modifiers(rawValue: 1)
+        package static let option = Modifiers(rawValue: 2)
+        package static let command = Modifiers(rawValue: 4)
+        package static let shift = Modifiers(rawValue: 8)
     }
 
     /// What the key typed, with Option applied (a Turkish layout types `{`
     /// with ⌥) — `event.characters`; with Control, the bare letter
     /// (`charactersIgnoringModifiers`).
-    var characters: String
-    var named: Named?
-    var modifiers: Modifiers
+    package var characters: String
+    package var named: Named?
+    package var modifiers: Modifiers
 
-    init(_ characters: String, modifiers: Modifiers = []) {
+    package init(_ characters: String, modifiers: Modifiers = []) {
         self.characters = characters
         self.named = nil
         self.modifiers = modifiers
     }
 
-    init(_ named: Named, modifiers: Modifiers = []) {
+    package init(_ named: Named, modifiers: Modifiers = []) {
         self.characters = ""
         self.named = named
         self.modifiers = modifiers
@@ -80,7 +81,7 @@ struct VimKey: Equatable, Sendable {
 
     /// The key in vim's notation: `d`, `<c-r>`, `<esc>`. Characters typed at
     /// once (a dead key, IME) are one token each.
-    var tokens: [String] {
+    package var tokens: [String] {
         if let named {
             switch named {
             case .escape: return ["<esc>"]

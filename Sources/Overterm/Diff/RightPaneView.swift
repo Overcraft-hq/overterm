@@ -2,32 +2,32 @@ import SwiftUI
 
 /// What the pane on the right shows.
 @MainActor
-final class RightPane: ObservableObject {
-    enum Mode: String {
+package final class RightPane: ObservableObject {
+    package enum Mode: String {
         case changes, pullRequest, usage, commit, runner, graph, compare, object, container, redis, database, manifest, kubernetes, terraformPlan, mcp
     }
 
-    @Published var mode: Mode = .changes
+    @Published package var mode: Mode = .changes
     /// The notes' graph was asked for: its tab stays from then on.
-    @Published var graphOpened = false
+    @Published package var graphOpened = false
     /// A comparison was asked for in Overgit: its tab stays from then on.
-    @Published var compareOpened = false
+    @Published package var compareOpened = false
     /// A stored file was opened (Database panel): its tab stays from then on.
-    @Published var objectOpened = false
+    @Published package var objectOpened = false
     /// A container was picked in the Docker panel: its tab stays from then on.
-    @Published var containerOpened = false
+    @Published package var containerOpened = false
     /// A Redis key or server was opened (Database panel): its tab stays from then on.
-    @Published var redisOpened = false
+    @Published package var redisOpened = false
     /// A database connection's Server or Users page was opened: its tab stays from then on.
-    @Published var databaseOpened = false
+    @Published package var databaseOpened = false
     /// An MCP server was inspected (API panel): its tab stays from then on.
-    @Published var mcpOpened = false
+    @Published package var mcpOpened = false
     /// A Kubernetes manifest was diffed with its cluster: its tab stays from then on.
-    @Published var manifestOpened = false
+    @Published package var manifestOpened = false
     /// A pod was picked in the Kubernetes panel: its tab stays from then on.
-    @Published var kubernetesOpened = false
+    @Published package var kubernetesOpened = false
     /// A Terraform root was planned (or init run): its tab stays from then on.
-    @Published var terraformPlanOpened = false
+    @Published package var terraformPlanOpened = false
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
@@ -35,34 +35,34 @@ final class RightPane: ObservableObject {
 /// picked in Overgit, or the API collection run last — a switch at the top
 /// chooses. Commit and Runner show only once there is one: a tab that can
 /// say nothing is in the way.
-struct RightPaneView: View {
-    @ObservedObject var pane: RightPane
-    @ObservedObject var diff: DiffModel
-    @ObservedObject var worktrees: WorktreeModel
+package struct RightPaneView: View {
+    @ObservedObject package var pane: RightPane
+    @ObservedObject package var diff: DiffModel
+    @ObservedObject package var worktrees: WorktreeModel
     /// Observed so the Commit tab appears the moment one is picked.
-    @ObservedObject var detail: CommitDetailModel
+    @ObservedObject package var detail: CommitDetailModel
     /// Observed so the Runner tab appears when a run starts.
-    @ObservedObject var apiRunner: APIRunner
-    @ObservedObject var theme: ChromeTheme
-    let changes: DiffPanelView
-    let pullRequest: PullRequestView
-    let usage: UsageView
-    let commit: CommitDetailView
-    let runner: APIRunnerView
-    let compare: CompareView
-    let object: StorageObjectView
-    let container: DockerSlotView
-    let redis: RedisSlotView
-    let database: DatabaseSlotView
-    let mcp: MCPPageView
-    let graph: NotesGraphView
-    let manifest: KubeManifestDiffView
-    let kubernetes: KubeSlotView
-    let terraformPlan: TerraformPlanPaneView
+    @ObservedObject package var apiRunner: APIRunner
+    @ObservedObject package var theme: ChromeTheme
+    package let changes: DiffPanelView
+    package let pullRequest: PullRequestView
+    package let usage: UsageView
+    package let commit: CommitDetailView
+    package let runner: APIRunnerView
+    package let compare: CompareView
+    package let object: StorageObjectView
+    package let container: DockerSlotView
+    package let redis: RedisSlotView
+    package let database: DatabaseSlotView
+    package let mcp: MCPPageView
+    package let graph: NotesGraphView
+    package let manifest: KubeManifestDiffView
+    package let kubernetes: KubeSlotView
+    package let terraformPlan: TerraformPlanPaneView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
 
-    var body: some View {
+    package var body: some View {
         // Nothing while the pane is collapsed: its views kept updating
         // behind it (a thousand changed files' rows), and collapsing it over
         // a 3000-line diff animated every laid-out row — the window froze

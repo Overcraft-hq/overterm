@@ -13,49 +13,49 @@ import Foundation
 /// and nothing else. Typing a number at an agent that was asking something
 /// different is the one mistake this must not make.
 @MainActor
-final class InboxModel: ObservableObject {
-    struct Entry: Identifiable, Equatable {
-        let id: Tab.ID
-        let title: String
-        let group: TabGroup?
-        let mark: TabActivity.Mark
-        let note: String?
+package final class InboxModel: ObservableObject {
+    package struct Entry: Identifiable, Equatable {
+        package let id: Tab.ID
+        package let title: String
+        package let group: TabGroup?
+        package let mark: TabActivity.Mark
+        package let note: String?
         /// Nil when nothing readable is on screen — then the entry is a
         /// line with "Open tab", not a card.
-        let prompt: AgentPrompt?
+        package let prompt: AgentPrompt?
         /// How long it has been waiting.
-        let since: Date?
+        package let since: Date?
         /// A cluster's failure marked it (KubeAttention): Ask Why is offered.
-        var asksWhy = false
+        package var asksWhy = false
         /// A pane of it asks for a Terraform write (TerraformPrompt, 3.3):
         /// the card says what and where, and offers no answer — the
         /// person answers in the tab.
-        var terraform: TerraformAsk? = nil
+        package var terraform: TerraformAsk? = nil
         /// An agent run left processes running (6.9, D-17): Show opens
         /// Activity's Left Behind.
-        var leftBehind = false
+        package var leftBehind = false
 
         /// What the card is called: the tab, and what it is asking for.
-        var headline: String {
+        package var headline: String {
             if let terraform { return "\(title) \(terraform.summary)" }
             guard let prompt else { return [title, note].compactMap { $0 }.joined(separator: " — ") }
             return "\(title) \(prompt.summary)"
         }
 
-        static func == (a: Entry, b: Entry) -> Bool {
+        package static func == (a: Entry, b: Entry) -> Bool {
             a.id == b.id && a.mark == b.mark && a.note == b.note && a.prompt == b.prompt && a.asksWhy == b.asksWhy && a.terraform == b.terraform
                 && a.leftBehind == b.leftBehind
         }
     }
 
-    @Published private(set) var entries: [Entry] = []
+    @Published package private(set) var entries: [Entry] = []
     /// Where J and K are.
-    @Published var highlighted: Tab.ID?
+    @Published package var highlighted: Tab.ID?
 
-    var isEmpty: Bool { entries.isEmpty }
+    package var isEmpty: Bool { entries.isEmpty }
 
     /// "2 waiting · 1 finished" — what the header and the menu bar say.
-    var summary: String {
+    package var summary: String {
         let waiting = entries.count { $0.mark == .waiting }
         let failed = entries.count { $0.mark == .failed }
         let done = entries.count { $0.mark == .done }
@@ -70,7 +70,7 @@ final class InboxModel: ObservableObject {
     /// Rebuilt from the tabs that want something — and those a Terraform
     /// ask marked, whatever their mark says now. `screen` reads a pane's
     /// visible text — passed in so the model stays testable.
-    func refresh(tabs: [Tab], group: (Tab) -> TabGroup?, screen: (Tab) -> String?, now: Date = Date()) {
+    package func refresh(tabs: [Tab], group: (Tab) -> TabGroup?, screen: (Tab) -> String?, now: Date = Date()) {
         let wanting = tabs.filter { $0.activity.needsAttention || $0.terraformAsk != nil }
         let built = Self.ordered(wanting).map { tab in
             Entry(
@@ -90,7 +90,7 @@ final class InboxModel: ObservableObject {
     /// Blocked first, then failed, then finished, tab order inside each —
     /// the order you want to deal with them in, which is the same rank the
     /// agent overview uses.
-    static func ordered(_ tabs: [Tab]) -> [Tab] {
+    package static func ordered(_ tabs: [Tab]) -> [Tab] {
         func rank(_ tab: Tab) -> Int {
             switch tab.activity.mark {
             case .waiting: 0
@@ -103,7 +103,7 @@ final class InboxModel: ObservableObject {
     }
 
     /// J / K, wrapping.
-    func move(_ offset: Int) {
+    package func move(_ offset: Int) {
         guard !entries.isEmpty else { return }
         let at = entries.firstIndex { $0.id == highlighted } ?? 0
         let n = entries.count

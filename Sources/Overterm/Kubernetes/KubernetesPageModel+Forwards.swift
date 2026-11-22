@@ -5,14 +5,14 @@ import Foundation
 extension KubernetesPageModel {
     /// What `f` and `o` mean: the detail's object while it shows a pod, a
     /// Service or a Deployment, else the list's one selected row of them.
-    var forwardRef: KubeObjectRef? {
+    package var forwardRef: KubeObjectRef? {
         if let detail { return KubeForwardTarget.of(kind: detail.ref.kind, name: detail.ref.name) != nil ? detail.ref : nil }
         guard selection.count == 1, let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id) else { return nil }
         return KubeForwardTarget.of(kind: ref.kind, name: ref.name) != nil ? ref : nil
     }
 
     /// The forwards an object has, those not stopped.
-    func forwards(of ref: KubeObjectRef) -> [KubeForward] {
+    package func forwards(of ref: KubeObjectRef) -> [KubeForward] {
         guard let target = KubeForwardTarget.of(kind: ref.kind, name: ref.name) else { return [] }
         return forwards.forwards.filter {
             !$0.state.isStopped && $0.spec.context == ref.context && $0.spec.namespace == ref.namespace && $0.spec.target == target
@@ -22,7 +22,7 @@ extension KubernetesPageModel {
     /// A detail's buttons: Ask Why, a pod's tab verbs, then its forwards', then
     /// what opens through one (a database pod's Database client), and an
     /// Ingress's Open.
-    func detailVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
+    package func detailVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         [askWhyVerb(for: ref)].compactMap { $0 } + podVerbs(for: ref) + podFileVerbs(for: ref) + dockerVerbs(for: ref) + forwardVerbs(for: ref) + [editVerb(for: ref), compareVerb(for: ref)]
             + writeVerbs(for: ref)
             + tabWriteVerbs(for: ref)
@@ -30,7 +30,7 @@ extension KubernetesPageModel {
     }
 
     /// The one row picked: its forward verbs, and what opens through one.
-    func forwardVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+    package func forwardVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
         guard picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
         return forwardVerbs(for: ref) + [databaseVerb(for: ref), ingressVerb(for: ref)].compactMap { $0 }
     }
@@ -39,7 +39,7 @@ extension KubernetesPageModel {
     /// Deployment — greyed with why until `kubectl auth can-i create
     /// pods/portforward` says yes (a read-only context's too: a forward
     /// changes no object) — and Open Forward (`o`) while it has one.
-    func forwardVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
+    package func forwardVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         guard KubeForwardTarget.of(kind: ref.kind, name: ref.name) != nil, let context = model.contexts.context(named: ref.context),
             let namespace = ref.namespace
         else { return [] }
@@ -64,7 +64,7 @@ extension KubernetesPageModel {
 
     /// `f`: the sheet on `forwardRef`; false when there is none.
     @discardableResult
-    func portForward() -> Bool {
+    package func portForward() -> Bool {
         guard let ref = forwardRef else { return false }
         portForward(ref)
         return true
@@ -74,7 +74,7 @@ extension KubernetesPageModel {
     /// GET), the first picked and the same local port where it is free, and
     /// `kubectl auth can-i` asked. `port`: the one picked (a container port
     /// in a pod's Overview), the same local port where it is free.
-    func portForward(_ ref: KubeObjectRef, port: Int? = nil) {
+    package func portForward(_ ref: KubeObjectRef, port: Int? = nil) {
         commandProblem = nil
         forwardProblem = nil
         guard let (context, namespace, target) = forwardable(ref) else { return }
@@ -114,7 +114,7 @@ extension KubernetesPageModel {
 
     /// The sheet's Edit: the forward's local port, address and https; its
     /// target and remote port stay.
-    func editForward(_ id: UUID) {
+    package func editForward(_ id: UUID) {
         guard let forward = forwards.forward(id) else { return }
         let spec = forward.spec
         forwardProblem = nil
@@ -125,11 +125,11 @@ extension KubernetesPageModel {
     }
 
     /// The sheet's Random: a free local port.
-    func randomLocalPort() {
+    package func randomLocalPort() {
         forwardDraft?.local = freeLocalPort(preferring: nil).map(String.init) ?? ""
     }
 
-    func closeForwardSheet() {
+    package func closeForwardSheet() {
         forwardDraft = nil
         forwardProblem = nil
         giveListTheKeyboard()
@@ -138,7 +138,7 @@ extension KubernetesPageModel {
     /// The sheet's Forward (or Save): started, or the edited one started
     /// again — or why not, under its fields.
     @discardableResult
-    func confirmForward() -> UUID? {
+    package func confirmForward() -> UUID? {
         guard let draft = forwardDraft else { return nil }
         if let why = draft.unavailable {
             forwardProblem = why
@@ -174,7 +174,7 @@ extension KubernetesPageModel {
 
     /// Quick Forward: the object's first port, a free local port at random,
     /// no sheet — opened in the browser column once it forwards.
-    func quickForward(_ ref: KubeObjectRef) {
+    package func quickForward(_ ref: KubeObjectRef) {
         commandProblem = nil
         guard let (context, namespace, target) = forwardable(ref), let client = model.client(for: ref.context, role: .page) else { return }
         Task { [weak self] in
@@ -217,7 +217,7 @@ extension KubernetesPageModel {
     /// forward of the object `f` would act on — or, on an Ingress, where
     /// it is reached, in the default browser.
     @discardableResult
-    func openForward() -> Bool {
+    package func openForward() -> Bool {
         let forward: KubeForward?
         if section == .forwards {
             let live = forwards.forwards.filter { !$0.state.isStopped }
@@ -235,31 +235,31 @@ extension KubernetesPageModel {
     }
 
     /// Its URL in the browser column (or the default browser, as links open).
-    func openForward(_ id: UUID) {
+    package func openForward(_ id: UUID) {
         guard let url = forwards.forward(id)?.spec.url else { return }
         actions?.openURL(url)
     }
 
-    func stopForward(_ id: UUID) {
+    package func stopForward(_ id: UUID) {
         forwards.stop(id)
         if forwardSelection == id { forwardSelection = nil }
     }
 
     /// The Forwards section, on the page.
-    func showForwards() {
+    package func showForwards() {
         showSection(.forwards)
     }
 
     // MARK: Helpers
 
     /// A free local port: `preferring` it when free, else one at random.
-    func freeLocalPort(preferring port: Int?) -> Int? {
+    package func freeLocalPort(preferring port: Int?) -> Int? {
         KubeForwardPortChoice.free(preferred: port, taken: forwards.takenPorts, isBound: isPortBound)
     }
 
     /// The context, namespace and target `ref` is, or why not (the page's
     /// `commandProblem`): the process check first.
-    func forwardable(_ ref: KubeObjectRef) -> (KubeContext, String, KubeForwardTarget)? {
+    package func forwardable(_ ref: KubeObjectRef) -> (KubeContext, String, KubeForwardTarget)? {
         guard let target = KubeForwardTarget.of(kind: ref.kind, name: ref.name) else { return nil }
         guard let context = model.contexts.context(named: ref.context), let namespace = ref.namespace else {
             commandProblem = "No context called \(ref.context)."

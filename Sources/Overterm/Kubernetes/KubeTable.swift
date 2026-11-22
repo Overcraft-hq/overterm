@@ -11,16 +11,16 @@ import Foundation
 /// detail opens. The namespace is the request's — or, across all
 /// namespaces, the embedded metadata's (`includeObject=Metadata`, asked
 /// for there only): no core kind's Table has a Namespace column.
-struct KubeTable: Equatable, Sendable {
-    var columns: [KubeColumn]
-    var rows: [KubeRow]
+package struct KubeTable: Equatable, Sendable {
+    package var columns: [KubeColumn]
+    package var rows: [KubeRow]
     /// The collection's, to watch from.
-    var resourceVersion: String?
+    package var resourceVersion: String?
     /// The next page's token, when the server cut the list.
-    var continueToken: String?
-    var remainingItemCount: Int?
+    package var continueToken: String?
+    package var remainingItemCount: Int?
 
-    init(columns: [KubeColumn], rows: [KubeRow], resourceVersion: String? = nil, continueToken: String? = nil, remainingItemCount: Int? = nil) {
+    package init(columns: [KubeColumn], rows: [KubeRow], resourceVersion: String? = nil, continueToken: String? = nil, remainingItemCount: Int? = nil) {
         self.columns = columns
         self.rows = rows
         self.resourceVersion = resourceVersion
@@ -29,23 +29,23 @@ struct KubeTable: Equatable, Sendable {
     }
 
     /// The columns `kubectl get` shows (priority 0); the rest are `-o wide`'s.
-    var defaultColumns: [KubeColumn] { columns.filter { $0.priority == 0 } }
+    package var defaultColumns: [KubeColumn] { columns.filter { $0.priority == 0 } }
 
-    func column(named name: String) -> Int? { KubeColumn.index(of: name, in: columns) }
+    package func column(named name: String) -> Int? { KubeColumn.index(of: name, in: columns) }
 }
 
 /// One of a Table's `columnDefinitions`.
-struct KubeColumn: Equatable, Hashable, Sendable, Codable {
-    var name: String
+package struct KubeColumn: Equatable, Hashable, Sendable, Codable {
+    package var name: String
     /// OpenAPI's: `string`, `integer`, `number`, `boolean`, `date`.
-    var type: String
+    package var type: String
     /// `name` marks the identifier column.
-    var format: String
-    var description: String
+    package var format: String
+    package var description: String
     /// 0: the default view; higher: what `-o wide` adds.
-    var priority: Int
+    package var priority: Int
 
-    init(name: String, type: String = "string", format: String = "", description: String = "", priority: Int = 0) {
+    package init(name: String, type: String = "string", format: String = "", description: String = "", priority: Int = 0) {
         self.name = name
         self.type = type
         self.format = format
@@ -53,7 +53,7 @@ struct KubeColumn: Equatable, Hashable, Sendable, Codable {
         self.priority = priority
     }
 
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = try container.decode(String.self, forKey: .name)
         type = try container.decodeIfPresent(String.self, forKey: .type) ?? "string"
@@ -62,25 +62,25 @@ struct KubeColumn: Equatable, Hashable, Sendable, Codable {
         priority = try container.decodeIfPresent(Int.self, forKey: .priority) ?? 0
     }
 
-    static func index(of name: String, in columns: [KubeColumn]) -> Int? {
+    package static func index(of name: String, in columns: [KubeColumn]) -> Int? {
         columns.firstIndex { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
 
     /// The identifier column: `format: name`, else one called Name, else the first.
-    static func nameIndex(in columns: [KubeColumn]) -> Int {
+    package static func nameIndex(in columns: [KubeColumn]) -> Int {
         columns.firstIndex { $0.format == "name" } ?? index(of: "Name", in: columns) ?? 0
     }
 }
 
 /// One cell as the server sent it.
-enum KubeCell: Equatable, Hashable, Sendable {
+package enum KubeCell: Equatable, Hashable, Sendable {
     case text(String)
     case integer(Int)
     case number(Double)
     case bool(Bool)
     case none
 
-    init(json: Any?) {
+    package init(json: Any?) {
         switch json {
         case let string as String: self = .text(string)
         case let number as NSNumber:
@@ -101,7 +101,7 @@ enum KubeCell: Equatable, Hashable, Sendable {
     }
 
     /// As `kubectl get` prints it.
-    var text: String {
+    package var text: String {
         switch self {
         case .text(let text): text
         case .integer(let value): String(value)
@@ -114,52 +114,52 @@ enum KubeCell: Equatable, Hashable, Sendable {
 
 /// Which object a row is: its namespace (nil for a cluster-scoped kind)
 /// and name.
-struct KubeRowID: Hashable, Comparable, Sendable, CustomStringConvertible {
-    var namespace: String?
-    var name: String
+package struct KubeRowID: Hashable, Comparable, Sendable, CustomStringConvertible {
+    package var namespace: String?
+    package var name: String
 
-    var description: String { namespace.map { "\($0)/\(name)" } ?? name }
+    package var description: String { namespace.map { "\($0)/\(name)" } ?? name }
 
-    static func < (lhs: KubeRowID, rhs: KubeRowID) -> Bool {
+    package static func < (lhs: KubeRowID, rhs: KubeRowID) -> Bool {
         (lhs.namespace ?? "", lhs.name) < (rhs.namespace ?? "", rhs.name)
     }
 }
 
-struct KubeRow: Equatable, Sendable, Identifiable {
-    var id: KubeRowID
-    var cells: [KubeCell]
+package struct KubeRow: Equatable, Sendable, Identifiable {
+    package var id: KubeRowID
+    package var cells: [KubeCell]
     /// When the object was made, from the embedded metadata — only where
     /// the rows carry it (across all namespaces, `includeObject=Metadata`);
     /// with rows only, the server's Age cell is all there is (`KubeAge`).
-    var created: Date? = nil
+    package var created: Date? = nil
     /// Its `app.kubernetes.io/…` labels (name, instance, part-of…), from
     /// the embedded metadata — only where the rows carry it. The others
     /// aren't kept: they are the Applications grouping's, nothing else's.
-    var labels: [String: String] = [:]
+    package var labels: [String: String] = [:]
     /// Its `status.conditions` — only where the rows carry the whole object
     /// (`includeObject=Object`, the attention watches' Deployments: a
     /// stuck rollout is in its `Progressing` condition, which no cell says).
     /// Nothing else of the object is kept.
-    var conditions: [KubeRowCondition] = []
+    package var conditions: [KubeRowCondition] = []
     /// The Argo CD or Flux objects its labels and tracking annotation name
     /// as what deploys it (`KubeGitOpsOwner`) — only where the list asked
     /// (`KubeListOptions.owners`: the rail's workloads).
-    var owners: [KubeGitOpsOwner] = []
+    package var owners: [KubeGitOpsOwner] = []
     /// Argo CD's marks and what Argo CD's rules read beside them
     /// (`KubeMarkWire`'s allow-list), its tracking id checked against the
     /// kind listed — only where the list asked (`KubeListOptions.marks`)
     /// and the row carried its metadata. Nothing else of the metadata is
     /// kept: never kubectl's last-applied copy, another annotation or
     /// label, or a managed field's field set.
-    var marks: KubeMarkWire? = nil
+    package var marks: KubeMarkWire? = nil
     /// Whether its metadata carries one of Argo CD's own marks — the
     /// tracking annotation or `argocd.argoproj.io/instance` — looked up
     /// on every row that carries its metadata, nothing of it kept: what
     /// tells a context's GitOps section that marks are there to read
     /// (`KubernetesModel.marksSeen`, gitops.md 14.2.1).
-    var argoMarked = false
+    package var argoMarked = false
 
-    func cell(_ column: String, in columns: [KubeColumn]) -> KubeCell? {
+    package func cell(_ column: String, in columns: [KubeColumn]) -> KubeCell? {
         guard let index = KubeColumn.index(of: column, in: columns), index < cells.count else { return nil }
         return cells[index]
     }
@@ -167,12 +167,12 @@ struct KubeRow: Equatable, Sendable, Identifiable {
 
 /// One of an object's `status.conditions`, as a row embedding the object
 /// says it: its type, status and reason — never its message.
-struct KubeRowCondition: Equatable, Hashable, Sendable {
-    var type: String
-    var status: String
-    var reason: String?
+package struct KubeRowCondition: Equatable, Hashable, Sendable {
+    package var type: String
+    package var status: String
+    package var reason: String?
 
-    static func read(_ conditions: Any?) -> [KubeRowCondition] {
+    package static func read(_ conditions: Any?) -> [KubeRowCondition] {
         (conditions as? [[String: Any]] ?? []).compactMap { condition in
             guard let type = condition["type"] as? String, let status = condition["status"] as? String else { return nil }
             return KubeRowCondition(type: type, status: status, reason: condition["reason"] as? String)
@@ -183,10 +183,10 @@ struct KubeRowCondition: Equatable, Hashable, Sendable {
 /// Reads a Table — or, from an API without Table support (an aggregated
 /// one answers 406 to Table alone, so the request falls back to plain
 /// JSON), a List or a single object as Name and Created At. Pure.
-enum KubeTableReader {
-    struct Malformed: Error, Equatable, LocalizedError {
-        var detail: String
-        var errorDescription: String? { "The server's answer isn't a Table: \(detail)" }
+package enum KubeTableReader {
+    package struct Malformed: Error, Equatable, LocalizedError {
+        package var detail: String
+        package var errorDescription: String? { "The server's answer isn't a Table: \(detail)" }
     }
 
     /// `namespace`: the request's, for a row without a Namespace column.
@@ -194,7 +194,7 @@ enum KubeTableReader {
     /// events, which come without theirs. `kind`: what was listed, for
     /// the kinds whose cells are read with care (`row`), and required with
     /// `owners` or `marks`: a mark is checked against it.
-    static func read(
+    package static func read(
         _ data: Data, namespace: String?, columns: [KubeColumn]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false, marks: Bool = false
     ) throws -> KubeTable {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -203,7 +203,7 @@ enum KubeTableReader {
         return try read(object, namespace: namespace, columns: columns, kind: kind, owners: owners, marks: marks)
     }
 
-    static func read(
+    package static func read(
         _ object: [String: Any], namespace: String?, columns kept: [KubeColumn]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false,
         marks: Bool = false
     ) throws -> KubeTable {
@@ -236,7 +236,7 @@ enum KubeTableReader {
 
     /// What a server without Table support gives: Name (and Namespace,
     /// when the objects have one) and Created At.
-    static func plain(_ metadatas: [[String: Any]], resourceVersion: String?, continueToken: String?) -> KubeTable {
+    package static func plain(_ metadatas: [[String: Any]], resourceVersion: String?, continueToken: String?) -> KubeTable {
         let namespaced = metadatas.contains { $0["namespace"] is String }
         var columns = [KubeColumn(name: "Name", format: "name"), KubeColumn(name: "Created At", type: "date")]
         if namespaced { columns.insert(KubeColumn(name: "Namespace"), at: 0) }
@@ -265,7 +265,7 @@ enum KubeTableReader {
     /// surely. `marks`: Argo CD's marks kept by `KubeMarkWire`'s
     /// allow-list (`KubeRow.marks`), checked the same way — `kind` is
     /// required with it too.
-    static func row(
+    package static func row(
         _ cells: [KubeCell], columns: [KubeColumn], namespace: String?, object: [String: Any]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false,
         marks: Bool = false
     ) -> KubeRow? {
@@ -301,7 +301,7 @@ enum KubeTableReader {
     /// (`KubeRow.argoMarked`): two key look-ups on what was decoded
     /// anyway, nothing kept — all `marksSeen` costs a list (gitops.md
     /// 14.2.1; the D7 leg times it against the pods leg's Overview).
-    static func argoMarked(_ metadata: [String: Any]) -> Bool {
+    package static func argoMarked(_ metadata: [String: Any]) -> Bool {
         holds(metadata["annotations"], KubeGitOpsOwner.trackingAnnotation) || holds(metadata["labels"], KubeGitOpsOwner.argoInstanceLabel)
     }
 
@@ -319,7 +319,7 @@ enum KubeTableReader {
     /// Every text cell without a URL's userinfo: the URL column read as
     /// one URL (`GitRemoteURL.withoutUserinfo`), the others as text that
     /// may name some (`stripUserinfo(inText:)`).
-    static func withoutCredentials(_ cells: [KubeCell], columns: [KubeColumn]) -> [KubeCell] {
+    package static func withoutCredentials(_ cells: [KubeCell], columns: [KubeColumn]) -> [KubeCell] {
         let url = KubeColumn.index(of: "URL", in: columns)
         return cells.enumerated().map { index, cell in
             guard case .text(let text) = cell else { return cell }
@@ -330,19 +330,19 @@ enum KubeTableReader {
 
 /// A list's rows as they stand, a list and then a watch's changes applied
 /// to it. Pure: the page keeps one per section.
-struct KubeRows: Equatable, Sendable {
-    private(set) var columns: [KubeColumn] = []
-    private(set) var rows: [KubeRowID: KubeRow] = [:]
+package struct KubeRows: Equatable, Sendable {
+    package private(set) var columns: [KubeColumn] = []
+    package private(set) var rows: [KubeRowID: KubeRow] = [:]
     /// Where a watch would resume.
-    private(set) var resourceVersion: String?
+    package private(set) var resourceVersion: String?
 
-    init() {}
+    package init() {}
 
-    init(_ table: KubeTable) {
+    package init(_ table: KubeTable) {
         apply(.listed(table))
     }
 
-    mutating func apply(_ update: KubeFollowUpdate) {
+    package mutating func apply(_ update: KubeFollowUpdate) {
         switch update {
         case .listed(let table):
             columns = table.columns
@@ -364,14 +364,14 @@ struct KubeRows: Equatable, Sendable {
     }
 
     /// By namespace, then name.
-    var sorted: [KubeRow] { rows.values.sorted { $0.id < $1.id } }
-    var count: Int { rows.count }
-    subscript(_ id: KubeRowID) -> KubeRow? { rows[id] }
+    package var sorted: [KubeRow] { rows.values.sorted { $0.id < $1.id } }
+    package var count: Int { rows.count }
+    package subscript(_ id: KubeRowID) -> KubeRow? { rows[id] }
 }
 
 /// What following a list says: the whole list (first, and again after a
 /// 410), rows that changed, or only how far the watch has got.
-enum KubeFollowUpdate: Equatable, Sendable {
+package enum KubeFollowUpdate: Equatable, Sendable {
     case listed(KubeTable)
     case changed([KubeRowChange], resourceVersion: String?)
     case bookmark(String)
@@ -383,12 +383,12 @@ enum KubeFollowUpdate: Equatable, Sendable {
     case unlisted(String, KubeAPIError)
 }
 
-enum KubeRowChange: Equatable, Sendable {
+package enum KubeRowChange: Equatable, Sendable {
     case added(KubeRow)
     case modified(KubeRow)
     case deleted(KubeRowID)
 
-    var id: KubeRowID {
+    package var id: KubeRowID {
         switch self {
         case .added(let row), .modified(let row): row.id
         case .deleted(let id): id
@@ -404,23 +404,23 @@ enum KubeRowChange: Equatable, Sendable {
 /// (`Error`, `OOMKilled`, `Completed`), `Init:…` while an init container
 /// hasn't finished, `Terminating`, else the phase. Restarts is a number
 /// and, since 1.22, when the last one was: `5 (2m ago)`.
-struct KubePodSummary: Equatable, Sendable {
-    var id: KubeRowID
-    var ready: Int?
-    var containers: Int?
-    var status: String
-    var restarts: Int?
+package struct KubePodSummary: Equatable, Sendable {
+    package var id: KubeRowID
+    package var ready: Int?
+    package var containers: Int?
+    package var status: String
+    package var restarts: Int?
     /// "2m ago", as the row says it.
-    var lastRestart: String?
+    package var lastRestart: String?
 
     /// Waiting and terminated reasons that mean a container is failing.
-    static let failingReasons: Set<String> = [
+    package static let failingReasons: Set<String> = [
         "CrashLoopBackOff", "Error", "OOMKilled", "ImagePullBackOff", "ErrImagePull", "ErrImageNeverPull", "InvalidImageName",
         "CreateContainerConfigError", "CreateContainerError", "RunContainerError", "ContainerCannotRun", "StartError", "DeadlineExceeded",
         "Evicted", "Failed", "PreStartHookError", "PostStartHookError",
     ]
 
-    init(id: KubeRowID, ready: Int?, containers: Int?, status: String, restarts: Int?, lastRestart: String? = nil) {
+    package init(id: KubeRowID, ready: Int?, containers: Int?, status: String, restarts: Int?, lastRestart: String? = nil) {
         self.id = id
         self.ready = ready
         self.containers = containers
@@ -429,7 +429,7 @@ struct KubePodSummary: Equatable, Sendable {
         self.lastRestart = lastRestart
     }
 
-    init?(row: KubeRow, columns: [KubeColumn]) {
+    package init?(row: KubeRow, columns: [KubeColumn]) {
         guard let status = row.cell("Status", in: columns)?.text else { return nil }
         id = row.id
         self.status = status
@@ -455,25 +455,25 @@ struct KubePodSummary: Equatable, Sendable {
     private var bareStatus: String { status.hasPrefix("Init:") ? String(status.dropFirst(5)) : status }
 
     /// Whether an init container is the one the status is about.
-    var isInit: Bool { status.hasPrefix("Init:") }
+    package var isInit: Bool { status.hasPrefix("Init:") }
 
     /// A container failing, or one that exited with a signal or a code.
-    var isFailing: Bool {
+    package var isFailing: Bool {
         let bare = bareStatus
         return Self.failingReasons.contains(bare) || bare.hasPrefix("Signal:") || bare.hasPrefix("ExitCode:")
     }
 
     /// Why it fails, as the list says it — nil while it doesn't.
-    var exitReason: String? {
+    package var exitReason: String? {
         guard isFailing else { return nil }
         return isInit ? "\(bareStatus) (init container)" : bareStatus
     }
 
     /// Running, every container ready.
-    var isReady: Bool {
+    package var isReady: Bool {
         guard status == "Running", let ready, let containers else { return false }
         return ready == containers
     }
 
-    var isCompleted: Bool { status == "Completed" || status == "Succeeded" }
+    package var isCompleted: Bool { status == "Completed" || status == "Succeeded" }
 }

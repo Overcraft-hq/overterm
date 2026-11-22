@@ -2,15 +2,15 @@ import SwiftUI
 
 /// The usage pane: what each agent has left of its quota, and what the
 /// logs on this Mac say the day cost.
-struct UsageView: View {
-    @ObservedObject var model: UsageModel
-    @ObservedObject var theme: ChromeTheme
-    @ObservedObject var settings: Settings
-    let onClose: () -> Void
+package struct UsageView: View {
+    @ObservedObject package var model: UsageModel
+    @ObservedObject package var theme: ChromeTheme
+    @ObservedObject package var settings: Settings
+    package let onClose: () -> Void
 
     private var showsCost: Bool { settings.usageCost }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             header
             if model.providers.isEmpty {

@@ -6,13 +6,13 @@ import Foundation
 /// the docker scenario reach the fake engine as a remote one
 /// (`ssh://127.0.0.1:port/path/to/fake.sock`). Its folder is short: the
 /// sockets beside it must stay under 104 bytes.
-final class FakeSSHHost {
-    struct Unavailable: Error, CustomStringConvertible {
-        var description: String
+package final class FakeSSHHost {
+    package struct Unavailable: Error, CustomStringConvertible {
+        package var description: String
     }
 
-    let port: Int
-    let folder: URL
+    package let port: Int
+    package let folder: URL
     private let process: Process
 
     private init(port: Int, folder: URL, process: Process) {
@@ -23,17 +23,17 @@ final class FakeSSHHost {
 
     /// What `DockerSSHForward.testOptions` is set to while it runs: its key
     /// alone (no agent, no ~/.ssh/config), its own known_hosts.
-    var options: [String] {
+    package var options: [String] {
         [
             "-F", "/dev/null", "-i", folder.appendingPathComponent("client").path, "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none",
             "-o", "UserKnownHostsFile=\(folder.path)/known_hosts",
         ]
     }
 
-    static var isAvailable: Bool { FileManager.default.isExecutableFile(atPath: "/usr/sbin/sshd") }
+    package static var isAvailable: Bool { FileManager.default.isExecutableFile(atPath: "/usr/sbin/sshd") }
 
     /// Started, listening; throws `Unavailable` where it can't be.
-    static func start() throws -> FakeSSHHost {
+    package static func start() throws -> FakeSSHHost {
         guard isAvailable else { throw Unavailable(description: "no /usr/sbin/sshd") }
         let folder = URL(fileURLWithPath: "/tmp/ot-sshd-\(UUID().uuidString.prefix(6))")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -83,14 +83,14 @@ final class FakeSSHHost {
     }
 
     /// From now on, no key gets in.
-    func refuseEveryone() throws {
+    package func refuseEveryone() throws {
         try Data().write(to: folder.appendingPathComponent("authorized_keys"))
     }
 
     /// Bounded, never `waitUntilExit`: should another wait in the process
     /// reap sshd first, Foundation never hears it ended — a test process
     /// hung here at SSHTunnelTests' end for 16 min, its sshd long gone.
-    func stop() {
+    package func stop() {
         if process.isRunning {
             process.terminate()
             let pid = process.processIdentifier

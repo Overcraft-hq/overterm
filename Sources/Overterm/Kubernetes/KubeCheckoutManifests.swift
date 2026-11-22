@@ -29,73 +29,73 @@ import TreeSitterKit
 /// cluster's strings this is compared with are compared in memory only;
 /// nothing here reaches git but `ls-files`' own patterns. Blocking: run
 /// off the main thread (`KubeBlocking.run`).
-enum KubeCheckoutManifests {
-    struct Bounds: Sendable {
-        var files = 2_000
-        var fileBytes = 256 << 10
-        var totalBytes = 32 << 20
+package enum KubeCheckoutManifests {
+    package struct Bounds: Sendable {
+        package var files = 2_000
+        package var fileBytes = 256 << 10
+        package var totalBytes = 32 << 20
     }
 
     /// One object a document names.
-    struct Identity: Hashable, Sendable, Comparable {
+    package struct Identity: Hashable, Sendable, Comparable {
         /// "" for the core group.
-        var group: String
-        var kind: String
+        package var group: String
+        package var kind: String
         /// nil: the document names none — kustomize's or Argo CD's
         /// destination gives it one, which can't be read here.
-        var namespace: String?
-        var name: String
+        package var namespace: String?
+        package var name: String
 
         /// `Deployment shop/api`, or `Deployment api` without a namespace.
-        var said: String { "\(kind) \(namespace.map { "\($0)/" } ?? "")\(name)" }
+        package var said: String { "\(kind) \(namespace.map { "\($0)/" } ?? "")\(name)" }
 
-        static func < (a: Identity, b: Identity) -> Bool {
+        package static func < (a: Identity, b: Identity) -> Bool {
             (a.group, a.kind, a.namespace ?? "", a.name) < (b.group, b.kind, b.namespace ?? "", b.name)
         }
     }
 
     /// What was read, and what couldn't be.
-    struct Read: Equatable, Sendable {
-        var identities: Set<Identity> = []
+    package struct Read: Equatable, Sendable {
+        package var identities: Set<Identity> = []
         /// Every document's `metadata.name`, lowercased, by the namespace it
         /// names ("" for none): what an app's name is compared with (option
         /// C) — one with no namespace only in the binding's, as option B.
-        var names: [String: Set<String>] = [:]
+        package var names: [String: Set<String>] = [:]
         /// The folders right under `apps/`, `deploy/`, `k8s/`, `charts/` and
         /// `manifests/`, lowercased (option C).
-        var folders: Set<String> = []
+        package var folders: Set<String> = []
         /// Tracked `.yaml` and `.yml` files.
-        var files = 0
+        package var files = 0
         /// Files read whole.
-        var read = 0
+        package var read = 0
         /// Documents that named an object: compared.
-        var documents = 0
+        package var documents = 0
         /// Helm templates, not rendered: files holding `{{` the grammar
         /// can't read, and those it reads with a document whose four keys
         /// hold `{{` (left out).
-        var templates = 0
+        package var templates = 0
         /// Kustomizations with a `namePrefix` or `nameSuffix`.
-        var prefixed = 0
+        package var prefixed = 0
         /// Under a test, example, fixture or vendored folder.
-        var skipped = 0
+        package var skipped = 0
         /// A link, or a path that led out of the checkout once opened.
-        var links = 0
+        package var links = 0
         /// Not a plain file, over 256 KB, or not YAML the grammar reads whole.
-        var unreadable = 0
+        package var unreadable = 0
         /// The bound that stopped the read, said (its counts kept as numbers).
-        var cut: KubeCountedText?
+        package var cut: KubeCountedText?
         /// `git ls-files` couldn't say.
-        var failed: String?
+        package var failed: String?
     }
 
-    static let skippedFolders: Set<String> = ["test", "tests", "testdata", "examples", "fixtures", "vendor"]
-    static let nameFolders: Set<String> = ["apps", "deploy", "k8s", "charts", "manifests"]
+    package static let skippedFolders: Set<String> = ["test", "tests", "testdata", "examples", "fixtures", "vendor"]
+    package static let nameFolders: Set<String> = ["apps", "deploy", "k8s", "charts", "manifests"]
 
     /// `git ls-files`' arguments: the tracked YAML, NUL-separated.
-    static let listArguments = ["ls-files", "-z", "--", "*.yaml", "*.yml"]
+    package static let listArguments = ["ls-files", "-z", "--", "*.yaml", "*.yml"]
 
     /// The checkout's manifests: listed by its git, read off the main thread.
-    static func read(_ root: URL, git: @escaping KubeGitOpsCheckouts.Runner, bounds: Bounds = Bounds()) async -> Read {
+    package static func read(_ root: URL, git: @escaping KubeGitOpsCheckouts.Runner, bounds: Bounds = Bounds()) async -> Read {
         let listed: String
         do {
             listed = try await git(listArguments, root, [0])
@@ -109,7 +109,7 @@ enum KubeCheckoutManifests {
     }
 
     /// The files given read, in their order, within `bounds`. Blocking.
-    static func read(_ root: URL, paths: [String], bounds: Bounds = Bounds()) -> Read {
+    package static func read(_ root: URL, paths: [String], bounds: Bounds = Bounds()) -> Read {
         var read = Read()
         read.files = paths.count
         guard let top = real(root.path) else {
@@ -249,19 +249,19 @@ enum KubeCheckoutManifests {
     /// kustomization builds its names with a prefix or suffix, and whether
     /// one of the four is a template's (`{{` in its value, or a `metadata`
     /// that is one): what it names is only known rendered.
-    struct Document: Equatable, Sendable {
-        var apiVersion: String?
-        var kind: String?
-        var name: String?
-        var namespace: String?
-        var prefixed = false
-        var templated = false
+    package struct Document: Equatable, Sendable {
+        package var apiVersion: String?
+        package var kind: String?
+        package var name: String?
+        package var namespace: String?
+        package var prefixed = false
+        package var templated = false
     }
 
     /// Each document of a YAML stream, its top-level keys and `metadata`'s
     /// read off the grammar's tree; nil when the grammar can't read the
     /// text whole (as `YAMLReader`).
-    static func documents(_ text: String) -> [Document]? {
+    package static func documents(_ text: String) -> [Document]? {
         guard let language = EditorLanguage.named("yaml") else { return nil }
         let parser = ts_parser_new()
         defer { ts_parser_delete(parser) }

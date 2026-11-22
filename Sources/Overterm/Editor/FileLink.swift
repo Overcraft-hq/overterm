@@ -4,15 +4,15 @@ import Foundation
 /// what it matched (`src/main.swift:12`, `./a.go:3:7`, `~/x.md`, an absolute
 /// path it already resolved), and this decides whether it is a file to open
 /// in the editor, and at which line.
-struct FileLink: Equatable {
-    let url: URL
-    let line: Int?
+package struct FileLink: Equatable {
+    package let url: URL
+    package let line: Int?
 
     /// `text` as a file under one of `directories` (tried in order: the
     /// shell's directory, then the checkout — compilers and `git grep` print
     /// repo-relative paths). Nil when it isn't an existing regular file, so
     /// URLs, directories and binaries keep going to the system opener.
-    static func resolve(_ text: String, in directories: [String]) -> FileLink? {
+    package static func resolve(_ text: String, in directories: [String]) -> FileLink? {
         var text = text.trimmingCharacters(in: .whitespaces)
         // Only `scheme://…` is a URL: `main.swift:3` parses as one too.
         if text.contains("://") {
@@ -29,7 +29,7 @@ struct FileLink: Equatable {
     }
 
     /// `path:12`, `path:12:5` and `path(12,5)` → the path and the line.
-    static func split(_ text: String) -> (String?, Int?) {
+    package static func split(_ text: String) -> (String?, Int?) {
         if let match = text.firstMatch(of: /^(.+?):(\d+)(?::\d+)?$/) {
             return (String(match.1), Int(match.2))
         }

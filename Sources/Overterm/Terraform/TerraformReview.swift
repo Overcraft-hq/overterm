@@ -4,25 +4,25 @@ import Foundation
 /// roots what is under review touches — a file in the root, or in a module
 /// it calls —, which checkout has its head (where a plan of it can run),
 /// and the text "Post to Pull Request…" shows before it posts. Pure.
-enum TerraformReview {
+package enum TerraformReview {
     /// One root the review touches.
-    struct Root: Equatable, Sendable, Identifiable {
-        var path: String
-        var name: String
-        var rootClass: TerraformClass
+    package struct Root: Equatable, Sendable, Identifiable {
+        package var path: String
+        package var name: String
+        package var rootClass: TerraformClass
         /// "envs/dev/main.tf", "2 files", or "through modules/acme-net".
-        var why: String
+        package var why: String
         /// Its folder is in the checkout read (a root the review adds is not
         /// until it is checked out).
-        var present: Bool
-        var id: String { path }
-        var isProduction: Bool { rootClass == .production }
+        package var present: Bool
+        package var id: String { path }
+        package var isProduction: Bool { rootClass == .production }
     }
 
     /// The roots `changed` touches (paths relative to the top; a rename's
     /// old path too), each with why — from the cards and modules of the
     /// checkout read. Production first, then by path.
-    static func touched(cards: [TerraformRootCard], modules: [TerraformModuleRow], changed: [String], present: Set<String>? = nil) -> [Root] {
+    package static func touched(cards: [TerraformRootCard], modules: [TerraformModuleRow], changed: [String], present: Set<String>? = nil) -> [Root] {
         let callers = Dictionary(modules.map { ($0.path, $0.callers) }, uniquingKeysWith: { first, _ in first })
         let rootPaths = Set(cards.map(\.path))
         var direct: [String: [String]] = [:]
@@ -52,7 +52,7 @@ enum TerraformReview {
     }
 
     /// The changed paths a review lists, renames' old paths included.
-    static func changedPaths(_ files: [ChangedFile]) -> [String] {
+    package static func changedPaths(_ files: [ChangedFile]) -> [String] {
         var paths: [String] = []
         for file in files {
             paths.append(file.path)
@@ -64,7 +64,7 @@ enum TerraformReview {
     /// The listing of the checkout read, with the reviewed Terraform files
     /// that aren't in it added — a root or module the review adds is then
     /// one too, read with no facts (its files aren't here).
-    static func listing(_ folders: [String: [String]], adding changed: [String]) -> [String: [String]] {
+    package static func listing(_ folders: [String: [String]], adding changed: [String]) -> [String: [String]] {
         var folders = folders
         for path in changed where TerraformRootGuess.isTerraformName((path as NSString).lastPathComponent) && !TerraformRootGuess.isSkipped(path) {
             let folder = (path as NSString).deletingLastPathComponent
@@ -77,31 +77,31 @@ enum TerraformReview {
     // MARK: Where its head is
 
     /// A checkout of the repository: its folder, its branch and HEAD.
-    struct Checkout: Equatable, Sendable {
-        var url: URL
-        var branch: String?
-        var head: String?
-        var name: String { branch ?? head.map { "(\($0.prefix(7)))" } ?? url.lastPathComponent }
+    package struct Checkout: Equatable, Sendable {
+        package var url: URL
+        package var branch: String?
+        package var head: String?
+        package var name: String { branch ?? head.map { "(\($0.prefix(7)))" } ?? url.lastPathComponent }
     }
 
     /// The checkout a plan of the review runs in, and whether it is at
     /// the reviewed head.
-    struct Head: Equatable, Sendable {
-        var checkout: Checkout
+    package struct Head: Equatable, Sendable {
+        package var checkout: Checkout
         /// Why it isn't what is reviewed: a pull request's branch here
         /// behind (or ahead of) the pull request's head. Plan and Post
         /// wait for it: a plan of other code isn't the review's.
-        var note: String?
-        var isReviewed: Bool { note == nil }
+        package var note: String?
+        package var isReviewed: Bool { note == nil }
     }
 
     /// What the review's head is, as git and gh name it.
-    struct Wanted: Equatable, Sendable {
+    package struct Wanted: Equatable, Sendable {
         /// A local branch's name — never a fork's: its name says nothing here.
-        var branch: String?
+        package var branch: String?
         /// A commit (full or abbreviated): a range's head resolved, a pull
         /// request's `headRefOid`.
-        var commit: String?
+        package var commit: String?
     }
 
     /// The head the source reviews: the checkout itself for `branch` and
@@ -110,7 +110,7 @@ enum TerraformReview {
     /// commit —; the last commit; a pull request's head commit, once `gh
     /// pr view` said it, and its branch only when the pull request is from
     /// this repository (a fork's `main` is not the person's `main`).
-    static func wanted(
+    package static func wanted(
         _ source: ReviewSource, pullRequestBranch: String? = nil, pullRequestHead: String? = nil, crossRepository: Bool = false,
         resolved: String? = nil
     ) -> Wanted? {
@@ -125,9 +125,9 @@ enum TerraformReview {
         }
     }
 
-    static func isCommit(_ ref: String) -> Bool { ref.count >= 7 && ref.count <= 64 && ref.allSatisfy(\.isHexDigit) }
+    package static func isCommit(_ ref: String) -> Bool { ref.count >= 7 && ref.count <= 64 && ref.allSatisfy(\.isHexDigit) }
 
-    static func sameCommit(_ a: String?, _ b: String?) -> Bool {
+    package static func sameCommit(_ a: String?, _ b: String?) -> Bool {
         guard let a = a?.lowercased(), let b = b?.lowercased(), min(a.count, b.count) >= 7 else { return false }
         return a.hasPrefix(b) || b.hasPrefix(a)
     }
@@ -137,7 +137,7 @@ enum TerraformReview {
     /// branch first); else one on the wanted branch elsewhere, said and not
     /// planned ("pull it first"). Nil when none has it: "Check Out in a New
     /// Worktree…". A branch alone matches only when no commit is known.
-    static func head(of source: ReviewSource, review: Checkout, wanted: Wanted?, checkouts: [Checkout]) -> Head? {
+    package static func head(of source: ReviewSource, review: Checkout, wanted: Wanted?, checkouts: [Checkout]) -> Head? {
         switch source {
         case .branch, .uncommitted: return Head(checkout: review)
         default: break
@@ -164,7 +164,7 @@ enum TerraformReview {
 
     /// What is under review, for the plan's question (5.5: planning code
     /// the person didn't write always asks).
-    static func reviewing(_ source: ReviewSource, pullRequest: Int? = nil) -> String {
+    package static func reviewing(_ source: ReviewSource, pullRequest: Int? = nil) -> String {
         if let pullRequest { return "pull request #\(pullRequest)" }
         switch source {
         case .branch(_, _, let branch): return "the branch \(branch)"
@@ -179,36 +179,36 @@ enum TerraformReview {
     // MARK: Posting
 
     /// One root's plan as the comment says it.
-    struct PostedPlan: Equatable, Sendable {
+    package struct PostedPlan: Equatable, Sendable {
         /// `TerraformPlanText.copySummary`'s text: the masked model only.
-        var summary: String
+        package var summary: String
         /// "feature-x @ 3f2a91c", where it was planned.
-        var planned: String?
-        var age: String
+        package var planned: String?
+        package var age: String
         /// Why it may no longer be what applying would do.
-        var stale: String?
+        package var stale: String?
     }
 
     /// A root's latest plan in the head's checkout, as Post weighs it.
-    struct Candidate: Equatable, Sendable {
-        var root: String
-        var summary: String
+    package struct Candidate: Equatable, Sendable {
+        package var root: String
+        package var summary: String
         /// The checkout's HEAD when it was planned.
-        var commit: String?
+        package var commit: String?
         /// Tracked files of the checkout differed from that commit.
-        var uncommitted = false
-        var mode: TerraformPlanMode = .normal
-        var age: String
-        var stale: String?
+        package var uncommitted = false
+        package var mode: TerraformPlanMode = .normal
+        package var age: String
+        package var stale: String?
         /// False once it was applied: its changes are made, nothing is left to post.
-        var held = true
+        package var held = true
     }
 
     /// The plans a pull request's comment may carry (5.5): only a whole
     /// plan (no destroy, target or replace) made at the pull request's
     /// head with nothing uncommitted — anything else is another code's
     /// plan, and is left out with why. Each names the commit it planned.
-    static func postable(_ candidates: [Candidate], head: String, branch: String?) -> (plans: [PostedPlan], skipped: [String]) {
+    package static func postable(_ candidates: [Candidate], head: String, branch: String?) -> (plans: [PostedPlan], skipped: [String]) {
         var plans: [PostedPlan] = []
         var skipped: [String] = []
         for candidate in candidates {
@@ -241,14 +241,14 @@ enum TerraformReview {
     }
 
     /// GitHub's limit for a comment is 65,536 characters; a margin kept.
-    static let maxComment = 60_000
+    package static let maxComment = 60_000
 
     /// The pull request's comment (2.2, 5.6 rule 8): every plan's masked
     /// summary, each in a fence longer than any run of backticks in it (an
     /// address can't close it, nor a mention inside notify anyone), cut to
     /// GitHub's size with what was left out said — the first plan cut to
     /// fit rather than left out. Never `terraform show`.
-    static func comment(_ plans: [PostedPlan]) -> String {
+    package static func comment(_ plans: [PostedPlan]) -> String {
         var parts = ["**Terraform plans** (from Overterm; values Terraform marks sensitive, and what looks like a secret, masked)"]
         var used = parts[0].count
         var left = 0
@@ -285,7 +285,7 @@ enum TerraformReview {
 
     /// A line outside a fence, with nothing GitHub would act on: no
     /// mention, no reference, no markup.
-    static func inline(_ text: String) -> String {
+    package static func inline(_ text: String) -> String {
         var out = ""
         for character in text {
             switch character {
@@ -298,7 +298,7 @@ enum TerraformReview {
         return out
     }
 
-    static func longestBacktickRun(_ text: String) -> Int {
+    package static func longestBacktickRun(_ text: String) -> Int {
         var longest = 0
         var run = 0
         for character in text {
@@ -318,21 +318,21 @@ enum TerraformReview {
 /// are read against; the risks in the modules the root calls, which a
 /// review of a module's change is about; the head, as the plan's header
 /// says where it was planned.
-struct TerraformReviewPlan: Equatable, Sendable {
-    var reviewing: String
-    var base: String?
-    var moduleRisks: [TerraformRunRisk] = []
+package struct TerraformReviewPlan: Equatable, Sendable {
+    package var reviewing: String
+    package var base: String?
+    package var moduleRisks: [TerraformRunRisk] = []
     /// Modules the root calls whose code wasn't read (past the cap, or not
     /// in the checkout): the question can't say they run nothing.
-    var unreadModules = 0
-    var branch: String?
+    package var unreadModules = 0
+    package var branch: String?
 }
 
 extension TerraformReview {
     /// The risks in the modules a root calls (local ones, through other
     /// modules too), each said with its module: "data.external in
     /// modules/acme-net". The lock file's providers are the root's alone.
-    static func moduleRisks(_ modules: [(path: String, config: TerraformConfigFacts)]) -> [TerraformRunRisk] {
+    package static func moduleRisks(_ modules: [(path: String, config: TerraformConfigFacts)]) -> [TerraformRunRisk] {
         var found: [TerraformRunRisk] = []
         for module in modules.sorted(by: { $0.path < $1.path }) {
             for risk in TerraformRunRisks.risks(config: module.config, lockProviders: nil) {

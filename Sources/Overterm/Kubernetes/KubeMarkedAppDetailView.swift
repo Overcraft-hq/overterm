@@ -16,19 +16,19 @@ import SwiftUI
 /// `markedNode`, drawn picked and scrolled to) —, its right-click menu Open
 /// and Copy — never a write. Ask Why hands an agent the app's brief as the
 /// detail read it (D6: greyed while it is Ready). Esc or × closes it.
-struct KubeMarkedAppDetailView: View {
+package struct KubeMarkedAppDetailView: View {
     /// Not observed: its every publish would draw the tree again.
-    let page: KubernetesPageModel
-    let ref: KubeMarkedDetailRef
+    package let page: KubernetesPageModel
+    package let ref: KubeMarkedDetailRef
     /// The node the keyboard is on (`page.markedNode`), given as a value:
     /// the tree drawn again when it moves.
-    let selected: String?
-    @ObservedObject var gitOps: KubeGitOpsSession
-    @ObservedObject var marked: KubeMarkedAppsSession
-    @ObservedObject var read: KubeMarkedDetailSession
-    @ObservedObject var theme: ChromeTheme
+    package let selected: String?
+    @ObservedObject package var gitOps: KubeGitOpsSession
+    @ObservedObject package var marked: KubeMarkedAppsSession
+    @ObservedObject package var read: KubeMarkedDetailSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let detail = page.markedDetailShown {
                 header(detail)
@@ -231,7 +231,7 @@ struct KubeMarkedAppDetailView: View {
     }
 
     /// Depth first, each node with its depth.
-    static func rows(_ nodes: [KubeMarkedAppDetail.Node]) -> [(depth: Int, node: KubeMarkedAppDetail.Node)] {
+    package static func rows(_ nodes: [KubeMarkedAppDetail.Node]) -> [(depth: Int, node: KubeMarkedAppDetail.Node)] {
         func walk(_ node: KubeMarkedAppDetail.Node, _ depth: Int) -> [(depth: Int, node: KubeMarkedAppDetail.Node)] {
             [(depth, node)] + node.children.flatMap { walk($0, depth + 1) }
         }

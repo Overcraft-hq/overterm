@@ -16,27 +16,27 @@ import NIOSSL
 /// the fields of a sample of each (20 documents) as columns. A console
 /// statement is the mongo shell's (`MongoStatement`); documents come back a
 /// row each, their top-level fields as columns.
-actor MongoDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor MongoDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let password: String?
     private var channel: Channel?
     private var replies: MongoReplyHandler?
     private var nextRequest: Int32 = 1
     /// The database `db` is in the console (its `use`).
-    private(set) var current: String
+    package private(set) var current: String
     /// Not the primary: reads ask for any member, writes are the server's to refuse.
     private var onSecondary = false
     /// Where it is connected, for what is said.
     private var address = ""
     /// What the server it is connected to said of itself: its replica set,
     /// mongos, this connection's id (the Server page's own operations).
-    private(set) var hello: BSONDocument?
+    package private(set) var hello: BSONDocument?
 
     /// Collections a database reads fields for at most.
-    static let sampledCollections = 100
-    static let sampleSize = 20
+    package static let sampledCollections = 100
+    package static let sampleSize = 20
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
         current = connection.database.isEmpty ? "test" : connection.database
@@ -47,7 +47,7 @@ actor MongoDriver: DatabaseDriver {
 
     // MARK: Connecting
 
-    func connect() async throws {
+    package func connect() async throws {
         guard channel == nil else { return }
         var seeds: [(host: String, port: Int)]
         var authSource = config.authSource
@@ -164,7 +164,7 @@ actor MongoDriver: DatabaseDriver {
         return "\(address) didn't answer as \(product) — \(Self.describe(error))"
     }
 
-    static func tlsWords(_ error: NIOSSLError) -> String {
+    package static func tlsWords(_ error: NIOSSLError) -> String {
         let said = String(describing: error)
         if said.contains("CERTIFICATE_VERIFY_FAILED") || said.contains("certificate") {
             return "its certificate isn't trusted here. Choose its CA bundle (DocumentDB's global-bundle.pem), or don't check the certificate. (\(said))"
@@ -252,7 +252,7 @@ actor MongoDriver: DatabaseDriver {
         }
     }
 
-    func close() async { await drop() }
+    package func close() async { await drop() }
 
     private func drop() async {
         try? await channel?.close().get()
@@ -264,7 +264,7 @@ actor MongoDriver: DatabaseDriver {
 
     /// One command on a database, its answer — or the server's error,
     /// thrown as `MongoServerError`.
-    func send(_ body: BSONDocument, database: String, timeout: TimeAmount? = nil) async throws -> BSONDocument {
+    package func send(_ body: BSONDocument, database: String, timeout: TimeAmount? = nil) async throws -> BSONDocument {
         guard let channel, let replies else { throw DatabaseError.notConnected }
         var body = body
         body["$db"] = .string(database)
@@ -291,7 +291,7 @@ actor MongoDriver: DatabaseDriver {
     }
 
     /// A command as the console's, its errors in words.
-    func command(_ body: BSONDocument, database: String) async throws -> BSONDocument {
+    package func command(_ body: BSONDocument, database: String) async throws -> BSONDocument {
         do {
             return try await send(body, database: database)
         } catch let error as MongoServerError {
@@ -301,7 +301,7 @@ actor MongoDriver: DatabaseDriver {
 
     // MARK: Running
 
-    func execute(_ statement: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ statement: String, limit: Int) async throws -> QueryResult {
         let started = Date()
         let command: MongoCommand
         do {
@@ -380,7 +380,7 @@ actor MongoDriver: DatabaseDriver {
 
     /// A cursor's documents, up to one past `limit` (so "there are more"
     /// is known), the rest of the cursor closed.
-    func documents(_ command: MongoCommand, database: String, limit: Int) async throws -> [BSONDocument] {
+    package func documents(_ command: MongoCommand, database: String, limit: Int) async throws -> [BSONDocument] {
         var body = command.body
         let wanted = min(command.limit ?? Int.max, limit + 1)
         if command.name == "find" {
@@ -416,7 +416,7 @@ actor MongoDriver: DatabaseDriver {
 
     /// The databases — the connection's first; admin, config and local
     /// only when it is one of them.
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         if channel == nil { try await connect() }
         var names: [String]
         do {
@@ -432,7 +432,7 @@ actor MongoDriver: DatabaseDriver {
         return names.sorted { ($0 == current ? 0 : 1, $0) < ($1 == current ? 0 : 1, $1) }
     }
 
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         if channel == nil { try await connect() }
         let command = MongoCommand(
             method: "listCollections", body: ["listCollections": .int32(1), "nameOnly": .bool(true), "authorizedCollections": .bool(true)],
@@ -454,7 +454,7 @@ actor MongoDriver: DatabaseDriver {
 
     /// Each collection's fields, from its first documents: a collection
     /// has no schema of its own to read.
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         let collections = try await tables(in: schema).prefix(Self.sampledCollections)
         var columns: [CatalogColumn] = []
         for collection in collections {
@@ -468,7 +468,7 @@ actor MongoDriver: DatabaseDriver {
 
     /// The top-level fields of some documents, in the order met, `_id`
     /// first, each with the type it first has that isn't null.
-    static func fields(of documents: [BSONDocument]) -> [(name: String, type: String)] {
+    package static func fields(of documents: [BSONDocument]) -> [(name: String, type: String)] {
         var order: [String] = []
         var types: [String: String] = [:]
         for document in documents {
@@ -484,7 +484,7 @@ actor MongoDriver: DatabaseDriver {
         return order.map { ($0, types[$0] ?? "") }
     }
 
-    static func describe(_ error: Error) -> String {
+    package static func describe(_ error: Error) -> String {
         if let error = error as? NIOSSLError { return tlsWords(error) }
         if let error = error as? DatabaseError { return error.localizedDescription }
         if let error = error as? NIOConnectionError {
@@ -498,12 +498,12 @@ actor MongoDriver: DatabaseDriver {
 
 /// An `{ ok: 0 }` answer: its message, code and name — said plainly, and
 /// for DocumentDB, that it is DocumentDB refusing what MongoDB would take.
-struct MongoServerError: Error {
-    let code: Int?
-    let name: String?
-    let message: String
+package struct MongoServerError: Error {
+    package let code: Int?
+    package let name: String?
+    package let message: String
 
-    init(reply: BSONDocument, documentDB: Bool) {
+    package init(reply: BSONDocument, documentDB: Bool) {
         code = reply["code"]?.int
         name = reply["codeName"]?.string
         var message = Self.words(reply["errmsg"]?.string ?? "The server refused the command.", code: code, name: name)
@@ -512,18 +512,18 @@ struct MongoServerError: Error {
         self.message = message
     }
 
-    static func words(_ message: String, code: Int?, name: String?) -> String {
+    package static func words(_ message: String, code: Int?, name: String?) -> String {
         guard let name, !name.isEmpty, !message.contains(name) else { return message }
         return "\(message) (\(name))"
     }
 }
 
 /// OP_MSG's bytes: the header, no flags, one body section.
-enum MongoWire {
-    static let opMsg: Int32 = 2013
-    static let opReply: Int32 = 1
+package enum MongoWire {
+    package static let opMsg: Int32 = 2013
+    package static let opReply: Int32 = 1
 
-    static func message(_ body: BSONDocument, requestID: Int32, responseTo: Int32 = 0) -> [UInt8] {
+    package static func message(_ body: BSONDocument, requestID: Int32, responseTo: Int32 = 0) -> [UInt8] {
         let document = [UInt8](body.encoded())
         let length = Int32(16 + 4 + 1 + document.count)
         var out: [UInt8] = []
@@ -542,7 +542,7 @@ enum MongoWire {
     /// One whole message: its id, who it answers, and its body (a kind 1
     /// section's documents folded in under their name). nil when it isn't
     /// all here yet.
-    static func reply(_ bytes: [UInt8]) throws -> (requestID: Int32, responseTo: Int32, body: BSONDocument, length: Int)? {
+    package static func reply(_ bytes: [UInt8]) throws -> (requestID: Int32, responseTo: Int32, body: BSONDocument, length: Int)? {
         guard bytes.count >= 4 else { return nil }
         var reader = BSON.Reader(bytes: bytes)
         let length = Int(try reader.little(Int32.self))
@@ -584,20 +584,20 @@ enum MongoWire {
 
 /// The socket's end: bytes in, each reply to the request it answers.
 /// Touched only on its channel's event loop.
-final class MongoReplyHandler: ChannelInboundHandler, @unchecked Sendable {
-    typealias InboundIn = ByteBuffer
+package final class MongoReplyHandler: ChannelInboundHandler, @unchecked Sendable {
+    package typealias InboundIn = ByteBuffer
 
     private let product: String
     private var bytes: [UInt8] = []
     private var waiting: [Int32: EventLoopPromise<BSONDocument>] = [:]
 
-    init(product: String) { self.product = product }
+    package init(product: String) { self.product = product }
 
-    func expect(_ id: Int32, _ promise: EventLoopPromise<BSONDocument>) { waiting[id] = promise }
+    package func expect(_ id: Int32, _ promise: EventLoopPromise<BSONDocument>) { waiting[id] = promise }
 
-    func fail(_ id: Int32, _ error: Error) { waiting.removeValue(forKey: id)?.fail(error) }
+    package func fail(_ id: Int32, _ error: Error) { waiting.removeValue(forKey: id)?.fail(error) }
 
-    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    package func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         var buffer = unwrapInboundIn(data)
         bytes += buffer.readBytes(length: buffer.readableBytes) ?? []
         do {
@@ -611,12 +611,12 @@ final class MongoReplyHandler: ChannelInboundHandler, @unchecked Sendable {
         }
     }
 
-    func errorCaught(context: ChannelHandlerContext, error: Error) {
+    package func errorCaught(context: ChannelHandlerContext, error: Error) {
         failAll(error)
         context.close(promise: nil)
     }
 
-    func channelInactive(context: ChannelHandlerContext) {
+    package func channelInactive(context: ChannelHandlerContext) {
         failAll(DatabaseError.failed("\(product) closed the connection."))
         context.fireChannelInactive()
     }

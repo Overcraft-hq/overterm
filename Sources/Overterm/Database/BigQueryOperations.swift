@@ -9,10 +9,10 @@ import Foundation
 /// page: who may do what is Google Cloud IAM, not SQL.
 /// docs/architecture.md, Database: Server page.
 extension BigQueryDriver: DatabaseMonitoring, DatabaseTableEditing {
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .slowQueries, .sizes] }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .slowQueries, .sizes] }
 
     /// `jobs.cancel` alone: there is no session to end.
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
         guard BigQueryOps.isJobID(session.id) else { return [] }
         return [
             SessionStop(
@@ -23,11 +23,11 @@ extension BigQueryDriver: DatabaseMonitoring, DatabaseTableEditing {
         ]
     }
 
-    func editDialect() async -> SQLDialect { .bigquery }
+    package func editDialect() async -> SQLDialect { .bigquery }
 
     /// The table's declared primary key and every column's type — the
     /// literals are cast to them (BigQuery converts no text on its own).
-    func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
+    package func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
         let query: EditableQuery
         switch EditableQuery.parse(statement) {
         case .success(let parsed): query = parsed
@@ -50,18 +50,18 @@ extension BigQueryDriver: DatabaseMonitoring, DatabaseTableEditing {
         }
     }
 
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
+    package func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
         try BigQueryOps.editStatements(edits, rows: rows, result: result)
     }
 
-    func editSaveNote() async -> String { BigQueryOps.saveNote }
+    package func editSaveNote() async -> String { BigQueryOps.saveNote }
 
     /// The region INFORMATION_SCHEMA's jobs and storage are read in.
     private var region: (qualifier: String, assumed: Bool) { BigQueryOps.region(config.location) }
 
     // MARK: Monitoring
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         let listing = try await jobs()
         let datasets = (try? await get("\(base)/datasets?maxResults=1000"))?["datasets"] as? [[String: Any]]
         return BigQueryOps.overview(
@@ -85,12 +85,12 @@ extension BigQueryDriver: DatabaseMonitoring, DatabaseTableEditing {
         return (listed.jobs, everyone)
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         .value(try await jobs().jobs)
     }
 
     /// The last week's jobs grouped by their normalized text, costliest first.
-    func slowQueries() async throws -> Monitored<[SlowQuery]> {
+    package func slowQueries() async throws -> Monitored<[SlowQuery]> {
         do {
             let result = try await query(BigQueryOps.slowSQL(region: region.qualifier), limit: 200, own: true)
             return .value(BigQueryOps.slowQueries(result))
@@ -99,7 +99,7 @@ extension BigQueryDriver: DatabaseMonitoring, DatabaseTableEditing {
         }
     }
 
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         do {
             let datasets = try await query(BigQueryOps.datasetSizesSQL(region: region.qualifier), limit: 200, own: true)
             let tables = try await query(BigQueryOps.tableSizesSQL(region: region.qualifier), limit: 50, own: true)
@@ -117,7 +117,7 @@ extension BigQueryDriver: DatabaseMonitoring, DatabaseTableEditing {
     }
 
     /// `jobs.cancel` — BigQuery cancels a job; there is no session to end.
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("cancelling a job") }
         guard !terminate else { throw DatabaseError.failed("BigQuery ends no session: a job is cancelled.") }
         guard BigQueryOps.isJobID(session) else { throw DatabaseError.failed("No job \(session).") }
@@ -135,7 +135,7 @@ extension BigQueryDriver: DatabaseMonitoring, DatabaseTableEditing {
 
     /// A table's declared primary key — BigQuery enforces none, so a table
     /// without one isn't edited.
-    func key(of table: TableName) async throws -> TableKey? {
+    package func key(of table: TableName) async throws -> TableKey? {
         guard let table = BigQueryOps.table(table, defaultDataset: config.database) else {
             throw DatabaseError.failed("Name the table's dataset (dataset.table) — the connection has no default dataset.")
         }
@@ -163,7 +163,7 @@ extension BigQueryDriver: DatabaseMonitoring, DatabaseTableEditing {
     /// One script: a transaction whose every statement must change its one
     /// row (`@@row_count`), else everything is rolled back and the error
     /// says which.
-    func apply(_ statements: [EditStatement]) async throws {
+    package func apply(_ statements: [EditStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("saving the edits") }
         guard !statements.isEmpty else { return }
         do {
@@ -177,22 +177,22 @@ extension BigQueryDriver: DatabaseMonitoring, DatabaseTableEditing {
 
 /// BigQuery's statements and REST answers for the Server page and editing.
 /// Pure.
-enum BigQueryOps {
+package enum BigQueryOps {
     /// `region-us`, `region-europe-west1` — the connection's location, US
     /// when it names none (said).
-    static func region(_ location: String) -> (qualifier: String, assumed: Bool) {
+    package static func region(_ location: String) -> (qualifier: String, assumed: Bool) {
         let trimmed = location.trimmingCharacters(in: .whitespaces).lowercased()
         let safe = trimmed.filter { $0.isLetter || $0.isNumber || $0 == "-" }
         return safe.isEmpty ? ("`region-us`", true) : ("`region-\(safe)`", false)
     }
 
     /// A job id: letters, digits, `_`, `-` (Google's rule).
-    static func isJobID(_ id: String) -> Bool {
+    package static func isJobID(_ id: String) -> Bool {
         !id.isEmpty && id.count <= 1024 && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
     }
 
     /// `` `project`.`dataset`.INFORMATION_SCHEMA ``.
-    static func informationSchema(project: String, dataset: String) -> String {
+    package static func informationSchema(project: String, dataset: String) -> String {
         SQLDialect.bigquery.identifier(project) + "." + SQLDialect.bigquery.identifier(dataset) + ".INFORMATION_SCHEMA"
     }
 
@@ -200,7 +200,7 @@ enum BigQueryOps {
 
     /// jobs.list's jobs as sessions: the job id, who, the query or what the
     /// job does, how long — running since it started, pending since made.
-    static func jobs(_ answer: [String: Any], now: Date, own: Set<String>) -> (jobs: [DatabaseActivity], locations: [String: String]) {
+    package static func jobs(_ answer: [String: Any], now: Date, own: Set<String>) -> (jobs: [DatabaseActivity], locations: [String: String]) {
         var out: [DatabaseActivity] = []
         var locations: [String: String] = [:]
         for job in answer["jobs"] as? [[String: Any]] ?? [] {
@@ -227,7 +227,7 @@ enum BigQueryOps {
         return (out.sorted { ($0.seconds ?? 0) > ($1.seconds ?? 0) }, locations)
     }
 
-    static func overview(project: String, location: String, datasets: Int?, jobs: [DatabaseActivity], everyone: Bool) -> ServerOverview {
+    package static func overview(project: String, location: String, datasets: Int?, jobs: [DatabaseActivity], everyone: Bool) -> ServerOverview {
         let running = jobs.filter { $0.state == "running" }.count
         let pending = jobs.filter { $0.state == "pending" }.count
         var facts = [
@@ -250,7 +250,7 @@ enum BigQueryOps {
 
     /// The last seven days' finished queries, grouped by their text with
     /// literals taken out, costliest by slot time; a script's children only.
-    static func slowSQL(region: String) -> String {
+    package static func slowSQL(region: String) -> String {
         """
         SELECT COALESCE(query_info.query_hashes.normalized_literals, TO_HEX(MD5(query))) AS id, ANY_VALUE(query) AS query,
           ANY_VALUE(user_email) AS user, COUNT(*) AS calls,
@@ -264,7 +264,7 @@ enum BigQueryOps {
         """
     }
 
-    static func jobsGap(_ error: Error, region: (qualifier: String, assumed: Bool)) -> MonitorGap {
+    package static func jobsGap(_ error: Error, region: (qualifier: String, assumed: Bool)) -> MonitorGap {
         let message = error.localizedDescription
         if message.lowercased().contains("access denied") || message.contains("permission") {
             return MonitorGap(
@@ -276,14 +276,14 @@ enum BigQueryOps {
             fix: region.assumed ? "the connection's Location (US, EU, us-central1…) — where its jobs run" : nil)
     }
 
-    static func datasetSizesSQL(region: String) -> String {
+    package static func datasetSizesSQL(region: String) -> String {
         """
         SELECT table_schema AS name, SUM(total_logical_bytes) AS bytes, CONCAT(CAST(COUNT(*) AS STRING), ' tables') AS detail
         FROM \(region).INFORMATION_SCHEMA.TABLE_STORAGE WHERE NOT deleted GROUP BY table_schema ORDER BY bytes DESC
         """
     }
 
-    static func tableSizesSQL(region: String) -> String {
+    package static func tableSizesSQL(region: String) -> String {
         """
         SELECT table_schema AS schema, table_name AS name, total_logical_bytes AS bytes,
           CONCAT('rows ', CAST(total_rows AS STRING), ', ', CAST(ROUND(total_physical_bytes / 1048576) AS STRING), ' MiB physical') AS detail
@@ -291,7 +291,7 @@ enum BigQueryOps {
         """
     }
 
-    static func slowQueries(_ result: QueryResult) -> [SlowQuery] {
+    package static func slowQueries(_ result: QueryResult) -> [SlowQuery] {
         ResultRow.rows(of: result).compactMap { row in
             guard let id = row["id"] else { return nil }
             let detail = [
@@ -305,7 +305,7 @@ enum BigQueryOps {
 
     // MARK: Editing
 
-    static func keySQL(schema: String, table: String) -> String {
+    package static func keySQL(schema: String, table: String) -> String {
         """
         SELECT k.column_name, k.ordinal_position FROM \(schema).TABLE_CONSTRAINTS c
         JOIN \(schema).KEY_COLUMN_USAGE k ON k.constraint_name = c.constraint_name AND k.table_name = c.table_name
@@ -315,14 +315,14 @@ enum BigQueryOps {
 
     /// Types whose grid text isn't a literal a CAST reads back: nested ones
     /// (shown as JSON), BYTES (shown base64), GEOGRAPHY (WKT needs its function).
-    static func isUnwritable(_ type: String) -> Bool {
+    package static func isUnwritable(_ type: String) -> Bool {
         let upper = type.uppercased()
         return ["STRUCT", "ARRAY", "JSON", "BYTES", "GEOGRAPHY", "RANGE"].contains { upper.hasPrefix($0) }
     }
 
     /// `dataset.table` as written, a backticked `` `dataset.table` `` cut in
     /// two, else the connection's dataset; nil: no dataset to name.
-    static func table(_ table: TableName, defaultDataset: String) -> TableName? {
+    package static func table(_ table: TableName, defaultDataset: String) -> TableName? {
         if table.schema == nil, table.name.contains(".") {
             let parts = table.name.split(separator: ".").map(String.init)
             guard parts.count >= 2 else { return nil }
@@ -333,7 +333,7 @@ enum BigQueryOps {
     }
 
     /// Each column's type, and the columns in order.
-    static func types(_ columns: QueryResult) -> (types: [String: String], order: [String]) {
+    package static func types(_ columns: QueryResult) -> (types: [String: String], order: [String]) {
         var types: [String: String] = [:]
         var order: [String] = []
         for row in ResultRow.rows(of: columns) {
@@ -344,10 +344,10 @@ enum BigQueryOps {
         return (types, order)
     }
 
-    static let saveNote =
+    package static let saveNote =
         "BigQuery: one script, in a transaction — each statement must change exactly one row (@@row_count), else none is kept. The key is declared, not enforced. Rows still in the streaming buffer can't be updated or deleted."
 
-    static func key(_ table: TableName, tableType: String, constraints: QueryResult, columns: QueryResult) -> Result<TableKey, EditRefusal> {
+    package static func key(_ table: TableName, tableType: String, constraints: QueryResult, columns: QueryResult) -> Result<TableKey, EditRefusal> {
         guard tableType == "BASE TABLE" else {
             return .failure(.said("\(table.name) is a \(tableType.lowercased()): rows are edited in a table."))
         }
@@ -369,12 +369,12 @@ enum BigQueryOps {
     }
 
     /// A literal as its column takes it: `CAST('5' AS INT64)`; a STRING's as is.
-    static func value(_ cell: CellValue, type: String) -> String {
+    package static func value(_ cell: CellValue, type: String) -> String {
         guard case .text(let text) = cell else { return "NULL" }
         return cast(SQLDialect.bigquery.literal(text), to: type)
     }
 
-    static func cast(_ literal: String, to type: String) -> String {
+    package static func cast(_ literal: String, to type: String) -> String {
         let bare = type.trimmingCharacters(in: .whitespaces)
         // A type is the catalog's words: letters, digits, (), commas, spaces.
         guard !bare.isEmpty, !bare.uppercased().hasPrefix("STRING"),
@@ -385,7 +385,7 @@ enum BigQueryOps {
 
     /// A Save's statements, SQL's order — each literal cast to its column's
     /// type (`EditableResult.types`); a new row sets a column at least. Pure.
-    static func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
+    package static func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
         let dialect = SQLDialect.bigquery
         let table = dialect.qualified(result.key.table)
         func type(_ column: Int) -> String { result.types[safe: column] ?? "" }
@@ -420,7 +420,7 @@ enum BigQueryOps {
 
     /// The statements in one transaction, each checked by `@@row_count`; any
     /// error rolls all of it back and is raised again.
-    static func script(_ statements: [EditStatement]) -> String {
+    package static func script(_ statements: [EditStatement]) -> String {
         var lines = ["BEGIN", "  BEGIN TRANSACTION;"]
         for (index, statement) in statements.enumerated() {
             lines.append("  \(statement.sql);")

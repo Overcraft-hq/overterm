@@ -10,15 +10,15 @@ import Foundation
 // busy is DCGM exporter's to say (`KubeGPUCharts`), and without it every
 // allocation is shown, none hidden as idle. Pure.
 
-enum KubeGPU {
+package enum KubeGPU {
     /// A GPU resource's name: NVIDIA's (whole, time-sliced, a MIG profile's) or AMD's.
-    static func isGPU(_ resource: String) -> Bool {
+    package static func isGPU(_ resource: String) -> Bool {
         resource == "nvidia.com/gpu" || resource == "nvidia.com/gpu.shared" || resource.hasPrefix("nvidia.com/mig-") || resource == "amd.com/gpu"
     }
 
     /// A container's GPUs from its resources: an extended resource is given
     /// as its limit (its request, where set, must equal it).
-    static func counts(requests: [String: Any], limits: [String: Any]) -> [String: Double] {
+    package static func counts(requests: [String: Any], limits: [String: Any]) -> [String: Double] {
         var out: [String: Double] = [:]
         for (key, value) in limits.merging(requests, uniquingKeysWith: { limit, _ in limit }) where isGPU(key) {
             guard let count = number(value), count > 0 else { continue }
@@ -28,7 +28,7 @@ enum KubeGPU {
     }
 
     /// A node's `status.capacity` or `allocatable`, its GPU resources alone.
-    static func resources(_ map: Any?) -> [String: Double] {
+    package static func resources(_ map: Any?) -> [String: Double] {
         var out: [String: Double] = [:]
         for (key, value) in map as? [String: Any] ?? [:] where isGPU(key) {
             if let count = number(value) { out[key] = count }
@@ -36,12 +36,12 @@ enum KubeGPU {
         return out
     }
 
-    static func number(_ value: Any?) -> Double? {
+    package static func number(_ value: Any?) -> Double? {
         (value as? String).flatMap(KubeQuantity.value) ?? (value as? NSNumber)?.doubleValue
     }
 
     /// `nvidia.com/mig-1g.5gb` → `MIG 1g.5gb`; `nvidia.com/gpu` → `nvidia.com/gpu`.
-    static func title(_ resource: String) -> String {
+    package static func title(_ resource: String) -> String {
         resource.hasPrefix("nvidia.com/mig-") ? "MIG " + resource.dropFirst("nvidia.com/mig-".count) : resource
     }
 
@@ -49,7 +49,7 @@ enum KubeGPU {
     /// device (`nvidia.com/gpu`, `amd.com/gpu`), a time slice of one shared
     /// with other pods (`nvidia.com/gpu.shared`), a MIG instance — a slice
     /// of one, its own memory and engines (`nvidia.com/mig-*`).
-    static func given(_ resource: String) -> String {
+    package static func given(_ resource: String) -> String {
         if resource == "nvidia.com/gpu.shared" {
             return "\(resource): a time slice of a device, shared with the other pods given one: not the pod's alone, and others' work shows in its numbers."
         }
@@ -60,39 +60,39 @@ enum KubeGPU {
     }
 
     /// `1`, `2.5` — a count as said.
-    static func count(_ value: Double) -> String { value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value) }
+    package static func count(_ value: Double) -> String { value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value) }
 }
 
 /// What the objects say of an object's GPUs: a node's resources and who
 /// holds them, a pod's containers', a workload's template's. Nil from the
 /// builders where there are none. Pure.
-struct KubeGPUAllocation: Equatable, Sendable {
+package struct KubeGPUAllocation: Equatable, Sendable {
     /// A node's GPU resource: what it has, what it offers, what its active pods hold.
-    struct Resource: Equatable, Sendable, Identifiable {
-        var name: String
-        var capacity: Double?
-        var allocatable: Double?
+    package struct Resource: Equatable, Sendable, Identifiable {
+        package var name: String
+        package var capacity: Double?
+        package var allocatable: Double?
         /// Held by its active pods; nil where the node's pods aren't read.
-        var allocated: Double?
-        var id: String { name }
+        package var allocated: Double?
+        package var id: String { name }
     }
 
     /// Who holds GPUs: a pod (a node's, a workload's), or a container of the pod shown.
-    struct Holder: Equatable, Sendable, Identifiable {
-        var name: String
-        var gpus: [String: Double]
+    package struct Holder: Equatable, Sendable, Identifiable {
+        package var name: String
+        package var gpus: [String: Double]
         /// The pod to open (a node's holders).
-        var pod: KubeRowID?
-        var id: String { name }
+        package var pod: KubeRowID?
+        package var id: String { name }
     }
 
-    var resources: [Resource] = []
-    var holders: [Holder] = []
+    package var resources: [Resource] = []
+    package var holders: [Holder] = []
     /// What is said under it: how the numbers were read, what they leave out.
-    var notes: [String] = []
+    package var notes: [String] = []
 
     /// The lines the tab shows, in order.
-    var lines: [String] {
+    package var lines: [String] {
         var out: [String] = []
         for resource in resources {
             var parts: [String] = []
@@ -116,12 +116,12 @@ struct KubeGPUAllocation: Equatable, Sendable {
     }
 
     /// What the view's identifier and a scenario read: every line and note.
-    var text: String { (lines + notes).joined(separator: "\n") }
+    package var text: String { (lines + notes).joined(separator: "\n") }
 
     // MARK: Building
 
     /// A pod's: each container's GPUs; nil, none.
-    static func pod(_ object: [String: Any]) -> KubeGPUAllocation? {
+    package static func pod(_ object: [String: Any]) -> KubeGPUAllocation? {
         let containers = KubePodCharts.containers(of: object).filter { !$0.gpus.isEmpty }
         guard !containers.isEmpty else { return nil }
         var totals: [String: Double] = [:]
@@ -135,7 +135,7 @@ struct KubeGPUAllocation: Equatable, Sendable {
     /// A node's: its GPU resources' capacity and allocatable, and — its
     /// pods read as objects — who holds them, the active pods only (the
     /// scheduler's count); nil where it offers none and none are held.
-    static func node(_ object: [String: Any], pods: KubeNodePods?) -> KubeGPUAllocation? {
+    package static func node(_ object: [String: Any], pods: KubeNodePods?) -> KubeGPUAllocation? {
         let status = object["status"] as? [String: Any] ?? [:]
         let capacity = KubeGPU.resources(status["capacity"])
         let allocatable = KubeGPU.resources(status["allocatable"])
@@ -156,7 +156,7 @@ struct KubeGPUAllocation: Equatable, Sendable {
     }
 
     /// A workload's: what its template gives a pod, times the pods it runs now.
-    static func workload(_ object: [String: Any], kind: String) -> KubeGPUAllocation? {
+    package static func workload(_ object: [String: Any], kind: String) -> KubeGPUAllocation? {
         let template = ((object["spec"] as? [String: Any])?["template"] as? [String: Any]) ?? [:]
         let containers = KubePodCharts.containers(of: ["spec": template["spec"] ?? [:]]).filter { !$0.gpus.isEmpty }
         guard !containers.isEmpty else { return nil }
@@ -170,7 +170,7 @@ struct KubeGPUAllocation: Equatable, Sendable {
     }
 
     /// The object's, by its subject; nil, none (or not a kind with GPUs).
-    static func of(_ subject: KubeMetricsSubject, object: [String: Any], nodePods: KubeNodePods?) -> KubeGPUAllocation? {
+    package static func of(_ subject: KubeMetricsSubject, object: [String: Any], nodePods: KubeNodePods?) -> KubeGPUAllocation? {
         switch subject {
         case .pod: pod(object)
         case .node: node(object, pods: nodePods)

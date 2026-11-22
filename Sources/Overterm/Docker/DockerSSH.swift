@@ -4,13 +4,13 @@ import Foundation
 /// `ssh://[user@]host[:port]`, as `DOCKER_HOST` and a context spell a
 /// remote engine. A path after the host names the engine's socket there
 /// (the CLI asks the host's own `docker` for it). Pure.
-struct DockerSSHTarget: Hashable, Sendable {
-    var user: String?
-    var host: String
-    var port: Int?
-    var socket: String?
+package struct DockerSSHTarget: Hashable, Sendable {
+    package var user: String?
+    package var host: String
+    package var port: Int?
+    package var socket: String?
 
-    static func parse(_ url: String) -> DockerSSHTarget? {
+    package static func parse(_ url: String) -> DockerSSHTarget? {
         guard url.hasPrefix("ssh://") else { return nil }
         var rest = String(url.dropFirst("ssh://".count))
         var socket: String?
@@ -45,12 +45,12 @@ struct DockerSSHTarget: Hashable, Sendable {
     }
 
     /// As `DOCKER_HOST` spells it.
-    var url: String {
+    package var url: String {
         "ssh://" + (user.map { "\($0)@" } ?? "") + (host.contains(":") ? "[\(host)]" : host) + (port.map { ":\($0)" } ?? "") + (socket ?? "")
     }
 
     /// ssh's words for where to go, last on its command line.
-    var destination: [String] {
+    package var destination: [String] {
         var words: [String] = []
         if let user { words += ["-l", user] }
         if let port, port != 22 { words += ["-p", "\(port)"] }
@@ -61,7 +61,7 @@ struct DockerSSHTarget: Hashable, Sendable {
     /// What the engine menu offers on the host — where the engine's
     /// settings and log are — run in a terminal tab, where ssh and sudo
     /// ask what they need.
-    var commands: [(title: String, command: String)] {
+    package var commands: [(title: String, command: String)] {
         let ssh = (["ssh"] + destination).map(DockerCommands.quote).joined(separator: " ")
         let tty = (["ssh", "-t"] + destination).map(DockerCommands.quote).joined(separator: " ")
         return [
@@ -79,12 +79,12 @@ struct DockerSSHTarget: Hashable, Sendable {
 /// request and stream. The user's ~/.ssh/config, keys and agent do for it
 /// what they do for `docker -H ssh://`; nothing is asked (BatchMode) — a
 /// prompt nobody can answer would hang it.
-final class DockerSSHForward: ManagedResource {
-    let target: DockerSSHTarget
+package final class DockerSSHForward: ManagedResource {
+    package let target: DockerSSHTarget
     /// The local end: only this user may use it (the engine is root on the host).
-    let socket: String
+    package let socket: String
     /// The ssh, which removes the local end when it is closed.
-    let process: ManagedProcess
+    package let process: ManagedProcess
 
     private init(target: DockerSSHTarget, socket: String, process: ManagedProcess) {
         self.target = target
@@ -92,32 +92,32 @@ final class DockerSSHForward: ManagedResource {
         self.process = process
     }
 
-    var isOpen: Bool { process.isRunning }
+    package var isOpen: Bool { process.isRunning }
 
     /// Why the host's end refused the last request, as ssh said it
     /// (`connect failed: Permission denied` — the user isn't in the docker
     /// group there): the local end takes the connection either way.
-    var refusal: String? { Self.refusal(in: process.stderr.text) }
+    package var refusal: String? { Self.refusal(in: process.stderr.text) }
 
-    static func refusal(in text: String) -> String? {
+    package static func refusal(in text: String) -> String? {
         let line = text.components(separatedBy: .newlines).last { $0.contains("open failed") }
         guard let line, let range = line.range(of: "open failed: ") else { return nil }
         return line[range.upperBound...].trimmingCharacters(in: .whitespaces)
     }
 
-    func close() { process.close() }
+    package func close() { process.close() }
 
     /// Tests keep their hosts and keys out of ~/.ssh: `-F`, `-i`,
     /// `UserKnownHostsFile`, before the destination.
-    nonisolated(unsafe) static var testOptions: [String] = []
+    package nonisolated(unsafe) static var testOptions: [String] = []
 
-    static let ssh = URL(fileURLWithPath: "/usr/bin/ssh")
+    package static let ssh = URL(fileURLWithPath: "/usr/bin/ssh")
 
     /// What every ssh here is told: its own connection (a ControlMaster in
     /// the user's config would make the forward a passing client), no
     /// prompts, a new host remembered as `ssh` asks a person to — a changed
     /// key is still refused.
-    static func common() -> [String] {
+    package static func common() -> [String] {
         [
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=15",
@@ -128,7 +128,7 @@ final class DockerSSHForward: ManagedResource {
     }
 
     /// The forward's arguments — pure.
-    static func arguments(_ target: DockerSSHTarget, localSocket: String, remoteSocket: String) -> [String] {
+    package static func arguments(_ target: DockerSSHTarget, localSocket: String, remoteSocket: String) -> [String] {
         ["-N", "-T"] + common() + [
             "-o", "ExitOnForwardFailure=yes",
             "-o", "ServerAliveInterval=30",
@@ -142,14 +142,14 @@ final class DockerSSHForward: ManagedResource {
 
     /// What asks the host's `docker` where its engine is — the context
     /// `docker system dial-stdio` would use, which is what the CLI runs there.
-    static func socketQuery(_ target: DockerSSHTarget) -> [String] {
+    package static func socketQuery(_ target: DockerSSHTarget) -> [String] {
         ["-T"] + common() + target.destination + ["docker context inspect --format '{{.Endpoints.docker.Host}}'"]
     }
 
-    static let defaultRemoteSocket = "/var/run/docker.sock"
+    package static let defaultRemoteSocket = "/var/run/docker.sock"
 
     /// The engine's socket from that answer; nil for anything not a unix socket.
-    static func remoteSocket(fromOutput output: String) -> String? {
+    package static func remoteSocket(fromOutput output: String) -> String? {
         let line = output.split(whereSeparator: \.isNewline).last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         guard line.hasPrefix("unix://"), line.count > "unix://".count else { return nil }
         return String(line.dropFirst("unix://".count))
@@ -159,7 +159,7 @@ final class DockerSSHForward: ManagedResource {
     /// most), this run's own, one a host. Its name says the run's pid and
     /// start (`ArgvSign.dockerSSH`): `/usr/bin/ssh` hides its environment,
     /// so this is how a forward a crashed run left is known for its.
-    static func localSocket(
+    package static func localSocket(
         for target: DockerSSHTarget, folder: URL = FileManager.default.temporaryDirectory, run: ActivityProcessID = OvertermRun.current.identity
     ) -> String {
         let key = String(UInt64(bitPattern: Int64(target.url.hashValue)) % 0xFFFF_FFFF, radix: 16)
@@ -170,7 +170,7 @@ final class DockerSSHForward: ManagedResource {
     /// what its `docker` says, else the usual place. ssh's own failure (it
     /// exits 255: no route, refused key) is the answer — the forward would
     /// fail the same way, after another wait.
-    static func remoteSocket(of target: DockerSSHTarget) async throws -> String {
+    package static func remoteSocket(of target: DockerSSHTarget) async throws -> String {
         if let socket = target.socket { return socket }
         do {
             let output = try await Git.run(ssh, socketQuery(target), in: FileManager.default.homeDirectoryForCurrentUser, timeout: 25)
@@ -184,7 +184,7 @@ final class DockerSSHForward: ManagedResource {
 
     /// Opens it, and returns once the local end takes connections — or
     /// throws what ssh said.
-    static func open(_ target: DockerSSHTarget) async throws -> DockerSSHForward {
+    package static func open(_ target: DockerSSHTarget) async throws -> DockerSSHForward {
         let remote = try await remoteSocket(of: target)
         let local = localSocket(for: target)
         do {
@@ -201,7 +201,7 @@ final class DockerSSHForward: ManagedResource {
 
     /// The forward as a process: ready when the local end takes a
     /// connection, the local end removed before and after — pure.
-    static func launch(_ target: DockerSSHTarget, localSocket: String, remoteSocket: String) -> ManagedProcess.Launch {
+    package static func launch(_ target: DockerSSHTarget, localSocket: String, remoteSocket: String) -> ManagedProcess.Launch {
         ManagedProcess.Launch(
             executable: ssh, arguments: arguments(target, localSocket: localSocket, remoteSocket: remoteSocket),
             readiness: .socket(localSocket), timeout: 20, removing: [localSocket],
@@ -211,13 +211,13 @@ final class DockerSSHForward: ManagedResource {
     /// The host's real name, as ~/.ssh/config makes it (`ssh -G`, which
     /// connects nowhere): where its published ports are. Nil when ssh
     /// can't say.
-    static func hostName(of target: DockerSSHTarget) async -> String? {
+    package static func hostName(of target: DockerSSHTarget) async -> String? {
         let arguments = ["-G"] + testOptions + target.destination
         guard let output = try? await Git.run(ssh, arguments, in: FileManager.default.homeDirectoryForCurrentUser, timeout: 5) else { return nil }
         return hostName(fromConfig: output)
     }
 
-    static func hostName(fromConfig output: String) -> String? {
+    package static func hostName(fromConfig output: String) -> String? {
         for line in output.split(whereSeparator: \.isNewline) where line.hasPrefix("hostname ") {
             let name = line.dropFirst("hostname ".count).trimmingCharacters(in: .whitespaces)
             return name.isEmpty ? nil : name
@@ -237,23 +237,23 @@ final class DockerSSHForward: ManagedResource {
 /// One forward a host, opened by the first request and again when its ssh
 /// has gone (the network changed, the Mac slept); requests that arrive
 /// while it opens wait for that one.
-actor DockerSSHForwards {
-    static let shared = DockerSSHForwards()
+package actor DockerSSHForwards {
+    package static let shared = DockerSSHForwards()
 
     private let pool = ManagedProcessPool<DockerSSHTarget, DockerSSHForward> { try await DockerSSHForward.open($0) }
 
-    func socket(for target: DockerSSHTarget) async throws -> String {
+    package func socket(for target: DockerSSHTarget) async throws -> String {
         try await pool.value(for: target).socket
     }
 
     /// Closes the forward to `target`, when it is no longer the engine.
-    func close(_ target: DockerSSHTarget) async {
+    package func close(_ target: DockerSSHTarget) async {
         await pool.close(target)
     }
 
-    func refusal(_ target: DockerSSHTarget) async -> String? { await pool.existing(target)?.refusal }
+    package func refusal(_ target: DockerSSHTarget) async -> String? { await pool.existing(target)?.refusal }
 
     /// Every forward, for closing when the app quits — or each ssh would
     /// outlive it.
-    static func closeAll() { shared.pool.closeAll() }
+    package static func closeAll() { shared.pool.closeAll() }
 }

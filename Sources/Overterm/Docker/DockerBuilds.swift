@@ -3,37 +3,37 @@ import Foundation
 /// A build, as `docker buildx history ls --format json` lists it: one JSON
 /// object a line. Docker Desktop's Builds view reads the same records.
 /// Pure.
-struct DockerBuildRecord: Identifiable, Equatable, Sendable {
+package struct DockerBuildRecord: Identifiable, Equatable, Sendable {
     /// `builder/node/id`.
-    var ref: String
-    var name: String
+    package var ref: String
+    package var name: String
     /// `Completed`, `Error`, `Running`, `Canceled`.
-    var status: String
-    var createdAt: String
-    var completedAt: String?
-    var totalSteps: Int
-    var cachedSteps: Int
-    var completedSteps: Int
+    package var status: String
+    package var createdAt: String
+    package var completedAt: String?
+    package var totalSteps: Int
+    package var cachedSteps: Int
+    package var completedSteps: Int
 
-    var id: String { ref }
+    package var id: String { ref }
     /// The record's own id, as `buildx history` commands take it.
-    var shortRef: String { String(ref.split(separator: "/").last ?? Substring(ref)) }
-    var failed: Bool { status.lowercased() == "error" }
-    var running: Bool { status.lowercased() == "running" }
+    package var shortRef: String { String(ref.split(separator: "/").last ?? Substring(ref)) }
+    package var failed: Bool { status.lowercased() == "error" }
+    package var running: Bool { status.lowercased() == "running" }
 
     /// Seconds from start to end, when it ended.
-    var duration: Double? {
+    package var duration: Double? {
         guard let completedAt, let start = Self.date(createdAt), let end = Self.date(completedAt) else { return nil }
         return end.timeIntervalSince(start)
     }
 
     /// Seconds since it started, for one still running: never below 0, a
     /// remote engine's clock may be ahead of this Mac's.
-    func elapsed(now: Date) -> TimeInterval {
+    package func elapsed(now: Date) -> TimeInterval {
         Self.date(createdAt).map { max(0, now.timeIntervalSince($0)) } ?? 0
     }
 
-    static func date(_ stamp: String) -> Date? {
+    package static func date(_ stamp: String) -> Date? {
         let trimmed = stamp.replacingOccurrences(of: #"(\.\d{3})\d+"#, with: "$1", options: .regularExpression)
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -42,7 +42,7 @@ struct DockerBuildRecord: Identifiable, Equatable, Sendable {
 
     /// The listing, running ones first, then newest first, as buildx's
     /// own `ls` orders it; lines that aren't a record are skipped.
-    static func parse(_ output: String) -> [DockerBuildRecord] {
+    package static func parse(_ output: String) -> [DockerBuildRecord] {
         output.split(whereSeparator: \.isNewline).compactMap { line -> DockerBuildRecord? in
             guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], let ref = json["ref"] as? String else {
                 return nil
@@ -56,7 +56,7 @@ struct DockerBuildRecord: Identifiable, Equatable, Sendable {
     }
 
     /// `6.9 s`, `2 min 14 s`.
-    static func duration(_ seconds: Double) -> String {
+    package static func duration(_ seconds: Double) -> String {
         seconds < 60 ? String(format: "%.1f s", seconds) : "\(Int(seconds) / 60) min \(Int(seconds) % 60) s"
     }
 }
@@ -65,30 +65,30 @@ struct DockerBuildRecord: Identifiable, Equatable, Sendable {
 /// from, with what, how it ended. Build args are masked as env is, and a
 /// secret one's value is taken out of the rest — BuildKit expands an ARG
 /// into a RUN step's name, which the error names. Pure.
-struct DockerBuildDetail: Equatable, Sendable {
-    var context: String?
-    var dockerfile: String?
-    var buildArgs: [(key: String, value: String)]
-    var repository: String?
-    var revision: String?
-    var error: String?
+package struct DockerBuildDetail: Equatable, Sendable {
+    package var context: String?
+    package var dockerfile: String?
+    package var buildArgs: [(key: String, value: String)]
+    package var repository: String?
+    package var revision: String?
+    package var error: String?
     /// `running`, `completed`, `failed`, `canceled`.
-    var status: String?
+    package var status: String?
     /// The step that failed, as BuildKit names it.
-    var errorStep: String?
+    package var errorStep: String?
     /// Where in the Dockerfile: BuildKit's excerpt, the line marked `>>>`.
-    var errorSource: String?
+    package var errorSource: String?
     /// The secret build args' values, to take out of step names and output:
     /// in memory only, and no part of `==`.
-    var secrets: [String] = []
+    package var secrets: [String] = []
 
-    static func == (a: DockerBuildDetail, b: DockerBuildDetail) -> Bool {
+    package static func == (a: DockerBuildDetail, b: DockerBuildDetail) -> Bool {
         a.context == b.context && a.dockerfile == b.dockerfile && a.repository == b.repository && a.revision == b.revision && a.error == b.error
             && a.status == b.status && a.errorStep == b.errorStep && a.errorSource == b.errorSource
             && a.buildArgs.map { "\($0.key)=\($0.value)" } == b.buildArgs.map { "\($0.key)=\($0.value)" }
     }
 
-    static func parse(_ output: String) -> DockerBuildDetail? {
+    package static func parse(_ output: String) -> DockerBuildDetail? {
         guard let json = try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] else { return nil }
         let raw = (json["BuildArgs"] as? [[String: Any]] ?? []).compactMap { arg -> (key: String, value: String)? in
             guard let name = arg["Name"] as? String else { return nil }
@@ -112,7 +112,7 @@ struct DockerBuildDetail: Equatable, Sendable {
     /// output that isn't one, so its secrets are never taken as none. Its
     /// status is said only by `Duration: … (running)`, `Error:` and
     /// `Status: Canceled`. Pure.
-    static func parsePlain(_ output: String) -> DockerBuildDetail? {
+    package static func parsePlain(_ output: String) -> DockerBuildDetail? {
         func cells(_ line: Substring) -> (String, String) {
             let isPad: (Character) -> Bool = { $0 == "\t" || $0 == " " }
             guard let cut = line.firstIndex(where: isPad) else { return (String(line), "") }
@@ -147,7 +147,7 @@ struct DockerBuildDetail: Equatable, Sendable {
     /// `buildx history inspect <ref> --format json`, read; buildx 0.20
     /// refuses the flag, and its plain table is read then (`parsePlain`).
     /// Nil when neither answers.
-    static func read(_ ref: String, cli: DockerCLI) async -> DockerBuildDetail? {
+    package static func read(_ ref: String, cli: DockerCLI) async -> DockerBuildDetail? {
         do {
             return parse(try await cli.run(["buildx", "history", "inspect", ref, "--format", "json"], timeout: 30))
         } catch let error as GitError where error.stderr.contains("unknown flag") {
@@ -159,7 +159,7 @@ struct DockerBuildDetail: Equatable, Sendable {
     }
 
     /// The Dockerfile on this Mac, when the context is a folder here.
-    var dockerfileURL: URL? {
+    package var dockerfileURL: URL? {
         guard let context, context.hasPrefix("/") else { return nil }
         let file =
             dockerfile.map { $0.hasPrefix("/") ? URL(fileURLWithPath: $0) : URL(fileURLWithPath: context).appendingPathComponent($0) }

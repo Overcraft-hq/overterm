@@ -12,10 +12,10 @@ import Foundation
 /// So a tab joins a group only where the intent is unmistakable: the
 /// island's own + (or its menu), the folder someone bound to it, an island
 /// the strip is focused on, or a group that was asked and said yes.
-enum NewTabGroup {
+package enum NewTabGroup {
     /// What was asked for — the folder binding answers one of these and not
     /// the other.
-    enum Opening {
+    package enum Opening {
         /// Another tab where you already are: ⌘T, the strip's +, the
         /// palette, "New Tab to the Right".
         case here
@@ -25,7 +25,7 @@ enum NewTabGroup {
         case folder
     }
 
-    enum Placement: Equatable {
+    package enum Placement: Equatable {
         /// Outside every island. Inserted after the anchor, which the
         /// store's contiguous-run invariant then lands after its island.
         case loose
@@ -45,7 +45,7 @@ enum NewTabGroup {
     ///     and only when that binding was ticked (`TabGroup.folder`).
     ///   - takesNewTabs: what `anchor`'s island answered, if it was asked.
     ///   - hasTabOutside: some tab in the strip is not in `anchor`'s island.
-    static func placement(
+    package static func placement(
         opening: Opening, anchor: UUID?, focused: UUID?, bound: UUID?, takesNewTabs: Bool?, hasTabOutside: Bool
     ) -> Placement {
         // Focus shows one island and nothing else, so a loose tab would

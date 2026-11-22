@@ -3,10 +3,10 @@ import CryptoKit
 import Foundation
 
 /// Whose words a user statement is in.
-enum UserDialect: Equatable, Sendable {
+package enum UserDialect: Equatable, Sendable {
     case postgres, redshift, mysql, mariadb
 
-    var sql: SQLDialect {
+    package var sql: SQLDialect {
         switch self {
         case .postgres: .postgres
         case .redshift: .redshift
@@ -15,24 +15,24 @@ enum UserDialect: Equatable, Sendable {
         }
     }
 
-    var isMySQL: Bool { self == .mysql || self == .mariadb }
+    package var isMySQL: Bool { self == .mysql || self == .mariadb }
 }
 
 /// A statement that changes users, and how it is shown: `shown` has the
 /// password replaced, and is all the preview, the confirmation and any
 /// error ever say. `sql` lives in memory until it is sent, once.
-struct UserStatement: Equatable, Sendable {
-    var sql: String
-    var shown: String
+package struct UserStatement: Equatable, Sendable {
+    package var sql: String
+    package var shown: String
 
-    init(_ sql: String, shown: String? = nil) {
+    package init(_ sql: String, shown: String? = nil) {
         self.sql = sql
         self.shown = shown ?? sql
     }
 }
 
 /// What a grant is on.
-enum GrantTarget: Equatable, Hashable, Sendable {
+package enum GrantTarget: Equatable, Hashable, Sendable {
     /// MySQL's `*.*`.
     case server
     /// PostgreSQL's database; MySQL's database's tables (`db.*`).
@@ -46,7 +46,7 @@ enum GrantTarget: Equatable, Hashable, Sendable {
     /// pattern, Neo4j's graph: its kind as the engine says it, and its name.
     case named(kind: String, name: String)
 
-    var title: String {
+    package var title: String {
         switch self {
         case .server: "Server (*.*)"
         case .database(let name): "Database \(name)"
@@ -60,18 +60,18 @@ enum GrantTarget: Equatable, Hashable, Sendable {
 
 /// A new user, as the Create sheet fills it in. The password is in memory
 /// only, until the statement that carries it is sent.
-struct NewUser: Equatable, Sendable {
-    var name = ""
+package struct NewUser: Equatable, Sendable {
+    package var name = ""
     /// MySQL's account host; `%` when empty.
-    var host = "%"
-    var password = ""
+    package var host = "%"
+    package var password = ""
     /// PostgreSQL: a role that can log in (a user) or not (a group role).
-    var login = true
-    var superuser = false
-    var createDatabases = false
-    var createRoles = false
+    package var login = true
+    package var superuser = false
+    package var createDatabases = false
+    package var createRoles = false
     /// PostgreSQL's VALID UNTIL, `yyyy-MM-dd`; empty: forever.
-    var validUntil = ""
+    package var validUntil = ""
 }
 
 /// The statements that make, change and drop users and roles, quoted the
@@ -80,17 +80,17 @@ struct NewUser: Equatable, Sendable {
 /// `\password` sends it) and Redshift's as its md5 form: neither is in the
 /// clear on the wire or in a server log. MySQL's goes as `IDENTIFIED BY`,
 /// which the server keeps out of its logs. Pure.
-enum UserStatements {
-    struct Refusal: Error, Equatable, LocalizedError {
-        var message: String
-        var errorDescription: String? { message }
+package enum UserStatements {
+    package struct Refusal: Error, Equatable, LocalizedError {
+        package var message: String
+        package var errorDescription: String? { message }
     }
 
-    static let mask = "'••••••••'"
+    package static let mask = "'••••••••'"
 
     /// The privileges a target can be granted, each a word the engine knows —
     /// nothing typed goes into a GRANT.
-    static func privileges(on target: GrantTarget, dialect: UserDialect) -> [String] {
+    package static func privileges(on target: GrantTarget, dialect: UserDialect) -> [String] {
         if dialect.isMySQL {
             let tables = ["SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER", "INDEX", "REFERENCES", "TRIGGER", "CREATE VIEW", "SHOW VIEW"]
             switch target {
@@ -116,7 +116,7 @@ enum UserStatements {
     }
 
     /// The targets an engine grants on.
-    static func targetKinds(_ dialect: UserDialect) -> [String] {
+    package static func targetKinds(_ dialect: UserDialect) -> [String] {
         dialect.isMySQL ? ["Server", "Database", "Table"] : ["Database", "Schema", "All tables in schema", "Table"]
     }
 
@@ -129,7 +129,7 @@ enum UserStatements {
 
     /// A user as a statement names it: `"name"`, or MySQL's `'name'@'host'`
     /// (MariaDB's role: its name alone).
-    static func account(_ user: DatabaseUser, dialect: UserDialect) -> String {
+    package static func account(_ user: DatabaseUser, dialect: UserDialect) -> String {
         let sql = dialect.sql
         if dialect.isMySQL {
             if dialect == .mariadb, user.isRole { return sql.identifier(user.name) }
@@ -169,7 +169,7 @@ enum UserStatements {
 
     /// CREATE ROLE … LOGIN PASSWORD, CREATE USER … IDENTIFIED BY. `salt` is
     /// the tests' (random otherwise).
-    static func create(_ user: NewUser, dialect: UserDialect, salt: Data? = nil) throws -> [UserStatement] {
+    package static func create(_ user: NewUser, dialect: UserDialect, salt: Data? = nil) throws -> [UserStatement] {
         try checkName(user.name)
         let sql = dialect.sql
         if dialect.isMySQL {
@@ -204,7 +204,7 @@ enum UserStatements {
     }
 
     /// ALTER ROLE … PASSWORD, ALTER USER … IDENTIFIED BY.
-    static func password(of user: DatabaseUser, to password: String, dialect: UserDialect, salt: Data? = nil) throws -> UserStatement {
+    package static func password(of user: DatabaseUser, to password: String, dialect: UserDialect, salt: Data? = nil) throws -> UserStatement {
         try checkName(user.name)
         guard !password.isEmpty else { throw Refusal(message: "A password, please.") }
         let sql = dialect.sql
@@ -221,7 +221,7 @@ enum UserStatements {
         }
     }
 
-    static func grant(_ privileges: [String], on object: GrantTarget, to user: DatabaseUser, dialect: UserDialect, grantOption: Bool = false) throws
+    package static func grant(_ privileges: [String], on object: GrantTarget, to user: DatabaseUser, dialect: UserDialect, grantOption: Bool = false) throws
         -> UserStatement
     {
         let words = try checked(privileges, on: object, dialect: dialect)
@@ -230,14 +230,14 @@ enum UserStatements {
             "GRANT \(words) ON \(on) TO \(account(user, dialect: dialect))" + (grantOption ? " WITH GRANT OPTION" : ""))
     }
 
-    static func revoke(_ privileges: [String], on object: GrantTarget, from user: DatabaseUser, dialect: UserDialect) throws -> UserStatement {
+    package static func revoke(_ privileges: [String], on object: GrantTarget, from user: DatabaseUser, dialect: UserDialect) throws -> UserStatement {
         let words = try checked(privileges, on: object, dialect: dialect)
         let on = try target(object, dialect: dialect)
         return UserStatement("REVOKE \(words) ON \(on) FROM \(account(user, dialect: dialect))")
     }
 
     /// A role's membership: GRANT role TO user (Redshift: a group's ADD USER).
-    static func grantRole(_ role: DatabaseUser, to user: DatabaseUser, dialect: UserDialect) throws -> UserStatement {
+    package static func grantRole(_ role: DatabaseUser, to user: DatabaseUser, dialect: UserDialect) throws -> UserStatement {
         try checkName(role.name, "A role")
         if dialect == .redshift {
             return UserStatement("ALTER GROUP \(dialect.sql.identifier(role.name)) ADD USER \(dialect.sql.identifier(user.name))")
@@ -245,7 +245,7 @@ enum UserStatements {
         return UserStatement("GRANT \(account(role, dialect: dialect)) TO \(account(user, dialect: dialect))")
     }
 
-    static func revokeRole(_ role: DatabaseUser, from user: DatabaseUser, dialect: UserDialect) throws -> UserStatement {
+    package static func revokeRole(_ role: DatabaseUser, from user: DatabaseUser, dialect: UserDialect) throws -> UserStatement {
         try checkName(role.name, "A role")
         if dialect == .redshift {
             return UserStatement("ALTER GROUP \(dialect.sql.identifier(role.name)) DROP USER \(dialect.sql.identifier(user.name))")
@@ -254,7 +254,7 @@ enum UserStatements {
     }
 
     /// DROP ROLE, DROP USER (a MariaDB role: DROP ROLE).
-    static func drop(_ user: DatabaseUser, dialect: UserDialect) throws -> UserStatement {
+    package static func drop(_ user: DatabaseUser, dialect: UserDialect) throws -> UserStatement {
         try checkName(user.name)
         switch dialect {
         case .postgres: return UserStatement("DROP ROLE \(account(user, dialect: dialect))")
@@ -289,7 +289,7 @@ enum UserStatements {
 
     /// PostgreSQL's stored form of a password (RFC 5803, as `\password` makes
     /// it): `SCRAM-SHA-256$4096:<salt>$<StoredKey>:<ServerKey>`.
-    static func scramVerifier(_ password: String, salt: Data? = nil, iterations: Int = 4096) -> String {
+    package static func scramVerifier(_ password: String, salt: Data? = nil, iterations: Int = 4096) -> String {
         let salt = salt ?? Data((0..<16).map { _ in UInt8.random(in: 0...255) })
         let prepared = Data(MongoSCRAM.saslPrep(password).utf8)
         var salted = [UInt8](repeating: 0, count: 32)
@@ -309,7 +309,7 @@ enum UserStatements {
     }
 
     /// Redshift's: `md5` and the MD5 of the password then the user's name.
-    static func redshiftMD5(_ password: String, user: String) -> String {
+    package static func redshiftMD5(_ password: String, user: String) -> String {
         "md5" + Insecure.MD5.hash(data: Data((password + user).utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }

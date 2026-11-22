@@ -3,7 +3,7 @@ import Foundation
 /// What an agent can do with a tab's browser — BrowserSession does it; the
 /// tests hand in a fake.
 @MainActor
-protocol AgentBrowser: AnyObject {
+package protocol AgentBrowser: AnyObject {
     func navigate(_ url: URL, timeout: TimeInterval) async throws
     func snapshot() async throws -> String
     func click(ref: String) async throws
@@ -26,13 +26,13 @@ protocol AgentBrowser: AnyObject {
 /// streams), one server per pane so a call reaches its own tab's browser.
 /// Pure of any transport: BrowserBridge carries the bytes.
 @MainActor
-enum BrowserMCP {
-    static let protocolVersion = "2025-06-18"
+package enum BrowserMCP {
+    package static let protocolVersion = "2025-06-18"
 
     /// The answer to one JSON-RPC message; nil for a notification. A
     /// pane's call runs with `MCPAsker.pane` set: every confirmation it
     /// asks names that pane's tab and agent.
-    static func handle(
+    package static func handle(
         _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI? = { nil }, pane: String? = nil, settings: Settings = .shared,
         kubernetes: KubernetesModel = .shared
     ) async -> [String: Any]? {
@@ -174,8 +174,8 @@ enum BrowserMCP {
         }
     }
 
-    struct ToolError: Error {
-        let message: String
+    package struct ToolError: Error {
+        package let message: String
     }
 
     private static func call(_ name: String, _ arguments: [String: Any], _ browser: AgentBrowser) async throws -> [String: Any] {
@@ -240,9 +240,9 @@ enum BrowserMCP {
     }
 
     /// The tools of what Settings gives agents: the browser's, the API client's, the notes', the databases', Docker's, Kubernetes', Terraform's, Activity's.
-    static var offered: [[String: Any]] { offered(in: .shared) }
+    package static var offered: [[String: Any]] { offered(in: .shared) }
 
-    static func offered(in settings: Settings) -> [[String: Any]] {
+    package static func offered(in settings: Settings) -> [[String: Any]] {
         var offered: [[String: Any]] = []
         if settings.browserAgentControl { offered += tools }
         if settings.apiAgentControl { offered += APIMCP.tools }
@@ -255,9 +255,9 @@ enum BrowserMCP {
         return offered
     }
 
-    static var instructions: String { instructions(in: .shared) }
+    package static var instructions: String { instructions(in: .shared) }
 
-    static func instructions(in settings: Settings) -> String {
+    package static func instructions(in settings: Settings) -> String {
         var parts: [String] = []
         if settings.browserAgentControl {
             parts.append(
@@ -289,10 +289,10 @@ enum BrowserMCP {
         return parts.joined(separator: " ")
     }
 
-    static func textResult(_ text: String) -> [String: Any] { ["content": [["type": "text", "text": text]]] }
-    static func errorResult(_ text: String) -> [String: Any] { ["content": [["type": "text", "text": text]], "isError": true] }
+    package static func textResult(_ text: String) -> [String: Any] { ["content": [["type": "text", "text": text]]] }
+    package static func errorResult(_ text: String) -> [String: Any] { ["content": [["type": "text", "text": text]], "isError": true] }
 
-    static let tools: [[String: Any]] = [
+    package static let tools: [[String: Any]] = [
         tool(
             "browser_navigate", "Open a URL (or localhost:3000, :3000) in the browser and return the page's snapshot.",
             ["url": ["type": "string", "description": "The address, as you'd type it in a browser."]], required: ["url"]),

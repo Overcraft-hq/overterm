@@ -5,22 +5,22 @@ import TreeSitterKit
 /// text predicates (`#eq?`, `#match?`, `#any-of?`) and settings (`#set!
 /// injection.language "bash"`). Immutable once built — shared by every
 /// document of the language, on the syntax queue.
-final class SyntaxQuery: @unchecked Sendable {
-    let query: OpaquePointer
-    let captureNames: [String]
+package final class SyntaxQuery: @unchecked Sendable {
+    package let query: OpaquePointer
+    package let captureNames: [String]
     private let patterns: [Pattern]
 
-    struct Pattern {
-        var predicates: [Predicate] = []
-        var settings: [String: String] = [:]
+    package struct Pattern {
+        package var predicates: [Predicate] = []
+        package var settings: [String: String] = [:]
     }
 
-    enum Operand {
+    package enum Operand {
         case capture(UInt32)
         case string(String)
     }
 
-    enum Predicate {
+    package enum Predicate {
         case eq(UInt32, Operand, negated: Bool)
         case match(UInt32, NSRegularExpression?, negated: Bool)
         case anyOf(UInt32, Set<String>, negated: Bool)
@@ -28,7 +28,7 @@ final class SyntaxQuery: @unchecked Sendable {
 
     /// Nil when the query doesn't compile against the grammar — a query
     /// written for another revision of it. The language then stays plain.
-    init?(source: String, language: OpaquePointer, name: String) {
+    package init?(source: String, language: OpaquePointer, name: String) {
         var errorOffset: UInt32 = 0
         var errorType = TSQueryErrorNone
         let utf8 = Array(source.utf8)
@@ -53,10 +53,10 @@ final class SyntaxQuery: @unchecked Sendable {
 
     deinit { ts_query_delete(query) }
 
-    func settings(of pattern: UInt32) -> [String: String] { patterns[Int(pattern)].settings }
+    package func settings(of pattern: UInt32) -> [String: String] { patterns[Int(pattern)].settings }
 
     /// Whether a match's text predicates hold. `text` reads a node's text.
-    func accepts(pattern: UInt32, captures: UnsafePointer<TSQueryCapture>, count: Int, text: (TSNode) -> String) -> Bool {
+    package func accepts(pattern: UInt32, captures: UnsafePointer<TSQueryCapture>, count: Int, text: (TSNode) -> String) -> Bool {
         let predicates = patterns[Int(pattern)].predicates
         if predicates.isEmpty { return true }
         func nodes(_ id: UInt32) -> [TSNode] {

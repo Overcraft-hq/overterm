@@ -5,12 +5,12 @@ import Foundation
 /// ones that can be picked. Without Prometheus only the sampled ones can:
 /// Live (the raw samples, 15 minutes) and 6h (the minute buckets kept
 /// while shown); the others say they need Prometheus. Pure.
-enum KubeMetricsRange: String, CaseIterable, Identifiable, Sendable {
+package enum KubeMetricsRange: String, CaseIterable, Identifiable, Sendable {
     case live, hour, sixHours, day, week
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .live: "Live"
         case .hour: "1h"
@@ -20,7 +20,7 @@ enum KubeMetricsRange: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var span: TimeInterval {
+    package var span: TimeInterval {
         switch self {
         case .live: TimeInterval(KubeUsageRing.rawSpan)
         case .hour: 3600
@@ -32,16 +32,16 @@ enum KubeMetricsRange: String, CaseIterable, Identifiable, Sendable {
 
     /// The points' spacing: metrics-server's (15 s by default — the
     /// tab says what was seen, `KubePodCharts.spacing`), or the folded minute.
-    var step: TimeInterval { self == .live ? 15 : TimeInterval(KubeUsageRing.bucketSeconds) }
+    package var step: TimeInterval { self == .live ? 15 : TimeInterval(KubeUsageRing.bucketSeconds) }
 
     /// What metrics-server's samples taken while shown can draw.
-    var isSampled: Bool { self == .live || self == .sixHours }
+    package var isSampled: Bool { self == .live || self == .sixHours }
 
-    static let sampled: [KubeMetricsRange] = allCases.filter(\.isSampled)
+    package static let sampled: [KubeMetricsRange] = allCases.filter(\.isSampled)
 
     /// `,` (−1) and `.` (+1): the next one of `available` that way,
     /// stopping at either end.
-    func stepped(_ by: Int, among available: [KubeMetricsRange]) -> KubeMetricsRange {
+    package func stepped(_ by: Int, among available: [KubeMetricsRange]) -> KubeMetricsRange {
         let order = Self.allCases.filter { available.contains($0) }
         guard let index = order.firstIndex(of: self) else { return order.first ?? self }
         return order[min(max(index + by, 0), order.count - 1)]
@@ -56,64 +56,64 @@ enum KubeMetricsRange: String, CaseIterable, Identifiable, Sendable {
 /// The numbers are `KubeUsageRing`'s: Live its raw tier, 6h its minute
 /// buckets (CPU the minute's mean, memory its peak, so the spike before
 /// an OOM survives). Pure.
-struct KubePodCharts: Equatable, Sendable {
+package struct KubePodCharts: Equatable, Sendable {
     /// How a container last ended, as its status says (only the last one is kept).
-    struct Termination: Equatable, Sendable {
-        var reason: String
-        var exitCode: Int?
-        var finishedAt: Date?
+    package struct Termination: Equatable, Sendable {
+        package var reason: String
+        package var exitCode: Int?
+        package var finishedAt: Date?
     }
 
     /// A container as its spec and status say it.
-    struct Container: Equatable, Sendable {
-        var name: String
-        var cpuRequest: Double?
-        var cpuLimit: Double?
-        var memoryRequest: Double?
-        var memoryLimit: Double?
-        var restarts = 0
-        var lastTerminated: Termination?
+    package struct Container: Equatable, Sendable {
+        package var name: String
+        package var cpuRequest: Double?
+        package var cpuLimit: Double?
+        package var memoryRequest: Double?
+        package var memoryLimit: Double?
+        package var restarts = 0
+        package var lastTerminated: Termination?
         /// Its GPUs, by resource (`nvidia.com/gpu`, a MIG profile's,
         /// `amd.com/gpu`): what it is given — an extended resource's
         /// request is its limit (metrics.md decision 12).
-        var gpus: [String: Double] = [:]
+        package var gpus: [String: Double] = [:]
     }
 
-    struct Chart: Equatable, Sendable, Identifiable {
-        var data: KubeChartData
-        var headline: String?
-        var chips: [KubeChartChip] = []
-        var id: String { data.id }
+    package struct Chart: Equatable, Sendable, Identifiable {
+        package var data: KubeChartData
+        package var headline: String?
+        package var chips: [KubeChartChip] = []
+        package var id: String { data.id }
     }
 
     /// One container's charts, under its name.
-    struct Section: Equatable, Sendable, Identifiable {
-        var container: String
-        var charts: [Chart]
+    package struct Section: Equatable, Sendable, Identifiable {
+        package var container: String
+        package var charts: [Chart]
         /// Why one of its charts is left out: "No CPU limit: never throttled".
-        var notes: [String] = []
-        var id: String { container }
+        package var notes: [String] = []
+        package var id: String { container }
     }
 
     /// Beyond this many containers a picker replaces the sections.
-    static let sectionsAtMost = 4
+    package static let sectionsAtMost = 4
     /// At this share of its memory limit a container is near its OOMKill.
-    static let oomRisk = 0.9
+    package static let oomRisk = 0.9
 
-    var range: KubeMetricsRange
-    var pod: [Chart]
-    var sections: [Section]
+    package var range: KubeMetricsRange
+    package var pod: [Chart]
+    package var sections: [Section]
     /// Where the numbers come from, and since when.
-    var caption: String
+    package var caption: String
     /// "last 15 min", for each chart's summary.
-    var span: String
+    package var span: String
     /// Whether anything was sampled to draw.
-    var hasSamples: Bool
+    package var hasSamples: Bool
     /// Why a chart is left out, what Prometheus said beside its answers.
-    var notes: [String] = []
+    package var notes: [String] = []
 
     /// More containers than sections are shown for: one picked at a time.
-    var picksContainer: Bool { sections.count > Self.sectionsAtMost }
+    package var picksContainer: Bool { sections.count > Self.sectionsAtMost }
 
     // MARK: The spec
 
@@ -125,7 +125,7 @@ struct KubePodCharts: Equatable, Sendable {
     /// others' requests and limits only); requests and limits from the
     /// spec, restarts and the last termination from the status. An init
     /// container that runs to completion first isn't one: it isn't running.
-    static func containers(of pod: [String: Any]) -> [Container] {
+    package static func containers(of pod: [String: Any]) -> [Container] {
         let spec = pod["spec"] as? [String: Any] ?? [:]
         let status = pod["status"] as? [String: Any] ?? [:]
         let statuses = ((status["containerStatuses"] as? [[String: Any]] ?? []) + (status["initContainerStatuses"] as? [[String: Any]] ?? [])).reduce(
@@ -162,7 +162,7 @@ struct KubePodCharts: Equatable, Sendable {
     }
 
     /// A container's last termination as a marker, where its time is known.
-    static func marker(_ container: Container) -> KubeChartMarker? {
+    package static func marker(_ container: Container) -> KubeChartMarker? {
         KubeChartMarkers.termination(KubePodStates.Container(name: container.name, restarts: container.restarts, last: container.lastTerminated))
     }
 
@@ -170,7 +170,7 @@ struct KubePodCharts: Equatable, Sendable {
 
     /// How far apart a series' samples came: the median spacing inside its
     /// segments (a break isn't spacing), nil with fewer than two in one.
-    static func spacing(_ segments: [[KubeUsagePoint]]) -> TimeInterval? {
+    package static func spacing(_ segments: [[KubeUsagePoint]]) -> TimeInterval? {
         var gaps: [TimeInterval] = []
         for segment in segments {
             for (a, b) in zip(segment, segment.dropFirst()) { gaps.append(b.time.timeIntervalSince(a.time)) }
@@ -189,7 +189,7 @@ struct KubePodCharts: Equatable, Sendable {
     /// Every chart is marked (`KubeChartMarkers.mark`): the pod's
     /// terminations and restarts — `changes`' read of its states, else its
     /// object's —, its events; `window`, narrowed to it from the tier that holds it.
-    static func build(
+    package static func build(
         namespace: String, pod name: String, object: [String: Any], ring: KubeUsageRing, range: KubeMetricsRange, now: Date, interval: TimeInterval,
         changes: KubeChartChanges = KubeChartChanges(), window: KubeChartWindow? = nil
     ) -> KubePodCharts {
@@ -335,12 +335,12 @@ struct KubePodCharts: Equatable, Sendable {
     }
 
     /// `15 s`, `0.5 s`.
-    static func seconds(_ interval: TimeInterval) -> String {
+    package static func seconds(_ interval: TimeInterval) -> String {
         interval >= 1 ? "\(Int(interval.rounded())) s" : String(format: "%.1f s", interval)
     }
 
     /// CPU's chips: its share of the request and of the limit.
-    static func cpuChips(_ used: Double?, request: Double?, limit: Double?) -> [KubeChartChip] {
+    package static func cpuChips(_ used: Double?, request: Double?, limit: Double?) -> [KubeChartChip] {
         guard let used else { return [] }
         var chips: [KubeChartChip] = []
         if let percent = KubeMetricsFormat.percent(used, of: request) { chips.append(KubeChartChip(text: "\(percent)% of request")) }
@@ -351,7 +351,7 @@ struct KubePodCharts: Equatable, Sendable {
 
     /// Memory's chips: the working set's share of the request, and of the
     /// limit — red past nine tenths of it, where the OOMKill is near.
-    static func memoryChips(_ used: Double?, request: Double?, limit: Double?) -> [KubeChartChip] {
+    package static func memoryChips(_ used: Double?, request: Double?, limit: Double?) -> [KubeChartChip] {
         guard let used else { return [] }
         var chips: [KubeChartChip] = []
         if let percent = KubeMetricsFormat.percent(used, of: request) { chips.append(KubeChartChip(text: "\(percent)% of request")) }

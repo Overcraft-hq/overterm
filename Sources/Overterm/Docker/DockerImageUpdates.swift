@@ -5,16 +5,16 @@ import Foundation
 /// inspect <ref>` prints it by default: the tag's own digest (an index's
 /// for a multi-platform tag), its media type, and an index's children.
 /// Pure.
-struct DockerRegistryDigest: Equatable, Sendable {
-    var digest: String
-    var mediaType: String?
+package struct DockerRegistryDigest: Equatable, Sendable {
+    package var digest: String
+    package var mediaType: String?
     /// An index's manifests' digests, one per platform (and attestation).
-    var manifests: [String] = []
+    package var manifests: [String] = []
 
     /// buildx's text: `Name:`, `MediaType:` and `Digest:` unindented, then
     /// for an index `Manifests:` with each child's `Name: <ref>@<digest>`
     /// indented. Nil without a top digest — never a child's taken for it.
-    static func parse(_ output: String) -> Self? {
+    package static func parse(_ output: String) -> Self? {
         var digest: String?
         var mediaType: String?
         var manifests: [String] = []
@@ -38,24 +38,24 @@ struct DockerRegistryDigest: Equatable, Sendable {
 
     /// Whether it names one of `digests`: its own, or one of an index's
     /// children — a pull by a platform's digest records that one.
-    func names(any digests: Set<String>) -> Bool { digests.contains(digest) || manifests.contains(where: digests.contains) }
+    package func names(any digests: Set<String>) -> Bool { digests.contains(digest) || manifests.contains(where: digests.contains) }
 }
 
 /// One tag's answer, kept with when it came.
-struct DockerImageCheck: Equatable, Sendable {
+package struct DockerImageCheck: Equatable, Sendable {
     /// As the CLI was given it: `nginx:1.27`.
-    var reference: String
-    var remote: DockerRegistryDigest?
+    package var reference: String
+    package var remote: DockerRegistryDigest?
     /// Why it couldn't be asked, in a sentence.
-    var failure: String?
+    package var failure: String?
     /// The registry has no such image, or wants credentials it was asked
     /// for without: for a tag that may have been built here, not a failure.
-    var absent = false
-    var at: Date
+    package var absent = false
+    package var at: Date
 }
 
 /// Where a tag stands. Pure.
-enum DockerImageUpdateState: Equatable, Sendable {
+package enum DockerImageUpdateState: Equatable, Sendable {
     /// Built or tagged here — no repo digest for its own name in the
     /// classic store, or a project's files build it — or pinned by
     /// digest: nothing to ask.
@@ -80,7 +80,7 @@ enum DockerImageUpdateState: Equatable, Sendable {
     /// nil when it isn't here. `known`: whether they say it came from its
     /// registry — in the classic store they do; in the containerd store
     /// only once an answer named one, or a project's files pull it.
-    static func of(local: Set<String>?, check: DockerImageCheck?, checking: Bool, known: Bool = true) -> Self {
+    package static func of(local: Set<String>?, check: DockerImageCheck?, checking: Bool, known: Bool = true) -> Self {
         if checking { return .checking }
         guard let local, !local.isEmpty else { return .local }
         guard let check else { return .unchecked }
@@ -90,7 +90,7 @@ enum DockerImageUpdateState: Equatable, Sendable {
         return known ? .available : .differs
     }
 
-    var isFailure: Bool {
+    package var isFailure: Bool {
         if case .failed = self { return true }
         return false
     }
@@ -98,7 +98,7 @@ enum DockerImageUpdateState: Equatable, Sendable {
 
 /// Why a registry couldn't be asked: no buildx (which stops the whole
 /// check), or what to say. Pure.
-enum DockerImageUpdateFailure: Error, Equatable, Sendable {
+package enum DockerImageUpdateFailure: Error, Equatable, Sendable {
     case noBuildx
     /// No such image or tag there, or credentials wanted of a question
     /// asked without any.
@@ -112,7 +112,7 @@ enum DockerImageUpdateFailure: Error, Equatable, Sendable {
     /// buildx's stderr, in a sentence for `registry` (its domain). The
     /// reference, the URLs and the digests are taken out first: a tag
     /// like `2.401.3` or `nightly-20240429` is no status code.
-    static func of(_ stderr: String, reference: String = "", registry: String) -> Self {
+    package static func of(_ stderr: String, reference: String = "", registry: String) -> Self {
         let text = scrub(stderr, reference: reference)
         let name = registry == "docker.io" ? "Docker Hub" : registry
         if text.contains("'buildx' is not a docker command") || (text.contains("unknown command") && text.contains("buildx")) { return .noBuildx }
@@ -155,7 +155,7 @@ enum DockerImageUpdateFailure: Error, Equatable, Sendable {
 
     /// Lower case, without the reference in any of its spellings, the
     /// URLs (a request's carries the tag) and the digests.
-    static func scrub(_ stderr: String, reference: String) -> String {
+    package static func scrub(_ stderr: String, reference: String) -> String {
         var text = stderr.lowercased().replacingOccurrences(of: #"https?://[^\s"']+"#, with: " ", options: .regularExpression)
         var forms = reference.isEmpty ? [] : [reference]
         if let parsed = DockerImageReference(reference) {
@@ -168,7 +168,7 @@ enum DockerImageUpdateFailure: Error, Equatable, Sendable {
     }
 
     /// What a tag's answer says of it.
-    var words: String? {
+    package var words: String? {
         switch self {
         case .absent(let why), .unreachable(let why), .reason(let why): why
         case .noBuildx, .cancelled: nil
@@ -178,27 +178,27 @@ enum DockerImageUpdateFailure: Error, Equatable, Sendable {
 
 /// A compose project's services by where their images stand: what its
 /// detail and its row say. Pure.
-struct DockerProjectUpdates: Equatable {
-    struct Entry: Equatable {
-        var service: String
-        var reference: String
-        var reason: String?
+package struct DockerProjectUpdates: Equatable {
+    package struct Entry: Equatable {
+        package var service: String
+        package var reference: String
+        package var reason: String?
     }
 
-    var available: [Entry] = []
-    var current: [Entry] = []
-    var failed: [Entry] = []
+    package var available: [Entry] = []
+    package var current: [Entry] = []
+    package var failed: [Entry] = []
     /// Services whose registry names another image, where nothing says
     /// theirs came from it (`DockerImageUpdateState.differs`).
-    var differs: [Entry] = []
+    package var differs: [Entry] = []
     /// Current services a container of which runs another image than its
     /// tag names now — pulled since it was made: Up makes it again.
-    var recreate: [String] = []
+    package var recreate: [String] = []
     /// The oldest of its answers.
-    var checkedAt: Date?
+    package var checkedAt: Date?
 
     /// The detail's words; nil while nothing of it was checked.
-    func line(ago: (Date) -> String) -> String? {
+    package func line(ago: (Date) -> String) -> String? {
         let checked = checkedAt.map { " — checked " + ago($0) } ?? ""
         var parts: [String] = []
         if !available.isEmpty { parts.append("Newer in the registry: " + Self.entries(available) + checked) }
@@ -219,12 +219,12 @@ struct DockerProjectUpdates: Equatable {
 }
 
 /// What the Images header counts, an image once: its tags' best news.
-struct DockerImageUpdateCounts: Equatable, Sendable {
-    var available = 0
-    var differs = 0
-    var failed = 0
+package struct DockerImageUpdateCounts: Equatable, Sendable {
+    package var available = 0
+    package var differs = 0
+    package var failed = 0
     /// Not asked yet, or being asked: "Up to date" waits for them.
-    var unchecked = 0
+    package var unchecked = 0
 }
 
 /// Check for Updates: whether each local tag still names what its
@@ -236,35 +236,35 @@ struct DockerImageUpdateCounts: Equatable, Sendable {
 /// when an image changes, so a pull anywhere — the page's, `compose pull`
 /// in a tab — makes an update current with no second question.
 @MainActor
-final class DockerImageUpdates: ObservableObject {
-    static let shared = DockerImageUpdates(docker: .shared)
+package final class DockerImageUpdates: ObservableObject {
+    package static let shared = DockerImageUpdates(docker: .shared)
 
     /// By `DockerImageReference.key`.
-    @Published private(set) var checks: [String: DockerImageCheck] = [:]
+    @Published package private(set) var checks: [String: DockerImageCheck] = [:]
     /// Each local tag's repo digests in its own repository, by key: empty
     /// for one built or tagged here in the classic store.
-    @Published private(set) var local: [String: Set<String>] = [:]
+    @Published package private(set) var local: [String: Set<String>] = [:]
     /// The image each local tag names, by key.
-    @Published private(set) var imageIDs: [String: String] = [:]
+    @Published package private(set) var imageIDs: [String: String] = [:]
     /// Tags whose repo digests say nothing of where they came from: the
     /// containerd store records one for every named image (its own ID), a
     /// build's too.
-    @Published private(set) var unproven: Set<String> = []
+    @Published package private(set) var unproven: Set<String> = []
     /// Each tag's repo digests that a registry's answer named, this run:
     /// those came from it, even once it has moved on.
-    @Published private(set) var confirmed: [String: Set<String>] = [:]
+    @Published package private(set) var confirmed: [String: Set<String>] = [:]
     /// Tags a project's files build: not the registry's, never asked.
-    @Published private(set) var builtKeys: Set<String> = []
+    @Published package private(set) var builtKeys: Set<String> = []
     /// Tags a project's files pull — an `image:` they don't build: the
     /// registry's.
-    @Published private(set) var pulledKeys: Set<String> = []
-    @Published private(set) var checking: Set<String> = []
-    @Published private(set) var running = false
-    @Published private(set) var done = 0
-    @Published private(set) var total = 0
+    @Published package private(set) var pulledKeys: Set<String> = []
+    @Published package private(set) var checking: Set<String> = []
+    @Published package private(set) var running = false
+    @Published package private(set) var done = 0
+    @Published package private(set) var total = 0
     /// When a check last asked a registry something — of some images, or
     /// all: the header counts what wasn't asked.
-    @Published private(set) var lastRun: Date?
+    @Published package private(set) var lastRun: Date?
 
     /// Each project's services' references as last seen: once a tag
     /// moves, the engine lists a container by its image's ID, and the
@@ -283,7 +283,7 @@ final class DockerImageUpdates: ObservableObject {
 
     /// `cli`: the `docker` to ask, nil when none may be — an isolated run
     /// asks only a scenario's stub.
-    init(
+    package init(
         docker: DockerModel, cli: @escaping @MainActor (DockerEndpoint?) -> DockerCLI? = DockerImageUpdates.defaultCLI, parallel: Int = 4,
         now: @escaping () -> Date = Date.init
     ) {
@@ -330,7 +330,7 @@ final class DockerImageUpdates: ObservableObject {
             .store(in: &subscriptions)
     }
 
-    static let defaultCLI: @MainActor (DockerEndpoint?) -> DockerCLI? = { endpoint in
+    package static let defaultCLI: @MainActor (DockerEndpoint?) -> DockerCLI? = { endpoint in
         !AppEnvironment.isIsolated || DockerCLI.override != nil ? DockerCLI(endpoint: endpoint) : nil
     }
 
@@ -354,7 +354,7 @@ final class DockerImageUpdates: ObservableObject {
     /// named when it came from its registry — a tag with none was built or
     /// tagged here. In the containerd store every named image has one, its
     /// own ID (`unprovenTags`).
-    nonisolated static func localDigests(_ images: [ImageSummary]) -> [String: Set<String>] {
+    package nonisolated static func localDigests(_ images: [ImageSummary]) -> [String: Set<String>] {
         var found: [String: Set<String>] = [:]
         for image in images where !image.isDangling {
             let digests = (image.RepoDigests ?? []).compactMap(DockerImageReference.digested)
@@ -369,7 +369,7 @@ final class DockerImageUpdates: ObservableObject {
     /// The tags whose repo digests don't say they were pulled: all of them
     /// in the containerd store (`/info` says so), and any image's whose
     /// repo digest is its own ID — only that store makes one so.
-    nonisolated static func unprovenTags(_ images: [ImageSummary], containerd: Bool) -> Set<String> {
+    package nonisolated static func unprovenTags(_ images: [ImageSummary], containerd: Bool) -> Set<String> {
         var found = Set<String>()
         for image in images where !image.isDangling {
             guard containerd || (image.RepoDigests ?? []).contains(where: { DockerImageReference.digested($0)?.digest == image.Id }) else { continue }
@@ -381,7 +381,7 @@ final class DockerImageUpdates: ObservableObject {
     }
 
     /// Which image each tag names, by key.
-    nonisolated static func taggedImages(_ images: [ImageSummary]) -> [String: String] {
+    package nonisolated static func taggedImages(_ images: [ImageSummary]) -> [String: String] {
         var found: [String: String] = [:]
         for image in images {
             for tag in image.tags {
@@ -397,7 +397,7 @@ final class DockerImageUpdates: ObservableObject {
     /// from — unless that is an ID (the engine says one once the tag names
     /// another image) or a digest, which can't move. Built services too:
     /// `built(of:)` says which those are.
-    nonisolated static func references(of project: ComposeProject, recorded: [String: String]) -> [String: String] {
+    package nonisolated static func references(of project: ComposeProject, recorded: [String: String]) -> [String: String] {
         let services = Set(project.services.map(\.name))
         var references = recorded.filter { services.contains($0.key) }
         for service in project.services {
@@ -412,19 +412,19 @@ final class DockerImageUpdates: ObservableObject {
     }
 
     /// The services a project's files build: a plan's say so themselves.
-    nonisolated static func specBuilt(_ project: ComposeProject) -> Set<String> {
+    package nonisolated static func specBuilt(_ project: ComposeProject) -> Set<String> {
         Set(project.services.filter { $0.spec?.buildContext != nil }.map(\.name))
     }
 
     /// Where a tag stands; a name that doesn't parse, one pinned by
     /// digest, or one a project's files build is `.local`.
-    func state(of reference: String) -> DockerImageUpdateState {
+    package func state(of reference: String) -> DockerImageUpdateState {
         guard let key = DockerImageReference(reference)?.key, !builtKeys.contains(key) else { return .local }
         return .of(local: local[key], check: checks[key], checking: checking.contains(key), known: isKnown(key))
     }
 
     /// Whether a project's files build the tag.
-    func isBuilt(_ reference: String) -> Bool { DockerImageReference(reference)?.key.map(builtKeys.contains) == true }
+    package func isBuilt(_ reference: String) -> Bool { DockerImageReference(reference)?.key.map(builtKeys.contains) == true }
 
     /// Whether the tag's repo digests say it came from its registry.
     private func isKnown(_ key: String) -> Bool {
@@ -432,14 +432,14 @@ final class DockerImageUpdates: ObservableObject {
     }
 
     /// Why an image has nothing to ask its registry; nil when it has.
-    func uncheckable(_ image: ImageSummary) -> String? {
+    package func uncheckable(_ image: ImageSummary) -> String? {
         let digests = Self.localDigests([image])
         if image.tags.contains(where: { digests[DockerImageReference($0)?.key ?? ""]?.isEmpty == false && !isBuilt($0) }) { return nil }
         return image.tags.contains(where: isBuilt) ? "Its project's files build it: no registry to ask." : "Built or tagged here: no registry to ask."
     }
 
     /// The answer for a tag, if it was asked.
-    func check(of reference: String) -> DockerImageCheck? { DockerImageReference(reference)?.key.flatMap { checks[$0] } }
+    package func check(of reference: String) -> DockerImageCheck? { DockerImageReference(reference)?.key.flatMap { checks[$0] } }
 
     // MARK: Projects
 
@@ -462,7 +462,7 @@ final class DockerImageUpdates: ObservableObject {
     /// its containers no longer say them; `built`: the services its files
     /// build, when they were read. The ones it doesn't build, back.
     @discardableResult
-    func record(_ project: ComposeProject, built: Set<String>? = nil) -> [String: String] {
+    package func record(_ project: ComposeProject, built: Set<String>? = nil) -> [String: String] {
         projectReferences[project.name] = Self.references(of: project, recorded: projectReferences[project.name] ?? [:])
         if let built {
             builtServices[project.name] = built.union(Self.specBuilt(project))
@@ -475,13 +475,13 @@ final class DockerImageUpdates: ObservableObject {
 
     /// Its services' references, as `record` would give them, without
     /// keeping anything: what a view draws. Not what its files build.
-    func references(of project: ComposeProject) -> [String: String] {
+    package func references(of project: ComposeProject) -> [String: String] {
         let built = built(of: project)
         return Self.references(of: project, recorded: projectReferences[project.name] ?? [:]).filter { !built.contains($0.key) }
     }
 
     /// The services its files build, as far as they were read.
-    func built(of project: ComposeProject) -> Set<String> { (builtServices[project.name] ?? []).union(Self.specBuilt(project)) }
+    package func built(of project: ComposeProject) -> Set<String> { (builtServices[project.name] ?? []).union(Self.specBuilt(project)) }
 
     /// The tags the projects' files build, and those they pull: known
     /// only for a project whose files were read.
@@ -500,7 +500,7 @@ final class DockerImageUpdates: ObservableObject {
         if pulled != pulledKeys { pulledKeys = pulled }
     }
 
-    func summary(of project: ComposeProject) -> DockerProjectUpdates {
+    package func summary(of project: ComposeProject) -> DockerProjectUpdates {
         var summary = DockerProjectUpdates()
         var dates: [Date] = []
         for (service, reference) in references(of: project).sorted(by: { $0.key < $1.key }) {
@@ -529,13 +529,13 @@ final class DockerImageUpdates: ObservableObject {
     }
 
     /// The images a tag of which has a newer image in its registry.
-    func images(withUpdates images: [ImageSummary]) -> [ImageSummary] {
+    package func images(withUpdates images: [ImageSummary]) -> [ImageSummary] {
         images.filter { image in image.tags.contains { state(of: $0) == .available } }
     }
 
     /// What the header counts, an image once: an update, else a registry
     /// with another image, else a failure, else not asked yet.
-    func counts(of images: [ImageSummary]) -> DockerImageUpdateCounts {
+    package func counts(of images: [ImageSummary]) -> DockerImageUpdateCounts {
         var counts = DockerImageUpdateCounts()
         for image in images {
             let states = image.tags.map(state(of:))
@@ -555,7 +555,7 @@ final class DockerImageUpdates: ObservableObject {
     /// `1 update`, `3 updates`, `No updates`, then ` · 1 differs`,
     /// ` · 1 couldn't be checked`, ` · 28 not checked`. "Up to date" only
     /// when every image there was to ask is current.
-    nonisolated static func headline(_ counts: DockerImageUpdateCounts) -> String {
+    package nonisolated static func headline(_ counts: DockerImageUpdateCounts) -> String {
         let settled = counts.differs == 0 && counts.failed == 0 && counts.unchecked == 0
         var parts = [counts.available == 0 ? (settled ? "Up to date" : "No updates") : counts.available == 1 ? "1 update" : String(counts.available) + " updates"]
         if counts.differs > 0 { parts.append(String(counts.differs) + (counts.differs == 1 ? " differs" : " differ")) }
@@ -566,15 +566,15 @@ final class DockerImageUpdates: ObservableObject {
 
     // MARK: Asking
 
-    struct Outcome: Equatable {
+    package struct Outcome: Equatable {
         /// Tags whose registries were asked.
-        var asked: Int
+        package var asked: Int
         /// Names with nothing to ask: built or tagged here, not here, pinned.
-        var skipped: Int
+        package var skipped: Int
         /// What stopped the whole check.
-        var failure: String?
+        package var failure: String?
         /// Stopped by the person (`cancel`).
-        var cancelled = false
+        package var cancelled = false
     }
 
     /// Asks each of `references`' registries once — a tag with several
@@ -582,7 +582,7 @@ final class DockerImageUpdates: ObservableObject {
     /// that didn't answer isn't asked again in it. Nil when a check runs
     /// already.
     @discardableResult
-    func check(_ references: [String]) async -> Outcome? {
+    package func check(_ references: [String]) async -> Outcome? {
         guard !running else { return nil }
         guard let cli = cli(docker.endpoint) else {
             return Outcome(
@@ -603,7 +603,7 @@ final class DockerImageUpdates: ObservableObject {
 
     /// Stops the check: what was asked stays, the questions on their way
     /// are dropped (their processes ended).
-    func cancel() { task?.cancel() }
+    package func cancel() { task?.cancel() }
 
     private func ask(_ references: [String], cli: DockerCLI, engine: DockerEngine) async -> Outcome {
         // What is here now, not what the list read last.
@@ -703,21 +703,21 @@ final class DockerImageUpdates: ObservableObject {
     }
 
     /// One tag to ask about.
-    struct Target: Sendable {
-        var key: String
-        var reference: String
-        var registry: String
+    package struct Target: Sendable {
+        package var key: String
+        package var reference: String
+        package var registry: String
     }
 
     /// The work of one tag, made here rather than in a closure of the main
     /// actor's: that one would be isolated to it (CLAUDE.md).
-    nonisolated static func asker(_ cli: DockerCLI) -> @Sendable (Target) async -> Result<DockerRegistryDigest, DockerImageUpdateFailure> {
+    package nonisolated static func asker(_ cli: DockerCLI) -> @Sendable (Target) async -> Result<DockerRegistryDigest, DockerImageUpdateFailure> {
         { target in await inspect(target.reference, registry: target.registry, cli: cli) }
     }
 
     /// `docker buildx imagetools inspect <ref>`, its default output: a
     /// `--format` makes buildx fetch every platform's manifest and config.
-    nonisolated static func inspect(_ reference: String, registry: String, cli: DockerCLI) async -> Result<DockerRegistryDigest, DockerImageUpdateFailure> {
+    package nonisolated static func inspect(_ reference: String, registry: String, cli: DockerCLI) async -> Result<DockerRegistryDigest, DockerImageUpdateFailure> {
         do {
             let output = try await cli.run(["buildx", "imagetools", "inspect", reference], timeout: 30)
             guard let digest = DockerRegistryDigest.parse(output) else { return .failure(.reason("buildx's answer couldn't be read.")) }
@@ -733,7 +733,7 @@ final class DockerImageUpdates: ObservableObject {
 
     /// Every answer forgotten: a scenario's end, so what follows reads no
     /// images for them.
-    func forget() {
+    package func forget() {
         checks = [:]
         confirmed = [:]
         projectReferences = [:]

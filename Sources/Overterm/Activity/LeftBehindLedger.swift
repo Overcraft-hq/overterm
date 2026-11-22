@@ -11,42 +11,42 @@ import Foundation
 /// tick reads every visible tab's panes); 2 s after a run ends, one
 /// one-off census says what it left, and the tab is told.
 @MainActor
-final class LeftBehindLedger: ObservableObject {
-    static let shared = LeftBehindLedger()
+package final class LeftBehindLedger: ObservableObject {
+    package static let shared = LeftBehindLedger()
 
     /// The panes this run closed, oldest first.
-    @Published private(set) var retired: [ActivityContext.RetiredPane] = []
+    @Published package private(set) var retired: [ActivityContext.RetiredPane] = []
     /// What the person kept: Keep, or unticked in a close sheet (6.9).
-    @Published private(set) var kept: Set<ActivityProcessID> = []
+    @Published package private(set) var kept: Set<ActivityProcessID> = []
     /// What each tab's ended agent runs left, as the last census after the
     /// run found it: the overview's "left N behind" (6.9).
-    @Published private(set) var leftByTab: [UUID: [LeftBehindItem]] = [:]
-    private(set) var runs = ActivityAgentRuns()
+    @Published package private(set) var leftByTab: [UUID: [LeftBehindItem]] = [:]
+    package private(set) var runs = ActivityAgentRuns()
 
     /// A run ended and left processes in a tab still open: its note (D-17).
-    var onLeft: @MainActor (_ tab: UUID, _ run: ActivityAgentRun, _ left: [LeftBehindItem]) -> Void = { _, _, _ in }
+    package var onLeft: @MainActor (_ tab: UUID, _ run: ActivityAgentRun, _ left: [LeftBehindItem]) -> Void = { _, _, _ in }
     /// The checkouts the app knows: an app inside one stays a pane's.
-    var checkouts: @MainActor () -> [String] = { [] }
+    package var checkouts: @MainActor () -> [String] = { [] }
     /// The kept set changed: written down (D-29).
-    var keptChanged: @MainActor (Set<ActivityProcessID>) -> Void = { _ in }
+    package var keptChanged: @MainActor (Set<ActivityProcessID>) -> Void = { _ in }
 
-    static let kept = 256
+    package static let kept = 256
     /// How long after an agent's end its leftovers are read: SIGHUP and the
     /// shells' own exits have had their effect.
-    static let settle: Duration = .seconds(2)
+    package static let settle: Duration = .seconds(2)
 
     /// How often a full snapshot sweeps the kept set.
-    static let pruneSpacing: TimeInterval = 60
+    package static let pruneSpacing: TimeInterval = 60
     private var lastPrune = Date.distantPast
     private var snapshots: AnyCancellable?
     private let monitor: ActivityMonitor
 
-    init(monitor: ActivityMonitor = .shared) {
+    package init(monitor: ActivityMonitor = .shared) {
         self.monitor = monitor
     }
 
     /// Follows the census's snapshots: each one's panes' agents.
-    func start() {
+    package func start() {
         guard snapshots == nil else { return }
         // @Published emits before it changes: the emitted value.
         snapshots = monitor.$snapshot.compactMap { $0 }
@@ -55,7 +55,7 @@ final class LeftBehindLedger: ObservableObject {
 
     /// One snapshot's panes: a run that ended is read again in 2 s. A full
     /// one also sweeps the kept set of what ended, at most once a minute.
-    func observe(_ snapshot: ActivitySnapshot) {
+    package func observe(_ snapshot: ActivitySnapshot) {
         if snapshot.demand.full, snapshot.date.timeIntervalSince(lastPrune) >= Self.pruneSpacing {
             lastPrune = snapshot.date
             prune(in: snapshot)
@@ -86,7 +86,7 @@ final class LeftBehindLedger: ObservableObject {
     /// A command finished in the pane `tag`: when an agent was running
     /// there, one census 2 s later says whether it went — a window off
     /// screen has no tick to say so (6.9). It publishes, so `observe` takes it.
-    func commandFinished(in tag: String) {
+    package func commandFinished(in tag: String) {
         guard runs.running[tag] != nil else { return }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: Self.settle)
@@ -96,14 +96,14 @@ final class LeftBehindLedger: ObservableObject {
     }
 
     /// The overview's count for `tab`, kept to what still runs in `snapshot`.
-    func leftCount(of tab: UUID, in snapshot: ActivitySnapshot?) -> Int {
+    package func leftCount(of tab: UUID, in snapshot: ActivitySnapshot?) -> Int {
         guard let left = leftByTab[tab] else { return 0 }
         guard let snapshot else { return left.count }
         return left.filter { snapshot.table.process($0.identity).map { !$0.isZombie } ?? false }.count
     }
 
     /// A pane closes: what still carries its tag was left behind by it.
-    func retire(_ pane: ActivityContext.Pane, at date: Date = Date()) {
+    package func retire(_ pane: ActivityContext.Pane, at date: Date = Date()) {
         retired.append(ActivityContext.RetiredPane(pane: pane, closed: date))
         if retired.count > Self.kept { retired.removeFirst(retired.count - Self.kept) }
         runs.forget(tag: pane.tag)
@@ -112,7 +112,7 @@ final class LeftBehindLedger: ObservableObject {
 
     /// The person kept these (Keep, a close sheet's unticked rows): never
     /// in a bulk Stop, never Left Behind again, for their life.
-    func keep(_ identities: some Sequence<ActivityProcessID>) {
+    package func keep(_ identities: some Sequence<ActivityProcessID>) {
         let before = kept
         kept.formUnion(identities)
         guard kept != before else { return }
@@ -122,14 +122,14 @@ final class LeftBehindLedger: ObservableObject {
 
     /// The kept identities as a launch read them back (D-29), swept of
     /// what ended.
-    func restoreKept(_ identities: Set<ActivityProcessID>) {
+    package func restoreKept(_ identities: Set<ActivityProcessID>) {
         guard !identities.isEmpty else { return }
         kept.formUnion(identities)
         monitor.contextChanged()
     }
 
     /// What ended goes from the kept set.
-    func prune(in snapshot: ActivitySnapshot) {
+    package func prune(in snapshot: ActivitySnapshot) {
         let live = kept.filter { snapshot.table.process($0).map { !$0.isZombie } ?? false }
         guard live != kept else { return }
         kept = live
@@ -137,7 +137,7 @@ final class LeftBehindLedger: ObservableObject {
     }
 
     /// The context's part (7.1): retired panes, ended runs, kept.
-    func fill(_ context: inout ActivityContext) {
+    package func fill(_ context: inout ActivityContext) {
         context.retired = retired
         context.agentRuns = runs.ended
         context.kept = kept

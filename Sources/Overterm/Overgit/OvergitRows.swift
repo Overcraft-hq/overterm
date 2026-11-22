@@ -5,24 +5,24 @@ import SwiftUI
 /// against its upstream, what is uncommitted, and the pull request. The
 /// one row a person reads before anything else — "where am I, and is
 /// anything broken".
-struct OvergitOverview: View {
-    let branch: String?
-    let ref: BranchRef?
-    let badge: DiffModel.Badge?
-    let pullRequest: PullRequestSummary?
+package struct OvergitOverview: View {
+    package let branch: String?
+    package let ref: BranchRef?
+    package let badge: DiffModel.Badge?
+    package let pullRequest: PullRequestSummary?
     /// Against its upstream, read whatever sections are open.
-    var tracking = BranchTracking()
-    var inProgress: GitInProgress?
+    package var tracking = BranchTracking()
+    package var inProgress: GitInProgress?
     /// A command running ("Pulling…").
-    var running: String?
-    @ObservedObject var theme: ChromeTheme
-    let onChanges: () -> Void
-    let onPullRequest: () -> Void
-    var onCommand: (OvergitCommand) -> Void = { _ in }
+    package var running: String?
+    @ObservedObject package var theme: ChromeTheme
+    package let onChanges: () -> Void
+    package let onPullRequest: () -> Void
+    package var onCommand: (OvergitCommand) -> Void = { _ in }
     /// Opens the Changes section, where the message and Commit are.
-    var onCommit: () -> Void = {}
+    package var onCommit: () -> Void = {}
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.triangle.branch").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2)
@@ -176,18 +176,18 @@ struct OvergitOverview: View {
 }
 
 /// One commit: its lane in the graph, its subject, and who and when.
-struct CommitRowView<Extra: View>: View {
-    let commit: Commit
-    let row: GraphRow?
-    let lanes: Int
-    let isSelected: Bool
-    @ObservedObject var theme: ChromeTheme
-    let onOpen: () -> Void
+package struct CommitRowView<Extra: View>: View {
+    package let commit: Commit
+    package let row: GraphRow?
+    package let lanes: Int
+    package let isSelected: Bool
+    @ObservedObject package var theme: ChromeTheme
+    package let onOpen: () -> Void
     /// More of the menu: Compare, where the row is Overgit's.
-    @ViewBuilder var menu: Extra
+    @ViewBuilder package var menu: Extra
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 6) {
             if let row {
                 GraphGutter(row: row, lanes: lanes, height: OvergitView.commitRowHeight)
@@ -247,16 +247,16 @@ struct CommitRowView<Extra: View>: View {
 
     /// The one ref worth the room: where HEAD is, else a local branch,
     /// else a tag, else whatever there is.
-    static func leadingRef(_ refs: [CommitRef]) -> CommitRef? { CommitRowRefs.leading(refs) }
+    package static func leadingRef(_ refs: [CommitRef]) -> CommitRef? { CommitRowRefs.leading(refs) }
 }
 
 /// Which ref a commit row shows.
-enum CommitRowRefs {
-    static func leading(_ refs: [CommitRef]) -> CommitRef? {
+package enum CommitRowRefs {
+    package static func leading(_ refs: [CommitRef]) -> CommitRef? {
         refs.first { $0.isHead } ?? refs.first { $0.kind == .branch } ?? refs.first { $0.kind == .tag } ?? refs.first
     }
 
-    static func help(_ commit: Commit) -> String {
+    package static func help(_ commit: Commit) -> String {
         var lines = [commit.subject, "\(commit.shortSHA) · \(commit.author) · \(commit.relative)"]
         if !commit.refs.isEmpty { lines.append(commit.refs.map(\.name).joined(separator: ", ")) }
         if !commit.body.isEmpty { lines.append(commit.body) }
@@ -265,11 +265,11 @@ enum CommitRowRefs {
 }
 
 /// A branch, a tag or HEAD riding a commit row.
-struct RefPill: View {
-    let ref: CommitRef
-    @ObservedObject var theme: ChromeTheme
+package struct RefPill: View {
+    package let ref: CommitRef
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         Text(verbatim: ref.name)
             .font(.system(size: ChromeMetrics.text(9), weight: ref.isHead ? .semibold : .regular))
             .foregroundStyle(color)
@@ -291,19 +291,19 @@ struct RefPill: View {
 }
 
 /// A branch, or the folder a `/` makes.
-struct BranchRowView: View {
-    @ObservedObject var model: OvergitModel
-    let node: BranchNode
-    let isCurrent: Bool
-    let isOpen: Bool
-    @ObservedObject var theme: ChromeTheme
-    let onToggle: () -> Void
-    let actions: OvergitActions
+package struct BranchRowView: View {
+    @ObservedObject package var model: OvergitModel
+    package let node: BranchNode
+    package let isCurrent: Bool
+    package let isOpen: Bool
+    @ObservedObject package var theme: ChromeTheme
+    package let onToggle: () -> Void
+    package let actions: OvergitActions
     /// The checked-out branch: what Merge goes into and Rebase moves.
-    var current: String?
+    package var current: String?
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 4) {
             Image(systemName: isOpen ? "chevron.down" : "chevron.right")
                 .font(.system(size: ChromeMetrics.text(8), weight: .semibold)).frame(width: 10)
@@ -379,16 +379,16 @@ struct BranchRowView: View {
 }
 
 /// An open pull request, as the list shows it.
-struct PullRequestRowView: View {
-    let pullRequest: PullRequestSummary
-    let isCurrent: Bool
-    @ObservedObject var theme: ChromeTheme
-    let onOpen: () -> Void
-    let onOpenExternally: () -> Void
-    var onReview: () -> Void = {}
+package struct PullRequestRowView: View {
+    package let pullRequest: PullRequestSummary
+    package let isCurrent: Bool
+    @ObservedObject package var theme: ChromeTheme
+    package let onOpen: () -> Void
+    package let onOpenExternally: () -> Void
+    package var onReview: () -> Void = {}
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 6) {
             Text(verbatim: "#\(pullRequest.number)")
                 .font(.system(size: ChromeMetrics.text(10), design: .monospaced))
@@ -421,13 +421,13 @@ struct PullRequestRowView: View {
     }
 }
 
-struct StashRowView: View {
-    let stash: Stash
-    @ObservedObject var theme: ChromeTheme
-    let actions: OvergitActions
+package struct StashRowView: View {
+    package let stash: Stash
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: OvergitActions
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "tray.full").font(.system(size: ChromeMetrics.text(10))).frame(width: 14).foregroundStyle(theme.text3)
             VStack(alignment: .leading, spacing: 0) {
@@ -454,19 +454,19 @@ struct StashRowView: View {
 }
 
 extension CommitRowView where Extra == EmptyView {
-    init(commit: Commit, row: GraphRow?, lanes: Int, isSelected: Bool, theme: ChromeTheme, onOpen: @escaping () -> Void) {
+    package init(commit: Commit, row: GraphRow?, lanes: Int, isSelected: Bool, theme: ChromeTheme, onOpen: @escaping () -> Void) {
         self.init(commit: commit, row: row, lanes: lanes, isSelected: isSelected, theme: theme, onOpen: onOpen) { EmptyView() }
     }
 }
 
 /// What a commit's menu runs on the checked-out branch: a branch or a tag
 /// on it, it picked onto the branch, it undone, the branch reset to it.
-struct CommitGitMenuItems: View {
-    let commit: Commit
-    let current: String?
-    let actions: OvergitActions
+package struct CommitGitMenuItems: View {
+    package let commit: Commit
+    package let current: String?
+    package let actions: OvergitActions
 
-    var body: some View {
+    package var body: some View {
         Divider()
         Button("New Branch Here…") { actions.git(.newBranch(from: commit.sha)) }
         Button("New Tag Here…") { actions.git(.tag(at: commit.sha)) }

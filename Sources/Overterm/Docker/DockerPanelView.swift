@@ -4,34 +4,34 @@ import SwiftUI
 /// A window's Docker panel and the container it shows on the right: which
 /// checkout the selected tab is in, the container picked, its tab.
 @MainActor
-final class DockerPanelModel: ObservableObject {
+package final class DockerPanelModel: ObservableObject {
     /// The selected tab's checkout (its repository's root, else its folder).
-    @Published var checkout: URL?
+    @Published package var checkout: URL?
     /// The container in the right-hand pane.
-    @Published var picked: String?
-    @Published var tab: ContainerTab = .logs
+    @Published package var picked: String?
+    @Published package var tab: ContainerTab = .logs
     /// Whether that pane shows it now (the window says).
-    @Published var slotVisible = false
+    @Published package var slotVisible = false
     /// Whether the sidebar shows the panel now (the window says): its
     /// views live on while it is collapsed.
-    @Published var panelVisible = false
-    @Published var error: String?
-    @Published var collapsed: Set<String> = []
+    @Published package var panelVisible = false
+    @Published package var error: String?
+    @Published package var collapsed: Set<String> = []
     /// What can be done to a container or a project here: the page's verbs,
     /// with the panel starting and stopping (its errors are its own). The
     /// window sets them.
-    var verbs: (ContainerSummary) -> [ResourceVerb] = { _ in [] }
-    var projectVerbs: (ComposeProject) -> [ResourceVerb] = { _ in [] }
+    package var verbs: (ContainerSummary) -> [ResourceVerb] = { _ in [] }
+    package var projectVerbs: (ComposeProject) -> [ResourceVerb] = { _ in [] }
     /// A test run on the page, by its session (the window sets it).
-    var showRun: (String) -> Void = { _ in }
+    package var showRun: (String) -> Void = { _ in }
 
-    let docker: DockerModel
+    package let docker: DockerModel
     /// The checkout's compose project before it runs; the page shows it too.
-    let checkoutCompose: ComposeFileModel
+    package let checkoutCompose: ComposeFileModel
 
     private var streams: AnyCancellable?
 
-    init(docker: DockerModel = .shared, checkoutCompose: ComposeFileModel? = nil) {
+    package init(docker: DockerModel = .shared, checkoutCompose: ComposeFileModel? = nil) {
         self.docker = docker
         self.checkoutCompose = checkoutCompose ?? ComposeFileModel(docker: docker)
         streams = Publishers.CombineLatest3($picked, $tab, $slotVisible)
@@ -41,7 +41,7 @@ final class DockerPanelModel: ObservableObject {
             }
     }
 
-    func updateStreams() {
+    package func updateStreams() {
         guard let id = picked else {
             session?.close()
             session = nil
@@ -51,42 +51,42 @@ final class DockerPanelModel: ObservableObject {
     }
 
     /// The checkout's compose projects: its stack.
-    var here: [ComposeProject] { checkout.map { docker.projects(in: $0) } ?? [] }
+    package var here: [ComposeProject] { checkout.map { docker.projects(in: $0) } ?? [] }
 
     /// What else runs: containers of other projects, or of none. Not
     /// Testcontainers': a test run's dozen would bury the rest (`runs`).
-    var others: [ContainerSummary] {
+    package var others: [ContainerSummary] {
         let mine = Set(here.flatMap(\.containers).map(\.Id))
         return docker.containers.filter { $0.state.isUp && !mine.contains($0.Id) && !Testcontainers.isMember($0) }
     }
 
     /// The test runs with something running, the newest first: one row.
-    var runs: [TestcontainersSession] { docker.testcontainers.filter { $0.running > 0 } }
+    package var runs: [TestcontainersSession] { docker.testcontainers.filter { $0.running > 0 } }
 
     /// A compose file at the checkout's top, for "Up" when nothing runs.
-    var composeFile: URL? { checkout.flatMap(ComposeProjects.composeFile(in:)) }
+    package var composeFile: URL? { checkout.flatMap(ComposeProjects.composeFile(in:)) }
 
     /// The checkout's compose project before it runs: until one of its
     /// name runs here, or one made from its files under another name, when
     /// the labels' project takes its place.
-    var plan: ComposeProject? {
+    package var plan: ComposeProject? {
         guard let plan = checkoutCompose.project, !here.contains(where: { ComposeProjects.replaces($0, plan) }) else { return nil }
         return plan
     }
 
     /// The plan, when it was read from the files as they are now: what the
     /// View menu and the palette act on, Docker on screen or not.
-    var currentPlan: ComposeProject? { checkoutCompose.isCurrent ? plan : nil }
+    package var currentPlan: ComposeProject? { checkoutCompose.isCurrent ? plan : nil }
 
     /// A project of the plan's name running from another folder — usually
     /// another worktree whose file sets `name:`. Its Up asks first.
-    var planElsewhere: ComposeProject? {
+    package var planElsewhere: ComposeProject? {
         plan.flatMap { plan in docker.projects.first { $0.name == plan.name } }
     }
 
-    private(set) var session: ContainerSession?
+    package private(set) var session: ContainerSession?
 
-    func session(for id: String) -> ContainerSession {
+    package func session(for id: String) -> ContainerSession {
         if let session, session.id == id { return session }
         session?.close()
         let made = ContainerSession(id: id, docker: docker)
@@ -94,7 +94,7 @@ final class DockerPanelModel: ObservableObject {
         return made
     }
 
-    func act(_ action: DockerEngine.ContainerAction, on containers: [ContainerSummary]) {
+    package func act(_ action: DockerEngine.ContainerAction, on containers: [ContainerSummary]) {
         for container in containers {
             Task {
                 do {
@@ -110,22 +110,22 @@ final class DockerPanelModel: ObservableObject {
 /// The rail's Docker panel: the selected tab's checkout's stack first —
 /// its compose projects and their containers — then what else runs. A
 /// container clicked opens in the right-hand pane.
-struct DockerPanelView: View {
-    @ObservedObject var panel: DockerPanelModel
-    @ObservedObject var docker: DockerModel
+package struct DockerPanelView: View {
+    @ObservedObject package var panel: DockerPanelModel
+    @ObservedObject package var docker: DockerModel
     /// The panel's, observed for its plan.
-    @ObservedObject var checkoutCompose: ComposeFileModel
+    @ObservedObject package var checkoutCompose: ComposeFileModel
     /// What the registries said: a project's mark.
-    @ObservedObject var updates: DockerImageUpdates
-    @ObservedObject var settings: Settings
-    @ObservedObject var theme: ChromeTheme
-    let group: TabGroup?
-    let actions: DockerActions
-    let openPage: () -> Void
+    @ObservedObject package var updates: DockerImageUpdates
+    @ObservedObject package var settings: Settings
+    @ObservedObject package var theme: ChromeTheme
+    package let group: TabGroup?
+    package let actions: DockerActions
+    package let openPage: () -> Void
     /// A container in the right-hand pane.
-    let show: (ContainerSummary) -> Void
+    package let show: (ContainerSummary) -> Void
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             PanelHeader(title: "Docker", group: group, theme: theme, help: panel.checkout?.path) {
                 PanelHeaderButton(symbol: "macwindow", help: "The Docker page (⌥⌘P)", action: openPage, theme: theme)
@@ -330,13 +330,13 @@ struct DockerPanelView: View {
 }
 
 /// The container picked in the panel, in the right-hand pane.
-struct DockerSlotView: View {
-    @ObservedObject var panel: DockerPanelModel
-    @ObservedObject var docker: DockerModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+package struct DockerSlotView: View {
+    @ObservedObject package var panel: DockerPanelModel
+    @ObservedObject package var docker: DockerModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
 
-    var body: some View {
+    package var body: some View {
         if let id = panel.picked, let container = docker.container(id) {
             ContainerDetailView(
                 container: container, session: panel.session(for: id), tab: $panel.tab, docker: docker, theme: theme, actions: actions,

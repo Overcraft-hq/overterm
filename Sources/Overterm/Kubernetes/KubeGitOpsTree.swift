@@ -8,11 +8,11 @@ import Foundation
 /// what they manage, so an Application or a Kustomization needs no read
 /// beyond its own object; a HelmRelease's objects are a few lists by
 /// Helm's labels. Sync and reconcile are their own CLIs' (stage 4). Pure.
-enum KubeGitOpsTree {
+package enum KubeGitOpsTree {
     /// What is drawn of one; the rest counted.
-    static let shownLimit = 300
+    package static let shownLimit = 300
 
-    static func build(_ root: KubeTree.Root, object: [String: Any], read: KubeTreeRead) -> KubeTree {
+    package static func build(_ root: KubeTree.Root, object: [String: Any], read: KubeTreeRead) -> KubeTree {
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         let kind = object["kind"] as? String ?? ""
         let name = metadata["name"] as? String ?? ""
@@ -33,7 +33,7 @@ enum KubeGitOpsTree {
     // MARK: Argo CD
 
     /// Argo's health words, as its UI colours them.
-    static func argoHealth(_ status: String?) -> KubeTreeHealth {
+    package static func argoHealth(_ status: String?) -> KubeTreeHealth {
         switch status {
         case "Healthy": .good
         case "Progressing": .waiting
@@ -47,16 +47,16 @@ enum KubeGitOpsTree {
 
     /// Whether an Application deploys to the cluster it lives in: its
     /// objects can be opened here only then (`KubeGitOpsSource.inCluster`).
-    static func argoInCluster(_ destination: [String: Any]) -> Bool {
+    package static func argoInCluster(_ destination: [String: Any]) -> Bool {
         KubeGitOpsSource.inCluster(server: destination["server"] as? String, name: destination["name"] as? String)
     }
 
     /// Said once of an Argo CD 3 Application whose resources carry no health.
-    static let appTreeNote = "Argo CD 3 keeps each resource's health outside the Application: its objects are shown by sync alone."
+    package static let appTreeNote = "Argo CD 3 keeps each resource's health outside the Application: its objects are shown by sync alone."
 
     /// `status.resourceHealthSource: appTree` — Argo CD 3's default: each
     /// resource's health isn't in `status.resources`.
-    static func isHealthElsewhere(_ status: [String: Any]) -> Bool { status["resourceHealthSource"] as? String == "appTree" }
+    package static func isHealthElsewhere(_ status: [String: Any]) -> Bool { status["resourceHealthSource"] as? String == "appTree" }
 
     private static func argo(_ tree: inout KubeTree, _ object: [String: Any]) {
         let spec = object["spec"] as? [String: Any] ?? [:]
@@ -118,7 +118,7 @@ enum KubeGitOpsTree {
     /// Where a Kustomization or a HelmRelease applies to another cluster
     /// (`spec.kubeConfig`): the Secret (or ConfigMap) that says how; nil
     /// when it applies to its own.
-    static func fluxRemote(_ spec: [String: Any]) -> String? {
+    package static func fluxRemote(_ spec: [String: Any]) -> String? {
         guard let config = spec["kubeConfig"] as? [String: Any] else { return nil }
         if let name = (config["secretRef"] as? [String: Any])?["name"] as? String { return "spec.kubeConfig.secretRef \(name)" }
         if let name = (config["configMapRef"] as? [String: Any])?["name"] as? String { return "spec.kubeConfig.configMapRef \(name)" }
@@ -127,7 +127,7 @@ enum KubeGitOpsTree {
 
     /// Said of one deploying elsewhere: its objects not opened here — a
     /// verb on one would reach a same-named object of this cluster.
-    static func remoteNote(_ how: String) -> String {
+    package static func remoteNote(_ how: String) -> String {
         "It deploys to another cluster through \(how): its objects are listed as Flux says them, not opened here."
     }
 

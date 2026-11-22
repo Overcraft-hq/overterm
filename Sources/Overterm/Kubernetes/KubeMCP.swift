@@ -49,38 +49,38 @@ import Foundation
 /// (`KubeMCP+Marks`, 14.2.6) —, or what deploys the calling pane's
 /// checkout (`KubeMCP+GitOps`); `k8s_why` takes their four main kinds too.
 @MainActor
-enum KubeMCP {
-    static let prefix = "k8s_"
+package enum KubeMCP {
+    package static let prefix = "k8s_"
     /// The reads, always offered.
-    static let reads: [String] = ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout", "k8s_top", "k8s_metrics", "k8s_gitops"]
+    package static let reads: [String] = ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout", "k8s_top", "k8s_metrics", "k8s_gitops"]
     /// The writes, listed only while `kubernetes.agentWrites` names a context (`KubeAgentWrites`).
-    static let writes: [String] = KubeAgentWrites.tools
+    package static let writes: [String] = KubeAgentWrites.tools
 
     /// How long one read may take: an oidc sign-in in the browser, a
     /// cluster that doesn't answer.
-    static var readTimeout: Duration = .seconds(30)
+    package static var readTimeout: Duration = .seconds(30)
 
     /// What the tools are bounded by.
-    static let defaultRows = 100
-    static let maxRows = 500
-    static let defaultTail = 200
-    static let maxTail = 2000
-    static let defaultEvents = 50
-    static let maxEvents = 200
+    package static let defaultRows = 100
+    package static let maxRows = 500
+    package static let defaultTail = 200
+    package static let maxTail = 2000
+    package static let defaultEvents = 50
+    package static let maxEvents = 200
     /// A namespace's events are read this many to a page, at most
     /// `eventPages` pages, before the newest are picked.
-    static var eventsPage = 500
-    static var eventPages = 4
+    package static var eventsPage = 500
+    package static var eventPages = 4
     /// A log is read up to this many bytes (`limitBytes`), of which the
     /// last `logKeepBytes` are taken apart.
-    static let logReadBytes = 1 << 20
-    static let logKeepBytes = 512 << 10
+    package static let logReadBytes = 1 << 20
+    package static let logKeepBytes = 512 << 10
 
     // MARK: Calls
 
     /// `pane`: the calling pane's tag — its checkout's binding (3.1) is
     /// the context and namespace a call doesn't name.
-    static func call(
+    package static func call(
         _ name: String, _ arguments: [String: Any], kubernetes: KubernetesModel, pane: String? = nil, now: Date = Date()
     ) async throws -> [String: Any] {
         guard reads.contains(name) || writes.contains(name) else {
@@ -115,17 +115,17 @@ enum KubeMCP {
     }
 
     /// One call's arguments, read.
-    struct Call {
-        let name: String
-        let arguments: [String: Any]
+    package struct Call {
+        package let name: String
+        package let arguments: [String: Any]
 
-        func string(_ key: String) -> String? {
+        package func string(_ key: String) -> String? {
             (arguments[key] as? String).map { $0.trimmingCharacters(in: .whitespaces) }.flatMap { $0.isEmpty ? nil : $0 }
         }
 
-        func bool(_ key: String) -> Bool { arguments[key] as? Bool ?? false }
+        package func bool(_ key: String) -> Bool { arguments[key] as? Bool ?? false }
 
-        func int(_ key: String, default value: Int, in range: ClosedRange<Int>) -> Int {
+        package func int(_ key: String, default value: Int, in range: ClosedRange<Int>) -> Int {
             // A Double clamped before it is made an Int: `Int(1e300)` traps,
             // and an agent's JSON may hold any number.
             let given =
@@ -135,18 +135,18 @@ enum KubeMCP {
         }
 
         /// `number` towards zero, within `range`: nil when it isn't a number at all (NaN, ±∞).
-        static func clamped(_ number: Double, to range: ClosedRange<Int>) -> Int? {
+        package static func clamped(_ number: Double, to range: ClosedRange<Int>) -> Int? {
             guard number.isFinite else { return nil }
             return Int(min(max(number.rounded(.towardZero), Double(range.lowerBound)), Double(range.upperBound)))
         }
 
-        func required(_ key: String, _ hint: String) throws -> String {
+        package func required(_ key: String, _ hint: String) throws -> String {
             guard let value = string(key) else { throw BrowserMCP.ToolError(message: "\(name) needs “\(key)” — \(hint).") }
             return value
         }
 
         /// An object's name: one path segment, never a path.
-        func objectName(_ key: String = "name", _ hint: String) throws -> String {
+        package func objectName(_ key: String = "name", _ hint: String) throws -> String {
             let value = try required(key, hint)
             guard KubeMCPText.isName(value) else { throw BrowserMCP.ToolError(message: "“\(value)” isn't an object's name.") }
             return value
@@ -156,17 +156,17 @@ enum KubeMCP {
     // MARK: Where
 
     /// The context and namespace a call works on, with its client.
-    struct Target {
-        let context: KubeContext
-        let client: KubeClient
-        let scope: KubeScope
+    package struct Target {
+        package let context: KubeContext
+        package let client: KubeClient
+        package let scope: KubeScope
 
-        var brief: KubeBriefContext { KubeBriefContext(name: context.name, production: context.isProduction, writable: context.isWritable) }
+        package var brief: KubeBriefContext { KubeBriefContext(name: context.name, production: context.isProduction, writable: context.isWritable) }
         /// One namespace, or nil for several or all of them.
-        var namespace: String? { if case .namespace(let name) = scope { name } else { nil } }
+        package var namespace: String? { if case .namespace(let name) = scope { name } else { nil } }
 
         /// The first line of every answer.
-        func header(_ scope: KubeScope? = nil, kind: KubeResourceKind? = nil) -> String {
+        package func header(_ scope: KubeScope? = nil, kind: KubeResourceKind? = nil) -> String {
             let said = brief.said
             var line = said.prefix(1).uppercased() + String(said.dropFirst())
             let shown = scope ?? self.scope
@@ -177,7 +177,7 @@ enum KubeMCP {
         }
 
         /// The one namespace a namespaced object is in.
-        func oneNamespace(_ tool: String) throws -> String {
+        package func oneNamespace(_ tool: String) throws -> String {
             guard let namespace else {
                 throw BrowserMCP.ToolError(message: "\(tool) needs “namespace”: the Kubernetes page shows \(scope.said) of \(context.name).")
             }
@@ -188,19 +188,19 @@ enum KubeMCP {
     /// The checkout a pane's tab works in — the window answers (nil
     /// outside any window's tabs, and in tests that set none) — as the tab
     /// says it: a call's helpers ask it, after `paneFollow` at its start.
-    static var paneCheckout: ((String) -> URL?)?
+    package static var paneCheckout: ((String) -> URL?)?
     /// Where the calling pane's agent works, read again at a call's start
     /// while its window is off screen — no light tick reads its tabs then,
     /// and agents ask exactly while the person looks elsewhere (docs/design/
     /// activity/analysis.md, 7.1, 7.9): what `paneCheckout` answers then.
     /// The window sets it; none in tests.
-    static var paneFollow: ((String) async -> Void)?
+    package static var paneFollow: ((String) async -> Void)?
     /// Where bindings are kept (a test's own store).
-    static var bindings: KubeBindingStore = .shared
+    package static var bindings: KubeBindingStore = .shared
 
     /// The calling pane's checkout's binding (3.1), when its context is
     /// one the kubeconfig has.
-    static func binding(for pane: String?, in list: KubeContextList) -> KubeBinding? {
+    package static func binding(for pane: String?, in list: KubeContextList) -> KubeBinding? {
         guard let pane, let checkout = paneCheckout?(pane), let binding = bindings.binding(for: checkout),
             list.context(named: binding.context) != nil
         else { return nil }
@@ -209,18 +209,18 @@ enum KubeMCP {
 
     /// The context a call doesn't name: the calling pane's checkout's
     /// binding's, else the page's selected one.
-    static func defaultContext(in list: KubeContextList, kubernetes: KubernetesModel, pane: String?) -> String? {
+    package static func defaultContext(in list: KubeContextList, kubernetes: KubernetesModel, pane: String?) -> String? {
         binding(for: pane, in: list)?.context ?? kubernetes.agentDefaultContext(in: list)
     }
 
     /// The namespace a call doesn't name, on `context`: the binding's when
     /// the binding is on it, else the page's (`agentDefaultScope`).
-    static func defaultScope(for context: KubeContext, list: KubeContextList, kubernetes: KubernetesModel, pane: String?) -> KubeScope {
+    package static func defaultScope(for context: KubeContext, list: KubeContextList, kubernetes: KubernetesModel, pane: String?) -> KubeScope {
         if let binding = binding(for: pane, in: list), binding.context == context.name { return .namespace(binding.namespace) }
         return kubernetes.agentDefaultScope(for: context)
     }
 
-    static func target(_ call: Call, list: KubeContextList, kubernetes: KubernetesModel, pane: String?) throws -> Target {
+    package static func target(_ call: Call, list: KubeContextList, kubernetes: KubernetesModel, pane: String?) throws -> Target {
         let names = list.contexts.map(\.name)
         guard !names.isEmpty else {
             throw BrowserMCP.ToolError(message: "The kubeconfig has no context." + (list.problems.isEmpty ? "" : " " + list.problems.joined(separator: " ")))
@@ -265,7 +265,7 @@ enum KubeMCP {
     private static var discoveries: [String: (key: String, discovery: KubeDiscovery, read: Date)] = [:]
 
     /// What the tools read is forgotten (a test's next fake server).
-    static func forgetDiscoveries() { discoveries = [:] }
+    package static func forgetDiscoveries() { discoveries = [:] }
 
     /// Which cluster, as which user: what a kept discovery holds for.
     private static func key(_ context: KubeContext) -> String {
@@ -283,7 +283,7 @@ enum KubeMCP {
         return kept.discovery
     }
 
-    static func discovery(for target: Target, kubernetes: KubernetesModel) async throws -> KubeDiscovery {
+    package static func discovery(for target: Target, kubernetes: KubernetesModel) async throws -> KubeDiscovery {
         if let known = known(for: target, kubernetes: kubernetes) { return known }
         let client = target.client
         let read = try await within { try await client.discover() }
@@ -305,7 +305,7 @@ enum KubeMCP {
     // MARK: Reads
 
     /// One read, or an error once `readTimeout` has passed.
-    static func within<T: Sendable>(_ read: @escaping @Sendable () async throws -> T) async throws -> T {
+    package static func within<T: Sendable>(_ read: @escaping @Sendable () async throws -> T) async throws -> T {
         do {
             return try await KubeBriefRace.run(limit: readTimeout, read)
         } catch is KubeBriefTimeout {
@@ -314,7 +314,7 @@ enum KubeMCP {
     }
 
     /// A read's failure, said scrubbed.
-    static func said(_ error: Error) -> String {
+    package static func said(_ error: Error) -> String {
         if let tool = error as? BrowserMCP.ToolError { return tool.message }
         return KubeMCPText.scrubbed(KubernetesModel.said(error))
     }
@@ -331,7 +331,7 @@ enum KubeMCP {
 
     // MARK: k8s_contexts
 
-    static func contexts(_ list: KubeContextList, kubernetes: KubernetesModel, pane: String?) async -> String {
+    package static func contexts(_ list: KubeContextList, kubernetes: KubernetesModel, pane: String?) async -> String {
         guard !list.contexts.isEmpty else {
             return "The kubeconfig has no context." + (list.problems.isEmpty ? "" : " " + list.problems.joined(separator: " "))
         }
@@ -356,7 +356,7 @@ enum KubeMCP {
 
     // MARK: k8s_get
 
-    static func get(_ call: Call, _ target: Target, kubernetes: KubernetesModel) async throws -> String {
+    package static func get(_ call: Call, _ target: Target, kubernetes: KubernetesModel) async throws -> String {
         let kind = try await kind(call, target, kubernetes: kubernetes)
         guard kind.canList else { throw BrowserMCP.ToolError(message: "\(kind.fullName) can't be listed.") }
         let name = call.string("name")
@@ -395,7 +395,7 @@ enum KubeMCP {
     }
 
     /// How many namespaces an all-namespace Secret list goes through.
-    static var secretNamespaces = 100
+    package static var secretNamespaces = 100
 
     /// Secrets across namespaces, one namespace at a time: a list across
     /// all of them carries each row's metadata (`includeObject=Metadata`,
@@ -458,7 +458,7 @@ enum KubeMCP {
 
     // MARK: k8s_describe
 
-    static func describe(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
+    package static func describe(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
         let kind = try await kind(call, target, kubernetes: kubernetes)
         let name = try call.objectName("name", "the object's name, from k8s_get")
         let namespace = try kind.namespaced ? target.oneNamespace(call.name) : nil
@@ -512,7 +512,7 @@ enum KubeMCP {
 
     // MARK: k8s_logs
 
-    static func logs(_ call: Call, _ target: Target, now: Date) async throws -> String {
+    package static func logs(_ call: Call, _ target: Target, now: Date) async throws -> String {
         let pod = try call.objectName("pod", "its name, from k8s_get pods")
         let namespace = try target.oneNamespace(call.name)
         let client = target.client
@@ -555,7 +555,7 @@ enum KubeMCP {
 
     // MARK: k8s_events
 
-    static func events(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
+    package static func events(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
         let limit = call.int("limit", default: defaultEvents, in: 1...maxEvents)
         let warnings = call.bool("warnings_only")
         let client = target.client
@@ -612,7 +612,7 @@ enum KubeMCP {
 
     // MARK: k8s_why
 
-    static func why(
+    package static func why(
         _ call: Call, _ target: Target, kubernetes: KubernetesModel, pane: String? = nil, list: KubeContextList = KubeContextList(), now: Date
     ) async throws -> String {
         let name = try call.objectName("name", "a failing pod's, Deployment's, or Argo CD or Flux object's name, from k8s_get or k8s_gitops")
@@ -659,7 +659,7 @@ enum KubeMCP {
 
     // MARK: k8s_rollout
 
-    static func rollout(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
+    package static func rollout(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
         let name = try call.objectName("name", "the workload's name, from k8s_get")
         let namespace = try target.oneNamespace(call.name)
         let kind = try await kind(call, target, kubernetes: kubernetes, default: "deployments")
@@ -702,7 +702,7 @@ enum KubeMCP {
     // MARK: Writes (stage 2a)
 
     /// Answers the confirmation in a test or a scenario: what was typed, nil to refuse.
-    static var askOverride: ((KubeWriteConfirmation) -> String?)?
+    package static var askOverride: ((KubeWriteConfirmation) -> String?)?
 
     /// `k8s_restart`, `k8s_scale`, `k8s_delete_pod`: on a context writable
     /// for agents only, through the page's checks — the class check, the
@@ -710,7 +710,7 @@ enum KubeMCP {
     /// confirmation in the window, the name typed where rule 4 says, the
     /// checks again against the context as it is now — then one request.
     /// Refused or declined, nothing is sent.
-    static func write(_ call: Call, _ target: Target, kubernetes: KubernetesModel, pane: String? = nil) async throws -> String {
+    package static func write(_ call: Call, _ target: Target, kubernetes: KubernetesModel, pane: String? = nil) async throws -> String {
         if let refused = KubeAgentWrites.refused(target.context, agentWrites: kubernetes.agentWrites) {
             throw BrowserMCP.ToolError(message: "\(call.name) isn't offered on \(target.context.name): \(refused) Tell the user what to change instead.")
         }
@@ -797,7 +797,7 @@ enum KubeMCP {
     /// The confirmation in the window — the context and namespace in its
     /// title, all of the detail shown, a field for the name where asked —
     /// or a test's answer: what was typed, nil when refused.
-    static func ask(_ confirmation: KubeWriteConfirmation, pane: String? = nil) async -> String? {
+    package static func ask(_ confirmation: KubeWriteConfirmation, pane: String? = nil) async -> String? {
         if let askOverride { return askOverride(confirmation) }
         let sheet = WriteConfirmation(
             title: KubeAgentWrites.title(confirmation), scope: confirmation.scope, production: confirmation.production,
@@ -812,14 +812,14 @@ enum KubeMCP {
 
     /// The window of the pane that called, else the main one, else any
     /// terminal window on screen.
-    static func window(forPane pane: String?) -> NSWindow? { MCPAsker.window(forPane: pane) }
+    package static func window(forPane pane: String?) -> NSWindow? { MCPAsker.window(forPane: pane) }
 
     // MARK: Tools
 
     /// What is offered: the reads, and the writes while `kubernetes.agentWrites` names a context.
-    static func tools(writes: Bool) -> [[String: Any]] { writes ? tools + writeTools : tools }
+    package static func tools(writes: Bool) -> [[String: Any]] { writes ? tools + writeTools : tools }
 
-    static var writeTools: [[String: Any]] {
+    package static var writeTools: [[String: Any]] {
         let context: [String: Any] = [
             "type": "string",
             "description": "A context k8s_contexts says agents may write in. Default: the one selected on the Kubernetes page; with none, name one.",
@@ -860,7 +860,7 @@ enum KubeMCP {
     }
 
     /// The reads.
-    static var tools: [[String: Any]] {
+    package static var tools: [[String: Any]] {
         let context: [String: Any] = ["type": "string", "description": "A context's name from k8s_contexts. Default: the one selected on the Kubernetes page; with none, name one."]
         let namespace: [String: Any] = [
             "type": "string", "description": "A namespace, several as a,b, or all (k8s_get, k8s_events, k8s_top). Default: the page's namespaces on that context, else the context's own.",
@@ -994,7 +994,7 @@ enum KubeMCP {
         ]
     }
 
-    static let instructions =
+    package static let instructions =
         "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history, k8s_top what pods and nodes use now (metrics-server's), k8s_metrics an object's usage over a range against its requests and limits, k8s_gitops Argo CD's and Flux's objects and why they fail — where Argo CD runs in another cluster, its apps read from the marks on their objects (checkout: what deploys this checkout, and whether this branch has reached the cluster); k8s_why takes those objects too. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
@@ -1007,20 +1007,20 @@ enum KubeMCP {
 
 /// What the `k8s_` tools say: tables, an Overview, events, a rollout's
 /// history, a brief — bounded and scrubbed. Pure.
-enum KubeMCPText {
+package enum KubeMCPText {
     /// How much of an answer an agent gets.
-    static let maxCharacters = 60_000
+    package static let maxCharacters = 60_000
     /// A cell this long is cut.
-    static let maxCell = 200
+    package static let maxCell = 200
 
     /// `text` scrubbed of what looks like a credential (`Secrets`), and of
     /// every URL's userinfo — a token alone has no `:` for `maskURLs`.
-    static func scrubbed(_ text: String) -> String { Secrets.scrubCredentials(GitRemoteURL.stripUserinfo(inText: Secrets.maskURLs(in: text))) }
+    package static func scrubbed(_ text: String) -> String { Secrets.scrubCredentials(GitRemoteURL.stripUserinfo(inText: Secrets.maskURLs(in: text))) }
 
     /// Scrubbed and bounded: every answer's last step.
-    static func finished(_ text: String) -> String { bounded(scrubbed(text)) }
+    package static func finished(_ text: String) -> String { bounded(scrubbed(text)) }
 
-    static func bounded(_ text: String, keepEnd: Bool = false, max: Int = maxCharacters) -> String {
+    package static func bounded(_ text: String, keepEnd: Bool = false, max: Int = maxCharacters) -> String {
         guard text.count > max else { return text }
         return keepEnd
             ? "… (the first \(text.count - max) characters left out)\n" + String(text.suffix(max))
@@ -1028,36 +1028,36 @@ enum KubeMCPText {
     }
 
     /// An object's or a namespace's name: one path segment, not a path.
-    static func isName(_ text: String) -> Bool {
+    package static func isName(_ text: String) -> Bool {
         !text.isEmpty && text.count <= 253 && text != "." && text != ".." && !text.contains("/") && !text.contains { $0.isNewline || $0 == "\u{0}" }
     }
 
-    static func isSecret(_ kind: KubeResourceKind) -> Bool { kind.group.isEmpty && kind.resource == "secrets" }
+    package static func isSecret(_ kind: KubeResourceKind) -> Bool { kind.group.isEmpty && kind.resource == "secrets" }
 
     // MARK: Contexts
 
-    struct ContextRow: Equatable {
-        var name: String
-        var displayName: String?
-        var contextClass: KubeContextClass
-        var writable: Bool
-        var namespace: String
-        var isDefault: Bool
-        var isCurrent: Bool
+    package struct ContextRow: Equatable {
+        package var name: String
+        package var displayName: String?
+        package var contextClass: KubeContextClass
+        package var writable: Bool
+        package var namespace: String
+        package var isDefault: Bool
+        package var isCurrent: Bool
         /// Why its requests stop now, when they do.
-        var problem: String?
+        package var problem: String?
         /// Whether the write tools work here (`KubeAgentWrites`).
-        var agentsWrite = false
+        package var agentsWrite = false
     }
 
     /// What the header says of writes.
-    static func writesSaid(_ rows: [ContextRow]) -> String {
+    package static func writesSaid(_ rows: [ContextRow]) -> String {
         rows.contains(where: \.agentsWrite)
             ? "Agents write only where a context says so (k8s_restart, k8s_scale, k8s_delete_pod, k8s_apply), each call asked of the user first."
             : "Agents only read: no context is writable for agents now."
     }
 
-    static func contexts(_ rows: [ContextRow]) -> String {
+    package static func contexts(_ rows: [ContextRow]) -> String {
         var lines = [
             rows.contains(where: \.isDefault)
                 ? "The kubeconfig's contexts (* the one the tools use unless told another). \(writesSaid(rows))"
@@ -1083,7 +1083,7 @@ enum KubeMCPText {
     /// A Table as `kubectl get` prints it: a NAMESPACE column first across
     /// namespaces, the default columns (or every one, `wide`), cells cut,
     /// columns padded; rows with `filter`'s text only; a cut list said.
-    static func table(
+    package static func table(
         _ table: KubeTable, kind: KubeResourceKind, allNamespaces: Bool, wide: Bool, filter: String?, selectors: [String] = [], name: String? = nil
     ) -> String {
         let shown = table.columns.enumerated().filter { wide || $0.element.priority == 0 }
@@ -1120,19 +1120,19 @@ enum KubeMCPText {
     }
 
     /// A list's `metadata.continue`: there when the server cut it.
-    static func continueToken(_ body: Data) -> String? {
+    package static func continueToken(_ body: Data) -> String? {
         let metadata = ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any])?["metadata"] as? [String: Any]
         return (metadata?["continue"] as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
 
-    static func cut(_ text: String) -> String {
+    package static func cut(_ text: String) -> String {
         let flat = text.replacingOccurrences(of: "\n", with: " ")
         return flat.count > maxCell ? String(flat.prefix(maxCell)) + "…" : flat
     }
 
     /// A Secret, from its Table row: its type and how many keys — never
     /// their names or values, which only its GET has.
-    static func secret(_ row: KubeRow, columns: [KubeColumn], namespace: String) -> String {
+    package static func secret(_ row: KubeRow, columns: [KubeColumn], namespace: String) -> String {
         let type = row.cell("Type", in: columns)?.text ?? "?"
         let keys = row.cell("Data", in: columns)?.text ?? "?"
         let age = row.cell("Age", in: columns)?.text
@@ -1142,7 +1142,7 @@ enum KubeMCPText {
     }
 
     /// The pods a workload or a Service selects, as rows: bounded.
-    static func pods(_ table: KubeTable, selector: String, max: Int = 30) -> String {
+    package static func pods(_ table: KubeTable, selector: String, max: Int = 30) -> String {
         let pods = table.rows.sorted { $0.id < $1.id }.compactMap { KubePodSummary(row: $0, columns: table.columns) }
         guard !pods.isEmpty else { return "Pods it selects (\(selector)): none." }
         var lines = ["Pods it selects (\(selector)):"]
@@ -1160,7 +1160,7 @@ enum KubeMCPText {
 
     // MARK: An Overview
 
-    static func overview(_ overview: KubeOverview, title: String) -> String {
+    package static func overview(_ overview: KubeOverview, title: String) -> String {
         var lines = [title]
         for item in overview.facts { lines.append(self.item(item, indent: "")) }
         if let rollout = overview.rollout, overview.item("Rollout") == nil { lines.append("Rollout: \(rollout.message)") }
@@ -1179,7 +1179,7 @@ enum KubeMCPText {
 
     // MARK: Events
 
-    static func events(_ events: [(KubeEvent, String)], limit: Int, now: Date, empty: String) -> String {
+    package static func events(_ events: [(KubeEvent, String)], limit: Int, now: Date, empty: String) -> String {
         guard !events.isEmpty else { return empty }
         var lines = ["Events, newest first:"]
         for (event, about) in events.prefix(limit) {
@@ -1195,7 +1195,7 @@ enum KubeMCPText {
 
     // MARK: Rollouts
 
-    static func rollout(_ rollout: KubeRollout, _ object: [String: Any], of what: String) -> String {
+    package static func rollout(_ rollout: KubeRollout, _ object: [String: Any], of what: String) -> String {
         let spec = KubeAgentText.map(object["spec"])
         let status = KubeAgentText.map(object["status"])
         func int(_ key: String) -> Int { KubeRollout.int(status[key]) ?? 0 }
@@ -1212,7 +1212,7 @@ enum KubeMCPText {
     }
 
     /// Whether a ReplicaSet or ControllerRevision is the workload's own.
-    static func isOwned(_ item: [String: Any], by uid: String?, name: String, kind: String) -> Bool {
+    package static func isOwned(_ item: [String: Any], by uid: String?, name: String, kind: String) -> Bool {
         KubeAgentText.list(KubeAgentText.map(item["metadata"])["ownerReferences"]).contains { owner in
             if let uid, let theirs = owner["uid"] as? String { return theirs == uid }
             return owner["kind"] as? String == kind && owner["name"] as? String == name
@@ -1222,7 +1222,7 @@ enum KubeMCPText {
     /// Each revision — a Deployment's ReplicaSets, a StatefulSet's or a
     /// DaemonSet's ControllerRevisions — newest first: its images, its
     /// replicas, its age, its change-cause; nil with none.
-    static func history(_ items: [[String: Any]], of object: [String: Any], kind: String, now: Date, limit: Int = 15) -> String? {
+    package static func history(_ items: [[String: Any]], of object: [String: Any], kind: String, now: Date, limit: Int = 15) -> String? {
         let metadata = KubeAgentText.map(object["metadata"])
         let status = KubeAgentText.map(object["status"])
         let currentRevision = KubeAgentText.string(KubeAgentText.map(metadata["annotations"])["deployment.kubernetes.io/revision"]).flatMap { Int($0) }
@@ -1264,7 +1264,7 @@ enum KubeMCPText {
     // MARK: A brief
 
     /// Ask Why's brief as one text: the question, what is always sent, then each part.
-    static func brief(_ brief: KubeAgentBrief) -> String {
+    package static func brief(_ brief: KubeAgentBrief) -> String {
         var text = "Question: \(brief.message)\n\n\(brief.text)"
         for part in brief.parts { text += "\n\n## \(part.title)\n\(part.text)" }
         return text
@@ -1273,7 +1273,7 @@ enum KubeMCPText {
     // MARK: Time
 
     /// `30s`, `10m`, `2h`, `1d`, `90` (seconds) as seconds; nil otherwise.
-    static func seconds(_ text: String) -> Int? {
+    package static func seconds(_ text: String) -> Int? {
         let trimmed = text.trimmingCharacters(in: .whitespaces).lowercased()
         if let plain = Int(trimmed) { return plain > 0 ? plain : nil }
         guard let unit = trimmed.last, let value = Int(trimmed.dropLast()), value > 0 else { return nil }
@@ -1290,7 +1290,7 @@ enum KubeMCPText {
     }
 
     /// RFC 3339 in whole seconds, UTC: what `sinceTime` takes.
-    static func rfc3339(_ date: Date) -> String {
+    package static func rfc3339(_ date: Date) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         formatter.timeZone = TimeZone(identifier: "UTC")
@@ -1306,11 +1306,11 @@ enum KubeMCPText {
 /// decision); agents keep the stricter rule they had, an explicit
 /// `writable: true` standing for production's former session switch.
 /// Nothing else turns them on. Pure.
-enum KubeAgentWrites {
-    static let tools = ["k8s_restart", "k8s_scale", "k8s_delete_pod", "k8s_apply"]
+package enum KubeAgentWrites {
+    package static let tools = ["k8s_restart", "k8s_scale", "k8s_delete_pod", "k8s_apply"]
 
     /// Why agents may not write on `context`; nil when they may.
-    static func refused(_ context: KubeContext, agentWrites: [String]) -> String? {
+    package static func refused(_ context: KubeContext, agentWrites: [String]) -> String? {
         guard context.isWritable else {
             return "\(context.name) is read-only for Overterm (its writable setting), so for agents too."
         }
@@ -1328,7 +1328,7 @@ enum KubeAgentWrites {
 
     /// The confirmation's title: who asks, the context and namespace, then
     /// what — `An agent asks, in kind-fake · namespace shop: Scale …?`.
-    static func title(_ confirmation: KubeWriteConfirmation) -> String {
+    package static func title(_ confirmation: KubeWriteConfirmation) -> String {
         "An agent asks, in \(confirmation.scope): \(confirmation.title)"
     }
 }

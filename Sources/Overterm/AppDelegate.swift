@@ -3,12 +3,12 @@ import Combine
 import UserNotifications
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var windowController: TerminalWindowController?
     /// The census's context from the app's windows (`wireActivityCensus`).
     private var activityCensus: AnyCancellable?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    package func applicationDidFinishLaunching(_ notification: Notification) {
         // A scenario whose environment carries a credential variable stops
         // before any pane could inherit it (analysis 4.5): its names, never
         // their values, as the run's one failed check.
@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Quitting closes every tab: always confirmed — unless the window's own
     /// close was just confirmed, or nothing is open.
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    package func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Unsaved editor changes ask first, whatever Settings says about tabs
         // (closing the window asks about them itself).
         // A cluster object's YAML with edits not applied counts too: it is never saved.
@@ -193,14 +193,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         return alert.runModal() == .alertFirstButtonReturn ? quitting() : .terminateCancel
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    package func applicationWillTerminate(_ notification: Notification) {
         endRun()
     }
 
     /// What quitting ends, so nothing Overterm started outlives it: at
     /// quit, and at the end of an end-to-end scenario, which exits without
     /// quitting (`E2ERunner.start`).
-    func endRun() {
+    package func endRun() {
         // Save first: the autosave is debounced and would miss a quick quit.
         // With each pane's text — unless closing the window already did.
         windowController?.saveFinalSession()
@@ -236,28 +236,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     /// Overterm ▸ Settings… (⌘,): the Settings tab.
-    @objc func showSettings(_ sender: Any?) {
+    @objc package func showSettings(_ sender: Any?) {
         windowController?.openSettings()
     }
 
-    @objc func showChangelog(_ sender: Any?) {
+    @objc package func showChangelog(_ sender: Any?) {
         ChangelogWindowController.shared.show()
     }
 
     /// Settings ▸ About, checking.
-    @objc func checkForUpdates(_ sender: Any?) {
+    @objc package func checkForUpdates(_ sender: Any?) {
         windowController?.openSettings(.about)
         Task { await UpdateChecker.shared.check() }
     }
 
     /// Finder's Open With, or a drop on the Dock icon.
-    func application(_ application: NSApplication, open urls: [URL]) {
+    package func application(_ application: NSApplication, open urls: [URL]) {
         windowController?.open(urls)
     }
 
     /// Finder's "New Overterm Tab Here" (Info.plist NSServices): the
     /// selected files and folders, as for Open With.
-    @objc func newTabHere(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString>) {
+    @objc package func newTabHere(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString>) {
         let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
         guard !urls.isEmpty else {
             error.pointee = "No files or folders to open." as NSString
@@ -268,12 +268,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Overterm ▸ About Overterm. The menu item has no target: the action
     /// reaches the app's delegate after the windows' responders.
-    @objc func showAbout(_ sender: Any?) {
+    @objc package func showAbout(_ sender: Any?) {
         AboutPanel.show()
     }
 
     /// Returning to the app is "seeing" the selected tab.
-    func applicationDidBecomeActive(_ notification: Notification) {
+    package func applicationDidBecomeActive(_ notification: Notification) {
         windowController?.windowDidBecomeKey(notification)
     }
 
@@ -281,7 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// system may call it off the main thread, and this conformance's
     /// isolation check would trap there (as AttentionNotifier's completion
     /// did); the tab is revealed on the main thread.
-    nonisolated func userNotificationCenter(
+    package nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let id = (response.notification.request.content.userInfo[AttentionNotifier.tabIDKey] as? String).flatMap(UUID.init(uuidString:))
@@ -293,7 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         completionHandler()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    package func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
 }

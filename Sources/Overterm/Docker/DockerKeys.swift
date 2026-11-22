@@ -3,13 +3,13 @@ import Foundation
 /// The Docker lists' keys (`ResourceKey`): single letters, only while a
 /// list has the keyboard — the terminal never sees them, and a list is
 /// where a keystroke can't be text. `?` shows this table. Pure.
-enum DockerKey: String, ResourceKey {
+package enum DockerKey: String, ResourceKey {
     case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, client, askAgent, inspect, files, open, database, vulnerabilities, settings, remove,
         composeUp, composeUpFreePorts, composeDown, checkUpdates, rebuild, watch, run, filter, cleanUp, containers, images, volumes, networks, builds, models,
         help
 
     /// The section a digit goes to.
-    var section: DockerPageModel.Section? {
+    package var section: DockerPageModel.Section? {
         switch self {
         case .containers: .containers
         case .images: .images
@@ -22,7 +22,7 @@ enum DockerKey: String, ResourceKey {
     }
 
     /// What is pressed: one character, or a key's name.
-    var key: String {
+    package var key: String {
         switch self {
         case .details: "↩"
         case .toggleDetail: "Space"
@@ -61,7 +61,7 @@ enum DockerKey: String, ResourceKey {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .details: "Logs of the selected container; a build's steps"
         case .toggleDetail: "Show or hide the detail"

@@ -13,10 +13,10 @@ import Foundation
 /// keep unique: each change counts the key's rows first and runs only when
 /// that is one, and they run one at a time, not in a transaction.
 extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserManagement {
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .slowQueries, .sizes] }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .slowQueries, .sizes] }
 
     /// KILL QUERY alone: over HTTP there is no session to end.
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
         guard !session.id.isEmpty else { return [] }
         return [
             SessionStop(
@@ -26,17 +26,17 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
         ]
     }
 
-    func editDialect() async -> SQLDialect { .clickhouse }
-    func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
-    func userStatements() async -> any UserStatementMaking { ClickHouseUserStatements() }
+    package func editDialect() async -> SQLDialect { .clickhouse }
+    package func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
+    package func userStatements() async -> any UserStatementMaking { ClickHouseUserStatements() }
 
     /// Mutations: ALTER TABLE … UPDATE, a lightweight DELETE, an INSERT —
     /// each UPDATE and DELETE counting its key's rows first.
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
+    package func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
         try ClickHouseOps.editStatements(edits, rows: rows, result: result)
     }
 
-    func editSaveNote() async -> String { ClickHouseOps.mutationNote }
+    package func editSaveNote() async -> String { ClickHouseOps.mutationNote }
 
     /// A read of the page's, marked so its own record of statements leaves it out.
     private func read(_ sql: String, limit: Int = 10_000) async throws -> QueryResult {
@@ -45,14 +45,14 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
 
     // MARK: Monitoring
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         let result = try await read(ClickHouseOps.overviewSQL, limit: 1)
         let maxConnections = try? await read("SELECT value FROM system.server_settings WHERE name = 'max_connections'", limit: 1)
         let replicas = try? await read("SELECT count() AS replicas, max(absolute_delay) AS delay FROM system.replicas", limit: 1)
         return ClickHouseOps.overview(result, maxConnections: maxConnections, replicas: replicas, readOnly: config.readOnly)
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         do {
             return .value(ClickHouseOps.activity(try await read(ClickHouseOps.activitySQL)))
         } catch  where ClickHouseOps.isPrivilege(error) {
@@ -61,7 +61,7 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
     }
 
     /// system.query_log, the last seven days grouped by the normalized query.
-    func slowQueries() async throws -> Monitored<[SlowQuery]> {
+    package func slowQueries() async throws -> Monitored<[SlowQuery]> {
         do {
             let byTotal = try await read(ClickHouseOps.slowSQL(byMean: false), limit: 100)
             let byMean = try await read(ClickHouseOps.slowSQL(byMean: true), limit: 100)
@@ -76,7 +76,7 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
         }
     }
 
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         var sizes = DatabaseSizes()
         do {
             sizes.databases = PostgresOps.sizes(try await read(ClickHouseOps.databaseSizesSQL, limit: 200))
@@ -94,7 +94,7 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
     }
 
     /// `KILL QUERY` — a query is cancelled; HTTP has no session to end.
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("KILL QUERY") }
         guard !terminate else { throw DatabaseError.failed("ClickHouse ends no session: a query is cancelled (KILL QUERY).") }
         guard !session.isEmpty else { throw DatabaseError.failed("No query \(session).") }
@@ -108,7 +108,7 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
 
     /// A plain MergeTree table's primary key, its columns plain names. Why
     /// another table's rows aren't edited is thrown, as the edit bar says it.
-    func key(of table: TableName) async throws -> TableKey? {
+    package func key(of table: TableName) async throws -> TableKey? {
         let dialect = SQLDialect.clickhouse
         let database = table.schema.map(dialect.literal) ?? "currentDatabase()"
         let found = try await read(
@@ -127,7 +127,7 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
     /// One at a time, each waited for (`mutations_sync`): an UPDATE or DELETE
     /// only once its key finds exactly one row. ClickHouse has no transaction
     /// to roll back: one that fails stops the rest, and says which ran.
-    func apply(_ statements: [EditStatement]) async throws {
+    package func apply(_ statements: [EditStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("saving the edits") }
         for (index, statement) in statements.enumerated() {
             if let countSQL = statement.countSQL {
@@ -148,7 +148,7 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
 
     /// system.users and system.roles — never `auth_params`; a user from the
     /// server's users.xml marked: SQL can't change it.
-    func users() async throws -> Monitored<[DatabaseUser]> {
+    package func users() async throws -> Monitored<[DatabaseUser]> {
         do {
             let users = try await read(ClickHouseOps.usersSQL)
             let roles = try await read("SELECT name, storage FROM system.roles ORDER BY name")
@@ -162,7 +162,7 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
         }
     }
 
-    func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
+    package func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
         let who = SQLDialect.clickhouse.literal(user.name)
         do {
             let result = try await read(
@@ -175,7 +175,7 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
         }
     }
 
-    func run(_ statements: [UserStatement]) async throws {
+    package func run(_ statements: [UserStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("changing users") }
         for statement in statements {
             do {
@@ -189,21 +189,21 @@ extension ClickHouseDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUs
 
 /// ClickHouse's statements for the Server and Users pages, and their answers
 /// read. Pure.
-enum ClickHouseOps {
+package enum ClickHouseOps {
     /// What the page's own reads start with: system.query_log keeps it, and
     /// Slow Queries leaves those out.
-    static let marker = "/* overterm server page */ "
+    package static let marker = "/* overterm server page */ "
 
     /// `KILL QUERY WHERE query_id = '…'` — the id a literal.
-    static func kill(_ queryID: String) -> String { "KILL QUERY WHERE query_id = \(SQLDialect.clickhouse.literal(queryID))" }
+    package static func kill(_ queryID: String) -> String { "KILL QUERY WHERE query_id = \(SQLDialect.clickhouse.literal(queryID))" }
 
-    static let mutationNote =
+    package static let mutationNote =
         "ClickHouse: each change is a mutation (ALTER TABLE … UPDATE, a lightweight DELETE) that rewrites the parts it touches. Its primary key isn't unique, so each counts the key's rows first and runs only when that is one; they run one at a time, each waited for — not in a transaction: one that fails stops the rest, and those before it stay."
 
     /// A Save's statements: deletes, updates, inserts, as SQL's are ordered —
     /// an UPDATE as `ALTER TABLE … UPDATE`, never of a sorting or partition
     /// key's column; a DELETE lightweight; each counted by its key first. Pure.
-    static func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
+    package static func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
         let dialect = SQLDialect.clickhouse
         let table = dialect.qualified(result.key.table)
         func whereKey(_ row: Int) throws -> String {
@@ -244,24 +244,24 @@ enum ClickHouseOps {
         return statements
     }
 
-    static func isPrivilege(_ error: Error) -> Bool {
+    package static func isPrivilege(_ error: Error) -> Bool {
         let text = error.localizedDescription
         return text.contains("ACCESS_DENIED") || text.contains("Not enough privileges")
     }
 
-    static func isMissing(_ error: Error) -> Bool {
+    package static func isMissing(_ error: Error) -> Bool {
         let text = error.localizedDescription
         return text.contains("UNKNOWN_TABLE") || text.contains("does not exist") || text.contains("doesn't exist")
     }
 
-    static let queryLogMissing = MonitorGap(
+    package static let queryLogMissing = MonitorGap(
         reason: "There is no system.query_log — this server keeps no record of its queries (it is written every 7.5 s, so a new server's appears after its first queries).",
         fix: "<query_log> in the server's config.xml (on by default), and the log_queries setting = 1 (on by default)")
 
     // MARK: Statements
 
     /// Aggregates only: a scalar subquery over no rows would fail.
-    static let overviewSQL = """
+    package static let overviewSQL = """
         SELECT version() AS version, uptime() AS uptime, hostName() AS host, currentDatabase() AS db,
           (SELECT count() FROM system.processes) AS running,
           (SELECT sum(value) FROM system.metrics WHERE metric IN ('TCPConnection', 'HTTPConnection', 'MySQLConnection', 'PostgreSQLConnection')) AS connections,
@@ -278,7 +278,7 @@ enum ClickHouseOps {
         """
 
     /// Every running query; the page's own read marked.
-    static let activitySQL = """
+    package static let activitySQL = """
         SELECT query_id AS id, user, current_database AS db, toString(address) AS client, client_name, http_user_agent, elapsed AS seconds,
           query, is_cancelled, read_rows, formatReadableSize(memory_usage) AS memory, query_id = queryID() AS own
         FROM system.processes ORDER BY elapsed DESC
@@ -286,7 +286,7 @@ enum ClickHouseOps {
 
     /// Aliases unlike any column: ClickHouse's aliases are the whole
     /// statement's, so `any(user) AS user` would read itself.
-    static func slowSQL(byMean: Bool) -> String {
+    package static func slowSQL(byMean: Bool) -> String {
         """
         SELECT toString(normalized_query_hash) AS hash, any(current_database) AS db, any(user) AS who, count() AS calls,
           sum(query_duration_ms) / 1000 AS total, avg(query_duration_ms) / 1000 AS mean, sum(result_rows) AS result_count,
@@ -297,23 +297,23 @@ enum ClickHouseOps {
         """
     }
 
-    static let databaseSizesSQL = """
+    package static let databaseSizesSQL = """
         SELECT database AS name, sum(bytes_on_disk) AS size, concat(toString(sum(rows)), ' rows, ', toString(count()), ' parts') AS detail
         FROM system.parts WHERE active GROUP BY database ORDER BY size DESC
         """
 
-    static let tableSizesSQL = """
+    package static let tableSizesSQL = """
         SELECT database AS schema, table AS name, sum(bytes_on_disk) AS size,
           concat('rows ', toString(sum(rows)), ', ', toString(count()), ' parts, ', formatReadableSize(sum(data_uncompressed_bytes)), ' raw') AS detail
         FROM system.parts WHERE active GROUP BY database, table ORDER BY size DESC LIMIT 50
         """
 
-    static let skipIndexSizesSQL = """
+    package static let skipIndexSizesSQL = """
         SELECT database AS schema, name, data_compressed_bytes AS size, concat('on ', table, ', ', type) AS detail
         FROM system.data_skipping_indices WHERE data_compressed_bytes > 0 ORDER BY size DESC LIMIT 50
         """
 
-    static let usersSQL = """
+    package static let usersSQL = """
         SELECT name, storage, toString(auth_type) AS auth, arrayStringConcat(arrayConcat(host_ip, host_names, host_names_like), ', ') AS hosts,
           default_database
         FROM system.users ORDER BY name
@@ -321,7 +321,7 @@ enum ClickHouseOps {
 
     // MARK: Answers
 
-    static func overview(_ result: QueryResult, maxConnections: QueryResult?, replicas: QueryResult?, readOnly: Bool) -> ServerOverview {
+    package static func overview(_ result: QueryResult, maxConnections: QueryResult?, replicas: QueryResult?, readOnly: Bool) -> ServerOverview {
         guard let row = ResultRow.rows(of: result).first else { return ServerOverview() }
         var facts: [ServerFact] = []
         facts.append(ServerFact(title: "Version", value: row["version"] ?? "—", detail: row["host"].map { "on \($0)" }))
@@ -353,7 +353,7 @@ enum ClickHouseOps {
         return ServerOverview(facts: facts, notes: readOnly ? ["Read-only: ClickHouse's readonly = 1."] : [])
     }
 
-    static func activity(_ result: QueryResult) -> [DatabaseActivity] {
+    package static func activity(_ result: QueryResult) -> [DatabaseActivity] {
         ResultRow.rows(of: result).map { row in
             let agent = [row["client_name"], row["http_user_agent"]].compactMap { $0 }.first { !$0.isEmpty }
             let doing = [row["memory"].map { "\($0) memory" }, row["read_rows"].map { "\($0) rows read" }].compactMap { $0 }.joined(separator: ", ")
@@ -366,7 +366,7 @@ enum ClickHouseOps {
         }
     }
 
-    static func slowQueries(_ results: [QueryResult]) -> [SlowQuery] {
+    package static func slowQueries(_ results: [QueryResult]) -> [SlowQuery] {
         var seen: Set<String> = []
         var out: [SlowQuery] = []
         for result in results {
@@ -385,11 +385,11 @@ enum ClickHouseOps {
     /// Engines whose rows a mutation finds by their key as a person expects:
     /// the plain MergeTree. Replacing, Collapsing, Summing… merge rows on
     /// their own terms.
-    static let editableEngines: Set<String> = ["MergeTree", "ReplicatedMergeTree", "SharedMergeTree"]
+    package static let editableEngines: Set<String> = ["MergeTree", "ReplicatedMergeTree", "SharedMergeTree"]
 
     /// A key's columns as plain names: `id, ts` → ["id", "ts"]; nil for an
     /// expression (`toDate(ts)`), which no cell holds.
-    static func plainColumns(_ expression: String) -> [String]? {
+    package static func plainColumns(_ expression: String) -> [String]? {
         let parts = expression.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         guard !parts.isEmpty else { return nil }
         var names: [String] = []
@@ -403,14 +403,14 @@ enum ClickHouseOps {
     }
 
     /// Types whose grid text isn't a literal ClickHouse reads back as the value.
-    static func isUnwritable(_ type: String) -> Bool {
+    package static func isUnwritable(_ type: String) -> Bool {
         let bare = type.hasPrefix("LowCardinality(") ? String(type.dropFirst(15).dropLast()) : type
         let inner = bare.hasPrefix("Nullable(") ? String(bare.dropFirst(9).dropLast()) : bare
         return ["Array(", "Map(", "Tuple(", "Nested(", "Object(", "JSON", "AggregateFunction(", "SimpleAggregateFunction(", "Variant(", "Dynamic"]
             .contains { inner.hasPrefix($0) }
     }
 
-    static func key(_ table: ResultRow, columns: QueryResult) -> Result<TableKey, EditRefusal> {
+    package static func key(_ table: ResultRow, columns: QueryResult) -> Result<TableKey, EditRefusal> {
         let name = table["name"] ?? ""
         let engine = table["engine"] ?? ""
         guard editableEngines.contains(engine) else {
@@ -443,22 +443,22 @@ enum ClickHouseOps {
         return .success(key)
     }
 
-    static func stopped(index: Int, found: Int, sql: String) -> String {
+    package static func stopped(index: Int, found: Int, sql: String) -> String {
         "Statement \(index + 1)'s key finds \(found) rows, not 1 — the row has changed or gone since it was read, or the key isn't unique. "
             + (index == 0 ? "Nothing was changed." : "The \(index) before it were applied (ClickHouse has no transaction); none after it ran.") + "\n\(sql)"
     }
 
-    static func failed(index: Int, error: String, sql: String) -> String {
+    package static func failed(index: Int, error: String, sql: String) -> String {
         "Statement \(index + 1) failed: \(error) — "
             + (index == 0 ? "nothing was changed." : "the \(index) before it were applied (ClickHouse has no transaction); none after it ran.") + "\n\(sql)"
     }
 
     /// What a user from the server's config files says among its
     /// attributes; the page offers no write on it.
-    static let configUser = "from users.xml — SQL can't change it, its config file does"
-    static let ldapUser = "from LDAP — changed there, not here"
+    package static let configUser = "from users.xml — SQL can't change it, its config file does"
+    package static let ldapUser = "from LDAP — changed there, not here"
 
-    static func users(_ users: QueryResult, roles: QueryResult, memberships: QueryResult) -> [DatabaseUser] {
+    package static func users(_ users: QueryResult, roles: QueryResult, memberships: QueryResult) -> [DatabaseUser] {
         var memberOf: [String: [String]] = [:]
         for row in ResultRow.rows(of: memberships) {
             guard let role = row["granted_role_name"], let member = row["user_name"] ?? row["role_name"] else { continue }
@@ -491,7 +491,7 @@ enum ClickHouseOps {
 
     /// system.grants by object — `*.*`, `db.*`, `db.table` (a column's,
     /// and a partial revoke, said in the privilege) — and the roles granted.
-    static func grants(_ result: QueryResult, roles: QueryResult) -> [DatabaseGrant] {
+    package static func grants(_ result: QueryResult, roles: QueryResult) -> [DatabaseGrant] {
         var out: [DatabaseGrant] = []
         var at: [String: Int] = [:]
         for row in ResultRow.rows(of: result) {
@@ -535,11 +535,11 @@ enum ClickHouseOps {
 /// the wire — and VALID UNTIL, or CREATE ROLE for one that doesn't log in;
 /// GRANT/REVOKE on `*.*`, a database, a table; roles; DROP USER/ROLE. A user
 /// from users.xml or LDAP is offered nothing. Pure.
-struct ClickHouseUserStatements: UserStatementMaking {
-    static let mask = "'••••••••'"
+package struct ClickHouseUserStatements: UserStatementMaking {
+    package static let mask = "'••••••••'"
     private var dialect: SQLDialect { .clickhouse }
 
-    var form: UserForm {
+    package var form: UserForm {
         UserForm(
             login: true, superuser: nil, validUntil: true,
             passwordNote: "The password is sent as its salted SHA-256 hash (sha256_hash) — never in the clear, and never kept here.",
@@ -552,21 +552,21 @@ struct ClickHouseUserStatements: UserStatementMaking {
     }
 
     /// ClickHouse's `sha256_hash`: SHA-256 of the password then the salt, in hex.
-    static func hash(_ password: String, salt: String) -> String {
+    package static func hash(_ password: String, salt: String) -> String {
         SHA256.hash(data: Data((password + salt).utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     /// ` IDENTIFIED WITH sha256_hash BY '<hash>' SALT '<salt>'`; `salt` the tests'.
-    func identified(_ password: String, salt: Data? = nil) throws -> (sql: String, shown: String) {
+    package func identified(_ password: String, salt: Data? = nil) throws -> (sql: String, shown: String) {
         guard !password.isEmpty else { throw Self.refusal("A password, please.") }
         let salt = (salt ?? Data((0..<16).map { _ in UInt8.random(in: 0...255) })).map { String(format: "%02x", $0) }.joined()
         let tail = " SALT " + dialect.literal(salt)
         return (" IDENTIFIED WITH sha256_hash BY " + dialect.literal(Self.hash(password, salt: salt)) + tail, " IDENTIFIED WITH sha256_hash BY " + Self.mask + tail)
     }
 
-    func create(_ user: NewUser) throws -> [UserStatement] { try create(user, salt: nil) }
+    package func create(_ user: NewUser) throws -> [UserStatement] { try create(user, salt: nil) }
 
-    func create(_ user: NewUser, salt: Data?) throws -> [UserStatement] {
+    package func create(_ user: NewUser, salt: Data?) throws -> [UserStatement] {
         let name = dialect.identifier(try checked(user.name.trimmingCharacters(in: .whitespaces)))
         guard user.login else {
             guard user.password.isEmpty else { throw Self.refusal("A role has no password — or tick Logs in.") }
@@ -577,16 +577,16 @@ struct ClickHouseUserStatements: UserStatementMaking {
         return [UserStatement("CREATE USER \(name)" + identified.sql + until, shown: "CREATE USER \(name)" + identified.shown + until)]
     }
 
-    func password(of user: DatabaseUser, to password: String) throws -> UserStatement { try self.password(of: user, to: password, salt: nil) }
+    package func password(of user: DatabaseUser, to password: String) throws -> UserStatement { try self.password(of: user, to: password, salt: nil) }
 
-    func password(of user: DatabaseUser, to password: String, salt: Data?) throws -> UserStatement {
+    package func password(of user: DatabaseUser, to password: String, salt: Data?) throws -> UserStatement {
         let head = "ALTER USER " + dialect.identifier(try checked(user.name))
         let identified = try identified(password, salt: salt)
         return UserStatement(head + identified.sql, shown: head + identified.shown)
     }
 
     /// `yyyy-MM-dd`, checked to be a date; nil when empty.
-    static func validUntil(_ text: String) throws -> String? {
+    package static func validUntil(_ text: String) throws -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
         let formatter = DateFormatter()
@@ -597,16 +597,16 @@ struct ClickHouseUserStatements: UserStatementMaking {
     }
 
     /// Not a user the server's config files or LDAP keep.
-    static func isSQLs(_ user: DatabaseUser) -> Bool {
+    package static func isSQLs(_ user: DatabaseUser) -> Bool {
         !user.attributes.contains(ClickHouseOps.configUser) && !user.attributes.contains(ClickHouseOps.ldapUser)
     }
 
-    func offers(_ action: UserAction, on user: DatabaseUser) -> Bool {
+    package func offers(_ action: UserAction, on user: DatabaseUser) -> Bool {
         guard Self.isSQLs(user) else { return false }
         return action != .password || !user.isRole
     }
 
-    func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
+    package func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
         func field(_ at: Int) -> String { fields.indices.contains(at) ? fields[at] : "" }
         switch kind.title {
         case "Server": return .server
@@ -615,7 +615,7 @@ struct ClickHouseUserStatements: UserStatementMaking {
         }
     }
 
-    func privileges(on target: GrantTarget) -> [String] {
+    package func privileges(on target: GrantTarget) -> [String] {
         let tables = ["SELECT", "INSERT", "ALTER", "DROP", "TRUNCATE", "OPTIMIZE", "SHOW"]
         switch target {
         case .server: return ["ALL"] + tables + ["CREATE", "KILL QUERY", "ACCESS MANAGEMENT", "SYSTEM", "dictGet"]
@@ -638,7 +638,7 @@ struct ClickHouseUserStatements: UserStatementMaking {
         }
     }
 
-    func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
+    package func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
         let allowed = self.privileges(on: target)
         guard !privileges.isEmpty else { throw Self.refusal("Pick a privilege.") }
         for privilege in privileges where !allowed.contains(privilege) {
@@ -656,7 +656,7 @@ struct ClickHouseUserStatements: UserStatementMaking {
 
     /// The listed grant back: its privileges on its object (a column's or a
     /// partial revoke's left alone), or a role.
-    func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
+    package func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
         guard Self.isSQLs(user), let who = try? checked(user.name) else { return nil }
         if grant.kind == "role" {
             guard let role = try? checked(grant.object) else { return nil }
@@ -669,15 +669,15 @@ struct ClickHouseUserStatements: UserStatementMaking {
     }
 
     /// Roles only: ClickHouse grants a role, never a user.
-    func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
+    package func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
         users.filter { $0.isRole && $0.id != user.id && !user.memberOf.contains($0.name) }
     }
 
-    func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
+    package func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
         UserStatement("GRANT \(dialect.identifier(try checked(role.name, "A role"))) TO \(dialect.identifier(try checked(user.name)))")
     }
 
-    func drop(_ user: DatabaseUser) throws -> UserStatement {
+    package func drop(_ user: DatabaseUser) throws -> UserStatement {
         UserStatement((user.isRole ? "DROP ROLE " : "DROP USER ") + dialect.identifier(try checked(user.name)))
     }
 }

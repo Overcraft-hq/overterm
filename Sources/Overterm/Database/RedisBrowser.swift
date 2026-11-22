@@ -4,36 +4,36 @@ import Foundation
 /// which stops the server — filtered on the server by a pattern and a type,
 /// each key's type read in the same round trip, and laid out as folders.
 @MainActor
-final class RedisBrowser: ObservableObject {
-    let db: Int
+package final class RedisBrowser: ObservableObject {
+    package let db: Int
     private weak var session: DatabaseSession?
 
-    @Published var pattern = ""
+    @Published package var pattern = ""
     /// nil: every type.
-    @Published var type: String?
-    @Published private(set) var keys: [RedisKeyEntry] = []
-    @Published private(set) var tree = RedisKeyTree([])
+    @Published package var type: String?
+    @Published package private(set) var keys: [RedisKeyEntry] = []
+    @Published package private(set) var tree = RedisKeyTree([])
     /// Where the next page starts; "0" once the scan has gone round.
-    @Published private(set) var cursor = "0"
-    @Published private(set) var scanned = false
-    @Published private(set) var isScanning = false
-    @Published private(set) var error: String?
+    @Published package private(set) var cursor = "0"
+    @Published package private(set) var scanned = false
+    @Published package private(set) var isScanning = false
+    @Published package private(set) var error: String?
     /// DBSIZE: how many keys the database has, matched or not.
-    @Published private(set) var total: Int?
+    @Published package private(set) var total: Int?
     private var ticket = 0
 
     /// Keys a page brings at most.
-    static let page = 500
+    package static let page = 500
 
-    init(db: Int, session: DatabaseSession) {
+    package init(db: Int, session: DatabaseSession) {
         self.db = db
         self.session = session
     }
 
-    var hasMore: Bool { scanned && cursor != "0" }
+    package var hasMore: Bool { scanned && cursor != "0" }
 
     /// From the start: a new pattern or type, or Refresh.
-    func scan() async {
+    package func scan() async {
         ticket += 1
         keys = []
         tree = RedisKeyTree([])
@@ -43,7 +43,7 @@ final class RedisBrowser: ObservableObject {
     }
 
     /// The next page: SCAN until it found a page of keys or went round.
-    func more() async {
+    package func more() async {
         guard let driver = session?.redis, !isScanning, !(scanned && cursor == "0") else { return }
         let ticket = self.ticket
         isScanning = true
@@ -83,14 +83,14 @@ final class RedisBrowser: ObservableObject {
     }
 
     /// A key made or renamed here: in the list without a scan.
-    func added(_ entry: RedisKeyEntry) {
+    package func added(_ entry: RedisKeyEntry) {
         guard !keys.contains(where: { $0.name == entry.name }) else { return }
         keys.append(entry)
         tree = RedisKeyTree(keys, delimiter: session?.connection.redisDelimiter ?? ":")
         total = total.map { $0 + 1 }
     }
 
-    func removed(_ name: String) {
+    package func removed(_ name: String) {
         guard keys.contains(where: { $0.name == name }) else { return }
         keys.removeAll { $0.name == name }
         tree = RedisKeyTree(keys, delimiter: session?.connection.redisDelimiter ?? ":")
@@ -101,5 +101,5 @@ final class RedisBrowser: ObservableObject {
 extension DatabaseConnection {
     /// What separates a key's folders in the browser: `:`, as Redis
     /// Insight has it.
-    var redisDelimiter: String { ":" }
+    package var redisDelimiter: String { ":" }
 }

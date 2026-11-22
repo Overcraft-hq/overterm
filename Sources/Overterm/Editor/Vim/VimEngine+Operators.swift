@@ -1,7 +1,7 @@
 import Foundation
 
 extension VimEngine {
-    func operate(_ op: VimOperator, _ target: VimTarget, _ command: VimCommand) -> Bool {
+    package func operate(_ op: VimOperator, _ target: VimTarget, _ command: VimCommand) -> Bool {
         let t = text
         let fromVisual = isVisual
         let p = fromVisual ? visualCursor : t.clampNormal(buffer.selection.location)
@@ -46,7 +46,7 @@ extension VimEngine {
 
     /// The text a linewise operator takes, and what deleting it removes: the
     /// last line takes the newline before it instead of one after.
-    func lineSpan(_ first: Int, _ last: Int, _ t: VimText) -> (text: String, delete: NSRange, content: NSRange) {
+    package func lineSpan(_ first: Int, _ last: Int, _ t: VimText) -> (text: String, delete: NSRange, content: NSRange) {
         let start = t.lineStart(first)
         let end = t.lineEnd(max(first, last))
         let content = NSRange(location: start, length: end - start)
@@ -61,7 +61,7 @@ extension VimEngine {
         return (t.substring(content) + "\n", delete, content)
     }
 
-    func apply(_ op: VimOperator, _ range: VimRange, register: Character?, cursor p: Int, fromVisual: Bool, times: Int, _ t: VimText) -> Bool {
+    package func apply(_ op: VimOperator, _ range: VimRange, register: Character?, cursor p: Int, fromVisual: Bool, times: Int, _ t: VimText) -> Bool {
         switch op {
         case .yank:
             switch range {
@@ -141,7 +141,7 @@ extension VimEngine {
         return true
     }
 
-    static func changeCase(_ s: String, _ op: VimOperator) -> String {
+    package static func changeCase(_ s: String, _ op: VimOperator) -> String {
         switch op {
         case .uppercase: return s.uppercased()
         case .lowercase: return s.lowercased()
@@ -152,7 +152,7 @@ extension VimEngine {
 
     /// `>` and `<`: edits worked out first, made from the bottom up so the
     /// offsets above stay true.
-    func shift(_ first: Int, _ last: Int, outdent: Bool, times: Int, _ t: VimText) {
+    package func shift(_ first: Int, _ last: Int, outdent: Bool, times: Int, _ t: VimText) {
         let unit = buffer.indentUnit()
         let width = unit == "\t" ? 4 : max(1, unit.count)
         var edits: [(NSRange, String)] = []
@@ -185,7 +185,7 @@ extension VimEngine {
 
     // MARK: Simple changes
 
-    func toggleCaseChars(_ n: Int) -> Bool {
+    package func toggleCaseChars(_ n: Int) -> Bool {
         let t = text
         let p = t.clampNormal(buffer.selection.location)
         let le = t.lineEnd(p)
@@ -200,7 +200,7 @@ extension VimEngine {
         return true
     }
 
-    func replaceChars(with c: String, count n: Int) -> Bool {
+    package func replaceChars(with c: String, count n: Int) -> Bool {
         let t = text
         let p = t.clampNormal(buffer.selection.location)
         let le = t.lineEnd(p)
@@ -220,7 +220,7 @@ extension VimEngine {
         return true
     }
 
-    func visualReplace(with c: String) -> Bool {
+    package func visualReplace(with c: String) -> Bool {
         let t = text
         let r = buffer.selection
         let old = t.substring(r)
@@ -232,7 +232,7 @@ extension VimEngine {
         return true
     }
 
-    func join(spaces: Bool, count: Int?) -> Bool {
+    package func join(spaces: Bool, count: Int?) -> Bool {
         var t = text
         var p: Int
         var joins: Int
@@ -277,7 +277,7 @@ extension VimEngine {
 
     // MARK: Put
 
-    func put(before: Bool, _ command: VimCommand) -> Bool {
+    package func put(before: Bool, _ command: VimCommand) -> Bool {
         guard let (string, linewise) = read(register: command.register), !string.isEmpty else { return false }
         let t = text
         let p = t.clampNormal(buffer.selection.location)
@@ -316,7 +316,7 @@ extension VimEngine {
 
     /// `p` over a selection: it replaces it, and (`p`, not `P`) the
     /// replaced text becomes the register.
-    func visualPut(before: Bool, _ command: VimCommand) -> Bool {
+    package func visualPut(before: Bool, _ command: VimCommand) -> Bool {
         guard let (string, linewise) = read(register: command.register) else { return false }
         let t = text
         let a = min(visualAnchor, visualCursor)

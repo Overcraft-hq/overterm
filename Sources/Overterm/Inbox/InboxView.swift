@@ -2,24 +2,24 @@ import AppKit
 import SwiftUI
 
 /// What the inbox can do to an entry.
-struct InboxActions {
+package struct InboxActions {
     /// Type a choice's key and Return into that tab's agent.
-    var answer: (Tab.ID, AgentPrompt.Choice) -> Void
-    var open: (Tab.ID) -> Void
+    package var answer: (Tab.ID, AgentPrompt.Choice) -> Void
+    package var open: (Tab.ID) -> Void
     /// Ask Why on a cluster's mark (KubeAttention): the brief to the tab's agent.
-    var askWhy: (Tab.ID) -> Void = { _ in }
+    package var askWhy: (Tab.ID) -> Void = { _ in }
     /// Show on a Left Behind note: Activity's Left Behind for the tab.
-    var showLeftBehind: (Tab.ID) -> Void = { _ in }
-    var close: () -> Void
+    package var showLeftBehind: (Tab.ID) -> Void = { _ in }
+    package var close: () -> Void
 }
 
 /// The column of everything waiting on you.
-struct InboxView: View {
-    @ObservedObject var model: InboxModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: InboxActions
+package struct InboxView: View {
+    @ObservedObject package var model: InboxModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: InboxActions
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("Agent Inbox").font(.system(size: ChromeMetrics.text(13), weight: .bold)).foregroundStyle(theme.text)
@@ -193,17 +193,17 @@ private struct InboxCard: View {
 /// It does not take it on its own: the inbox is a column you leave open,
 /// and a panel that grabbed focus whenever it appeared would stop you
 /// typing in the terminal beside it.
-final class InboxHostingView<Content: View>: NSHostingView<Content> {
-    var onKey: ((String) -> Bool)?
+package final class InboxHostingView<Content: View>: NSHostingView<Content> {
+    package var onKey: ((String) -> Bool)?
 
-    override var acceptsFirstResponder: Bool { true }
+    package override var acceptsFirstResponder: Bool { true }
 
-    override func mouseDown(with event: NSEvent) {
+    package override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         super.mouseDown(with: event)
     }
 
-    override func keyDown(with event: NSEvent) {
+    package override func keyDown(with event: NSEvent) {
         let key = event.keyCode == 53 ? "escape" : (event.keyCode == 36 ? "return" : (event.charactersIgnoringModifiers ?? ""))
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty, onKey?(key) == true { return }
         super.keyDown(with: event)

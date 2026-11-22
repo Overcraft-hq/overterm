@@ -13,7 +13,7 @@ extension TerminalWindowController {
     /// title, its checkout and branch, the forwards, the tunnels — comes
     /// with the stage that reads it, and with what rebuilds it when it
     /// changes.
-    static func activityContext(windows: [NSWindow] = NSApp.windows) -> ActivityContext {
+    package static func activityContext(windows: [NSWindow] = NSApp.windows) -> ActivityContext {
         let surfaces = SurfaceProcesses.shared
         if surfaces.hasWaiting, let snapshot = ActivityMonitor.shared.sampler.latest { surfaces.pair(snapshot) }
         var context = ActivityContext()
@@ -41,7 +41,7 @@ extension TerminalWindowController {
     /// The census's context follows this window's tabs and their panes: a
     /// tab opened, closed or moved in, a pane split off or moved between
     /// tabs. Surfaces and pairings say so themselves (`SurfaceProcesses`).
-    func watchActivityContext() {
+    package func watchActivityContext() {
         store.$tabs
             .map { tabs in Publishers.MergeMany(tabs.map { $0.$splits.map { _ in () } }).prepend(()) }
             .switchToLatest()
@@ -55,7 +55,7 @@ extension TerminalWindowController {
     /// the logins no pane has on its queue, the main actor pairs them
     /// (7.7) — and a pairing made brings the next tick early, so a new
     /// pane's processes are read a quarter of a second later.
-    static func wireActivityCensus() -> AnyCancellable {
+    package static func wireActivityCensus() -> AnyCancellable {
         let monitor = ActivityMonitor.shared
         monitor.contextSource = { activityContext() }
         // Left Behind follows the agents' runs in whatever lands (6.9).
@@ -83,9 +83,9 @@ extension TerminalWindowController {
 /// What the census's light tick says of one tab (docs/design/activity/
 /// analysis.md, 7.8's agent-poll row): what its processes listen on, each
 /// pane's own, and where its agent works. Pure: a value from a snapshot.
-struct TabLightRead: Equatable {
+package struct TabLightRead: Equatable {
     /// Where the tab's agent works.
-    enum Agent: Equatable, Sendable {
+    package enum Agent: Equatable, Sendable {
         /// No agent runs in any pane, or its folder can't be read: nothing
         /// to follow.
         case absent
@@ -102,17 +102,17 @@ struct TabLightRead: Equatable {
     /// the poll's `tree()` gave it), since a pill's Kill acts on it — a
     /// setuid program the pane runs, its effective uid the user's for now
     /// and root kept as its saved one, is root's (6.10's never-list).
-    var ports: [ListeningPort] = []
+    package var ports: [ListeningPort] = []
     /// The same by pane, the index in the panes asked: a pane's header
     /// says its own, never its neighbour's server.
-    var panePorts: [Int: [ListeningPort]] = [:]
-    var agent = Agent.absent
+    package var panePorts: [Int: [ListeningPort]] = [:]
+    package var agent = Agent.absent
 
     /// `tags`, a tab's panes — the focused one first, so its agent comes
     /// first and a process two panes place is the focused one's — as
     /// `snapshot` read them. A pane the snapshot has for another tab (one
     /// moved since its context was built) isn't this tab's yet.
-    static func of(_ tags: [String], tab: UUID, in snapshot: ActivitySnapshot) -> TabLightRead {
+    package static func of(_ tags: [String], tab: UUID, in snapshot: ActivitySnapshot) -> TabLightRead {
         var read = TabLightRead()
         var seen = Set<String>()
         for (index, tag) in tags.enumerated() {
@@ -131,7 +131,7 @@ struct TabLightRead: Equatable {
     /// first pane's agent, the focused one first, its folder the one the
     /// census knew at the tick — or `folder`'s answer, a read waited for
     /// (an MCP call's), nil when none came in time.
-    static func agent(
+    package static func agent(
         _ tags: [String], tab: UUID, in snapshot: ActivitySnapshot, folder: ((ActivityProcessID) -> ProcessFolders.Folder?)? = nil
     ) -> Agent {
         for tag in tags {
@@ -165,7 +165,7 @@ extension TerminalWindowController {
     /// isolated run stays in the background, often under the user's own
     /// windows: there the window says nothing about the run, and counts as
     /// shown, as Docker's page does — unless a scenario says otherwise.
-    var lightTickShown: Bool {
+    package var lightTickShown: Bool {
         if let lightTickVisibility { return lightTickVisibility }
         guard let window, window.isVisible, !window.isMiniaturized else { return false }
         return AppEnvironment.isIsolated || window.occlusionState.contains(.visible)
@@ -174,7 +174,7 @@ extension TerminalWindowController {
     /// This window's tabs at the light level while it is on screen, at the
     /// census's interval; given back otherwise. `tabs`: the window's, as a
     /// change of them is emitted — before it is set.
-    func updateLightTick(tabs: [Tab]? = nil) {
+    package func updateLightTick(tabs: [Tab]? = nil) {
         defer { OffScreenAgents.shared.update() }
         guard lightTickShown else {
             if lightTickWanted { endLightTick() }
@@ -186,13 +186,13 @@ extension TerminalWindowController {
 
     /// `activity.interval` changed: the census's cadence, and this
     /// window's want again at it — a want keeps the interval it was made at.
-    func activityIntervalChanged() {
+    package func activityIntervalChanged() {
         ActivityMonitor.shared.interval = Settings.shared.activityInterval
         if lightTickWanted { updateLightTick() }
     }
 
     /// The window going: its want given back.
-    func endLightTick() {
+    package func endLightTick() {
         ActivityMonitor.shared.unwant(self)
         lightTickWanted = false
         OffScreenAgents.shared.update()
@@ -200,7 +200,7 @@ extension TerminalWindowController {
 
     /// Wants what the window's tabs are as they change, and takes every
     /// snapshot that lands — whoever's tick it was.
-    func watchLightTick() {
+    package func watchLightTick() {
         // @Published emits before it changes: the emitted value.
         store.$tabs
             .sink { [weak self] tabs in self?.updateLightTick(tabs: tabs) }
@@ -212,7 +212,7 @@ extension TerminalWindowController {
 
     /// Each tab `snapshot` read at the light level: its ports, its panes',
     /// where its agent works. Only what changed is set.
-    func takeLightTick(_ snapshot: ActivitySnapshot) {
+    package func takeLightTick(_ snapshot: ActivitySnapshot) {
         let tabs = store.tabs
         lightTickAgents = lightTickAgents.filter { entry in tabs.contains { $0.id == entry.key } }
         for tab in tabs where snapshot.covers(ActivityDemand(.light(tabs: [tab.id]))) {
@@ -227,14 +227,14 @@ extension TerminalWindowController {
     }
 
     /// A tab's panes, the focused one first: its agent comes first.
-    static func focusedFirst(_ tab: Tab) -> [TerminalView] {
+    package static func focusedFirst(_ tab: Tab) -> [TerminalView] {
         [tab.terminal] + tab.terminals.filter { $0 !== tab.terminal }
     }
 
     /// The tab follows where its agent works: nothing where none runs, as
     /// it was while the folder isn't read yet, else the folder when it
     /// isn't the shell's checkout.
-    func follow(_ agent: TabLightRead.Agent, of tab: Tab) {
+    package func follow(_ agent: TabLightRead.Agent, of tab: Tab) {
         let following: String?
         switch agent {
         case .absent: following = nil
@@ -272,8 +272,8 @@ extension TerminalWindowController {
 /// most 512): `root(for:)` answers what is known and asks for the rest.
 /// `prime` walks on the caller's own thread, a GCD one (`agentsNow`), so a
 /// read waited for (an MCP call's) follows at once.
-final class AgentTreeRoots: @unchecked Sendable {
-    static let shared = AgentTreeRoots()
+package final class AgentTreeRoots: @unchecked Sendable {
+    package static let shared = AgentTreeRoots()
 
     private let lock = NSLock()
     private var roots: [String: URL] = [:]
@@ -281,7 +281,7 @@ final class AgentTreeRoots: @unchecked Sendable {
     private let queue = DispatchQueue(label: "Overterm.treeRoots", qos: .utility)
 
     /// `folder`'s root when it is known; else nil, its walk asked for.
-    func root(for folder: String) -> URL? {
+    package func root(for folder: String) -> URL? {
         let (known, ask) = lock.withLock { () -> (URL?, Bool) in
             if let root = roots[folder] { return (root, false) }
             return (nil, asked.insert(folder).inserted)
@@ -291,7 +291,7 @@ final class AgentTreeRoots: @unchecked Sendable {
     }
 
     /// The roots of `folders`, walked here: off the main thread only.
-    func prime(_ folders: [String]) {
+    package func prime(_ folders: [String]) {
         for folder in folders where lock.withLock({ roots[folder] == nil }) { walk(folder) }
     }
 
@@ -320,19 +320,19 @@ final class AgentTreeRoots: @unchecked Sendable {
 /// their ports left for the window to read as it shows. A tab at its prompt,
 /// with none of those, isn't read, as `TerraformPaneMonitor` doesn't walk one.
 @MainActor
-final class OffScreenAgents {
-    static let shared = OffScreenAgents()
-    static let interval: Duration = .seconds(2)
+package final class OffScreenAgents {
+    package static let shared = OffScreenAgents()
+    package static let interval: Duration = .seconds(2)
 
     private var loop: Task<Void, Never>?
     /// Rounds that read a tab (a scenario's count).
-    private(set) var reads = 0
+    package private(set) var reads = 0
 
-    var isFollowing: Bool { loop != nil }
+    package var isFollowing: Bool { loop != nil }
 
     /// A window came on screen or left it, or went: the rounds run while
     /// any window is off screen.
-    func update() {
+    package func update() {
         let offScreen = Self.windows().contains { !$0.lightTickShown }
         if offScreen, loop == nil {
             loop = Task { [weak self] in
@@ -374,7 +374,7 @@ extension TerminalWindowController {
     /// Whether an agent may be working in `tab`: it was opened for one, a
     /// command runs in one of its panes (an agent typed there), or it
     /// follows an agent's folder already — which goes when the agent does.
-    func agentMayWork(in tab: Tab) -> Bool {
+    package func agentMayWork(in tab: Tab) -> Bool {
         tab.agent != nil || tab.agentDirectory != nil || tab.terminals.contains { blocks(of: $0).ledger.running != nil }
     }
 
@@ -388,7 +388,7 @@ extension TerminalWindowController {
     /// since the call, waited for (`ProcessFolders.folder(readSince:of:)`,
     /// 200 ms at most), never the one known while a read goes on — the
     /// freshest there is, taken whichever window shows.
-    static func followAgents(_ tabs: [(TerminalWindowController, Tab)], fresh: Bool = false) async {
+    package static func followAgents(_ tabs: [(TerminalWindowController, Tab)], fresh: Bool = false) async {
         guard !tabs.isEmpty else { return }
         // The lookup reads the context the monitor last built: a rebuild
         // waiting is made now, so a tab opened since has its panes in it.
@@ -444,7 +444,7 @@ extension TerminalWindowController {
     /// and waited for (`followAgents(fresh:)`), so an agent that moved into
     /// a worktree is scoped to it at its first call. Nil for a pane no
     /// window has.
-    static func paneCheckout(_ tag: String) async -> URL? {
+    package static func paneCheckout(_ tag: String) async -> URL? {
         guard let (window, tab) = locate(pane: tag) else { return nil }
         if !window.lightTickShown { await followAgents([(window, tab)], fresh: true) }
         return tab.checkoutSource?.root
@@ -452,13 +452,13 @@ extension TerminalWindowController {
 
     /// The same, as the tab says it now, read again by nothing: what a
     /// call's helpers ask once its start has read it (`KubeMCP.paneFollow`).
-    static func knownCheckout(ofPane tag: String) -> URL? {
+    package static func knownCheckout(ofPane tag: String) -> URL? {
         locate(pane: tag)?.1.checkoutSource?.root
     }
 
     /// The window and the tab of pane `tag`, over every pane of every tab
     /// (`tab.terminals`) of every window.
-    static func locate(pane tag: String) -> (TerminalWindowController, Tab)? {
+    package static func locate(pane tag: String) -> (TerminalWindowController, Tab)? {
         for window in (NSApp as NSApplication?)?.windows ?? [] {
             guard let controller = window.windowController as? TerminalWindowController else { continue }
             if let tab = controller.store.tabs.first(where: { $0.terminals.contains { $0.processTag == tag } }) { return (controller, tab) }
@@ -471,7 +471,7 @@ extension TerminalWindowController {
 extension TerminalWindowController {
     /// `pane` of `tab` closes: its tag, title, checkout and agent kept in
     /// memory, so what still carries the tag says whose it was.
-    func retireForLeftBehind(_ pane: TerminalView, of tab: Tab) {
+    package func retireForLeftBehind(_ pane: TerminalView, of tab: Tab) {
         LeftBehindLedger.shared.retire(
             ActivityContext.Pane(
                 tag: pane.processTag, tab: tab.id, window: window?.windowNumber, title: ActivityText.title(tab.title),
@@ -482,7 +482,7 @@ extension TerminalWindowController {
 extension TerminalWindowController {
     /// The Inbox's Show on a Left Behind note: Activity's Left Behind, the
     /// tab's (6.9).
-    func showLeftBehind(of id: UUID) {
+    package func showLeftBehind(of id: UUID) {
         guard Settings.shared.activityEnabled else { return openSettings(.activity) }
         if let (controller, _) = Self.activityWindow(of: id), controller !== self { return controller.showLeftBehind(of: id) }
         showActivityPage(.leftBehind)

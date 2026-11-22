@@ -4,23 +4,23 @@ import Foundation
 /// writes: ~/.claude/projects/<cwd, non-alphanumerics as "-">/<session>.jsonl.
 /// Not a public API — if the format moves, this reads as "unknown" and the
 /// tests say so.
-struct ClaudeUsage: Equatable {
-    var input = 0
-    var output = 0
-    var cacheRead = 0
-    var cacheWrite = 0
+package struct ClaudeUsage: Equatable {
+    package var input = 0
+    package var output = 0
+    package var cacheRead = 0
+    package var cacheWrite = 0
     /// Distinct model replies.
-    var replies = 0
-    var model: String?
-    var started: Date?
-    var lastActivity: Date?
+    package var replies = 0
+    package var model: String?
+    package var started: Date?
+    package var lastActivity: Date?
 
-    var total: Int { input + output + cacheRead + cacheWrite }
+    package var total: Int { input + output + cacheRead + cacheWrite }
 }
 
 /// Reads session transcripts incrementally: a transcript only grows, so after
 /// the first read only the appended bytes are parsed.
-final class ClaudeUsageReader: @unchecked Sendable {
+package final class ClaudeUsageReader: @unchecked Sendable {
     private struct Progress {
         var offset: UInt64 = 0
         /// Per reply id, its latest usage: Claude Code writes a reply once
@@ -38,21 +38,21 @@ final class ClaudeUsageReader: @unchecked Sendable {
     /// The transcripts read lately: a week of sessions would otherwise all
     /// stay here, each with everything parsed from it.
     private var progress = RecentlyUsed<URL, Progress>(capacity: 120)
-    var trackedTranscripts: Int { lock.withLock { progress.count } }
+    package var trackedTranscripts: Int { lock.withLock { progress.count } }
 
     /// Where Claude Code keeps transcripts (an isolated run's own, see
     /// AppEnvironment). Overridable for tests.
-    nonisolated(unsafe) static var projectsDirectory: URL = AppEnvironment.claudeProjectsDirectory
+    package nonisolated(unsafe) static var projectsDirectory: URL = AppEnvironment.claudeProjectsDirectory
 
     /// Claude Code's folder name for a working directory: every character
     /// that isn't a letter or digit becomes "-" (/Users/b/.claude →
     /// -Users-b--claude).
-    static func projectFolder(for directory: String) -> String {
+    package static func projectFolder(for directory: String) -> String {
         String(directory.map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" })
     }
 
     /// The most recently written transcript for a working directory.
-    static func latestSession(for directory: String) -> URL? {
+    package static func latestSession(for directory: String) -> URL? {
         let folder = projectsDirectory.appendingPathComponent(projectFolder(for: directory))
         let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
         return
@@ -66,16 +66,16 @@ final class ClaudeUsageReader: @unchecked Sendable {
     }
 
     /// Usage of the latest session in `directory`. Blocking; call off main.
-    func usage(for directory: String) -> ClaudeUsage? {
+    package func usage(for directory: String) -> ClaudeUsage? {
         guard let file = Self.latestSession(for: directory) else { return nil }
         return usage(of: file)
     }
 
     /// Bytes read per step: memory stays flat however big the transcript
     /// (real ones pass a gigabyte).
-    static let chunkSize = 8 << 20
+    package static let chunkSize = 8 << 20
 
-    func usage(of file: URL) -> ClaudeUsage? {
+    package func usage(of file: URL) -> ClaudeUsage? {
         lock.lock()
         defer { lock.unlock() }
         var state = progress[file] ?? Progress()

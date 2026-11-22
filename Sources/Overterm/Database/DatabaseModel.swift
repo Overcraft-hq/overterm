@@ -4,28 +4,28 @@ import Foundation
 /// far as it has been read — schemas at once, a schema's tables and columns
 /// when the tree or completion first asks for them.
 @MainActor
-final class DatabaseSession: ObservableObject, Identifiable {
-    enum State: Equatable {
+package final class DatabaseSession: ObservableObject, Identifiable {
+    package enum State: Equatable {
         case closed, connecting, open
         case failed(String)
     }
 
-    let connection: DatabaseConnection
-    nonisolated var id: UUID { connection.id }
+    package let connection: DatabaseConnection
+    package nonisolated var id: UUID { connection.id }
     private var driver: (any DatabaseDriver)?
     private var tunnel: SSHTunnel?
     private let secrets: DatabaseSecrets
 
-    @Published private(set) var state = State.closed
-    @Published private(set) var schemas: [String] = []
-    @Published private(set) var tables: [String: [CatalogTable]] = [:]
-    @Published private(set) var columns: [String: [CatalogColumn]] = [:]
+    @Published package private(set) var state = State.closed
+    @Published package private(set) var schemas: [String] = []
+    @Published package private(set) var tables: [String: [CatalogTable]] = [:]
+    @Published package private(set) var columns: [String: [CatalogColumn]] = [:]
     /// The schema completion and unqualified names are about.
-    @Published var schema: String?
-    @Published private(set) var isRunning = false
+    @Published package var schema: String?
+    @Published package private(set) var isRunning = false
     /// The window Prometheus's, Loki's and Tempo's queries look at — every
     /// console of the connection's.
-    @Published var range = TimeRange.h1
+    @Published package var range = TimeRange.h1
     private var loadingColumns: Set<String> = []
     /// A Redis connection's key browsers, by database.
     private var browsers: [Int: RedisBrowser] = [:]
@@ -33,45 +33,45 @@ final class DatabaseSession: ObservableObject, Identifiable {
     private var opening: Task<Void, Never>?
     private var running: Task<Void, Never>?
 
-    init(_ connection: DatabaseConnection, secrets: DatabaseSecrets) {
+    package init(_ connection: DatabaseConnection, secrets: DatabaseSecrets) {
         self.connection = connection
         self.secrets = secrets
     }
 
-    var isOpen: Bool { state == .open }
+    package var isOpen: Bool { state == .open }
 
     /// The driver as Redis: the browser, a key's page and the server's
     /// speak commands, not statements.
-    var redis: RedisDriver? { driver as? RedisDriver }
+    package var redis: RedisDriver? { driver as? RedisDriver }
 
     /// The driver as Prometheus, Loki or Tempo: the tree's labels and tags,
     /// a trace, the live tail.
-    var observability: ObservabilityDriver? { driver as? ObservabilityDriver }
+    package var observability: ObservabilityDriver? { driver as? ObservabilityDriver }
 
     /// The Server page's reads — the driver's own connection, nothing else.
-    var monitoring: (any DatabaseMonitoring)? {
+    package var monitoring: (any DatabaseMonitoring)? {
         connection.kind.features.contains(.monitoring) ? driver as? any DatabaseMonitoring : nil
     }
 
     /// A result's rows edited — never on a read-only connection.
-    var editing: (any DatabaseTableEditing)? {
+    package var editing: (any DatabaseTableEditing)? {
         !connection.readOnly && connection.kind.features.contains(.editing) ? driver as? any DatabaseTableEditing : nil
     }
 
     /// The Users page's reads and writes (the writes refused on a read-only connection).
-    var userManagement: (any DatabaseUserManagement)? {
+    package var userManagement: (any DatabaseUserManagement)? {
         connection.kind.features.contains(.users) ? driver as? any DatabaseUserManagement : nil
     }
 
     /// A Prometheus, Loki or Tempo connection's names and values.
-    func observabilityCatalog() -> ObservabilityCatalog {
+    package func observabilityCatalog() -> ObservabilityCatalog {
         if let catalog { return catalog }
         let made = ObservabilityCatalog(session: self)
         catalog = made
         return made
     }
 
-    func browser(_ db: Int) -> RedisBrowser {
+    package func browser(_ db: Int) -> RedisBrowser {
         if let browser = browsers[db] { return browser }
         let browser = RedisBrowser(db: db, session: self)
         browsers[db] = browser
@@ -80,7 +80,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
 
     /// Opens it — or, while it is opening, waits for that: a statement run
     /// the moment a console picked the connection was dropped silently.
-    func open() async {
+    package func open() async {
         if let opening {
             await opening.value
             return
@@ -96,7 +96,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
     /// password nobody gave says only `authMechanismRequiresPassword`; why
     /// there was none — none saved, or the keychain wouldn't hand it over —
     /// is ours to say.
-    static func explain(_ error: Error, passwordGiven: Bool, readProblem: String?) -> String {
+    package static func explain(_ error: Error, passwordGiven: Bool, readProblem: String?) -> String {
         let said = error.localizedDescription
         let asksForOne = String(describing: error).contains("authMechanismRequiresPassword") || said.contains("authMechanismRequiresPassword")
         guard asksForOne, !passwordGiven else { return said }
@@ -134,7 +134,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
     }
 
     /// The schema a connection starts on: public, its database, else the first.
-    static func startingSchema(_ connection: DatabaseConnection, schemas: [String]) -> String? {
+    package static func startingSchema(_ connection: DatabaseConnection, schemas: [String]) -> String? {
         if connection.kind.isRedis { return "db\(RedisDriver.database(connection.database))" }
         if let preferred = connection.kind.defaultSchema, schemas.contains(preferred) { return preferred }
         if !connection.database.isEmpty, schemas.contains(connection.database) { return connection.database }
@@ -142,7 +142,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
         return schemas.first
     }
 
-    func close() async {
+    package func close() async {
         running?.cancel()
         await driver?.close()
         driver = nil
@@ -156,27 +156,27 @@ final class DatabaseSession: ObservableObject, Identifiable {
         columns = [:]
     }
 
-    func reloadCatalog() async {
+    package func reloadCatalog() async {
         guard let driver else { return }
         tables = [:]
         columns = [:]
         schemas = (try? await driver.schemas()) ?? schemas
     }
 
-    func loadTables(_ schema: String) async {
+    package func loadTables(_ schema: String) async {
         guard let driver, tables[schema] == nil else { return }
         tables[schema] = (try? await driver.tables(in: schema)) ?? []
     }
 
     /// Every column of a schema, once: the tree's and completion's.
-    func loadColumns(_ schema: String) async {
+    package func loadColumns(_ schema: String) async {
         guard let driver, columns[schema] == nil, !loadingColumns.contains(schema) else { return }
         loadingColumns.insert(schema)
         defer { loadingColumns.remove(schema) }
         columns[schema] = (try? await driver.columns(in: schema)) ?? []
     }
 
-    func columns(of table: String, in schema: String) -> [CatalogColumn] {
+    package func columns(of table: String, in schema: String) -> [CatalogColumn] {
         columns[schema]?.filter { $0.table.caseInsensitiveCompare(table) == .orderedSame } ?? []
     }
 
@@ -184,7 +184,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
 
     /// The statements in order — each one's result, or where it stopped.
     /// A read-only connection refuses a write before it is sent.
-    func run(_ statements: [String], limit: Int, onResult: @escaping (Int, Result<QueryResult, Error>) -> Void) async {
+    package func run(_ statements: [String], limit: Int, onResult: @escaping (Int, Result<QueryResult, Error>) -> Void) async {
         if state != .open { await open() }
         guard let driver, state == .open else {
             if case .failed(let message) = state { onResult(0, .failure(DatabaseError.failed(message))) }
@@ -217,45 +217,45 @@ final class DatabaseSession: ObservableObject, Identifiable {
 /// The client's state for the app: the saved connections (DatabaseStore),
 /// the ones open, and the history of what was run.
 @MainActor
-final class DatabaseModel: ObservableObject {
-    static let shared = DatabaseModel()
+package final class DatabaseModel: ObservableObject {
+    package static let shared = DatabaseModel()
 
-    let store: DatabaseStore
+    package let store: DatabaseStore
     // Not published: a session is made the first time the panel draws its row.
-    private(set) var sessions: [UUID: DatabaseSession] = [:]
+    package private(set) var sessions: [UUID: DatabaseSession] = [:]
     /// Storage connections' sessions, as `sessions` for the databases.
-    var storageSessions: [UUID: StorageSession] = [:]
+    package var storageSessions: [UUID: StorageSession] = [:]
     /// Open folders of the tree: connection ids, `id/schema`, `id/schema/table`.
-    @Published var expanded: Set<String> = []
-    @Published var filter = ""
-    @Published private(set) var history: [HistoryItem] = []
+    @Published package var expanded: Set<String> = []
+    @Published package var filter = ""
+    @Published package private(set) var history: [HistoryItem] = []
     /// Queries kept by name, a connection's under it in the panel.
-    @Published private(set) var saved: [SavedQuery] = []
+    @Published package private(set) var saved: [SavedQuery] = []
 
-    struct SavedQuery: Codable, Equatable, Identifiable {
-        var id = UUID()
-        var connection: UUID
-        var name: String
-        var text: String
-        var date = Date()
+    package struct SavedQuery: Codable, Equatable, Identifiable {
+        package var id = UUID()
+        package var connection: UUID
+        package var name: String
+        package var text: String
+        package var date = Date()
     }
 
-    struct HistoryItem: Codable, Equatable, Identifiable {
-        var id = UUID()
-        var connection: UUID
-        var sql: String
-        var date: Date
-        var rows: Int?
-        var error: String?
+    package struct HistoryItem: Codable, Equatable, Identifiable {
+        package var id = UUID()
+        package var connection: UUID
+        package var sql: String
+        package var date: Date
+        package var rows: Int?
+        package var error: String?
     }
 
-    init(store: DatabaseStore? = nil) {
+    package init(store: DatabaseStore? = nil) {
         self.store = store ?? DatabaseStore.shared
         history = Self.loadHistory()
         saved = Self.loadSaved()
     }
 
-    func session(_ connection: DatabaseConnection) -> DatabaseSession {
+    package func session(_ connection: DatabaseConnection) -> DatabaseSession {
         if let session = sessions[connection.id], session.connection == connection { return session }
         // A connection edited since: the old session goes.
         if let stale = sessions[connection.id] { Task { await stale.close() } }
@@ -264,11 +264,11 @@ final class DatabaseModel: ObservableObject {
         return session
     }
 
-    func session(id: UUID?) -> DatabaseSession? {
+    package func session(id: UUID?) -> DatabaseSession? {
         store.connection(id).map(session)
     }
 
-    func disconnect(_ connection: DatabaseConnection) {
+    package func disconnect(_ connection: DatabaseConnection) {
         if let storage = storageSessions.removeValue(forKey: connection.id) { storage.close() }
         expanded = expanded.filter { !$0.hasPrefix(connection.id.uuidString) }
         guard let session = sessions[connection.id] else { return }
@@ -276,7 +276,7 @@ final class DatabaseModel: ObservableObject {
         expanded = expanded.filter { !$0.hasPrefix(connection.id.uuidString) }
     }
 
-    func delete(_ connection: DatabaseConnection) throws {
+    package func delete(_ connection: DatabaseConnection) throws {
         disconnect(connection)
         sessions[connection.id] = nil
         try store.delete(connection)
@@ -298,7 +298,7 @@ final class DatabaseModel: ObservableObject {
         return (try? JSONDecoder().decode([HistoryItem].self, from: data)) ?? []
     }
 
-    func record(_ sql: String, on connection: UUID, rows: Int?, error: String?) {
+    package func record(_ sql: String, on connection: UUID, rows: Int?, error: String?) {
         history.insert(HistoryItem(connection: connection, sql: sql, date: Date(), rows: rows, error: error), at: 0)
         if history.count > 500 { history.removeLast(history.count - 500) }
         let items = history
@@ -323,13 +323,13 @@ final class DatabaseModel: ObservableObject {
     }
 
     /// A connection's, by name.
-    func saved(for connection: UUID) -> [SavedQuery] {
+    package func saved(for connection: UUID) -> [SavedQuery] {
         saved.filter { $0.connection == connection }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     /// Kept under the name; one of the same name on the connection is replaced.
     @discardableResult
-    func save(_ name: String, text: String, on connection: UUID) -> SavedQuery {
+    package func save(_ name: String, text: String, on connection: UUID) -> SavedQuery {
         let name = name.trimmingCharacters(in: .whitespaces)
         if let at = saved.firstIndex(where: { $0.connection == connection && $0.name == name }) {
             saved[at].text = text
@@ -343,13 +343,13 @@ final class DatabaseModel: ObservableObject {
         return query
     }
 
-    func rename(_ query: SavedQuery, to name: String) {
+    package func rename(_ query: SavedQuery, to name: String) {
         guard let at = saved.firstIndex(where: { $0.id == query.id }) else { return }
         saved[at].name = name.trimmingCharacters(in: .whitespaces)
         writeSaved()
     }
 
-    func remove(_ query: SavedQuery) {
+    package func remove(_ query: SavedQuery) {
         saved.removeAll { $0.id == query.id }
         writeSaved()
     }
@@ -358,7 +358,7 @@ final class DatabaseModel: ObservableObject {
 
     /// A connection's console: a `.sql` file of its own in Overterm's folder,
     /// opened in the editor and kept between launches, as DataGrip's are.
-    func console(for connection: DatabaseConnection) -> URL {
+    package func console(for connection: DatabaseConnection) -> URL {
         let folder = AppEnvironment.supportDirectory.appendingPathComponent("Database/Consoles", isDirectory: true)
         let safe = connection.name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
         let url = folder.appendingPathComponent("\(safe) — \(connection.id.uuidString.prefix(8)).sql")
@@ -373,14 +373,14 @@ final class DatabaseModel: ObservableObject {
     /// Which connection a `.sql` file runs on: remembered by its path.
     private static let attachmentsKey = "databaseFileConnections"
 
-    func attach(_ file: URL, to connection: UUID?) {
+    package func attach(_ file: URL, to connection: UUID?) {
         var map = AppEnvironment.defaults.dictionary(forKey: Self.attachmentsKey) as? [String: String] ?? [:]
         map[file.standardizedFileURL.path] = connection?.uuidString
         AppEnvironment.defaults.set(map, forKey: Self.attachmentsKey)
         objectWillChange.send()
     }
 
-    func connection(for file: URL) -> DatabaseConnection? {
+    package func connection(for file: URL) -> DatabaseConnection? {
         let map = AppEnvironment.defaults.dictionary(forKey: Self.attachmentsKey) as? [String: String] ?? [:]
         return map[file.standardizedFileURL.path].flatMap(UUID.init(uuidString:)).flatMap(store.connection)
     }

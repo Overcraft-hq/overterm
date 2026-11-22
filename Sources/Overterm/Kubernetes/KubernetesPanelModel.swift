@@ -31,8 +31,8 @@ import Foundation
 /// and the page takes the slot first when it needs one.
 /// Reads only: every request is a GET.
 @MainActor
-final class KubernetesPanelModel: ObservableObject {
-    enum State: Equatable {
+package final class KubernetesPanelModel: ObservableObject {
+    package enum State: Equatable {
         case idle
         case reading
         case live
@@ -40,116 +40,116 @@ final class KubernetesPanelModel: ObservableObject {
     }
 
     /// One bound workload, as its row says it.
-    struct Workload: Identifiable, Equatable {
-        var ref: KubeWorkloadRef
-        var health: String
-        var failing: Bool
-        var images: [String]
+    package struct Workload: Identifiable, Equatable {
+        package var ref: KubeWorkloadRef
+        package var health: String
+        package var failing: Bool
+        package var images: [String]
         /// The Argo CD or Flux objects its marks name (`KubeRow.owners`).
-        var owners: [KubeGitOpsOwner] = []
+        package var owners: [KubeGitOpsOwner] = []
         /// Argo CD's marks on it and its health from its row
         /// (`KubeRow.marks`): what the rail reads an app from where its
         /// Application isn't read here (gitops.md 14.2.5).
-        var member: KubeMarkedMember?
-        var id: String { ref.said }
+        package var member: KubeMarkedMember?
+        package var id: String { ref.said }
 
         /// As the rail's GitOps part takes it.
-        var bound: KubePanelGitOps.Bound { KubePanelGitOps.Bound(ref: ref, owners: owners, images: images, member: member) }
+        package var bound: KubePanelGitOps.Bound { KubePanelGitOps.Bound(ref: ref, owners: owners, images: images, member: member) }
     }
 
     /// One of its pods.
-    struct Pod: Identifiable, Equatable {
-        var summary: KubePodSummary
-        var id: KubeRowID { summary.id }
+    package struct Pod: Identifiable, Equatable {
+        package var summary: KubePodSummary
+        package var id: KubeRowID { summary.id }
     }
 
     /// The selected tab's checkout (`Tab.checkoutSource`'s root, as the
     /// diff and agents' tools have it).
-    @Published var checkout: URL? {
+    @Published package var checkout: URL? {
         didSet { if checkout != oldValue { checkoutChanged() } }
     }
     /// Whether the sidebar shows the panel now (the window says).
-    @Published var panelVisible = false {
+    @Published package var panelVisible = false {
         didSet { if panelVisible != oldValue { visibilityChanged() } }
     }
     /// Whether the right slot shows the pod picked now (the window says).
-    @Published var slotVisible = false {
+    @Published package var slotVisible = false {
         didSet { if slotVisible != oldValue { updateSlot() } }
     }
     /// Whether the window is on screen at all (a covered or minimized one
     /// reads nothing, the slot's log included).
-    @Published var windowVisible = true {
+    @Published package var windowVisible = true {
         didSet { if windowVisible != oldValue { updateSlot() } }
     }
-    @Published private(set) var binding: KubeBinding?
+    @Published package private(set) var binding: KubeBinding?
     /// What the checkout's files say, read once it shows unbound.
-    @Published private(set) var guess: KubeBindingGuess?
-    @Published private(set) var guessing = false
+    @Published package private(set) var guess: KubeBindingGuess?
+    @Published package private(set) var guessing = false
     /// Whether the checkout is a repository's root, the only folder the
     /// guess reads and Bind is offered for (`KubeCheckoutScan.isRepositoryRoot`).
-    @Published private(set) var canBind = false
+    @Published package private(set) var canBind = false
     /// The binding being made or edited in the panel.
-    @Published var draft: KubeBinding?
-    @Published private(set) var state: State = .idle
-    @Published private(set) var workloads: [Workload] = []
-    @Published private(set) var pods: [Pod] = []
+    @Published package var draft: KubeBinding?
+    @Published package private(set) var state: State = .idle
+    @Published package private(set) var workloads: [Workload] = []
+    @Published package private(set) var pods: [Pod] = []
     /// The pods not listed (past `podLimit`): the page has them.
-    @Published private(set) var podsHidden = 0
+    @Published package private(set) var podsHidden = 0
     /// The kinds that couldn't be listed, and why — the others still show.
-    @Published private(set) var problems: [String] = []
+    @Published package private(set) var problems: [String] = []
     /// Each workload's deployed commit against the checkout, by its id.
-    @Published private(set) var deployed: [String: KubeDeployedAnswer] = [:]
+    @Published package private(set) var deployed: [String: KubeDeployedAnswer] = [:]
     /// The workloads whose revision label (or appVersion) is being asked for.
-    @Published private(set) var lookingUp: Set<String> = []
+    @Published package private(set) var lookingUp: Set<String> = []
     /// What asking for one couldn't do.
-    @Published var lookUpProblem: String?
+    @Published package var lookUpProblem: String?
     /// Whether the bound context is production (its band).
-    @Published private(set) var production = false
+    @Published package private(set) var production = false
     /// The pod in the right slot.
-    @Published private(set) var picked: KubeRowID?
-    @Published private(set) var session: KubeDetailSession?
-    @Published var slotTab: SlotTab = .logs
+    @Published package private(set) var picked: KubeRowID?
+    @Published package private(set) var session: KubeDetailSession?
+    @Published package var slotTab: SlotTab = .logs
     /// The bound release against the checkout's chart: Diff Chart with
     /// Release, Upgrade… (made when first asked; it goes with the binding).
-    @Published private(set) var helmUpgrade: KubeHelmUpgradeSession?
+    @Published package private(set) var helmUpgrade: KubeHelmUpgradeSession?
     /// Asked of the window for the upgrade's sheet, its tab and its diff.
-    weak var helmHost: KubeHelmUpgradeHost?
+    package weak var helmHost: KubeHelmUpgradeHost?
     /// What deploys the checkout: Argo CD's and Flux's objects (gitops.md 4).
-    let gitOps: KubePanelGitOps
+    package let gitOps: KubePanelGitOps
     /// Asked of the window for a GitOps verb: the page's guard path.
-    weak var gitOpsHost: KubeGitOpsPanelHost? {
+    package weak var gitOpsHost: KubeGitOpsPanelHost? {
         didSet { gitOps.host = gitOpsHost }
     }
 
-    enum SlotTab: String, CaseIterable, Identifiable {
+    package enum SlotTab: String, CaseIterable, Identifiable {
         case logs = "Logs"
         case overview = "Overview"
-        var id: String { rawValue }
+        package var id: String { rawValue }
     }
 
-    let store: KubeBindingStore
-    let kubernetes: KubernetesModel
+    package let store: KubeBindingStore
+    package let kubernetes: KubernetesModel
     /// The cluster's pulse in the rail: warnings, nodes (`KubePanelPulse`).
-    let pulse = KubePanelPulse()
+    package let pulse = KubePanelPulse()
     /// Asked of the window: a review tab for a range in the checkout.
-    var openReview: (ReviewSource, URL) -> Void = { _, _ in }
+    package var openReview: (ReviewSource, URL) -> Void = { _, _ in }
     /// Asked of the window: the right slot on the pod picked.
-    var showSlot: () -> Void = {}
+    package var showSlot: () -> Void = {}
     /// The user's docker, for an image's revision label (nil in an isolated
     /// run unless a scenario set one: tests never reach the user's Docker).
-    var revisionCLI: () -> DockerCLI? = { DockerImageUpdates.defaultCLI(nil) }
+    package var revisionCLI: () -> DockerCLI? = { DockerImageUpdates.defaultCLI(nil) }
     /// A test's way of reading the revision label instead of the CLI.
-    var inspectRevision: ((String) async -> String?)?
+    package var inspectRevision: ((String) async -> String?)?
     /// The context, its client: the proxy's background slot (a test's connection instead).
-    var clientFor: ((KubeContext) -> KubeClient)?
+    package var clientFor: ((KubeContext) -> KubeClient)?
 
     /// At most this many pods are listed: failing ones first, the rest
     /// by name. A binding with no selector covers the whole namespace.
-    static let podLimit = 50
+    package static let podLimit = 50
     /// Watch events are applied at most this often.
-    var flushInterval: Duration = .milliseconds(120)
+    package var flushInterval: Duration = .milliseconds(120)
     /// The waits before a kind that failed is followed again (the last one repeated).
-    var retryDelays: [Duration] = [1, 2, 4, 8, 15, 30].map { .seconds($0) }
+    package var retryDelays: [Duration] = [1, 2, 4, 8, 15, 30].map { .seconds($0) }
 
     private var rows: [String: KubeRows] = [:]
     private var follows: [String: Task<Void, Never>] = [:]
@@ -174,7 +174,7 @@ final class KubernetesPanelModel: ObservableObject {
     /// The look-up running for a workload: only its own end clears it.
     private var lookUps: [String: UUID] = [:]
 
-    init(
+    package init(
         store: KubeBindingStore = .shared, kubernetes: KubernetesModel = .shared, gitOpsCache: KubeGitOpsMatchCache = .shared,
         gitOpsCheckouts: KubeGitOpsCheckouts = .shared
     ) {
@@ -223,12 +223,12 @@ final class KubernetesPanelModel: ObservableObject {
     }
 
     /// The kubeconfig's contexts, for the binding's picker (read when editing starts).
-    @Published private(set) var contextNames: [String] = []
+    @Published package private(set) var contextNames: [String] = []
 
     /// Starts editing: the binding there, else the guess with the page's
     /// context (if it isn't production), else the first one that isn't.
     /// The kubeconfig is read now, locally — no cluster is asked.
-    func beginEdit() {
+    package func beginEdit() {
         guard let checkout, binding != nil || canBind else { return }
         let kubernetes = self.kubernetes
         Task { [weak self] in
@@ -243,11 +243,11 @@ final class KubernetesPanelModel: ObservableObject {
         }
     }
 
-    func cancelEdit() { draft = nil }
+    package func cancelEdit() { draft = nil }
 
     /// The draft kept: the checkout bound.
     @discardableResult
-    func saveDraft() -> Bool {
+    package func saveDraft() -> Bool {
         guard let draft else { return false }
         guard store.set(draft) else { return false }
         self.draft = nil
@@ -257,12 +257,12 @@ final class KubernetesPanelModel: ObservableObject {
 
     /// Binds the checkout (the scenario's, a test's).
     @discardableResult
-    func bind(_ binding: KubeBinding) -> Bool {
+    package func bind(_ binding: KubeBinding) -> Bool {
         draft = binding
         return saveDraft()
     }
 
-    func unbind() {
+    package func unbind() {
         guard let checkout else { return }
         store.remove(checkout)
         draft = nil
@@ -439,7 +439,7 @@ final class KubernetesPanelModel: ObservableObject {
     }
 
     /// Try Again: every kind that failed followed again now.
-    func retry() {
+    package func retry() {
         guard panelVisible else { return }
         guard following != nil else { return restart() }
         let generation = self.generation
@@ -472,7 +472,7 @@ final class KubernetesPanelModel: ObservableObject {
 
     /// At most `limit` pods, in the order given: every failing one (a
     /// pending one too) first picked, then the rest.
-    static func limited(_ pods: [Pod], limit: Int = podLimit) -> (shown: [Pod], hidden: Int) {
+    package static func limited(_ pods: [Pod], limit: Int = podLimit) -> (shown: [Pod], hidden: Int) {
         guard pods.count > limit else { return (pods, 0) }
         func failing(_ pod: Pod) -> Bool { pod.summary.isFailing || pod.summary.status == "Pending" }
         var picked = Set(pods.filter(failing).prefix(limit).map(\.id))
@@ -483,7 +483,7 @@ final class KubernetesPanelModel: ObservableObject {
     /// A workload's row read into its health: a Deployment's state off its
     /// cells (as the page's Status), a StatefulSet's or DaemonSet's Ready;
     /// with Argo CD's marks, its member as an app read from them counts it.
-    static func workload(_ kind: KubeWorkloadKind, row: KubeRow, columns: [KubeColumn]) -> Workload {
+    package static func workload(_ kind: KubeWorkloadKind, row: KubeRow, columns: [KubeColumn]) -> Workload {
         let ref = KubeWorkloadRef(kind: kind, name: row.id.name)
         let images = KubeDeployedCommit.images(inCell: row.cell("Images", in: columns)?.text)
         let member = KubeMarkedMember.row(row, kind: KubeMarkedKind(kind.kind), columns: columns, now: Date())
@@ -531,7 +531,7 @@ final class KubernetesPanelModel: ObservableObject {
 
     /// The deployed commit everything else says: the first workload's that
     /// the checkout has, else the first one's answer.
-    var headline: (workload: Workload, answer: KubeDeployedAnswer)? {
+    package var headline: (workload: Workload, answer: KubeDeployedAnswer)? {
         let answered = workloads.compactMap { workload in deployed[workload.id].map { (workload, $0) } }
         return answered.first { $0.1.found != nil } ?? answered.first
     }
@@ -539,7 +539,7 @@ final class KubernetesPanelModel: ObservableObject {
     /// "Look up": the image's revision label through the user's docker
     /// (`buildx imagetools`), and the bound release's appVersion — only
     /// when asked; then the commit answered again.
-    func lookUp(_ workload: Workload) {
+    package func lookUp(_ workload: Workload) {
         guard let checkout, let binding, !lookingUp.contains(workload.id) else { return }
         let token = UUID()
         lookUps[workload.id] = token
@@ -593,13 +593,13 @@ final class KubernetesPanelModel: ObservableObject {
 
     /// The key a release's appVersion is kept under: the binding's
     /// context, namespace and release; nil without a release.
-    static func releaseKey(_ binding: KubeBinding) -> String? {
+    package static func releaseKey(_ binding: KubeBinding) -> String? {
         binding.release.map { "\(binding.context)\u{1F}\(binding.namespace)\u{1F}\($0)" }
     }
 
     /// A release's newest revision's chart appVersion: its Helm records'
     /// metadata listed, the newest one read (Helm's own decoding, masked).
-    nonisolated static func appVersion(_ release: String, namespace: String, client: KubeClient?) async -> String? {
+    package nonisolated static func appVersion(_ release: String, namespace: String, client: KubeClient?) async -> String? {
         guard let client else { return nil }
         guard let records = try? await client.helmRecords(.secret, in: .namespace(namespace)),
             let found = KubeHelm.releases(records).first(where: { $0.name == release }),
@@ -610,7 +610,7 @@ final class KubernetesPanelModel: ObservableObject {
 
     /// "Diff deployed…current": a review tab for what the checkout has that
     /// isn't deployed.
-    func reviewDeployed(_ found: KubeDeployedAnswer.Found) {
+    package func reviewDeployed(_ found: KubeDeployedAnswer.Found) {
         guard let checkout else { return }
         openReview(KubeDeployedCommit.review(found), checkout)
     }
@@ -618,7 +618,7 @@ final class KubernetesPanelModel: ObservableObject {
     // MARK: The right slot
 
     /// A pod picked: its detail (one GET, then its log while the slot shows it).
-    func pick(_ pod: KubeRowID) {
+    package func pick(_ pod: KubeRowID) {
         guard let binding else { return }
         if picked != pod {
             session?.cancel()
@@ -646,7 +646,7 @@ final class KubernetesPanelModel: ObservableObject {
         }
     }
 
-    func pickTab(_ tab: SlotTab) {
+    package func pickTab(_ tab: SlotTab) {
         slotTab = tab
         updateSlot()
     }
@@ -676,7 +676,7 @@ final class KubernetesPanelModel: ObservableObject {
     // MARK: The release and the checkout's chart (stage 3a)
 
     /// The bound release's session, made when first asked.
-    func helmSession() -> KubeHelmUpgradeSession? {
+    package func helmSession() -> KubeHelmUpgradeSession? {
         guard let binding, binding.release != nil, let checkout else { return nil }
         if let helmUpgrade, helmUpgrade.binding == binding, helmUpgrade.checkout == checkout { return helmUpgrade }
         let session = KubeHelmUpgradeSession(binding: binding, checkout: checkout, model: kubernetes)
@@ -688,10 +688,10 @@ final class KubernetesPanelModel: ObservableObject {
 
     /// Diff Chart with Release: the checkout's chart rendered with the
     /// release's values, against what it has — in the changes pane.
-    func diffChart() { helmSession()?.diff() }
+    package func diffChart() { helmSession()?.diff() }
 
     /// Upgrade…: `helm upgrade` from the checkout's chart, asked first.
-    func upgradeChart() { helmSession()?.upgrade() }
+    package func upgradeChart() { helmSession()?.upgrade() }
 
     /// The forwards in the bound namespace.
     /// No binding: the pulse of the page's context (else the kubeconfig's
@@ -711,7 +711,7 @@ final class KubernetesPanelModel: ObservableObject {
     }
 
     /// The forwards that are this binding's — or, with none, every one running.
-    func forwards(_ all: [KubeForward]) -> [KubeForward] {
+    package func forwards(_ all: [KubeForward]) -> [KubeForward] {
         guard let binding else { return all }
         return all.filter { $0.spec.context == binding.context && $0.spec.namespace == binding.namespace }
     }

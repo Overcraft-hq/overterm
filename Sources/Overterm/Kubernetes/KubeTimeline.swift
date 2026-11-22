@@ -5,35 +5,35 @@ import Foundation
 /// raw — in memory, for the diffs, and dropped with the detail — so a
 /// secret-looking env value that changed can say so masked (`*** (before)`,
 /// `*** (after)`) without saying what it is. Pure.
-struct KubeTemplateRevision: Equatable, Sendable, Identifiable {
-    struct Image: Equatable, Sendable {
-        var container: String
-        var image: String
+package struct KubeTemplateRevision: Equatable, Sendable, Identifiable {
+    package struct Image: Equatable, Sendable {
+        package var container: String
+        package var image: String
     }
 
-    var revision: Int
+    package var revision: Int
     /// The ReplicaSet's or ControllerRevision's name.
-    var name: String
-    var created: Date?
+    package var name: String
+    package var created: Date?
     /// `spec.template` as JSON, the controller's own hash label left out:
     /// never shown as it is — `KubeTimeline.templateDiff` masks it.
-    var template: Data
-    var images: [Image]
+    package var template: Data
+    package var images: [Image]
     /// `kubectl.kubernetes.io/restartedAt` on the template.
-    var restartedAt: String?
+    package var restartedAt: String?
     /// The revisions it was before (`deployment.kubernetes.io/revision-history`):
     /// a rollback made it the newest again.
-    var reused: [Int] = []
+    package var reused: [Int] = []
     /// A ReplicaSet's wanted replicas.
-    var replicas: Int?
+    package var replicas: Int?
 
-    var id: String { name }
+    package var id: String { name }
     /// Its template, parsed.
-    var object: [String: Any] { (try? JSONSerialization.jsonObject(with: template) as? [String: Any]) ?? [:] }
+    package var object: [String: Any] { (try? JSONSerialization.jsonObject(with: template) as? [String: Any]) ?? [:] }
 }
 
 /// What opens a change's diff in the changes pane.
-enum KubeTimelineChange: Hashable, Sendable {
+package enum KubeTimelineChange: Hashable, Sendable {
     /// One template revision against another (`from` nil: the first, against nothing).
     case template(from: Int?, to: Int)
     /// One Helm revision against another.
@@ -41,8 +41,8 @@ enum KubeTimelineChange: Hashable, Sendable {
 }
 
 /// One change in a workload's timeline. Pure.
-struct KubeTimelineEntry: Identifiable, Equatable, Sendable {
-    enum Kind: String, Sendable {
+package struct KubeTimelineEntry: Identifiable, Equatable, Sendable {
+    package enum Kind: String, Sendable {
         /// A new pod template: an image, its env, its resources…
         case revision
         /// The template the same but for `restartedAt`: a rollout restart.
@@ -55,18 +55,18 @@ struct KubeTimelineEntry: Identifiable, Equatable, Sendable {
         case warning
     }
 
-    var id: String
-    var kind: Kind
+    package var id: String
+    package var kind: Kind
     /// When: nil when the cluster doesn't say.
-    var time: Date?
+    package var time: Date?
     /// The time is a bound, not the moment: a rolled-back revision's
     /// object is older than the change, so it is placed after the one before.
-    var approximate = false
-    var title: String
-    var detail: String?
+    package var approximate = false
+    package var title: String
+    package var detail: String?
     /// How often a warning came.
-    var count = 1
-    var change: KubeTimelineChange?
+    package var count = 1
+    package var change: KubeTimelineChange?
 }
 
 /// A workload's change timeline (docs/design/kubernetes/analysis.md, 3.6):
@@ -76,25 +76,25 @@ struct KubeTimelineEntry: Identifiable, Equatable, Sendable {
 /// (its ReplicaSets, its pods), newest first, bounded. And
 /// the diffs a change opens: template against template, Helm revision
 /// against revision — stripped and masked together. Pure.
-enum KubeTimeline {
-    static let revisionAnnotation = "deployment.kubernetes.io/revision"
-    static let historyAnnotation = "deployment.kubernetes.io/revision-history"
-    static let restartedAt = "kubectl.kubernetes.io/restartedAt"
-    static let helmRelease = "meta.helm.sh/release-name"
-    static let helmNamespace = "meta.helm.sh/release-namespace"
+package enum KubeTimeline {
+    package static let revisionAnnotation = "deployment.kubernetes.io/revision"
+    package static let historyAnnotation = "deployment.kubernetes.io/revision-history"
+    package static let restartedAt = "kubectl.kubernetes.io/restartedAt"
+    package static let helmRelease = "meta.helm.sh/release-name"
+    package static let helmNamespace = "meta.helm.sh/release-namespace"
     /// The template revisions read: Kubernetes keeps 10 by default.
-    static let revisionLimit = 50
+    package static let revisionLimit = 50
     /// The entries shown.
-    static let entryLimit = 100
+    package static let entryLimit = 100
     /// The namespace's warnings read about one Kind (its ReplicaSets', its pods').
-    static let warningLimit = 500
+    package static let warningLimit = 500
 
     /// Which kinds have a history, and where their revisions are kept.
-    enum Source: Equatable, Sendable {
+    package enum Source: Equatable, Sendable {
         case replicaSets
         case controllerRevisions
 
-        static func of(_ ref: KubeObjectRef) -> Source? {
+        package static func of(_ ref: KubeObjectRef) -> Source? {
             guard ref.kind.group == "apps", ref.namespace != nil else { return nil }
             switch ref.kind.resource {
             case "deployments": return .replicaSets
@@ -104,13 +104,13 @@ enum KubeTimeline {
         }
 
         /// The collection's path: `apps/v1`, in the workload's namespace.
-        func path(namespace: String) -> String {
+        package func path(namespace: String) -> String {
             "/apis/apps/v1/namespaces/\(KubePath.segment(namespace))/\(self == .replicaSets ? "replicasets" : "controllerrevisions")"
         }
     }
 
     /// The Helm release a workload says it belongs to (Helm's own annotations).
-    static func helmRelease(of object: [String: Any]) -> (name: String, namespace: String?)? {
+    package static func helmRelease(of object: [String: Any]) -> (name: String, namespace: String?)? {
         let annotations = (object["metadata"] as? [String: Any])?["annotations"] as? [String: Any] ?? [:]
         guard let name = annotations[helmRelease] as? String, !name.isEmpty else { return nil }
         return (name, (annotations[helmNamespace] as? String).flatMap { $0.isEmpty ? nil : $0 })
@@ -121,14 +121,14 @@ enum KubeTimeline {
     /// A list's items owned by `owner` (its uid; any when empty), as
     /// template revisions, oldest first — and whether the list had more
     /// than was read.
-    static func revisions(_ body: Data, source: Source, owner: String) -> (revisions: [KubeTemplateRevision], more: Bool) {
+    package static func revisions(_ body: Data, source: Source, owner: String) -> (revisions: [KubeTemplateRevision], more: Bool) {
         guard let list = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else { return ([], false) }
         let more = ((list["metadata"] as? [String: Any])?["continue"] as? String).map { !$0.isEmpty } ?? false
         return (revisions(items: list["items"] as? [[String: Any]] ?? [], source: source, owner: owner), more)
     }
 
     /// The revisions of a list's items already read (Ask Why's ReplicaSets), oldest first.
-    static func revisions(items: [[String: Any]], source: Source, owner: String) -> [KubeTemplateRevision] {
+    package static func revisions(items: [[String: Any]], source: Source, owner: String) -> [KubeTemplateRevision] {
         let out = items.compactMap { item -> KubeTemplateRevision? in
             let metadata = item["metadata"] as? [String: Any] ?? [:]
             if !owner.isEmpty {
@@ -140,7 +140,7 @@ enum KubeTimeline {
         return out.sorted { $0.revision < $1.revision }
     }
 
-    static func replicaSet(_ item: [String: Any]) -> KubeTemplateRevision? {
+    package static func replicaSet(_ item: [String: Any]) -> KubeTemplateRevision? {
         let metadata = item["metadata"] as? [String: Any] ?? [:]
         let annotations = metadata["annotations"] as? [String: Any] ?? [:]
         guard let name = metadata["name"] as? String, let revision = (annotations[revisionAnnotation] as? String).flatMap({ Int($0) }) else { return nil }
@@ -151,7 +151,7 @@ enum KubeTimeline {
             replicas: KubeRollout.int(spec["replicas"]))
     }
 
-    static func controllerRevision(_ item: [String: Any]) -> KubeTemplateRevision? {
+    package static func controllerRevision(_ item: [String: Any]) -> KubeTemplateRevision? {
         let metadata = item["metadata"] as? [String: Any] ?? [:]
         guard let name = metadata["name"] as? String, let number = KubeRollout.int(item["revision"]) else { return nil }
         // A StatefulSet's or DaemonSet's revision: a patch of its spec, the
@@ -192,7 +192,7 @@ enum KubeTimeline {
 
     /// What changed from one template to the next, in words: the images,
     /// a restart, the template's other paths — never a value.
-    static func summary(from old: KubeTemplateRevision?, to new: KubeTemplateRevision) -> (kind: KubeTimelineEntry.Kind, title: String, detail: String?) {
+    package static func summary(from old: KubeTemplateRevision?, to new: KubeTemplateRevision) -> (kind: KubeTimelineEntry.Kind, title: String, detail: String?) {
         if !new.reused.isEmpty {
             let was = new.reused.map { "revision \($0)" }.joined(separator: ", ")
             return (.rollback, "Rolled back: revision \(new.revision)", "The template of \(was) again · \(imagesSaid(new.images))")
@@ -240,7 +240,7 @@ enum KubeTimeline {
 
     /// The paths where two templates differ, as names only (`spec.containers[web].env[LOG_LEVEL]`),
     /// at most 12 — a list of named things (containers, env) by name.
-    static func changedPaths(_ a: Any?, _ b: Any?, path: String, limit: Int = 12) -> [String] {
+    package static func changedPaths(_ a: Any?, _ b: Any?, path: String, limit: Int = 12) -> [String] {
         var out: [String] = []
         walk(a, b, path: path, into: &out, limit: limit)
         return out
@@ -279,7 +279,7 @@ enum KubeTimeline {
     /// a ReplicaSet's `<rs>-xxxxx`, a DaemonSet's `<name>-xxxxx`, a
     /// StatefulSet's `<name>-<ordinal>`. The workload's own events are
     /// read by its name: never here.
-    static func owns(_ event: KubeEvent, kind: String, name: String, replicaSets: Set<String>) -> Bool {
+    package static func owns(_ event: KubeEvent, kind: String, name: String, replicaSets: Set<String>) -> Bool {
         switch event.objectKind {
         case "ReplicaSet": return kind == "Deployment" && replicaSets.contains(event.object)
         case "Pod":
@@ -304,14 +304,14 @@ enum KubeTimeline {
 
     /// The ReplicaSet a `ScalingReplicaSet` event names
     /// (`Scaled up replica set web-7d9f8c from 1 to 2`).
-    static func scaledReplicaSet(_ message: String) -> String? {
+    package static func scaledReplicaSet(_ message: String) -> String? {
         guard let range = message.range(of: "replica set ") else { return nil }
         let name = message[range.upperBound...].prefix { !$0.isWhitespace }
         return name.isEmpty ? nil : String(name)
     }
 
     /// A StatefulSet's pod made or removed (`create Pod db-2 in StatefulSet db successful`).
-    static func statefulSetPod(_ event: KubeEvent) -> (created: Bool, pod: String)? {
+    package static func statefulSetPod(_ event: KubeEvent) -> (created: Bool, pod: String)? {
         guard ["SuccessfulCreate", "SuccessfulDelete"].contains(event.reason) else { return nil }
         let words = event.message.split(separator: " ")
         guard words.count >= 3, words[0] == "create" || words[0] == "delete", words[1] == "Pod" else { return nil }
@@ -321,7 +321,7 @@ enum KubeTimeline {
     /// A rollout's own scaling, told apart from a change of replicas:
     /// an older ReplicaSet scaled, or the newest while another one is
     /// scaled within `window` — a rollout moves pods from one to the other.
-    static func isRolloutStep(_ event: KubeEvent, among scaling: [KubeEvent], newest: String?, window: TimeInterval = 600) -> Bool {
+    package static func isRolloutStep(_ event: KubeEvent, among scaling: [KubeEvent], newest: String?, window: TimeInterval = 600) -> Bool {
         guard let name = scaledReplicaSet(event.message) else { return false }
         if let newest, name != newest { return true }
         guard let at = event.last ?? event.first else { return false }
@@ -334,7 +334,7 @@ enum KubeTimeline {
     // MARK: The timeline
 
     /// Every change, newest first, at most `limit`, and how many were left out.
-    static func entries(
+    package static func entries(
         revisions: [KubeTemplateRevision], helm: [KubeHelmRecord], events: [KubeEvent], kind: String = "Deployment", limit: Int = entryLimit
     ) -> (entries: [KubeTimelineEntry], cut: Int) {
         var out: [KubeTimelineEntry] = []
@@ -409,7 +409,7 @@ enum KubeTimeline {
     /// One template against another, as the changes pane shows it:
     /// stripped, masked together — a secret-looking env value that changed
     /// says so as `*** (before)` / `*** (after)` —, credentials in text out.
-    static func templateDiff(
+    package static func templateDiff(
         kind: String, name: String, namespace: String, from old: KubeTemplateRevision?, to new: KubeTemplateRevision
     ) -> KubeHelmDiffItem {
         let (before, after) = KubeHelmUpgrade.sides(old.map(\.object), new.object)
@@ -425,7 +425,7 @@ enum KubeTimeline {
     /// Two Helm revisions' user values (`config`), masked together: under
     /// a secret-looking key a value that changed is `*** (before)` /
     /// `*** (after)`, one that didn't `***`; credentials in other text out.
-    static func helmValues(before: [String: Any]?, after: [String: Any]) -> (before: String, after: String) {
+    package static func helmValues(before: [String: Any]?, after: [String: Any]) -> (before: String, after: String) {
         let (a, b) = paired(before, after, secret: false, key: nil)
         func text(_ value: Any?) -> String {
             guard let map = value as? [String: Any], !map.isEmpty else { return "{}\n" }
@@ -487,7 +487,7 @@ enum KubeTimeline {
     /// Two Helm revisions against each other: their values, then their
     /// manifests object by object (`KubeHelmUpgrade.diff`'s masking: a
     /// Secret's data `***`, `*** (before)` / `*** (after)`).
-    static func helmDiff(release: String, namespace: String, from old: KubeHelm.UpgradeInputs?, to new: KubeHelm.UpgradeInputs) -> KubeHelmDiff {
+    package static func helmDiff(release: String, namespace: String, from old: KubeHelm.UpgradeInputs?, to new: KubeHelm.UpgradeInputs) -> KubeHelmDiff {
         func values(_ data: Data) -> [String: Any] { (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:] }
         let (a, b) = helmValues(before: old.map { values($0.values) }, after: values(new.values))
         let from = old.map { "revision \($0.revision)" }
@@ -504,13 +504,13 @@ enum KubeTimeline {
 
 /// A change's diff, as the changes pane shows it: what it compares, where,
 /// and each part's diff — masked. Nothing raw is in it.
-struct KubeChangeDiff: Equatable, Sendable, Identifiable {
-    var id: String
+package struct KubeChangeDiff: Equatable, Sendable, Identifiable {
+    package var id: String
     /// `deployment/web: revision 2 → 3`.
-    var title: String
-    var context: String
-    var production: Bool
+    package var title: String
+    package var context: String
+    package var production: Bool
     /// What is compared with what.
-    var label: String
-    var diff: KubeHelmDiff
+    package var label: String
+    package var diff: KubeHelmDiff
 }

@@ -8,16 +8,16 @@ import Foundation
 /// executes the configuration [verified: `data "local_command"` ran during
 /// plan], so these are listed before a plan of code the person didn't
 /// write, and on every plan's header. Pure.
-struct TerraformRunRisk: Equatable, Hashable, Sendable {
-    enum Kind: String, Sendable, CaseIterable {
+package struct TerraformRunRisk: Equatable, Hashable, Sendable {
+    package enum Kind: String, Sendable, CaseIterable {
         case command, fetch, provisioner, remoteState, action, providerAdded, moduleChanged
     }
 
-    var kind: Kind
+    package var kind: Kind
     /// What exactly: `data.external`, `hashicorp/acme`, `git::https://…`.
-    var detail: String
+    package var detail: String
 
-    var said: String {
+    package var said: String {
         switch kind {
         case .command: "\(detail) runs a command on this Mac when planned"
         case .fetch: "\(detail) fetches a URL when planned"
@@ -30,18 +30,18 @@ struct TerraformRunRisk: Equatable, Hashable, Sendable {
     }
 }
 
-enum TerraformRunRisks {
-    static let commandTypes: Set<String> = ["data.external", "data.local_command", "ephemeral.local_command", "action.local_command"]
-    static let fetchTypes: Set<String> = ["data.http"]
+package enum TerraformRunRisks {
+    package static let commandTypes: Set<String> = ["data.external", "data.local_command", "ephemeral.local_command", "action.local_command"]
+    package static let fetchTypes: Set<String> = ["data.http"]
 
     /// The base branch's side: its facts and lock file, when it was read.
-    struct Base: Equatable, Sendable {
-        var config: TerraformConfigFacts
-        var lockProviders: [TerraformLockFile.Provider]?
+    package struct Base: Equatable, Sendable {
+        package var config: TerraformConfigFacts
+        package var lockProviders: [TerraformLockFile.Provider]?
     }
 
     /// Everything risky in a root's code now, and in its plan (actions).
-    static func risks(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?, plan: TerraformPlan? = nil) -> [TerraformRunRisk] {
+    package static func risks(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?, plan: TerraformPlan? = nil) -> [TerraformRunRisk] {
         var found: [TerraformRunRisk] = []
         for type in config.types.sorted() {
             if commandTypes.contains(type) { found.append(.init(kind: .command, detail: type)) }
@@ -68,7 +68,7 @@ enum TerraformRunRisks {
     /// agent's edit asks about (5.5). With no base read (no merge base, a
     /// new repository), all of them but the lock file's and the modules',
     /// which only a base can say are new.
-    static func new(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?, plan: TerraformPlan? = nil, base: Base?) -> [TerraformRunRisk] {
+    package static func new(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?, plan: TerraformPlan? = nil, base: Base?) -> [TerraformRunRisk] {
         let now = risks(config: config, lockProviders: lockProviders, plan: plan)
         guard let base else { return now.filter { $0.kind != .providerAdded && $0.kind != .moduleChanged } }
         let before = Set(risks(config: base.config, lockProviders: base.lockProviders))
@@ -77,26 +77,26 @@ enum TerraformRunRisks {
 
     /// All of them, the lock file's providers and the module sources only
     /// where they changed: what a plan's header lists.
-    static func listed(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?, plan: TerraformPlan?, base: Base?) -> [TerraformRunRisk] {
+    package static func listed(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?, plan: TerraformPlan?, base: Base?) -> [TerraformRunRisk] {
         let now = risks(config: config, lockProviders: lockProviders, plan: plan)
         let fresh = Set(new(config: config, lockProviders: lockProviders, plan: plan, base: base))
         return now.filter { ($0.kind != .providerAdded && $0.kind != .moduleChanged) || fresh.contains($0) }
     }
 
-    static func isLocal(_ source: String) -> Bool { source.hasPrefix("./") || source.hasPrefix("../") }
+    package static func isLocal(_ source: String) -> Bool { source.hasPrefix("./") || source.hasPrefix("../") }
 }
 
 /// Whether the person is asked before a plan starts (5.3, 5.5), and what
 /// the question says. Never an automatic plan: this is for a click, or an
 /// agent's `tf_plan`. Pure.
-enum TerraformPlanGate {
-    struct Question: Equatable, Sendable {
-        var title: String
-        var detail: String
-        var button: String
-        var production: Bool
+package enum TerraformPlanGate {
+    package struct Question: Equatable, Sendable {
+        package var title: String
+        package var detail: String
+        package var button: String
+        package var production: Bool
         /// What is typed to go ahead (D-21, 5.4: a write to production), or nil.
-        var typedName: String? = nil
+        package var typedName: String? = nil
     }
 
     /// `authoredByPerson`: every commit since the base is the person's
@@ -107,7 +107,7 @@ enum TerraformPlanGate {
     /// `reviewing`: what a review tab plans ("pull request #42") — code the
     /// person didn't write by its nature, so always asked, on every class,
     /// with every risk (5.5).
-    static func question(
+    package static func question(
         root: String, workspace: String, rootClass: TerraformClass, profile: String?, firstOnProduction: Bool, authoredByPerson: Bool?,
         newRisks: [TerraformRunRisk], allRisks: [TerraformRunRisk], agent: String? = nil, reviewing: String? = nil, unreadModules: Int = 0
     ) -> Question? {
@@ -155,7 +155,7 @@ enum TerraformPlanGate {
     /// Whether the person wrote every commit given (`git log --format=%ae
     /// <base>..HEAD`, or HEAD's alone on the base): false when one isn't
     /// theirs, nil when it can't be told (no `user.email`, no author read).
-    static func authoredByPerson(authors: [String], me: String?) -> Bool? {
+    package static func authoredByPerson(authors: [String], me: String?) -> Bool? {
         let me = (me ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let authors = authors.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { !$0.isEmpty }
         guard !me.isEmpty, !authors.isEmpty else { return nil }
@@ -167,7 +167,7 @@ enum TerraformPlanGate {
     /// something the approved plan's didn't — a `data "external"` added
     /// after the approval runs outside the agent's sandbox with the
     /// person's credentials, so it is asked about.
-    static func agentAsks(approved: Set<TerraformRunRisk>?, risks: [TerraformRunRisk]) -> Bool {
+    package static func agentAsks(approved: Set<TerraformRunRisk>?, risks: [TerraformRunRisk]) -> Bool {
         guard let approved else { return true }
         return !Set(risks).isSubset(of: approved)
     }

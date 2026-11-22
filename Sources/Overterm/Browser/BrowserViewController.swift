@@ -7,30 +7,30 @@ import WebKit
 /// underneath. Each terminal tab has its own BrowserWorkspace; this shows
 /// whichever tab is selected.
 @MainActor
-final class BrowserViewController: NSViewController, NSTextFieldDelegate {
-    var onClose: (() -> Void)?
-    var onToggleZoom: (() -> Void)?
+package final class BrowserViewController: NSViewController, NSTextFieldDelegate {
+    package var onClose: (() -> Void)?
+    package var onToggleZoom: (() -> Void)?
     /// "Ask an Agent About This Page".
-    var onAskAgent: ((BrowserSession) -> Void)?
-    var onOpenExternally: ((URL) -> Void)?
+    package var onAskAgent: ((BrowserSession) -> Void)?
+    package var onOpenExternally: ((URL) -> Void)?
     /// The selected tab's browser, made if it has none (the empty state's
     /// buttons, the address bar, ⌘T).
-    var makeWorkspace: (() -> BrowserWorkspace?)?
+    package var makeWorkspace: (() -> BrowserWorkspace?)?
 
-    let chrome: ChromeTheme
-    let theme: EditorTheme
-    private(set) var workspace: BrowserWorkspace?
+    package let chrome: ChromeTheme
+    package let theme: EditorTheme
+    package private(set) var workspace: BrowserWorkspace?
     /// The page showing: the workspace's active one.
-    private(set) var session: BrowserSession?
+    package private(set) var session: BrowserSession?
     private var observers: Set<AnyCancellable> = []
     private var workspaceObserver: AnyCancellable?
     private var ports: [ListeningPort] = []
-    private(set) lazy var strip = BrowserTabStrip(theme: theme, chrome: chrome)
+    package private(set) lazy var strip = BrowserTabStrip(theme: theme, chrome: chrome)
 
     private let back = NSButton()
     private let forward = NSButton()
     private let reload = NSButton()
-    private(set) var address = NSTextField()
+    package private(set) var address = NSTextField()
     private let progress = NSView()
     private var progressWidth: NSLayoutConstraint!
     private let page = NSView()
@@ -39,20 +39,20 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
     private let consolePanel = NSScrollView()
     private let consoleText = NSTextView()
     private var consoleHeight: NSLayoutConstraint!
-    private(set) var isConsoleOpen = false
-    private(set) var zoomButton = NSButton()
+    package private(set) var isConsoleOpen = false
+    package private(set) var zoomButton = NSButton()
 
-    init(chrome: ChromeTheme, background: NSColor) {
+    package init(chrome: ChromeTheme, background: NSColor) {
         self.chrome = chrome
         theme = EditorTheme(background: background)
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override func loadView() {
+    package override func loadView() {
         let root = BrowserRootView(color: theme.background)
         root.onKeyEquivalent = { [weak self] event in self?.handleKey(event) ?? false }
         strip.onSelect = { [weak self] in self?.workspace?.select($0) }
@@ -198,7 +198,7 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
 
     /// Shows `workspace` (the selected tab's browser), or the empty state
     /// with what that tab's servers listen on.
-    func show(_ workspace: BrowserWorkspace?, ports: [ListeningPort]) {
+    package func show(_ workspace: BrowserWorkspace?, ports: [ListeningPort]) {
         _ = view
         self.ports = ports
         if workspace !== self.workspace {
@@ -252,14 +252,14 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
 
     // MARK: Pages
 
-    func newPage(_ url: URL? = nil) {
+    package func newPage(_ url: URL? = nil) {
         guard let workspace = workspace ?? makeWorkspace?() else { return }
         if workspace !== self.workspace { show(workspace, ports: ports) }
         workspace.newPage(url)
         if url == nil { focusAddress() }
     }
 
-    func closePage(_ index: Int) {
+    package func closePage(_ index: Int) {
         workspace?.close(index)
         if workspace?.pages.isEmpty == true { focusAddress() }
     }
@@ -367,13 +367,13 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
         consoleText.scrollToEndOfDocument(nil)
     }
 
-    func setZoomed(_ zoomed: Bool) {
+    package func setZoomed(_ zoomed: Bool) {
         let symbol = zoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
         zoomButton.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
         zoomButton.toolTip = zoomed ? "Give the Terminal Back" : "Zoom Browser"
     }
 
-    func focusAddress() {
+    package func focusAddress() {
         _ = view
         view.window?.makeFirstResponder(address)
         address.currentEditor()?.selectAll(nil)
@@ -382,13 +382,13 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
     // MARK: Actions
 
     /// Opens `url` in the selected tab's browser (making it).
-    func open(_ url: URL) {
+    package func open(_ url: URL) {
         guard let workspace = workspace ?? makeWorkspace?() else { return }
         if workspace !== self.workspace { show(workspace, ports: ports) }
         if let page = workspace.active { page.load(url) } else { workspace.newPage(url) }
     }
 
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+    package func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         if selector == #selector(NSResponder.insertNewline(_:)) {
             if let url = BrowserLinks.url(fromTyped: address.stringValue) {
                 open(url)
@@ -426,7 +426,7 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
     /// Safari's Web Inspector for the page: the private hook WebKit's own
     /// right-click "Inspect Element" uses; without it, that right-click is
     /// the way in.
-    @objc func showInspector() {
+    @objc package func showInspector() {
         guard let web = session?.webView else { return }
         let selector = NSSelectorFromString("_inspector")
         if web.responds(to: selector), let inspector = web.perform(selector)?.takeUnretainedValue() as? NSObject {
@@ -435,7 +435,7 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
         }
     }
 
-    @objc func toggleConsole() {
+    @objc package func toggleConsole() {
         isConsoleOpen.toggle()
         consoleHeight.constant = isConsoleOpen ? 160 : 0
         updateConsole(session?.console ?? [])
@@ -445,22 +445,22 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
 }
 
 /// A plain filled view (the toolbar, the address field's well).
-final class BrowserBackground: NSView {
+package final class BrowserBackground: NSView {
     private let color: NSColor
     private let radius: CGFloat
 
-    init(color: NSColor, radius: CGFloat = 0) {
+    package init(color: NSColor, radius: CGFloat = 0) {
         self.color = color
         self.radius = radius
         super.init(frame: .zero)
         if #available(macOS 14, *) { clipsToBounds = true }
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         color.setFill()
         if radius > 0 {
             NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
@@ -471,25 +471,25 @@ final class BrowserBackground: NSView {
 }
 
 /// The browser's root: its own keys, before the menu (BrowserViewController.handleKey).
-final class BrowserRootView: NSView {
-    var onKeyEquivalent: ((NSEvent) -> Bool)?
+package final class BrowserRootView: NSView {
+    package var onKeyEquivalent: ((NSEvent) -> Bool)?
     private let color: NSColor
 
-    init(color: NSColor) {
+    package init(color: NSColor) {
         self.color = color
         super.init(frame: .zero)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         color.setFill()
         dirtyRect.intersection(bounds).fill()
     }
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    package override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown, onKeyEquivalent?(event) == true { return true }
         return super.performKeyEquivalent(with: event)
     }
@@ -498,17 +498,17 @@ final class BrowserRootView: NSView {
 /// The browser's pages, as Safari's tabs: title (or address), a spinner
 /// while loading, ✕ on hover; + makes one.
 @MainActor
-final class BrowserTabStrip: NSView {
-    var onSelect: ((Int) -> Void)?
-    var onClose: ((Int) -> Void)?
-    var onNew: (() -> Void)?
+package final class BrowserTabStrip: NSView {
+    package var onSelect: ((Int) -> Void)?
+    package var onClose: ((Int) -> Void)?
+    package var onNew: (() -> Void)?
     private let stack = NSStackView()
     private let plus = NSButton()
     private let theme: EditorTheme
     private let chrome: ChromeTheme
-    private(set) var titles: [String] = []
+    package private(set) var titles: [String] = []
 
-    init(theme: EditorTheme, chrome: ChromeTheme) {
+    package init(theme: EditorTheme, chrome: ChromeTheme) {
         self.theme = theme
         self.chrome = chrome
         super.init(frame: .zero)
@@ -535,18 +535,18 @@ final class BrowserTabStrip: NSView {
         ])
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         chrome.stripNS.setFill()
         dirtyRect.intersection(bounds).fill()
         theme.text.withAlphaComponent(0.08).setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
     }
 
-    func update(_ workspace: BrowserWorkspace?) {
+    package func update(_ workspace: BrowserWorkspace?) {
         let pages = workspace?.pages ?? []
         let active = workspace?.activeIndex ?? -1
         titles = pages.map { Self.title(of: $0) }
@@ -562,7 +562,7 @@ final class BrowserTabStrip: NSView {
         }
     }
 
-    static func title(of page: BrowserSession) -> String {
+    package static func title(of page: BrowserSession) -> String {
         if !page.title.isEmpty { return page.title }
         if let url = page.url { return url.host.map { host in url.port.map { "\(host):\($0)" } ?? host } ?? url.lastPathComponent }
         return "New Tab"

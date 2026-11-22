@@ -9,15 +9,15 @@ import SwiftUI
 /// and a dash, which is the truth — the figures are from before the
 /// window started again. Nothing at all only when there is no agent on
 /// this Mac, or when Settings ▸ General puts it away.
-struct UsageChip: View {
-    @ObservedObject var model: UsageModel
-    @ObservedObject var theme: ChromeTheme
+package struct UsageChip: View {
+    @ObservedObject package var model: UsageModel
+    @ObservedObject package var theme: ChromeTheme
     /// Settings ▸ General can put the gauge away.
-    @ObservedObject var settings: Settings = .shared
-    let action: () -> Void
+    @ObservedObject package var settings: Settings = .shared
+    package let action: () -> Void
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         if settings.usageChip, model.isAvailable {
             let shown = model.chipMeter()
             Button(action: action) {

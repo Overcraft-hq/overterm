@@ -11,20 +11,20 @@ import SwiftUI
 /// rows are added, duplicated, deleted — each change marked until it is
 /// saved or discarded: an edited cell tinted, a deleted row struck through,
 /// a new row green, its unset cells DEFAULT.
-struct ResultGrid: NSViewRepresentable {
-    let result: QueryResult
-    let theme: ChromeTheme
+package struct ResultGrid: NSViewRepresentable {
+    package let result: QueryResult
+    package let theme: ChromeTheme
     /// Where INSERT statements are written into, for Copy as INSERT.
-    let table: String
+    package let table: String
     /// The rows' editor; nil, or not editable: the grid only reads.
-    var editor: ResultEditor? = nil
+    package var editor: ResultEditor? = nil
     /// The editor's pending changes and state, so a change redraws the grid.
-    var edits: PendingEdits? = nil
-    var editable: EditableResult? = nil
+    package var edits: PendingEdits? = nil
+    package var editable: EditableResult? = nil
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    package func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    package func makeNSView(context: Context) -> NSScrollView {
         let table = GridTableView()
         table.coordinator = context.coordinator
         table.usesAlternatingRowBackgroundColors = true
@@ -54,36 +54,36 @@ struct ResultGrid: NSViewRepresentable {
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    package func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.theme = theme
         context.coordinator.tableName = table
         context.coordinator.update(result, editor: editor, edits: edits ?? PendingEdits(), editable: editable)
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate, NSTextFieldDelegate {
-        weak var table: NSTableView?
-        var theme: ChromeTheme?
-        var tableName = "table_name"
+    package final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate, NSTextFieldDelegate {
+        package weak var table: NSTableView?
+        package var theme: ChromeTheme?
+        package var tableName = "table_name"
         private var shown: QueryResult?
-        private(set) var columns: [String] = []
+        package private(set) var columns: [String] = []
         /// The result's rows, as read.
-        private(set) var source: [[String?]] = []
+        package private(set) var source: [[String?]] = []
         /// The rows' order on screen: indexes into `source`.
-        private(set) var order: [Int] = []
+        package private(set) var order: [Int] = []
         private weak var editor: ResultEditor?
-        private(set) var edits = PendingEdits()
-        private(set) var editable: EditableResult?
+        package private(set) var edits = PendingEdits()
+        package private(set) var editable: EditableResult?
         /// The cell being edited in place, and its text when editing began.
         private var editing: (row: Int, column: Int, start: String)?
 
         /// A row on screen: one read, or one added.
-        enum Place: Equatable {
+        package enum Place: Equatable {
             case read(Int)
             case added(Int)
         }
 
-        func update(_ result: QueryResult, editor: ResultEditor?, edits: PendingEdits, editable: EditableResult?) {
+        package func update(_ result: QueryResult, editor: ResultEditor?, edits: PendingEdits, editable: EditableResult?) {
             self.editor = editor
             let changed = edits != self.edits || editable != self.editable
             self.edits = edits
@@ -95,7 +95,7 @@ struct ResultGrid: NSViewRepresentable {
             }
         }
 
-        func show(_ result: QueryResult) {
+        package func show(_ result: QueryResult) {
             guard let table else { return }
             shown = result
             columns = result.columns
@@ -119,7 +119,7 @@ struct ResultGrid: NSViewRepresentable {
 
         // MARK: Rows
 
-        func place(_ row: Int) -> Place? {
+        package func place(_ row: Int) -> Place? {
             if order.indices.contains(row) { return .read(order[row]) }
             let added = row - order.count
             return edits.inserted.indices.contains(added) ? .added(added) : nil
@@ -127,16 +127,16 @@ struct ResultGrid: NSViewRepresentable {
 
         /// A cell's value as it stands — edited, or as read; nil for an added
         /// row's column left to its default.
-        func value(_ place: Place, column: Int) -> CellValue? {
+        package func value(_ place: Place, column: Int) -> CellValue? {
             switch place {
             case .read(let row): edits.value(row: row, column: column) ?? CellValue(source[safe: row]?[safe: column] ?? nil)
             case .added(let index): edits.inserted[safe: index]?[column]
             }
         }
 
-        func numberOfRows(in tableView: NSTableView) -> Int { order.count + edits.inserted.count }
+        package func numberOfRows(in tableView: NSTableView) -> Int { order.count + edits.inserted.count }
 
-        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        package func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             guard let tableColumn, let index = Int(tableColumn.identifier.rawValue), let place = place(row) else { return nil }
             let id = NSUserInterfaceItemIdentifier("cell")
             let cell = (tableView.makeView(withIdentifier: id, owner: nil) as? GridCell) ?? GridCell(identifier: id)
@@ -154,7 +154,7 @@ struct ResultGrid: NSViewRepresentable {
             }
         }
 
-        func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
+        package func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
             guard let descriptor = tableView.sortDescriptors.first, let column = descriptor.key.flatMap(Int.init) else { return }
             order = ResultExport.sortedIndexes(source, by: column, ascending: descriptor.ascending)
             tableView.reloadData()
@@ -162,13 +162,13 @@ struct ResultGrid: NSViewRepresentable {
 
         // MARK: Copying
 
-        func selectedRows() -> [[String?]] {
+        package func selectedRows() -> [[String?]] {
             guard let table else { return [] }
             let picked = table.selectedRowIndexes.isEmpty ? IndexSet(0..<numberOfRows(in: table)) : table.selectedRowIndexes
             return picked.compactMap { row in place(row).map { place in columns.indices.map { value(place, column: $0)?.text } } }
         }
 
-        func copy(_ format: ResultExport.Format, header: Bool = true) {
+        package func copy(_ format: ResultExport.Format, header: Bool = true) {
             let text = ResultExport.text(format, columns: columns, rows: selectedRows(), table: tableName, header: header)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
@@ -176,7 +176,7 @@ struct ResultGrid: NSViewRepresentable {
 
         // MARK: The menu
 
-        func menuNeedsUpdate(_ menu: NSMenu) {
+        package func menuNeedsUpdate(_ menu: NSMenu) {
             menu.removeAllItems()
             guard let table else { return }
             let row = table.clickedRow
@@ -256,14 +256,14 @@ struct ResultGrid: NSViewRepresentable {
 
         /// A double-click edits the cell in place — or, a value of several
         /// lines, in a sheet.
-        @objc func doubleClicked(_ sender: Any?) {
+        @objc package func doubleClicked(_ sender: Any?) {
             guard let table, table.clickedRow >= 0, table.clickedColumn >= 0,
                 let column = Int(table.tableColumns[table.clickedColumn].identifier.rawValue)
             else { return }
             beginEditing(row: table.clickedRow, column: column)
         }
 
-        func beginEditing(row: Int, column: Int) {
+        package func beginEditing(row: Int, column: Int) {
             guard let table, canEdit(row: row, column: column), let place = place(row),
                 let at = table.tableColumns.firstIndex(where: { $0.identifier.rawValue == "\(column)" })
             else { return }
@@ -277,7 +277,7 @@ struct ResultGrid: NSViewRepresentable {
             table.editColumn(at, row: row, with: nil, select: true)
         }
 
-        func controlTextDidEndEditing(_ notification: Notification) {
+        package func controlTextDidEndEditing(_ notification: Notification) {
             guard let field = notification.object as? NSTextField, let editing else { return }
             self.editing = nil
             field.isEditable = false
@@ -286,7 +286,7 @@ struct ResultGrid: NSViewRepresentable {
         }
 
         /// Esc: the edit is dropped, the cell as it was.
-        func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        package func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
             guard selector == #selector(NSResponder.cancelOperation(_:)), let field = control as? NSTextField, let editing else { return false }
             self.editing = nil
             field.abortEditing()
@@ -296,7 +296,7 @@ struct ResultGrid: NSViewRepresentable {
         }
 
         /// A value in a sheet of its own: several lines, or NULL.
-        func editInSheet(row: Int, column: Int) {
+        package func editInSheet(row: Int, column: Int) {
             guard let window = table?.window, canEdit(row: row, column: column), let place = place(row) else { return }
             let alert = NSAlert()
             alert.messageText = columns[safe: column] ?? "Value"
@@ -330,10 +330,10 @@ struct ResultGrid: NSViewRepresentable {
 
 /// One cell: its text field, the value's look (NULL grey, DEFAULT grey and
 /// italic) and the change's tint.
-final class GridCell: NSTableCellView {
-    enum Marking { case none, edited, deleted, added, addedDefault }
+package final class GridCell: NSTableCellView {
+    package enum Marking { case none, edited, deleted, added, addedDefault }
 
-    convenience init(identifier: NSUserInterfaceItemIdentifier) {
+    package convenience init(identifier: NSUserInterfaceItemIdentifier) {
         self.init(frame: .zero)
         self.identifier = identifier
         let field = NSTextField(labelWithString: "")
@@ -352,11 +352,11 @@ final class GridCell: NSTableCellView {
         textField = field
     }
 
-    static let editedTint = NSColor.systemOrange.withAlphaComponent(0.28)
-    static let deletedTint = NSColor.systemRed.withAlphaComponent(0.22)
-    static let addedTint = NSColor.systemGreen.withAlphaComponent(0.22)
+    package static let editedTint = NSColor.systemOrange.withAlphaComponent(0.28)
+    package static let deletedTint = NSColor.systemRed.withAlphaComponent(0.22)
+    package static let addedTint = NSColor.systemGreen.withAlphaComponent(0.22)
 
-    func show(_ value: CellValue?, marking: Marking) {
+    package func show(_ value: CellValue?, marking: Marking) {
         guard let field = textField else { return }
         field.isEditable = false
         let text: String
@@ -398,14 +398,14 @@ final class GridCell: NSTableCellView {
 }
 
 /// ⌘C in the grid: the selected rows, tab-separated.
-final class GridTableView: NSTableView {
-    weak var coordinator: ResultGrid.Coordinator?
+package final class GridTableView: NSTableView {
+    package weak var coordinator: ResultGrid.Coordinator?
 
-    @objc func copy(_ sender: Any?) {
+    @objc package func copy(_ sender: Any?) {
         coordinator?.copy(.tsv, header: false)
     }
 }
 
 extension Array {
-    subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
+    package subscript(safe index: Int) -> Element? { indices.contains(index) ? self[index] : nil }
 }

@@ -5,26 +5,26 @@ import Foundation
 /// its `variable "x"`, `local.x` to its line in `locals`, `module.y`,
 /// `data.t.n`, `t.n`. Pure, over the texts it is given (the open buffers'
 /// over the files on disk, by the caller).
-struct TerraformConfigIndex: Sendable {
-    struct Definition: Equatable, Sendable {
+package struct TerraformConfigIndex: Sendable {
+    package struct Definition: Equatable, Sendable {
         /// `var.region`, `local.tags`, `module.net`, `aws_s3_bucket.logs`, `data.aws_ami.ubuntu`, `output.url`.
-        var address: String
+        package var address: String
         /// `variable`, `local`, `module`, `resource`, `data`, `output`, `provider`…: what ⇧⌘O's badge says.
-        var kind: String
-        var file: URL
+        package var kind: String
+        package var file: URL
         /// The name, to select; the whole block or line, for the outline.
-        var nameRange: NSRange
-        var range: NSRange
+        package var nameRange: NSRange
+        package var range: NSRange
     }
 
-    private(set) var definitions: [String: Definition] = [:]
+    package private(set) var definitions: [String: Definition] = [:]
 
     /// The files of a module: its folder's `.tf` and `.tofu` files.
-    static func isModuleFile(_ url: URL) -> Bool {
+    package static func isModuleFile(_ url: URL) -> Bool {
         ["tf", "tofu"].contains(url.pathExtension.lowercased())
     }
 
-    init(files: [(url: URL, text: String)]) {
+    package init(files: [(url: URL, text: String)]) {
         // Sorted, so a name defined twice (an error terraform reports) resolves the same way every time.
         for file in files.sorted(by: { $0.url.path < $1.url.path }) {
             for definition in Self.definitions(in: file.text, file: file.url) where definitions[definition.address] == nil {
@@ -33,21 +33,21 @@ struct TerraformConfigIndex: Sendable {
         }
     }
 
-    func definition(of address: String) -> Definition? { definitions[address] }
+    package func definition(of address: String) -> Definition? { definitions[address] }
 
     // MARK: A folder's
 
     /// Bounds on what `load` reads from disk: a module is tens of files, and
     /// a folder of generated ones isn't read whole — 500 names, 2 MB a
     /// file, 8 MB in all.
-    static let fileLimit = 500
-    static let fileByteLimit = 2 << 20
-    static let byteLimit = 8 << 20
+    package static let fileLimit = 500
+    package static let fileByteLimit = 2 << 20
+    package static let byteLimit = 8 << 20
 
     /// A module's index from its folder: `open`'s texts (the open buffers,
     /// by standardized path) as they are on screen, the rest from disk
     /// within the bounds. Blocking: a GCD thread's, never the main one.
-    static func load(folder: URL, open: [String: String], byteLimit: Int = byteLimit) -> TerraformConfigIndex {
+    package static func load(folder: URL, open: [String: String], byteLimit: Int = byteLimit) -> TerraformConfigIndex {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         var files: [(url: URL, text: String)] = []
         var budget = byteLimit
@@ -69,7 +69,7 @@ struct TerraformConfigIndex: Sendable {
 
     /// `address`'s definition in `folder`'s module, read and parsed off
     /// the main thread.
-    static func loadDefinition(of address: String, in folder: URL, open: [String: String]) async -> Definition? {
+    package static func loadDefinition(of address: String, in folder: URL, open: [String: String]) async -> Definition? {
         await withCheckedContinuation { (continuation: CheckedContinuation<Definition?, Never>) in
             let work: @Sendable () -> Void = { continuation.resume(returning: load(folder: folder, open: open).definition(of: address)) }
             DispatchQueue.global(qos: .userInitiated).async(execute: work)
@@ -78,7 +78,7 @@ struct TerraformConfigIndex: Sendable {
 
     /// A file's definitions, in order: its blocks, a `locals` block's names
     /// each its own, a `.tfvars` file's assignments as the variables they set.
-    static func definitions(in text: String, file: URL) -> [Definition] {
+    package static func definitions(in text: String, file: URL) -> [Definition] {
         let scanned = TerraformBlocks.scan(text)
         var found: [Definition] = []
         for block in scanned.blocks {
@@ -99,7 +99,7 @@ struct TerraformConfigIndex: Sendable {
     }
 
     /// The address a block defines, as a reference names it.
-    static func address(of block: TerraformBlocks.Block) -> String? {
+    package static func address(of block: TerraformBlocks.Block) -> String? {
         let labels = block.labels
         switch block.type {
         case "variable": return labels.count == 1 ? "var.\(labels[0])" : nil
@@ -118,7 +118,7 @@ struct TerraformConfigIndex: Sendable {
     /// `local.x`, `module.y`, `data.t.n`, `t.n` — or nil when it names
     /// nothing a module defines (`each.key`, `path.module`, a string). In
     /// a `.tfvars` file, an assignment's name is the variable it sets.
-    static func reference(at index: Int, in text: String, tfvars: Bool = false) -> String? {
+    package static func reference(at index: Int, in text: String, tfvars: Bool = false) -> String? {
         let ns = text as NSString
         guard ns.length > 0 else { return nil }
         func isPart(_ c: unichar) -> Bool {

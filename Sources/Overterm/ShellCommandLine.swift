@@ -11,61 +11,61 @@ import Foundation
 /// Kubernetes' pane header (`KubeCommandLine`), a tab's kind (`TabKind`)
 /// and Terraform's (`TerraformCommandLine`) read it through this one
 /// splitter, so they agree on what a line says. Pure.
-enum ShellCommandLine {
+package enum ShellCommandLine {
     /// A `NAME=value` before the command (`KUBECONFIG=/tmp/a kubectl …`,
     /// `env TF_WORKSPACE=prod terraform …`).
-    struct Assignment: Equatable, Sendable {
-        var name: String
-        var value: String
+    package struct Assignment: Equatable, Sendable {
+        package var name: String
+        package var value: String
     }
 
     /// One command of a line.
-    struct Command: Equatable, Sendable {
+    package struct Command: Equatable, Sendable {
         /// The assignments before it, in order: before the wrappers and
         /// between them (`env -u FOO TF_WORKSPACE=prod terraform`).
-        var assignments: [Assignment]
+        package var assignments: [Assignment]
         /// The wrappers it runs behind, outermost first (`sudo`, `env`).
-        var wrappers: [String]
+        package var wrappers: [String]
         /// The command's word as written: `/opt/homebrew/bin/terraform`.
-        var executable: String
+        package var executable: String
         /// Its last path component: `terraform`.
-        var tool: String
+        package var tool: String
         /// The words after it.
-        var arguments: [String]
+        package var arguments: [String]
 
         /// What the line assigns `name`, the last assignment's (the one
         /// the command sees).
-        func assigned(_ name: String) -> String? {
+        package func assigned(_ name: String) -> String? {
             assignments.last { $0.name == name }?.value
         }
     }
 
     /// How a wrapper reads the words between it and the command it runs.
-    struct Wrapper: Equatable, Sendable {
+    package struct Wrapper: Equatable, Sendable {
         /// Options that take the next word as their value (`sudo -u root`,
         /// `watch -n 2`): that word is the option's, not the command.
-        var valued: Set<String> = []
+        package var valued: Set<String> = []
         /// The subcommand that makes it a wrapper (`aws-vault exec`, `op
         /// run`); any other (`op read`, `mise install`), and the wrapper's
         /// word is itself the command.
-        var subcommands: Set<String> = []
+        package var subcommands: Set<String> = []
         /// Words of its own before the command: `timeout 600`, `aws-vault
         /// exec acme-prod`, `direnv exec .`; `.max` until `--` (`mise exec
         /// terraform@1.9 -- terraform`).
-        var positionals = 0
+        package var positionals = 0
         /// Options whose value is a command line a shell runs (`doppler run
         /// --command '…'`, `mise exec -c '…'`): read as a line of its own.
-        var lines: Set<String> = []
+        package var lines: Set<String> = []
         /// Options whose value is split into words that take its place
         /// (`env -S 'terraform apply'`).
-        var splits: Set<String> = []
+        package var splits: Set<String> = []
         /// Runs the rest through `sh -c`, joined by spaces (`watch`): one
         /// quoted word (`watch 'terraform plan'`) is a line of its own.
-        var viaShell = false
+        package var viaShell = false
     }
 
     /// The wrappers a command is looked for behind.
-    static let wrappers: [String: Wrapper] = [
+    package static let wrappers: [String: Wrapper] = [
         "sudo": Wrapper(valued: [
             "-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T", "-R", "--user", "--group", "--close-from", "--chdir", "--host", "--prompt",
             "--role", "--type", "--other-user", "--command-timeout", "--chroot",
@@ -97,35 +97,35 @@ enum ShellCommandLine {
 
     /// The shells whose `-c` string is read as a line of its own (`bash -c
     /// 'terraform apply'`, `zsh -lc …`); without `-c` the shell is the command.
-    static let shells: Set<String> = ["sh", "bash", "zsh", "dash", "ksh", "fish"]
+    package static let shells: Set<String> = ["sh", "bash", "zsh", "dash", "ksh", "fish"]
 
     /// Reserved words before a command (`if terraform plan; then terraform
     /// apply; fi`, `{ terraform apply; }`, `! terraform …`): skipped.
-    static let leadingReservedWords: Set<String> = ["if", "then", "elif", "else", "do", "while", "until", "{", "!", "coproc"]
+    package static let leadingReservedWords: Set<String> = ["if", "then", "elif", "else", "do", "while", "until", "{", "!", "coproc"]
     /// Reserved words that begin a segment with no command in it: a
     /// closer (`fi`, `done`), or a header whose words aren't one (`for x in
     /// a b`, `case $x in`, `[[ … ]]`).
-    static let commandlessReservedWords: Set<String> = ["fi", "done", "esac", "}", "for", "case", "select", "function", "[[", "]]"]
+    package static let commandlessReservedWords: Set<String> = ["fi", "done", "esac", "}", "for", "case", "select", "function", "[[", "]]"]
 
     /// The line's words, as the shell splits them: `'…'` (and the `'\''`
     /// that puts a quote in one), `"…"` and `\ ` keep a space in a word,
     /// their quotes taken off; `''` is an empty word. Unclosed, the rest
     /// is the word. Operators (`|`, `&&`, `;`) are words here too: for a
     /// line's commands, `segments(of:)`.
-    static func words(_ line: String) -> [String] {
+    package static func words(_ line: String) -> [String] {
         tokens(line, splitting: false).flatMap { $0 }
     }
 
     /// The line's commands, each its words: split at `|`, `||`, `&&`, `;`,
     /// `&`, parentheses and newlines outside quotes; quotes and
     /// backslashes read as `words` reads them.
-    static func segments(of line: String) -> [[String]] {
+    package static func segments(of line: String) -> [[String]] {
         tokens(line, splitting: true)
     }
 
     /// Every command of the line that has one, in order — a `bash -c`
     /// string's, `env -S`'s, `doppler run --command`'s among them.
-    static func commands(in line: String) -> [Command] {
+    package static func commands(in line: String) -> [Command] {
         commands(inLine: line, depth: 0)
     }
 
@@ -133,7 +133,7 @@ enum ShellCommandLine {
     /// the assignments, the wrappers and the wrappers' own options. Nil
     /// when there is none (only assignments, a wrapper with nothing after
     /// it, a `for` header).
-    static func command(in words: [String]) -> Command? {
+    package static func command(in words: [String]) -> Command? {
         commands(of: words, depth: 0).first
     }
 
@@ -273,7 +273,7 @@ enum ShellCommandLine {
     }
 
     /// `NAME=value`, a name being letters, digits and `_`.
-    static func assignment(_ word: String) -> Assignment? {
+    package static func assignment(_ word: String) -> Assignment? {
         guard let equals = word.firstIndex(of: "="), equals != word.startIndex,
             word[..<equals].allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" })
         else { return nil }

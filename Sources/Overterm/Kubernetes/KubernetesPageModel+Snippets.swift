@@ -3,15 +3,15 @@ import Foundation
 // MARK: Kubernetes snippets in the verb menu (decision 18; KubeSnippet)
 
 extension KubernetesPageModel {
-    static let snippetsTitle = "Snippets"
+    package static let snippetsTitle = "Snippets"
 
     /// The one object picked: its snippets, a submenu.
-    func snippetVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+    package func snippetVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
         guard picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
         return snippetVerbs(for: ref)
     }
 
-    func snippetVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
+    package func snippetVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         let offered = (actions?.snippets() ?? []).filter { KubeSnippet.offered($0, on: ref, shownNamespace: shownNamespace) }
         guard !offered.isEmpty else { return [] }
         let children = offered.map { snippet in
@@ -24,7 +24,7 @@ extension KubernetesPageModel {
     /// names `${container}` (one GET of the pod; a picker for several) —,
     /// its own `{{…}}` asked for, on production asked first with the line
     /// shown, then typed into a tab pinned to the context and namespace.
-    func runSnippet(_ snippet: Snippet, on ref: KubeObjectRef) {
+    package func runSnippet(_ snippet: Snippet, on ref: KubeObjectRef) {
         commandProblem = nil
         guard let context = model.contexts.context(named: ref.context) else {
             commandProblem = "No context called \(ref.context)."

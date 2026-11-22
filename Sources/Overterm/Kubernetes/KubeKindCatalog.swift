@@ -11,12 +11,12 @@ import Foundation
 /// records (`KubeHelmSession`), on 8, Argo CD's and Flux's objects
 /// summarised (`KubeGitOpsSession`) on `g`, and the app's port-forwards
 /// (`KubeForwards`) on 9. Pure.
-enum KubeSection: String, CaseIterable, Identifiable, Sendable {
+package enum KubeSection: String, CaseIterable, Identifiable, Sendable {
     case overview, workloads, network, config, storage, cluster, custom, helm, gitops, forwards
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .overview: "Overview"
         case .workloads: "Workloads"
@@ -31,7 +31,7 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .overview: "gauge.with.dots.needle.33percent"
         case .workloads: "cube.box"
@@ -50,7 +50,7 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
     /// kind a cluster doesn't serve is passed over; of two that are one
     /// Kind (`events.events.k8s.io`, the core `events`) the first served
     /// is shown.
-    var named: [String] {
+    package var named: [String] {
         switch self {
         case .workloads:
             [
@@ -88,7 +88,7 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
     /// Its key on the list: Overview is 1 … Helm 8, Forwards 9 — digits
     /// people's habits know — and GitOps `g` (gitops.md decision 1: 0 is
     /// All Namespaces, and renumbering would break those habits).
-    var key: String {
+    package var key: String {
         switch self {
         case .overview: "1"
         case .workloads: "2"
@@ -107,19 +107,19 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
     /// up, Helm lists its releases, GitOps summarises Argo CD's and Flux's
     /// objects — their kinds stay in Custom Resources — Forwards
     /// Overterm's own forwards).
-    var listsKinds: Bool { ![.overview, .helm, .gitops, .forwards].contains(self) }
+    package var listsKinds: Bool { ![.overview, .helm, .gitops, .forwards].contains(self) }
 }
 
 /// What the page offers of a cluster: every kind discovery says can be
 /// listed and watched, each in its section. A kind that can't be listed or
 /// watched (metrics.k8s.io's, `bindings`, `tokenreviews`) is not offered:
 /// a list here is a list kept live. Pure.
-struct KubeKindCatalog: Equatable, Sendable {
-    private(set) var sections: [KubeSection: [KubeResourceKind]] = [:]
+package struct KubeKindCatalog: Equatable, Sendable {
+    package private(set) var sections: [KubeSection: [KubeResourceKind]] = [:]
 
-    init() {}
+    package init() {}
 
-    init(_ discovery: KubeDiscovery) {
+    package init(_ discovery: KubeDiscovery) {
         let offered = discovery.kinds.filter(Self.isOffered)
         var placed: Set<String> = []
         /// Kinds of Kubernetes' own groups, by Kind, once placed: the core
@@ -152,42 +152,42 @@ struct KubeKindCatalog: Equatable, Sendable {
     }
 
     /// A section's kinds, in the order they show.
-    func kinds(in section: KubeSection) -> [KubeResourceKind] { sections[section] ?? [] }
+    package func kinds(in section: KubeSection) -> [KubeResourceKind] { sections[section] ?? [] }
 
-    var all: [KubeResourceKind] { KubeSection.allCases.flatMap { kinds(in: $0) } }
+    package var all: [KubeResourceKind] { KubeSection.allCases.flatMap { kinds(in: $0) } }
 
-    var isEmpty: Bool { sections.isEmpty }
+    package var isEmpty: Bool { sections.isEmpty }
 
     /// The section a kind shows in; nil when it isn't offered.
-    func section(of kind: KubeResourceKind) -> KubeSection? {
+    package func section(of kind: KubeResourceKind) -> KubeSection? {
         KubeSection.allCases.first { section in kinds(in: section).contains { $0.fullName == kind.fullName } }
     }
 
     /// The kind offered under this full name.
-    func kind(fullName: String) -> KubeResourceKind? { all.first { $0.fullName == fullName } }
+    package func kind(fullName: String) -> KubeResourceKind? { all.first { $0.fullName == fullName } }
 
     /// A list here is a list kept live: listed, then watched.
-    static func isOffered(_ kind: KubeResourceKind) -> Bool { kind.canList && kind.canWatch }
+    package static func isOffered(_ kind: KubeResourceKind) -> Bool { kind.canList && kind.canWatch }
 
     /// Kubernetes' own groups: the core, `*.k8s.io`, and the unsuffixed
     /// ones it has always had. Any other group is a custom resource's (or
     /// an aggregated API's that isn't Kubernetes').
-    static func isBuiltIn(group: String) -> Bool {
+    package static func isBuiltIn(group: String) -> Bool {
         group.isEmpty || group == "k8s.io" || group.hasSuffix(".k8s.io") || unsuffixedGroups.contains(group)
     }
 
-    static let unsuffixedGroups: Set<String> = ["apps", "batch", "autoscaling", "policy", "extensions"]
+    package static let unsuffixedGroups: Set<String> = ["apps", "batch", "autoscaling", "policy", "extensions"]
 
     /// What the page calls a kind: its plural Kind (`Deployments`,
     /// `NetworkPolicies`, `Ingresses`), shortened where Lens and k9s do.
-    static func title(of kind: KubeResourceKind) -> String {
+    package static func title(of kind: KubeResourceKind) -> String {
         if let short = shortTitles[kind.fullName] { return short }
         let name = kind.kind.isEmpty ? kind.resource : kind.kind
         if name.lowercased() == kind.resource { return name }
         return plural(name)
     }
 
-    static let shortTitles: [String: String] = [
+    package static let shortTitles: [String: String] = [
         "horizontalpodautoscalers.autoscaling": "HPAs", "poddisruptionbudgets.policy": "PDBs", "persistentvolumeclaims": "PVCs",
         "persistentvolumes": "PVs", "customresourcedefinitions.apiextensions.k8s.io": "CRDs",
         "mutatingwebhookconfigurations.admissionregistration.k8s.io": "Mutating Webhooks",
@@ -197,7 +197,7 @@ struct KubeKindCatalog: Equatable, Sendable {
     ]
 
     /// English plurals as Kinds need them.
-    static func plural(_ word: String) -> String {
+    package static func plural(_ word: String) -> String {
         let lower = word.lowercased()
         if lower.hasSuffix("y"), let before = lower.dropLast().last, !"aeiou".contains(before) { return word.dropLast() + "ies" }
         if ["s", "x", "z", "ch", "sh"].contains(where: { lower.hasSuffix($0) }) { return word + "es" }

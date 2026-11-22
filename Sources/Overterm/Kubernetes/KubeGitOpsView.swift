@@ -13,15 +13,15 @@ import SwiftUI
 /// marked apps with none here among them, their chip showing them alone.
 /// Presentation only: every
 /// row comes from what `KubeGitOpsSession` already holds.
-struct KubeGitOpsSectionView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var gitOps: KubeGitOpsSession
+package struct KubeGitOpsSectionView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var gitOps: KubeGitOpsSession
     /// The marks' reads: what the header says of them.
-    @ObservedObject var marked: KubeMarkedAppsSession
-    @ObservedObject var model: KubernetesModel
-    @ObservedObject var theme: ChromeTheme
+    @ObservedObject package var marked: KubeMarkedAppsSession
+    @ObservedObject package var model: KubernetesModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         let rows = page.gitOpsVisibleRows
         let listed = page.gitOpsListRows(rows)
         VStack(alignment: .leading, spacing: 10) {

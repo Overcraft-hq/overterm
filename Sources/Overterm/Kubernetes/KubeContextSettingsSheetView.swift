@@ -6,13 +6,13 @@ import SwiftUI
 /// agents may change it, Apply on production. Production's switch for the
 /// session is said, never set here. Esc or Cancel closes it; Save writes
 /// settings.json, or says why not.
-struct KubeContextSettingsSheetView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
+package struct KubeContextSettingsSheetView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
 
-    static let identifier = "kubernetes.contextSettings"
+    package static let identifier = "kubernetes.contextSettings"
 
-    var body: some View {
+    package var body: some View {
         if let draft = page.contextSettingsDraft {
             ZStack(alignment: .top) {
                 Color.black.opacity(0.001).onTapGesture { page.closeContextSettings() }

@@ -6,28 +6,28 @@ import Foundation
 /// the pod is gone), its lines tagged with whose they are and put through
 /// the filter's line parts off the main actor. Only reads.
 @MainActor
-final class KubeMergedLogSource: LogSource {
-    let key: KubeLogStreamKey
-    let inner: KubePodLogSource
-    let filter: KubeMergedLogFilter
+package final class KubeMergedLogSource: LogSource {
+    package let key: KubeLogStreamKey
+    package let inner: KubePodLogSource
+    package let filter: KubeMergedLogFilter
 
-    init(key: KubeLogStreamKey, inner: KubePodLogSource, filter: KubeMergedLogFilter) {
+    package init(key: KubeLogStreamKey, inner: KubePodLogSource, filter: KubeMergedLogFilter) {
         self.key = key
         self.inner = inner
         self.filter = filter
     }
 
-    func follow(tail: Int, after: String?) async -> AsyncThrowingStream<[LogLine], any Error>? {
+    package func follow(tail: Int, after: String?) async -> AsyncThrowingStream<[LogLine], any Error>? {
         guard let stream = await inner.follow(tail: tail, after: after) else { return nil }
         return Self.tagged(stream, source: key.description, filter: filter)
     }
 
-    func followsAgain() async -> Bool { await inner.followsAgain() }
+    package func followsAgain() async -> Bool { await inner.followsAgain() }
 
     /// Each line's `source` set, the lines the filter leaves out dropped —
     /// the follower sees only what the feed gets, so a resume's duplicates
     /// are told by the same lines.
-    nonisolated static func tagged(
+    package nonisolated static func tagged(
         _ stream: AsyncThrowingStream<[LogLine], any Error>, source: String, filter: KubeMergedLogFilter
     ) -> AsyncThrowingStream<[LogLine], any Error> {
         AsyncThrowingStream { continuation in
@@ -65,50 +65,50 @@ final class KubeMergedLogSource: LogSource {
 /// (`show`/`hide`) — the watch and every stream closed otherwise — and
 /// only with GETs.
 @MainActor
-final class KubeMergedLogSession: ObservableObject {
-    struct Stream: Equatable, Identifiable {
-        var key: KubeLogStreamKey
-        var reading: KubePodLogSession.Reading
+package final class KubeMergedLogSession: ObservableObject {
+    package struct Stream: Equatable, Identifiable {
+        package var key: KubeLogStreamKey
+        package var reading: KubePodLogSession.Reading
 
-        var id: String { key.description }
+        package var id: String { key.description }
     }
 
-    let context: String
-    let namespace: String
-    let selector: String
+    package let context: String
+    package let namespace: String
+    package let selector: String
     /// What it is the logs of: `deployment/web`.
-    let title: String
-    let feed = LogFeed()
+    package let title: String
+    package let feed = LogFeed()
     /// The pods the selector picks now, by name.
-    @Published private(set) var pods: [String] = []
+    @Published package private(set) var pods: [String] = []
     /// The streams followed, in the pods' order, and how each reads.
-    @Published private(set) var streams: [Stream] = []
+    @Published package private(set) var streams: [Stream] = []
     /// How many streams the selector and the filter pick, and how many of
     /// them the cap leaves out.
-    @Published private(set) var total = 0
-    @Published private(set) var capped = 0
+    @Published package private(set) var total = 0
+    @Published package private(set) var capped = 0
     /// The cap the last plan was made with.
-    @Published private(set) var cap: Int
-    @Published private(set) var filter = KubeMergedLogFilter()
-    @Published private(set) var since: KubeLogSince = .all
+    @Published package private(set) var cap: Int
+    @Published package private(set) var filter = KubeMergedLogFilter()
+    @Published package private(set) var since: KubeLogSince = .all
     /// What the pod watch couldn't do.
-    @Published private(set) var problem: String?
+    @Published package private(set) var problem: String?
     /// What reading a pod couldn't do, by pod: said beside the summary,
     /// cleared once the pod is read or gone.
-    @Published private(set) var podProblems: [String: String] = [:]
+    @Published package private(set) var podProblems: [String: String] = [:]
     /// Streams that ended for good while their pod stays (a Job's
     /// Completed pod, an Evicted one): closed, their slot given to one
     /// left out, their lines kept and still picked out in the pane.
-    @Published private(set) var ended: [KubeLogStreamKey] = []
+    @Published package private(set) var ended: [KubeLogStreamKey] = []
     /// The pod watch is open and has listed them: streams start only then,
     /// so a re-show never reads pods deleted while it was hidden.
-    @Published private(set) var watching = false
+    @Published package private(set) var watching = false
     /// One stream's lines shown (the pane's picker); nil, all of them.
-    @Published var picked: String?
+    @Published package var picked: String?
 
     /// The first wait of each stream's resume (tests make it short).
-    var retryDelay: Duration = .milliseconds(300)
-    nonisolated static let firstTail = 200
+    package var retryDelay: Duration = .milliseconds(300)
+    package nonisolated static let firstTail = 200
 
     private let client: KubeClient?
     private let capSetting: () -> Int
@@ -133,7 +133,7 @@ final class KubeMergedLogSession: ObservableObject {
 
     /// `capChanged`: fires when `kubernetes.logStreams` may have changed
     /// (Settings' `changes`, which has no current value to drop).
-    init(
+    package init(
         context: String, namespace: String, selector: String, title: String, client: KubeClient?, cap: @escaping () -> Int,
         capChanged: AnyPublisher<Void, Never>? = nil
     ) {
@@ -154,13 +154,13 @@ final class KubeMergedLogSession: ObservableObject {
     }
 
     /// `deployment/web`, as kubectl names it.
-    static func title(kind: String, name: String) -> String { "\(kind.lowercased())/\(name)" }
+    package static func title(kind: String, name: String) -> String { "\(kind.lowercased())/\(name)" }
 
     // MARK: Shown and hidden
 
     /// The tab shows: the pods watched, their streams followed (from where
     /// each was, if it was).
-    func show(since: KubeLogSince) {
+    package func show(since: KubeLogSince) {
         let was = wanted
         wanted = true
         guard let client else {
@@ -182,7 +182,7 @@ final class KubeMergedLogSession: ObservableObject {
     }
 
     /// The tab is gone, the page hidden: the watch and every stream close.
-    func hide() {
+    package func hide() {
         wanted = false
         watchTask?.cancel()
         watchTask = nil
@@ -197,7 +197,7 @@ final class KubeMergedLogSession: ObservableObject {
     }
 
     /// The detail closed or moved on: nothing more is read.
-    func cancel() {
+    package func cancel() {
         hide()
         followers = [:]
         readings = [:]
@@ -209,7 +209,7 @@ final class KubeMergedLogSession: ObservableObject {
     /// Other include and exclude expressions: every stream from the start.
     /// One that isn't a regular expression changes nothing (`problem` says).
     @discardableResult
-    func setFilter(_ filter: KubeMergedLogFilter) -> Bool {
+    package func setFilter(_ filter: KubeMergedLogFilter) -> Bool {
         guard filter.problem == nil else { return false }
         guard filter != self.filter else { return true }
         self.filter = filter
@@ -399,7 +399,7 @@ final class KubeMergedLogSession: ObservableObject {
 
     /// The streams' tags, for the pane's picker: those followed and those
     /// ended, in the pods' order and their containers'.
-    var sources: [String] {
+    package var sources: [String] {
         guard !ended.isEmpty else { return streams.map(\.id) }
         let keys = streams.map(\.key) + ended.filter { key in !streams.contains { $0.key == key } }
         return keys.sorted { a, b in
@@ -410,7 +410,7 @@ final class KubeMergedLogSession: ObservableObject {
     }
 
     /// The tab's line about the streams, the cap stated.
-    var summary: String {
+    package var summary: String {
         let pods = self.pods.count
         let containers = streams.count
         var text = "\(containers) container\(containers == 1 ? "" : "s") of \(pods) pod\(pods == 1 ? "" : "s") followed"
@@ -421,20 +421,20 @@ final class KubeMergedLogSession: ObservableObject {
 
     /// What couldn't be done, said beside the summary: the watch's, then
     /// each pod's.
-    var problems: [String] { (problem.map { [$0] } ?? []) + podProblems.keys.sorted().compactMap { podProblems[$0] } }
+    package var problems: [String] { (problem.map { [$0] } ?? []) + podProblems.keys.sorted().compactMap { podProblems[$0] } }
 
     /// Lines picked out of it, for an agent: scrubbed of what looks secret —
     /// every pod's own env values (a gone pod's too, while its lines may be
     /// in the feed), tokens, keys.
-    func scrubbed(_ text: String) -> String {
+    package func scrubbed(_ text: String) -> String {
         KubeLogScrub.scrub(text, env: envs.values.flatMap { $0 } + retiredEnvs.values.flatMap { $0 })
     }
 
     /// What Save As suggests.
-    var fileName: String { KubeLogText.fileName(pod: title.replacingOccurrences(of: "/", with: "-"), container: nil, previous: false) }
+    package var fileName: String { KubeLogText.fileName(pod: title.replacingOccurrences(of: "/", with: "-"), container: nil, previous: false) }
 
     /// How kubectl reads the same.
-    func kubectl(timestamps: Bool) -> String {
+    package func kubectl(timestamps: Bool) -> String {
         KubectlLine.mergedLogs(context: context, namespace: namespace, selector: selector, streams: cap, since: since, timestamps: timestamps)
     }
 }

@@ -6,17 +6,17 @@ import SwiftUI
 /// only what is on screen is drawn, and a row redraws when its own line
 /// changes rather than the whole history redrawing when one commit lands.
 /// The rows must be a fixed height or the lines do not meet.
-struct GraphGutter: View {
-    let row: GraphRow
+package struct GraphGutter: View {
+    package let row: GraphRow
     /// The whole list's width in lanes, so subjects line up.
-    let lanes: Int
-    let height: CGFloat
+    package let lanes: Int
+    package let height: CGFloat
 
     /// A ring of lane colours. Fixed hues at one saturation and brightness
     /// so they read on a light ground and a dark one alike — the chrome's
     /// own tokens are derived from the terminal theme and there are only
     /// three of them, which is not enough to tell six branches apart.
-    static let laneColors: [Color] = [
+    package static let laneColors: [Color] = [
         Color(red: 0.42, green: 0.62, blue: 0.95),
         Color(red: 0.47, green: 0.78, blue: 0.52),
         Color(red: 0.90, green: 0.60, blue: 0.32),
@@ -25,15 +25,15 @@ struct GraphGutter: View {
         Color(red: 0.92, green: 0.47, blue: 0.55),
     ]
 
-    static func color(_ lane: Int) -> Color { laneColors[lane % laneColors.count] }
+    package static func color(_ lane: Int) -> Color { laneColors[lane % laneColors.count] }
 
     /// What one lane is given, in points. Six of them is 66 pt — the widest
     /// the gutter ever gets (`GraphLayout`'s own cap).
-    nonisolated static let laneWidth: CGFloat = 11
+    package nonisolated static let laneWidth: CGFloat = 11
 
-    static func width(lanes: Int) -> CGFloat { CGFloat(max(1, lanes)) * laneWidth }
+    package static func width(lanes: Int) -> CGFloat { CGFloat(max(1, lanes)) * laneWidth }
 
-    var body: some View {
+    package var body: some View {
         Canvas { context, size in
             let middle = size.height / 2
             func x(_ lane: Int) -> CGFloat { Self.laneWidth * (CGFloat(lane) + 0.5) }

@@ -4,29 +4,29 @@ import _CryptoExtras
 /// BigQuery over its REST API: `jobs.query`, then the job's results until it
 /// is done. Signed in with a service account's key (a JWT it signs, traded
 /// for a token) or with whoever `gcloud` is signed in as on this Mac.
-actor BigQueryDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor BigQueryDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let serviceAccount: String?
     private var token: (value: String, expires: Date)?
     private let session = URLSession(configuration: .ephemeral)
     /// Jobs the Server page's own reads started: never cancelled from it.
-    var ownJobs: Set<String> = []
+    package var ownJobs: Set<String> = []
     /// Where each listed job runs: `jobs.cancel` names it.
-    var jobLocations: [String: String] = [:]
+    package var jobLocations: [String: String] = [:]
 
-    init(_ connection: DatabaseConnection, serviceAccount: String?) {
+    package init(_ connection: DatabaseConnection, serviceAccount: String?) {
         config = connection
         self.serviceAccount = serviceAccount
     }
 
-    var base: String { "https://bigquery.googleapis.com/bigquery/v2/projects/\(config.project)" }
+    package var base: String { "https://bigquery.googleapis.com/bigquery/v2/projects/\(config.project)" }
 
-    func connect() async throws {
+    package func connect() async throws {
         _ = try await accessToken()
         _ = try await get("\(base)/datasets?maxResults=1")
     }
 
-    func close() async {
+    package func close() async {
         token = nil
     }
 
@@ -47,7 +47,7 @@ actor BigQueryDriver: DatabaseDriver {
     }
 
     /// The service account signs a JWT (RS256) that Google trades for a token.
-    static func token(
+    package static func token(
         serviceAccount json: String, session: URLSession, scope: String = "https://www.googleapis.com/auth/bigquery"
     ) async throws -> (String, Date) {
         guard let key = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any],
@@ -68,7 +68,7 @@ actor BigQueryDriver: DatabaseDriver {
     }
 
     /// `header.claims.signature`, each base64url.
-    static func jwt(
+    package static func jwt(
         email: String, privateKey pem: String, audience: String, now: Date, scope: String = "https://www.googleapis.com/auth/bigquery"
     ) throws -> String {
         func encode(_ data: Data) -> String {
@@ -94,7 +94,7 @@ actor BigQueryDriver: DatabaseDriver {
 
     /// `gcloud auth print-access-token`, from where gcloud is installed (a
     /// GUI app's PATH has no Homebrew).
-    static func gcloudToken() async throws -> String {
+    package static func gcloudToken() async throws -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let candidates = [
             "/opt/homebrew/bin/gcloud", "/usr/local/bin/gcloud", home.appendingPathComponent("google-cloud-sdk/bin/gcloud").path,
@@ -127,12 +127,12 @@ actor BigQueryDriver: DatabaseDriver {
         return json
     }
 
-    func get(_ address: String) async throws -> [String: Any] {
+    package func get(_ address: String) async throws -> [String: Any] {
         guard let url = URL(string: address) else { throw DatabaseError.failed("Not a valid project.") }
         return try await send(URLRequest(url: url))
     }
 
-    func post(_ address: String, _ body: [String: Any]) async throws -> [String: Any] {
+    package func post(_ address: String, _ body: [String: Any]) async throws -> [String: Any] {
         guard let url = URL(string: address) else { throw DatabaseError.failed("Not a valid project.") }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -143,12 +143,12 @@ actor BigQueryDriver: DatabaseDriver {
 
     // MARK: Queries
 
-    func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ sql: String, limit: Int) async throws -> QueryResult {
         try await query(sql, limit: limit, own: false)
     }
 
     /// A statement as a job; `own`, the Server page's, its job remembered.
-    func query(_ sql: String, limit: Int, own: Bool) async throws -> QueryResult {
+    package func query(_ sql: String, limit: Int, own: Bool) async throws -> QueryResult {
         let started = Date()
         var body: [String: Any] = ["query": sql, "useLegacySql": false, "maxResults": limit, "timeoutMs": 30_000]
         if !config.location.isEmpty { body["location"] = config.location }
@@ -168,7 +168,7 @@ actor BigQueryDriver: DatabaseDriver {
     }
 
     /// `schema.fields` and `rows[].f[].v`; nested and repeated fields as JSON.
-    static func parse(_ answer: [String: Any], limit: Int) -> QueryResult {
+    package static func parse(_ answer: [String: Any], limit: Int) -> QueryResult {
         var result = QueryResult()
         let fields = (answer["schema"] as? [String: Any])?["fields"] as? [[String: Any]] ?? []
         result.columns = fields.map { $0["name"] as? String ?? "" }
@@ -193,7 +193,7 @@ actor BigQueryDriver: DatabaseDriver {
         return result
     }
 
-    static func value(_ v: Any?, type: String) -> String? {
+    package static func value(_ v: Any?, type: String) -> String? {
         switch v {
         case nil, is NSNull: return nil
         case let text as String:
@@ -215,13 +215,13 @@ actor BigQueryDriver: DatabaseDriver {
 
     // MARK: The catalog
 
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         let answer = try await get("\(base)/datasets?maxResults=1000")
         let names = (answer["datasets"] as? [[String: Any]] ?? []).compactMap { ($0["datasetReference"] as? [String: Any])?["datasetId"] as? String }
         return names.sorted { ($0 == config.database ? 0 : 1, $0) < ($1 == config.database ? 0 : 1, $1) }
     }
 
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         let answer = try await get("\(base)/datasets/\(schema)/tables?maxResults=1000")
         return (answer["tables"] as? [[String: Any]] ?? []).compactMap { table in
             guard let name = (table["tableReference"] as? [String: Any])?["tableId"] as? String else { return nil }
@@ -229,7 +229,7 @@ actor BigQueryDriver: DatabaseDriver {
         }.sorted { $0.name < $1.name }
     }
 
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         let result = try await execute(
             """
             SELECT table_name, column_name, data_type, is_nullable FROM `\(config.project).\(schema)`.INFORMATION_SCHEMA.COLUMNS

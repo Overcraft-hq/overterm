@@ -17,23 +17,23 @@ import Foundation
 ///   the same value on both sides is the same hash, and no hash can be
 ///   looked up or compared with any other. The values are replaced as the
 ///   answer is read; nothing of them is kept.
-enum KubeCompare {
+package enum KubeCompare {
     /// One side: where it was read.
-    struct Side: Equatable, Hashable, Sendable {
-        var context: String
-        var namespace: String?
-        var production: Bool
+    package struct Side: Equatable, Hashable, Sendable {
+        package var context: String
+        package var namespace: String?
+        package var production: Bool
 
         /// `fake-dev/shop`, `fake-dev` for a cluster-wide object.
-        var said: String { namespace.map { "\(context)/\($0)" } ?? context }
+        package var said: String { namespace.map { "\(context)/\($0)" } ?? context }
     }
 
     /// What names one copy of an object, left out on both sides.
-    static let identity = ["uid", "resourceVersion", "creationTimestamp", "generation", "selfLink", "namespace", "managedFields"]
+    package static let identity = ["uid", "resourceVersion", "creationTimestamp", "generation", "selfLink", "namespace", "managedFields"]
 
     /// An object as it is compared: stripped (`KubeManifestDiff.stripped`)
     /// and without what names this copy of it.
-    static func comparable(_ object: [String: Any]) -> [String: Any] {
+    package static func comparable(_ object: [String: Any]) -> [String: Any] {
         var object = KubeManifestDiff.stripped(object)
         if var metadata = object["metadata"] as? [String: Any] {
             for key in identity { metadata[key] = nil }
@@ -50,7 +50,7 @@ enum KubeCompare {
     }
 
     /// A Secret's values, each its keyed hash: `hmac:1a2b3c4d5e6f`.
-    static func hashingSecret(_ object: [String: Any], key: SymmetricKey) -> [String: Any] {
+    package static func hashingSecret(_ object: [String: Any], key: SymmetricKey) -> [String: Any] {
         guard KubeObjectStrip.isSecret(object) else { return object }
         var object = object
         for field in ["data", "stringData"] {
@@ -67,7 +67,7 @@ enum KubeCompare {
 
     /// One side's answer, read: nil when it isn't an object. A Secret's
     /// values are hashed as it is read.
-    static func side(_ body: Data, key: SymmetricKey) -> [String: Any]? {
+    package static func side(_ body: Data, key: SymmetricKey) -> [String: Any]? {
         guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any], object["metadata"] is [String: Any] else { return nil }
         return KubeObjectStrip.isSecret(object) ? hashingSecret(object, key: key) : comparable(object)
     }
@@ -75,7 +75,7 @@ enum KubeCompare {
     /// The two answers compared: `left` the object the detail shows,
     /// `right` the other side's — nil where it has none (a 404). Each read
     /// and hashed under a key made here and dropped here.
-    static func diff(ref: KubeObjectRef, kind: String, left: Data, right: Data?, from: Side, to: Side) -> KubeChangeDiff? {
+    package static func diff(ref: KubeObjectRef, kind: String, left: Data, right: Data?, from: Side, to: Side) -> KubeChangeDiff? {
         let key = SymmetricKey(size: .bits256)
         guard let a = side(left, key: key) else { return nil }
         let b = right.flatMap { side($0, key: key) }
@@ -83,7 +83,7 @@ enum KubeCompare {
     }
 
     /// Two sides already read (`side`): masked together, as YAML, diffed.
-    static func diff(ref: KubeObjectRef, kind: String, left: [String: Any], right: [String: Any]?, rightMissing: Bool, from: Side, to: Side) -> KubeChangeDiff {
+    package static func diff(ref: KubeObjectRef, kind: String, left: [String: Any], right: [String: Any]?, rightMissing: Bool, from: Side, to: Side) -> KubeChangeDiff {
         let secret = KubeObjectStrip.isSecret(left) || right.map(KubeObjectStrip.isSecret) == true
         // A Secret's values are hashes already; anything else's env masked together.
         let (a, b): ([String: Any]?, [String: Any]?) = secret ? (left, right) : KubeManifestDiff.masked(before: left, after: right)

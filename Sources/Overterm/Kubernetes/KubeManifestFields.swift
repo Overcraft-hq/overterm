@@ -6,47 +6,47 @@ import Foundation
 /// a key typed at the caret would go, and the keys the docs don't know.
 /// A line scan, not a YAML parser: block maps and lists, `- ` items, quoted
 /// keys, comments, block scalars and flow values skipped. Pure, bounded.
-enum KubeManifestFields {
-    struct Key: Equatable {
-        var name: String
+package enum KubeManifestFields {
+    package struct Key: Equatable {
+        package var name: String
         /// Its path, itself last.
-        var path: [String]
+        package var path: [String]
         /// The key's own characters (UTF-16).
-        var range: NSRange
-        var line: Int
+        package var range: NSRange
+        package var line: Int
         /// The line of what holds it (a key, or a `- ` item); -1 at the top.
-        var holder: Int
+        package var holder: Int
         /// Its value on the line, when it has one.
-        var value: String?
+        package var value: String?
     }
 
-    struct Document: Equatable {
+    package struct Document: Equatable {
         /// Its lines' characters, `---` excluded.
-        var range: NSRange
-        var keys: [Key]
-        var apiVersion: String?
-        var kind: String?
+        package var range: NSRange
+        package var keys: [Key]
+        package var apiVersion: String?
+        package var kind: String?
 
-        var gvk: KubeGVK? { apiVersion.flatMap { api in kind.flatMap { KubeGVK(apiVersion: api, kind: $0) } } }
+        package var gvk: KubeGVK? { apiVersion.flatMap { api in kind.flatMap { KubeGVK(apiVersion: api, kind: $0) } } }
     }
 
     /// Where a key typed at the caret goes.
-    struct Slot: Equatable {
-        var document: Document
+    package struct Slot: Equatable {
+        package var document: Document
         /// The path of what will hold it.
-        var parent: [String]
+        package var parent: [String]
         /// The word typed so far, and its characters.
-        var prefix: String
-        var prefixRange: NSRange
+        package var prefix: String
+        package var prefixRange: NSRange
         /// The keys already there beside it.
-        var siblings: Set<String>
+        package var siblings: Set<String>
         /// Nothing follows the caret on its line: `name: ` can be inserted whole.
-        var atLineEnd: Bool
+        package var atLineEnd: Bool
     }
 
     /// Larger texts aren't scanned: no docs, no marks.
-    static let maxLength = 2 << 20
-    static let maxLines = 50_000
+    package static let maxLength = 2 << 20
+    package static let maxLines = 50_000
 
     private struct Entry {
         var indent: Int
@@ -151,7 +151,7 @@ enum KubeManifestFields {
     }
 
     /// The manifest's documents and their keys.
-    static func documents(_ text: NSString) -> [Document] {
+    package static func documents(_ text: NSString) -> [Document] {
         guard let lines = lines(text) else { return [] }
         return scan(lines, upTo: nil).documents
     }
@@ -219,7 +219,7 @@ enum KubeManifestFields {
 
     /// The document and key at `offset`: the key's own characters, or its
     /// line's value.
-    static func key(at offset: Int, in text: NSString) -> (document: Document, key: Key)? {
+    package static func key(at offset: Int, in text: NSString) -> (document: Document, key: Key)? {
         for document in documents(text) where offset >= document.range.location && offset <= NSMaxRange(document.range) {
             let starts = document.keys.first { NSLocationInRange(offset, $0.range) || offset == NSMaxRange($0.range) }
             if let key = starts { return (document, key) }
@@ -231,7 +231,7 @@ enum KubeManifestFields {
 
     /// Where a key typed at `caret` goes: nil unless the caret ends a word
     /// (perhaps empty) after the line's indent and any `- `.
-    static func slot(at caret: Int, in text: NSString) -> Slot? {
+    package static func slot(at caret: Int, in text: NSString) -> Slot? {
         guard let lines = lines(text), caret <= text.length else { return nil }
         guard let number = lines.lastIndex(where: { $0.start <= caret }) else { return nil }
         let line = lines[number]
@@ -274,18 +274,18 @@ enum KubeManifestFields {
     // MARK: Against the docs
 
     /// A key the cluster's docs don't know, said.
-    struct Mark: Equatable {
-        var range: NSRange
-        var message: String
+    package struct Mark: Equatable {
+        package var range: NSRange
+        package var message: String
     }
 
-    static let maxMarks = 200
+    package static let maxMarks = 200
 
     /// The keys `docs` has no field for, in every document whose kind it
     /// holds — a kind it doesn't serve marked on its `kind:`. `docs` gives
     /// the document for a kind as cached, and whose it is said; nil:
     /// nothing is said of that kind.
-    static func marks(_ documents: [Document], docs: (KubeGVK) -> (document: KubeOpenAPIDocument, source: String)?) -> [Mark] {
+    package static func marks(_ documents: [Document], docs: (KubeGVK) -> (document: KubeOpenAPIDocument, source: String)?) -> [Mark] {
         var marks: [Mark] = []
         for document in documents {
             guard let gvk = document.gvk, let (doc, source) = docs(gvk) else { continue }
@@ -306,7 +306,7 @@ enum KubeManifestFields {
 
     /// The fields a key typed at `slot` could be: the holder's, less those
     /// already there, matching the word typed (case-insensitively, in order).
-    static func candidates(_ slot: Slot, in doc: KubeOpenAPIDocument, gvk: KubeGVK) -> [KubeFieldSummary] {
+    package static func candidates(_ slot: Slot, in doc: KubeOpenAPIDocument, gvk: KubeGVK) -> [KubeFieldSummary] {
         guard case .found(let holder) = doc.lookup(gvk, slot.parent) else { return [] }
         let typed = slot.prefix.lowercased()
         return holder.fields.filter { field in

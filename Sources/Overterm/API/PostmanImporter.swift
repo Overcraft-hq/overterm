@@ -3,13 +3,13 @@ import Foundation
 /// A Postman collection (v2.0, v2.1) made into a Bruno one: folders,
 /// requests, auth, collection variables, and scripts with Postman's `pm.`
 /// calls turned into Bruno's — as Bruno's own importer turns them.
-enum PostmanImporter {
-    static func isPostman(_ document: [String: Any]) -> Bool {
+package enum PostmanImporter {
+    package static func isPostman(_ document: [String: Any]) -> Bool {
         guard let info = document["info"] as? [String: Any] else { return false }
         return (info["schema"] as? String ?? "").contains("getpostman") || info["_postman_id"] != nil || document["item"] is [Any]
     }
 
-    static func make(_ document: [String: Any]) throws -> APIImport {
+    package static func make(_ document: [String: Any]) throws -> APIImport {
         let info = document["info"] as? [String: Any] ?? [:]
         let name = (info["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Postman Collection"
         var notes: [String] = []
@@ -182,7 +182,7 @@ enum PostmanImporter {
     }
 
     /// Postman's script API, in Bruno's words.
-    static func translate(_ script: String) -> String {
+    package static func translate(_ script: String) -> String {
         var text = script
         let regexes: [(String, String)] = [
             // headers.add takes {key, value}; req.setHeader a name and a value.

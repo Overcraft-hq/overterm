@@ -5,29 +5,29 @@ import SwiftUI
 /// A stored file opened in the right-hand pane: what it is, and its
 /// contents as far as they can be shown — rows, text, an image, a PDF.
 @MainActor
-final class StorageObjectModel: ObservableObject {
-    enum Phase: Equatable {
+package final class StorageObjectModel: ObservableObject {
+    package enum Phase: Equatable {
         case idle, loading, loaded
         case failed(String)
     }
 
-    @Published private(set) var phase = Phase.idle
-    @Published private(set) var bucket = ""
-    @Published private(set) var object: StorageObject?
-    @Published private(set) var metadata: StorageMetadata?
-    @Published private(set) var preview = FilePreview.none
-    @Published private(set) var data = Data()
-    private(set) var session: StorageSession?
+    @Published package private(set) var phase = Phase.idle
+    @Published package private(set) var bucket = ""
+    @Published package private(set) var object: StorageObject?
+    @Published package private(set) var metadata: StorageMetadata?
+    @Published package private(set) var preview = FilePreview.none
+    @Published package private(set) var data = Data()
+    package private(set) var session: StorageSession?
     private var ticket = 0
 
     /// Read only while the pane shows it.
-    var visible = false {
+    package var visible = false {
         didSet { if visible, !oldValue, phase == .loading { Task { await load() } } }
     }
 
-    var path: String { object.map { session?.client.path(bucket: bucket, key: $0.key) ?? $0.key } ?? "" }
+    package var path: String { object.map { session?.client.path(bucket: bucket, key: $0.key) ?? $0.key } ?? "" }
 
-    func show(_ object: StorageObject, in bucket: String, session: StorageSession) {
+    package func show(_ object: StorageObject, in bucket: String, session: StorageSession) {
         self.session = session
         self.bucket = bucket
         self.object = object
@@ -65,32 +65,32 @@ final class StorageObjectModel: ObservableObject {
         }
     }
 
-    func reload() {
+    package func reload() {
         guard let session, let object else { return }
         show(object, in: bucket, session: session)
     }
 
-    func close() {
+    package func close() {
         object = nil
         phase = .idle
     }
 }
 
 /// What the object pane asks the window to do.
-struct StorageObjectActions {
-    var download: () -> Void
-    var openInEditor: () -> Void
-    var delete: () -> Void
-    var copyLink: () -> Void
-    var close: () -> Void
+package struct StorageObjectActions {
+    package var download: () -> Void
+    package var openInEditor: () -> Void
+    package var delete: () -> Void
+    package var copyLink: () -> Void
+    package var close: () -> Void
 }
 
-struct StorageObjectView: View {
-    @ObservedObject var model: StorageObjectModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: StorageObjectActions
+package struct StorageObjectView: View {
+    @ObservedObject package var model: StorageObjectModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: StorageObjectActions
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.3)

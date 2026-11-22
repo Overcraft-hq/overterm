@@ -1,13 +1,13 @@
 import Foundation
 
 /// One object a detail shows: which context, which kind, where, which.
-struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
-    var context: String
-    var kind: KubeResourceKind
-    var namespace: String?
-    var name: String
+package struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
+    package var context: String
+    package var kind: KubeResourceKind
+    package var namespace: String?
+    package var name: String
 
-    init(context: String, kind: KubeResourceKind, namespace: String?, name: String) {
+    package init(context: String, kind: KubeResourceKind, namespace: String?, name: String) {
         self.context = context
         self.kind = kind
         self.namespace = kind.namespaced ? namespace : nil
@@ -15,18 +15,18 @@ struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
     }
 
     /// `pods shop/web-7d9`, `nodes fake-node-1`.
-    var description: String { "\(kind.fullName) \(namespace.map { "\($0)/" } ?? "")\(name)" }
+    package var description: String { "\(kind.fullName) \(namespace.map { "\($0)/" } ?? "")\(name)" }
 
     /// A Secret: its object is every value at once, so a detail never GETs
     /// it — Show does, on purpose (docs/design/kubernetes/analysis.md, rule 9).
-    var isSecret: Bool { kind.group.isEmpty && kind.resource == "secrets" }
+    package var isSecret: Bool { kind.group.isEmpty && kind.resource == "secrets" }
 
     /// A pod: its detail has a Logs tab.
-    var isPod: Bool { kind.group.isEmpty && kind.resource == "pods" && namespace != nil }
+    package var isPod: Bool { kind.group.isEmpty && kind.resource == "pods" && namespace != nil }
 
     /// A workload, a Job or a Service: it picks pods by a label selector,
     /// so its detail has a Logs tab too — theirs, merged (stage 2e).
-    var selectsPods: Bool {
+    package var selectsPods: Bool {
         guard namespace != nil else { return false }
         switch kind.group {
         case "apps": return ["deployments", "statefulsets", "daemonsets", "replicasets"].contains(kind.resource)
@@ -37,25 +37,25 @@ struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
     }
 
     /// Its detail has a Logs tab: a pod's own, or the pods it picks, merged.
-    var hasLogs: Bool { isPod || selectsPods }
+    package var hasLogs: Bool { isPod || selectsPods }
 
     /// A Deployment, StatefulSet or DaemonSet: its detail has a History tab
     /// (its change timeline, 3.6).
-    var hasHistory: Bool { KubeTimeline.Source.of(self) != nil }
+    package var hasHistory: Bool { KubeTimeline.Source.of(self) != nil }
 
     /// What its Metrics tab charts (docs/design/kubernetes/metrics.md,
     /// 2.1): a pod (M3a), a workload, an HPA, a node, a namespace (M3b);
     /// nil, it has no such tab.
-    var metricsSubject: KubeMetricsSubject? { KubeMetricsSubject.of(self) }
+    package var metricsSubject: KubeMetricsSubject? { KubeMetricsSubject.of(self) }
 
     /// Its detail has a Metrics tab.
-    var hasMetrics: Bool { metricsSubject != nil }
+    package var hasMetrics: Bool { metricsSubject != nil }
 
-    static func == (lhs: KubeObjectRef, rhs: KubeObjectRef) -> Bool {
+    package static func == (lhs: KubeObjectRef, rhs: KubeObjectRef) -> Bool {
         lhs.context == rhs.context && lhs.kind.fullName == rhs.kind.fullName && lhs.namespace == rhs.namespace && lhs.name == rhs.name
     }
 
-    func hash(into hasher: inout Hasher) {
+    package func hash(into hasher: inout Hasher) {
         hasher.combine(context)
         hasher.combine(kind.fullName)
         hasher.combine(namespace)
@@ -64,7 +64,7 @@ struct KubeObjectRef: Hashable, Sendable, CustomStringConvertible {
 }
 
 /// What a detail's Metrics tab charts, by its object's kind.
-enum KubeMetricsSubject: Equatable, Sendable {
+package enum KubeMetricsSubject: Equatable, Sendable {
     case pod
     /// A Deployment, StatefulSet, DaemonSet, ReplicaSet or Job: its Kind.
     case workload(String)
@@ -72,12 +72,12 @@ enum KubeMetricsSubject: Equatable, Sendable {
     case node
     case namespace
 
-    static let workloadKinds: [String: String] = [
+    package static let workloadKinds: [String: String] = [
         "apps/deployments": "Deployment", "apps/statefulsets": "StatefulSet", "apps/daemonsets": "DaemonSet", "apps/replicasets": "ReplicaSet",
         "batch/jobs": "Job",
     ]
 
-    static func of(_ ref: KubeObjectRef) -> KubeMetricsSubject? {
+    package static func of(_ ref: KubeObjectRef) -> KubeMetricsSubject? {
         if ref.isPod { return .pod }
         if ref.namespace != nil, let kind = workloadKinds["\(ref.kind.group)/\(ref.kind.resource)"] { return .workload(kind) }
         if ref.namespace != nil, ref.kind.group == "autoscaling", ref.kind.resource == "horizontalpodautoscalers" { return .hpa }
@@ -90,16 +90,16 @@ enum KubeMetricsSubject: Equatable, Sendable {
 /// Another object an object names — an owner, its node, the pods its
 /// selector picks, a Service a rule sends to — by `apiVersion` and Kind,
 /// as references are written; discovery says where it is (`resolve`).
-struct KubeLink: Hashable, Sendable {
-    var apiVersion: String
-    var kind: String
-    var namespace: String?
-    var name: String
+package struct KubeLink: Hashable, Sendable {
+    package var apiVersion: String
+    package var kind: String
+    package var namespace: String?
+    package var name: String
 
     /// The kind as the context serves it — at the reference's version, else
     /// the group's preferred one — and the object's ref; nil when it serves
     /// no such kind.
-    func resolve(in discovery: KubeDiscovery, context: String) -> KubeObjectRef? {
+    package func resolve(in discovery: KubeDiscovery, context: String) -> KubeObjectRef? {
         guard let served = discovery.kind(apiVersion: apiVersion, kind: kind) else { return nil }
         return KubeObjectRef(context: context, kind: served, namespace: namespace, name: name)
     }
@@ -108,7 +108,7 @@ struct KubeLink: Hashable, Sendable {
 extension KubeDiscovery {
     /// The kind a reference means (`apps/v1` and `ReplicaSet`): its group's
     /// kind of that Kind, at the reference's version when served.
-    func kind(apiVersion: String, kind: String) -> KubeResourceKind? {
+    package func kind(apiVersion: String, kind: String) -> KubeResourceKind? {
         let parts = apiVersion.split(separator: "/", maxSplits: 1).map(String.init)
         let group = parts.count == 2 ? parts[0] : ""
         let version = parts.last ?? ""
@@ -123,8 +123,8 @@ extension KubeDiscovery {
 /// in the same context, so walking a list isn't a history of every row
 /// passed; another kind's row, or a link followed, is a visit of its own.
 /// Pure.
-struct KubeHistory: Equatable, Sendable {
-    enum Origin: Equatable, Sendable {
+package struct KubeHistory: Equatable, Sendable {
+    package enum Origin: Equatable, Sendable {
         /// A row of the list.
         case list
         /// A link in a detail, or a search's answer.
@@ -134,24 +134,24 @@ struct KubeHistory: Equatable, Sendable {
         case overview
     }
 
-    private(set) var back: [KubeObjectRef] = []
-    private(set) var current: KubeObjectRef?
-    private(set) var forward: [KubeObjectRef] = []
+    package private(set) var back: [KubeObjectRef] = []
+    package private(set) var current: KubeObjectRef?
+    package private(set) var forward: [KubeObjectRef] = []
     private var currentOrigin: Origin = .link
     /// The current one was opened from the Overview: back returns there
     /// first (`backToOverview`), then to what was shown before it.
-    private(set) var overviewBehind = false
+    package private(set) var overviewBehind = false
     /// The most kept behind.
-    var limit: Int
+    package var limit: Int
 
-    init(limit: Int = 50) { self.limit = limit }
+    package init(limit: Int = 50) { self.limit = limit }
 
-    var canGoBack: Bool { !back.isEmpty || overviewBehind }
-    var canGoForward: Bool { !forward.isEmpty }
+    package var canGoBack: Bool { !back.isEmpty || overviewBehind }
+    package var canGoForward: Bool { !forward.isEmpty }
 
     /// `ref` shown. The one shown again is no visit; a new one drops what
     /// was ahead.
-    mutating func visit(_ ref: KubeObjectRef, from origin: Origin) {
+    package mutating func visit(_ ref: KubeObjectRef, from origin: Origin) {
         guard ref != current else {
             currentOrigin = origin
             if origin == .overview { overviewBehind = true }
@@ -179,7 +179,7 @@ struct KubeHistory: Equatable, Sendable {
 
     /// Back from an object opened from the Overview: nothing current, the
     /// object ahead (`]` opens it again); false where it wasn't.
-    mutating func backToOverview() -> Bool {
+    package mutating func backToOverview() -> Bool {
         guard overviewBehind, let current else { return false }
         forward.append(current)
         self.current = nil
@@ -189,7 +189,7 @@ struct KubeHistory: Equatable, Sendable {
     }
 
     /// The one before, now current; nil when there is none.
-    mutating func goBack() -> KubeObjectRef? {
+    package mutating func goBack() -> KubeObjectRef? {
         guard let previous = back.popLast() else { return nil }
         if let current { forward.append(current) }
         current = previous
@@ -198,7 +198,7 @@ struct KubeHistory: Equatable, Sendable {
         return previous
     }
 
-    mutating func goForward() -> KubeObjectRef? {
+    package mutating func goForward() -> KubeObjectRef? {
         guard let next = forward.popLast() else { return nil }
         if let current { back.append(current) }
         current = next
@@ -208,7 +208,7 @@ struct KubeHistory: Equatable, Sendable {
     }
 
     /// The detail closed: what shows is nothing, the way back kept.
-    mutating func leave() {
+    package mutating func leave() {
         // Already left (back to the Overview): the way forward kept.
         guard let current else { return }
         back.append(current)
@@ -219,15 +219,15 @@ struct KubeHistory: Equatable, Sendable {
     }
 
     /// Everything forgotten: another context.
-    mutating func clear() { self = KubeHistory(limit: limit) }
+    package mutating func clear() { self = KubeHistory(limit: limit) }
 }
 
 /// The detail's tabs.
-enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
+package enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
     case overview, logs, yaml, events, history, metrics
 
-    var id: String { rawValue }
-    var title: String {
+    package var id: String { rawValue }
+    package var title: String {
         switch self {
         case .overview: "Overview"
         case .logs: "Logs"
@@ -241,7 +241,7 @@ enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
     /// The tabs an object's detail has: Logs a pod's, and a workload's
     /// (its pods', merged); History a Deployment's, StatefulSet's or
     /// DaemonSet's; Metrics a pod's, a workload's, an HPA's, a node's, a namespace's.
-    static func tabs(for ref: KubeObjectRef) -> [KubeDetailTab] {
+    package static func tabs(for ref: KubeObjectRef) -> [KubeDetailTab] {
         allCases.filter { tab in
             switch tab {
             case .logs: ref.hasLogs
@@ -255,27 +255,27 @@ enum KubeDetailTab: String, CaseIterable, Identifiable, Sendable {
 
 /// One of an object's events (core `v1` Event: what `kubectl describe`
 /// lists), as the detail's Events tab shows it. Pure.
-struct KubeEvent: Equatable, Sendable, Identifiable {
-    var id: String
+package struct KubeEvent: Equatable, Sendable, Identifiable {
+    package var id: String
     /// `Normal` or `Warning`.
-    var type: String
-    var reason: String
-    var message: String
-    var count: Int
-    var first: Date?
+    package var type: String
+    package var reason: String
+    package var message: String
+    package var count: Int
+    package var first: Date?
     /// When it was last seen: `lastTimestamp`, a series' last, `eventTime`, the first.
-    var last: Date?
+    package var last: Date?
     /// Who said it: the reporting component, and its host.
-    var source: String
+    package var source: String
     /// What it is about: `involvedObject`'s Kind and name.
-    var objectKind = ""
-    var object = ""
+    package var objectKind = ""
+    package var object = ""
 
-    var isWarning: Bool { type == "Warning" }
+    package var isWarning: Bool { type == "Warning" }
 
     /// The events of an object, as kubectl describe asks for them: by its
     /// name, namespace, Kind and — when known — uid (`involvedObject.*`).
-    static func fieldSelector(kind: String, name: String, namespace: String?, uid: String?) -> String {
+    package static func fieldSelector(kind: String, name: String, namespace: String?, uid: String?) -> String {
         var parts = ["involvedObject.name=\(name)"]
         if let namespace { parts.append("involvedObject.namespace=\(namespace)") }
         if !kind.isEmpty { parts.append("involvedObject.kind=\(kind)") }
@@ -284,7 +284,7 @@ struct KubeEvent: Equatable, Sendable, Identifiable {
     }
 
     /// An EventList's events, newest first (last seen, else first).
-    static func list(_ data: Data) throws -> [KubeEvent] {
+    package static func list(_ data: Data) throws -> [KubeEvent] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw KubeTableReader.Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self))
         }
@@ -292,7 +292,7 @@ struct KubeEvent: Equatable, Sendable, Identifiable {
         return newestFirst(events)
     }
 
-    static func newestFirst(_ events: [KubeEvent]) -> [KubeEvent] {
+    package static func newestFirst(_ events: [KubeEvent]) -> [KubeEvent] {
         events.enumerated()
             .sorted { a, b in
                 switch (a.element.last ?? a.element.first, b.element.last ?? b.element.first) {
@@ -305,7 +305,7 @@ struct KubeEvent: Equatable, Sendable, Identifiable {
             .map(\.element)
     }
 
-    init(
+    package init(
         id: String, type: String, reason: String, message: String, count: Int = 1, first: Date? = nil, last: Date? = nil, source: String = "",
         objectKind: String = "", object: String = ""
     ) {
@@ -321,7 +321,7 @@ struct KubeEvent: Equatable, Sendable, Identifiable {
         self.source = source
     }
 
-    init(item: [String: Any]) {
+    package init(item: [String: Any]) {
         let metadata = item["metadata"] as? [String: Any] ?? [:]
         let series = item["series"] as? [String: Any]
         let source = item["source"] as? [String: Any]
@@ -342,8 +342,8 @@ struct KubeEvent: Equatable, Sendable, Identifiable {
 
 /// Kubernetes' times: RFC 3339, with or without fractions (`eventTime`'s
 /// MicroTime has them). Pure.
-enum KubeTime {
-    static func date(_ text: String) -> Date? {
+package enum KubeTime {
+    package static func date(_ text: String) -> Date? {
         if let date = try? Date(text, strategy: .iso8601) { return date }
         return try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true))
     }
@@ -352,10 +352,10 @@ enum KubeTime {
 /// A label selector as the API writes one (`matchLabels`,
 /// `matchExpressions`) — or a Service's plain map — in the words a list's
 /// `labelSelector` takes. Pure.
-enum KubeSelector {
+package enum KubeSelector {
     /// `app=web,tier in (a,b),!legacy`; nil when there is no selector, or
     /// one of an operator the words can't say.
-    static func text(_ selector: Any?) -> String? {
+    package static func text(_ selector: Any?) -> String? {
         guard let selector = selector as? [String: Any] else { return nil }
         let isStructured = selector["matchLabels"] != nil || selector["matchExpressions"] != nil
         let labels = (isStructured ? selector["matchLabels"] : selector) as? [String: Any] ?? [:]

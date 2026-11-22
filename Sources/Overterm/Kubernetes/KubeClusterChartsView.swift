@@ -6,14 +6,14 @@ import SwiftUI
 /// need Prometheus, and its nodes as small multiples. Where the context's
 /// Prometheus is found, `KubePrometheusChartView(.cluster)` draws them over
 /// the range instead.
-struct KubeClusterSampledView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var metrics: KubeMetricsMonitor
-    @ObservedObject var theme: ChromeTheme
+package struct KubeClusterSampledView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var metrics: KubeMetricsMonitor
+    @ObservedObject package var theme: ChromeTheme
     /// The crosshair its two charts share — held, not observed.
     @State private var cursor = KubeChartCursor()
 
-    var body: some View {
+    package var body: some View {
         let charts = page.sampledClusterCharts()
         if !charts.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
@@ -55,17 +55,17 @@ struct KubeClusterSampledView: View {
 /// strips, their numbers — took the Overview's first draw past its 50 ms
 /// (metrics.md 5.3, M12). Each strip's summary is the hover's label and
 /// VoiceOver's, every row an accessibility element of its own.
-struct KubeNodeStripsView: View {
-    @ObservedObject var page: KubernetesPageModel
-    var rows: [KubeNodeStripRow]
-    var more: Int
-    var caption: String
-    @ObservedObject var theme: ChromeTheme
+package struct KubeNodeStripsView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    package var rows: [KubeNodeStripRow]
+    package var more: Int
+    package var caption: String
+    @ObservedObject package var theme: ChromeTheme
     @State private var token = UUID()
     /// What the pointer is over — held, not observed: only the hover's label redraws.
     @State private var hover = KubeNodeStripsHover()
 
-    var body: some View {
+    package var body: some View {
         if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: caption).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
@@ -164,37 +164,37 @@ struct KubeNodeStripsView: View {
 }
 
 /// Where X4's rows and strips are in its Canvas, and what a point is over. Pure.
-struct KubeNodeStripsLayout: Equatable {
-    var count: Int
+package struct KubeNodeStripsLayout: Equatable {
+    package var count: Int
 
-    static let nameWidth: CGFloat = 220
-    static let rowHeight: CGFloat = 18
-    static let shareWidth: CGFloat = 36
-    static let gap: CGFloat = 10
+    package static let nameWidth: CGFloat = 220
+    package static let rowHeight: CGFloat = 18
+    package static let shareWidth: CGFloat = 36
+    package static let gap: CGFloat = 10
     /// A strip, the gap before its share, its share.
-    static let column = KubeHeatStripView.width + 5 + shareWidth
+    package static let column = KubeHeatStripView.width + 5 + shareWidth
 
-    var width: CGFloat { Self.nameWidth + 2 * (Self.gap + Self.column) }
+    package var width: CGFloat { Self.nameWidth + 2 * (Self.gap + Self.column) }
     /// The header and `rows` rows.
-    func height(_ rows: Int) -> CGFloat { CGFloat(rows + 1) * Self.rowHeight }
+    package func height(_ rows: Int) -> CGFloat { CGFloat(rows + 1) * Self.rowHeight }
     /// A row's middle (row 0 is the first node's, under the header).
-    func mid(_ row: Int) -> CGFloat { CGFloat(row + 1) * Self.rowHeight + Self.rowHeight / 2 }
+    package func mid(_ row: Int) -> CGFloat { CGFloat(row + 1) * Self.rowHeight + Self.rowHeight / 2 }
 
     /// A measure's column: the header's.
-    func strip(_ measure: KubeUsageCell.Measure) -> CGRect {
+    package func strip(_ measure: KubeUsageCell.Measure) -> CGRect {
         let x = Self.nameWidth + Self.gap + (measure == .cpu ? 0 : Self.column + Self.gap)
         return CGRect(x: x, y: 0, width: KubeHeatStripView.width, height: KubeHeatStripView.height)
     }
 
     /// A row's strip of a measure.
-    func strip(_ measure: KubeUsageCell.Measure, row: Int) -> CGRect {
+    package func strip(_ measure: KubeUsageCell.Measure, row: Int) -> CGRect {
         var frame = strip(measure)
         frame.origin.y = mid(row) - KubeHeatStripView.height / 2
         return frame
     }
 
     /// What a point is over: a row's name (no measure) or one of its strips.
-    func hit(_ point: CGPoint, rows: Int) -> (row: Int, measure: KubeUsageCell.Measure?)? {
+    package func hit(_ point: CGPoint, rows: Int) -> (row: Int, measure: KubeUsageCell.Measure?)? {
         let row = Int((point.y / Self.rowHeight).rounded(.down)) - 1
         guard row >= 0, row < min(rows, count), point.x >= 0 else { return nil }
         if point.x < Self.nameWidth { return (row, nil) }
@@ -206,10 +206,10 @@ struct KubeNodeStripsLayout: Equatable {
     }
 
     /// How many characters of a monospaced name fit the names' column, one being `advance` wide.
-    static func fits(_ advance: CGFloat) -> Int { advance > 0 ? max(4, Int((nameWidth - 4) / advance)) : 32 }
+    package static func fits(_ advance: CGFloat) -> Int { advance > 0 ? max(4, Int((nameWidth - 4) / advance)) : 32 }
 
     /// A name cut in its middle to `fits` characters: `ip-10-0-1…compute.internal`.
-    static func middleCut(_ name: String, fits: Int) -> String {
+    package static func middleCut(_ name: String, fits: Int) -> String {
         guard name.count > fits else { return name }
         let kept = fits - 1
         return String(name.prefix((kept + 1) / 2)) + "…" + String(name.suffix(kept / 2))
@@ -218,11 +218,11 @@ struct KubeNodeStripsLayout: Equatable {
 
 /// What X4's pointer is over: only `KubeNodeStripsHoverLabel` observes it.
 @MainActor
-final class KubeNodeStripsHover: ObservableObject {
-    @Published private(set) var at: (row: Int, measure: KubeUsageCell.Measure?)?
+package final class KubeNodeStripsHover: ObservableObject {
+    @Published package private(set) var at: (row: Int, measure: KubeUsageCell.Measure?)?
 
     /// The same place again isn't a change.
-    func set(_ next: (row: Int, measure: KubeUsageCell.Measure?)?) {
+    package func set(_ next: (row: Int, measure: KubeUsageCell.Measure?)?) {
         if next?.row != at?.row || next?.measure != at?.measure { at = next }
     }
 }

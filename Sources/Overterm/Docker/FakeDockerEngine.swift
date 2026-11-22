@@ -10,93 +10,93 @@ import NIOPosix
 /// images, volumes and networks as values; actions change them and send
 /// the events the real engine would; logs come framed as a container
 /// without a TTY sends them; a container's files are a dictionary.
-final class FakeDockerEngine: @unchecked Sendable {
-    struct Container: Sendable {
-        var summary: ContainerSummary
-        var env: [String] = []
-        var tty = false
-        var files: [String: Data] = [:]
+package final class FakeDockerEngine: @unchecked Sendable {
+    package struct Container: Sendable {
+        package var summary: ContainerSummary
+        package var env: [String] = []
+        package var tty = false
+        package var files: [String: Data] = [:]
         /// When each was last written, as the archive's stat says it.
-        var mtimes: [String: String] = [:]
+        package var mtimes: [String: String] = [:]
         /// What an archive put in besides files' bytes: their modes, its
         /// folders (an empty one too), its links — as a listing and a GET
         /// give them back.
-        var modes: [String: Int] = [:]
-        var folders: Set<String> = []
-        var links: [String: String] = [:]
+        package var modes: [String: Int] = [:]
+        package var folders: Set<String> = []
+        package var links: [String: String] = [:]
         /// `--read-only`: an archive into it is refused, as the engine
         /// refuses it.
-        var readOnly = false
+        package var readOnly = false
         /// Each line with the time it was written, as the engine keeps it.
-        var logs: [(stream: DockerLogChunk.Stream, text: String, time: String)] = []
-        var error: String = ""
+        package var logs: [(stream: DockerLogChunk.Stream, text: String, time: String)] = []
+        package var error: String = ""
         /// A volume mounted where (`HostConfig.Binds`): the helper's.
-        var binds: [String: String] = [:]
+        package var binds: [String: String] = [:]
         /// The name it was made from, when the list says its image's ID.
-        var reference: String?
+        package var reference: String?
         /// How it failed, as inspect says it (`setFailure`).
-        var oomKilled = false
-        var restarts = 0
+        package var oomKilled = false
+        package var restarts = 0
         /// Its limits and restart policy, as inspect says them and
         /// `update` changes them.
-        var hostConfig = ContainerDetail.HostConfigDetail(
+        package var hostConfig = ContainerDetail.HostConfigDetail(
             RestartPolicy: .init(Name: "no", MaximumRetryCount: 0), NetworkMode: "bridge", Memory: 0, NanoCpus: 0, MemorySwap: 0, CpuQuota: 0,
             CpuPeriod: 0, AutoRemove: false)
-        var healthcheck: [String]?
+        package var healthcheck: [String]?
         /// What it runs, as inspect says it (`setCommand`).
-        var cmd = ["sleep", "infinity"]
-        var entrypoint: [String]?
+        package var cmd = ["sleep", "infinity"]
+        package var entrypoint: [String]?
         /// Its health check's last outputs, oldest first.
-        var probes: [String] = []
-        var failingStreak = 0
+        package var probes: [String] = []
+        package var failingStreak = 0
         /// What it was made for: its image's platform then.
-        var platform: ImagePlatform?
+        package var platform: ImagePlatform?
         /// What its one-shot stats say (`setUsage`): CPU as `docker stats`
         /// gives it, memory in use less the page cache.
-        var cpuPercent: Double = 8
-        var memoryUsed = 48 << 20
+        package var cpuPercent: Double = 8
+        package var memoryUsed = 48 << 20
         /// Its CPU counters, moved on at each one-shot read. Not from
         /// zero: a lifetime's average (2%) isn't the rate, so a read set
         /// against `precpu_stats` instead of the read before is wrong.
-        var cpuTotal = 5_000_000_000
-        var systemTotal = 1_000_000_000_000
+        package var cpuTotal = 5_000_000_000
+        package var systemTotal = 1_000_000_000_000
         /// How its one-shot stats answer (`setStatsAnswer`).
-        var statsAnswer = StatsAnswer.read
+        package var statsAnswer = StatsAnswer.read
         /// What its create asked for, when it was made through the API.
-        var created: CreateRequest?
+        package var created: CreateRequest?
     }
 
     /// A `POST /containers/create` body, as far as the fake reads it.
-    struct CreateRequest: Decodable, Sendable {
-        struct Host: Decodable, Sendable {
-            var Binds: [String]?
-            var AutoRemove: Bool?
-            var NetworkMode: String?
+    package struct CreateRequest: Decodable, Sendable {
+        package struct Host: Decodable, Sendable {
+            package var Binds: [String]?
+            package var AutoRemove: Bool?
+            package var NetworkMode: String?
         }
-        var Image: String
-        var Entrypoint: [String]?
-        var Cmd: [String]?
-        var Env: [String]?
-        var User: String?
-        var WorkingDir: String?
-        var Labels: [String: String]?
-        var HostConfig: Host?
+        package var Image: String
+        package var Entrypoint: [String]?
+        package var Cmd: [String]?
+        package var Env: [String]?
+        package var User: String?
+        package var WorkingDir: String?
+        package var Labels: [String: String]?
+        package var HostConfig: Host?
     }
 
     /// A one-shot stats read's answer: the sample, the engine's 500, or
     /// none at all — a container whose shim stopped answering.
-    enum StatsAnswer: Sendable {
+    package enum StatsAnswer: Sendable {
         case read, failing, never
     }
 
     /// What an image is built for, as its inspect says it.
-    struct ImagePlatform: Equatable, Sendable {
-        var os = "linux"
-        var architecture: String
-        var variant: String?
+    package struct ImagePlatform: Equatable, Sendable {
+        package var os = "linux"
+        package var architecture: String
+        package var variant: String?
     }
 
-    let socket: String
+    package let socket: String
     private let lock = NSLock()
     private var containers: [String: Container] = [:]
     private var images: [ImageSummary] = []
@@ -113,30 +113,30 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// entrypoint is `sh` doesn't start.
     private var shellless: Set<String> = []
     /// Bytes of build cache not in use.
-    var buildCache = 0
+    package var buildCache = 0
     /// What `/info` says the host is (`uname -m`): Apple silicon's.
-    var architecture = "aarch64"
+    package var architecture = "aarch64"
     /// What `/_ping` says it speaks: from 1.48 a container says the
     /// platform it runs (in the containerd store).
-    var apiVersion = "1.47"
+    package var apiVersion = "1.47"
     /// The containerd image store's ways, Docker Desktop's default since
     /// 4.34: an image's id is its index's, the same for each platform
     /// pulled into it, and its inspect says the host's platform once the
     /// index holds it. Else the classic store's: an id a platform.
-    var containerdStore = false
+    package var containerdStore = false
     /// moby's `refreshImage`: a container whose image's name now names
     /// another image (a pull moved the tag) is listed by its image's ID.
     /// Off unless a test asks: most of the fake's containers name images
     /// it doesn't have.
-    var refreshesImages = false
+    package var refreshesImages = false
     /// How long an image's inspect takes, in milliseconds: a remote
     /// engine's round trip.
-    var imageInspectDelay = 0
+    package var imageInspectDelay = 0
     /// How long a running container's removal takes, in milliseconds: its
     /// kill and its rootfs. Meanwhile it is still there, holding its
     /// volumes, and a second removal is refused as moby refuses it
     /// (`SetRemovalInProgress`).
-    var removalDelay = 0
+    package var removalDelay = 0
     private var removing: Set<String> = []
     /// Starts refused for a container that mounts the volume, as the
     /// engine says why (`failStarts`).
@@ -154,22 +154,22 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// in the classic store `ContainerConfig` too, the committed
     /// container's own as it was — the engine writes it whatever the
     /// changes; and the image it was made from.
-    struct ImageRecord: Sendable {
-        var config: ContainerDetail.Config
-        var containerConfig: ContainerDetail.Config?
-        var parent: String?
+    package struct ImageRecord: Sendable {
+        package var config: ContainerDetail.Config
+        package var containerConfig: ContainerDetail.Config?
+        package var parent: String?
     }
 
     /// A `docker commit` as the engine was asked it.
-    struct Commit: Equatable, Sendable {
-        var container: String
-        var repo: String
-        var tag: String
-        var comment: String
+    package struct Commit: Equatable, Sendable {
+        package var container: String
+        package var repo: String
+        package var tag: String
+        package var comment: String
         /// Its Dockerfile lines, as sent: one string, a line each.
-        var changes: String
+        package var changes: String
         /// Nil when not said: the engine pauses it then.
-        var pause: String?
+        package var pause: String?
     }
     private var exitCodes: [String: Int] = [:]
     private var eventStreams: [ObjectIdentifier: Channel] = [:]
@@ -190,20 +190,20 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// (`listenTCP`): nil is off, answered 503.
     private var runnerModels: [FakeRunnerModel]?
 
-    struct FakeRunnerModel: Sendable {
-        var tag: String
-        var parameters = "360M"
-        var quantization = "Q4_K_M"
-        var size = "256.35 MiB"
-        var loaded = false
+    package struct FakeRunnerModel: Sendable {
+        package var tag: String
+        package var parameters = "360M"
+        package var quantization = "Q4_K_M"
+        package var size = "256.35 MiB"
+        package var loaded = false
         /// The same for the same tag, as a digest is.
-        var id: String {
+        package var id: String {
             let hash = tag.utf8.reduce(UInt64(7)) { $0 &* 31 &+ UInt64($1) }
             return "sha256:" + String(String(hash, radix: 16).reversed()).padding(toLength: 64, withPad: "0", startingAt: 0)
         }
     }
 
-    init(socket: String) {
+    package init(socket: String) {
         self.socket = socket
     }
 
@@ -213,7 +213,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         return body()
     }
 
-    func start() throws {
+    package func start() throws {
         try? FileManager.default.removeItem(atPath: socket)
         let bootstrap = ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
             .childChannelInitializer { channel in
@@ -231,7 +231,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// The same answers on 127.0.0.1 too, at `port` or one of the system's:
     /// what a container publishing it would be, or a port a program on this
     /// Mac holds. Returns the port; each listens until `stop`.
-    func listenTCP(port: Int = 0) throws -> Int {
+    package func listenTCP(port: Int = 0) throws -> Int {
         let bootstrap = ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
             .childChannelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
@@ -244,10 +244,10 @@ final class FakeDockerEngine: @unchecked Sendable {
         return bound.localAddress?.port ?? 0
     }
 
-    func setModelRunner(_ models: [FakeRunnerModel]?) { locked { runnerModels = models } }
-    var modelRunnerTags: [String]? { locked { runnerModels?.map(\.tag) } }
+    package func setModelRunner(_ models: [FakeRunnerModel]?) { locked { runnerModels = models } }
+    package var modelRunnerTags: [String]? { locked { runnerModels?.map(\.tag) } }
 
-    func stop() {
+    package func stop() {
         let open = locked { Array(eventStreams.values) + Array(samplers.values) + logFollowers.values.flatMap { $0 } }
         open.forEach { $0.close(promise: nil) }
         try? channel?.close().wait()
@@ -265,7 +265,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// go over Compose's (Testcontainers' own); `created` is now unless
     /// said.
     @discardableResult
-    func add(
+    package func add(
         name: String, image: String = "debian:bookworm-slim", state: ContainerState = .running, project: String? = nil, workingDir: String? = nil,
         service: String? = nil, ports: [DockerPort] = [], env: [String] = [], health: String? = nil, imageID: String? = nil,
         volumes: [String] = [], configFiles: [String]? = nil, labels extra: [String: String] = [:], created: Int? = nil
@@ -295,7 +295,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         return id
     }
 
-    static func status(_ state: ContainerState, health: String? = nil, exitCode: Int = 0) -> String {
+    package static func status(_ state: ContainerState, health: String? = nil, exitCode: Int = 0) -> String {
         switch state {
         case .running: health.map { "Up 2 minutes (\($0))" } ?? "Up 2 minutes"
         case .paused: "Up 2 minutes (Paused)"
@@ -308,7 +308,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// Lines the container has written; to followers too.
-    func log(_ id: String, _ text: String, stream: DockerLogChunk.Stream = .stdout) {
+    package func log(_ id: String, _ text: String, stream: DockerLogChunk.Stream = .stdout) {
         let time = Self.timestamp()
         let followers = locked {
             containers[id]?.logs.append((stream, text, time))
@@ -324,7 +324,7 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     /// The container exits (or comes back), as if by itself: an event, as
     /// Docker sends one.
-    func set(_ id: String, state: ContainerState, exitCode: Int = 0, health: String? = nil, error: String = "") {
+    package func set(_ id: String, state: ContainerState, exitCode: Int = 0, health: String? = nil, error: String = "") {
         locked {
             containers[id]?.summary.State = state.rawValue
             containers[id]?.summary.Status = Self.status(state, health: health, exitCode: exitCode)
@@ -358,12 +358,12 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     /// A container that removes itself (AutoRemove) ends by itself: its
     /// sleep was up.
-    func expire(_ id: String) { set(id, state: .exited) }
+    package func expire(_ id: String) { set(id, state: .exited) }
 
     /// How it failed, as its inspect will say: out of memory, its
     /// restarts, its health check and that check's last outputs. Sends no
     /// event; `set` does.
-    func setFailure(
+    package func setFailure(
         _ id: String, oomKilled: Bool = false, restarts: Int = 0, restartPolicy: String = "no", memory: Int = 0, healthcheck: [String]? = nil,
         probes: [String] = [], failingStreak: Int = 0
     ) {
@@ -381,7 +381,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// The tag it was made from now names a newer image (a pull): the
     /// list says its image's ID, as Docker's does; inspect still says the
     /// name (`Config.Image`).
-    func supersedeImage(of id: String) {
+    package func supersedeImage(of id: String) {
         locked {
             guard let container = containers[id], container.reference == nil else { return }
             containers[id]?.reference = container.summary.Image
@@ -391,7 +391,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// What its one-shot stats say from now on.
-    func setUsage(_ id: String, cpuPercent: Double, memory: Int) {
+    package func setUsage(_ id: String, cpuPercent: Double, memory: Int) {
         locked {
             containers[id]?.cpuPercent = cpuPercent
             containers[id]?.memoryUsed = memory
@@ -399,32 +399,32 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// How its one-shot stats answer from now on.
-    func setStatsAnswer(_ id: String, _ answer: StatsAnswer) { locked { containers[id]?.statsAnswer = answer } }
+    package func setStatsAnswer(_ id: String, _ answer: StatsAnswer) { locked { containers[id]?.statsAnswer = answer } }
 
-    func file(_ id: String, _ path: String) -> Data? { locked { containers[id]?.files[path] } }
+    package func file(_ id: String, _ path: String) -> Data? { locked { containers[id]?.files[path] } }
 
     /// A file's mode, as an archive set it (0o644 unless one did).
-    func fileMode(_ id: String, _ path: String) -> Int? {
+    package func fileMode(_ id: String, _ path: String) -> Int? {
         locked { containers[id]?.files[path] == nil ? nil : containers[id]?.modes[path] ?? 0o644 }
     }
 
     /// A folder's mode, when an archive's entry for it set one: a folder
     /// merged into keeps none of its own here.
-    func folderMode(_ id: String, _ path: String) -> Int? {
+    package func folderMode(_ id: String, _ path: String) -> Int? {
         locked { containers[id].flatMap { $0.files[path] == nil && $0.links[path] == nil ? $0.modes[path] : nil } }
     }
 
     /// A link an archive made, its target.
-    func link(_ id: String, _ path: String) -> String? { locked { containers[id]?.links[path] } }
+    package func link(_ id: String, _ path: String) -> String? { locked { containers[id]?.links[path] } }
 
     /// Its rootfs read-only from now on (`--read-only`), or not.
-    func setReadOnly(_ id: String, _ readOnly: Bool) { locked { containers[id]?.readOnly = readOnly } }
+    package func setReadOnly(_ id: String, _ readOnly: Bool) { locked { containers[id]?.readOnly = readOnly } }
 
     /// Its limits and restart policy now.
-    func hostConfig(_ id: String) -> ContainerDetail.HostConfigDetail? { locked { containers[id]?.hostConfig } }
+    package func hostConfig(_ id: String) -> ContainerDetail.HostConfigDetail? { locked { containers[id]?.hostConfig } }
 
     /// As it was made: `-m`, `--cpu-quota`, `--rm`. Sends no event.
-    func setHostConfig(_ id: String, _ change: (inout ContainerDetail.HostConfigDetail) -> Void) {
+    package func setHostConfig(_ id: String, _ change: (inout ContainerDetail.HostConfigDetail) -> Void) {
         locked {
             guard var host = containers[id]?.hostConfig else { return }
             change(&host)
@@ -433,10 +433,10 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// The commits asked for, in order.
-    var commits: [Commit] { locked { committed } }
+    package var commits: [Commit] { locked { committed } }
 
     /// What a committed image holds, by its id or a tag.
-    func imageRecord(_ reference: String) -> ImageRecord? {
+    package func imageRecord(_ reference: String) -> ImageRecord? {
         locked {
             let id = images.first { $0.Id == reference || $0.tags.contains(reference) }?.Id ?? reference
             return imageRecords[id]
@@ -444,20 +444,20 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// Every image, those the list leaves out (a layer's parent) too.
-    var allImages: [ImageSummary] { locked { images } }
+    package var allImages: [ImageSummary] { locked { images } }
 
     /// What a tag (`nginx:1.27`) names in its registry now: a pull of it
     /// brings that image, or says it is up to date.
-    func setRegistryDigest(_ reference: String, _ digest: String) { locked { registryDigests[reference] = digest } }
+    package func setRegistryDigest(_ reference: String, _ digest: String) { locked { registryDigests[reference] = digest } }
 
     /// The image a container runs, as if made from it.
-    func setImageID(_ id: String, _ imageID: String) {
+    package func setImageID(_ id: String, _ imageID: String) {
         locked { containers[id]?.summary.ImageID = imageID }
         emit("update", id)
     }
 
     /// What it runs, as it was made.
-    func setCommand(_ id: String, _ cmd: [String], entrypoint: [String]? = nil, healthcheck: [String]? = nil) {
+    package func setCommand(_ id: String, _ cmd: [String], entrypoint: [String]? = nil, healthcheck: [String]? = nil) {
         locked {
             containers[id]?.cmd = cmd
             containers[id]?.entrypoint = entrypoint
@@ -465,7 +465,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
     }
 
-    func setFile(_ id: String, _ path: String, _ data: Data) {
+    package func setFile(_ id: String, _ path: String, _ data: Data) {
         let now = Self.timestamp()
         locked {
             containers[id]?.files[path] = data
@@ -484,7 +484,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// is another image. The containerd store records one for every named
     /// image, a build's too: its own ID, the index's digest.
     @discardableResult
-    func addImage(
+    package func addImage(
         _ tag: String?, size: Int, containers: Int = 0, architecture: String = "arm64", variant: String? = nil, labels: [String: String] = [:],
         shell: Bool = true, digest: String? = nil, repository: String? = nil
     ) -> String {
@@ -524,7 +524,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// The same for the same seed, as a digest is: its bytes as they are
     /// when they fit (a test reads them), else its SHA-256 — two long tags
     /// alike in their first 32 bytes are two images.
-    static func imageID(_ seed: String) -> String {
+    package static func imageID(_ seed: String) -> String {
         let bytes = Array(seed.utf8)
         let hex =
             bytes.count <= 32
@@ -540,7 +540,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         return platforms.first { $0.architecture == own } ?? platforms.first ?? ImagePlatform(architecture: "arm64")
     }
 
-    func addVolume(_ name: String, size: Int, refCount: Int, project: String? = nil, anonymous: Bool = false, labels extra: [String: String] = [:]) {
+    package func addVolume(_ name: String, size: Int, refCount: Int, project: String? = nil, anonymous: Bool = false, labels extra: [String: String] = [:]) {
         var labels = project.map { ["com.docker.compose.project": $0] } ?? [:]
         if anonymous { labels["com.docker.volume.anonymous"] = "" }
         labels.merge(extra) { $1 }
@@ -550,7 +550,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         locked { volumes.append(volume) }
     }
 
-    func addNetwork(_ name: String, members: [String] = [], labels: [String: String] = [:]) {
+    package func addNetwork(_ name: String, members: [String] = [], labels: [String: String] = [:]) {
         let network = NetworkSummary(
             Name: name, Id: name + "-id", Driver: name == "host" || name == "none" ? name : "bridge", Scope: "local",
             Containers: Dictionary(uniqueKeysWithValues: members.map { ($0, .init(Name: nil, IPv4Address: "172.18.0.2/16")) }), Labels: labels,
@@ -559,17 +559,17 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// The networks there are now, by name.
-    var networkNames: [String] { locked { networks.map(\.Name) } }
+    package var networkNames: [String] { locked { networks.map(\.Name) } }
     /// The volumes there are now, by name.
-    var volumeNames: [String] { locked { volumes.map(\.Name) } }
+    package var volumeNames: [String] { locked { volumes.map(\.Name) } }
     /// The images there are now, by id.
-    var imageIDs: [String] { locked { images.map(\.Id) } }
+    package var imageIDs: [String] { locked { images.map(\.Id) } }
 
     /// A removal the engine refuses from now on, as it answers one —
     /// `409 "removal of container … is already in progress"`, a driver's
     /// `500`: by the container's id or name, the volume's name, the
     /// image's id or the network's name.
-    func refuseRemoval(of name: String, _ status: Int, _ message: String) { locked { refusals[name] = (status, message) } }
+    package func refuseRemoval(of name: String, _ status: Int, _ message: String) { locked { refusals[name] = (status, message) } }
 
     /// The refusal for any of these names, when a test set one.
     private func refusal(_ names: String...) -> Answer? {
@@ -580,28 +580,28 @@ final class FakeDockerEngine: @unchecked Sendable {
         return refused.map { Self.error($0.status, $0.message) }
     }
 
-    var containerIDs: [String] { locked { Array(containers.keys) } }
+    package var containerIDs: [String] { locked { Array(containers.keys) } }
 
     /// Every request so far, `GET /v1.47/containers/json?all=1`.
-    var requests: [String] { locked { asked } }
+    package var requests: [String] { locked { asked } }
 
     /// The requests whose whole answer has been written to the client: one
     /// that reads only as fast as it writes to disk takes a big file's
     /// later than it is asked.
-    var answered: [String] { locked { delivered } }
+    package var answered: [String] { locked { delivered } }
 
     fileprivate func answerWritten(_ method: HTTPMethod, _ uri: String) { locked { delivered.append("\(method.rawValue) \(uri)") } }
 
     /// From now on, a request whose URI has `fragment` is never read past
     /// its head: a client writing its body waits, as for an engine that
     /// has stopped taking it.
-    func stall(_ fragment: String) { locked { stalling.append(fragment) } }
+    package func stall(_ fragment: String) { locked { stalling.append(fragment) } }
 
     fileprivate func stalls(_ uri: String) -> Bool { locked { stalling.contains { uri.contains($0) } } }
 
     /// The next `count` requests' connections are closed unanswered, as a
     /// busy engine's socket can drop a new one.
-    func drop(_ count: Int) { locked { dropping = count } }
+    package func drop(_ count: Int) { locked { dropping = count } }
     private var dropping = 0
 
     fileprivate func takeDrop() -> Bool {
@@ -613,17 +613,17 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// Who is waiting for events now.
-    var listening: Int { locked { eventStreams.count } }
+    package var listening: Int { locked { eventStreams.count } }
 
     /// Which are open, for a test's message.
-    var streams: String {
+    package var streams: String {
         locked { "events \(eventStreams.count), stats \(samplers.count), logs \(logFollowers.values.reduce(0) { $0 + $1.count })" }
     }
 
     /// Streams still open: events, followed logs, stats.
-    var openStreams: Int { locked { eventStreams.count + samplers.count + logFollowers.values.reduce(0) { $0 + $1.count } } }
+    package var openStreams: Int { locked { eventStreams.count + samplers.count + logFollowers.values.reduce(0) { $0 + $1.count } } }
 
-    func summary(_ id: String) -> ContainerSummary? { locked { containers[id]?.summary } }
+    package func summary(_ id: String) -> ContainerSummary? { locked { containers[id]?.summary } }
 
     private func emit(_ action: String, _ id: String, extra: [String: String] = [:]) {
         let (streams, labels) = locked { (Array(eventStreams.values), containers[id]?.summary.labels ?? [:]) }
@@ -639,14 +639,14 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
     }
 
-    static func frame(_ stream: DockerLogChunk.Stream, _ text: String) -> Data {
+    package static func frame(_ stream: DockerLogChunk.Stream, _ text: String) -> Data {
         let body = Data(text.utf8)
         var header = Data([stream.rawValue, 0, 0, 0])
         withUnsafeBytes(of: UInt32(body.count).bigEndian) { header.append(contentsOf: $0) }
         return header + body
     }
 
-    static func timestamp() -> String {
+    package static func timestamp() -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.string(from: Date())
@@ -654,7 +654,7 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     // MARK: Answers
 
-    enum Answer: Sendable {
+    package enum Answer: Sendable {
         case json(Int, Data)
         case empty(Int)
         case raw(Int, Data, [(String, String)])
@@ -671,7 +671,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         indirect case later(Int, Answer, @Sendable () -> Void)
     }
 
-    func answer(_ method: HTTPMethod, _ uri: String, body: Data, chunked: Bool = false) -> Answer {
+    package func answer(_ method: HTTPMethod, _ uri: String, body: Data, chunked: Bool = false) -> Answer {
         locked { asked.append("\(method.rawValue) \(uri)") }
         // As the engine does: a start with a body of unknown length is
         // refused (it took every real start down once).
@@ -749,9 +749,9 @@ final class FakeDockerEngine: @unchecked Sendable {
         }
     }
 
-    static func json<T: Encodable>(_ value: T) -> Answer { .json(200, (try? JSONEncoder().encode(value)) ?? Data()) }
+    package static func json<T: Encodable>(_ value: T) -> Answer { .json(200, (try? JSONEncoder().encode(value)) ?? Data()) }
 
-    static func error(_ status: Int, _ message: String) -> Answer {
+    package static func error(_ status: Int, _ message: String) -> Answer {
         .json(status, (try? JSONSerialization.data(withJSONObject: ["message": message])) ?? Data())
     }
 
@@ -770,7 +770,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// variant only when it has one (the engine leaves an empty one out).
     /// How long a request waits for its answer, in milliseconds: an
     /// image's inspect `imageInspectDelay`, the rest none.
-    func delay(of uri: String) -> Int {
+    package func delay(of uri: String) -> Int {
         let parts = (URLComponents(string: "http://docker" + uri)?.path ?? "").split(separator: "/").map(String.init).filter { !$0.hasPrefix("v1.") }
         return parts.count == 3 && parts[0] == "images" && parts[2] == "json" ? locked { imageInspectDelay } : 0
     }
@@ -1036,7 +1036,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// archive (`refusal`) before reading it, and closes: a client still
     /// writing a big one hears it after its write fails. Nil: read the
     /// body, then answer.
-    func early(_ method: HTTPMethod, _ uri: String) -> Answer? {
+    package func early(_ method: HTTPMethod, _ uri: String) -> Answer? {
         guard method == .PUT, let url = URLComponents(string: "http://docker" + uri) else { return nil }
         let parts = url.path.split(separator: "/").map(String.init).filter { !$0.hasPrefix("v1.") }
         guard parts.count == 3, parts[0] == "containers", parts[2] == "archive" else { return nil }
@@ -1048,7 +1048,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// `/a/b/` → `/a/b`; `/` stays.
-    static func normal(_ path: String) -> String {
+    package static func normal(_ path: String) -> String {
         var path = path
         while path.count > 1, path.hasSuffix("/") { path.removeLast() }
         return path.isEmpty ? "/" : path
@@ -1332,10 +1332,10 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// What a volume holds now, for a test.
-    func volumeContents(_ name: String) -> [String: Data] { locked { volumeFiles[name] ?? [:] } }
+    package func volumeContents(_ name: String) -> [String: Data] { locked { volumeFiles[name] ?? [:] } }
 
     /// A file in a volume — the volume made if it isn't there.
-    func setVolumeFile(_ name: String, _ path: String, _ data: Data, uid: Int = 0, gid: Int = 0) {
+    package func setVolumeFile(_ name: String, _ path: String, _ data: Data, uid: Int = 0, gid: Int = 0) {
         if locked({ !volumes.contains { $0.Name == name } }) { addVolume(name, size: 0, refCount: 0) }
         let now = Self.timestamp()
         locked {
@@ -1346,16 +1346,16 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// Whose a volume's file is now.
-    func volumeOwner(_ name: String, _ path: String) -> (uid: Int, gid: Int)? { locked { volumeOwners[name]?[path] } }
+    package func volumeOwner(_ name: String, _ path: String) -> (uid: Int, gid: Int)? { locked { volumeOwners[name]?[path] } }
 
     /// Starts of a container that mounts `volume` refused from now on, as
     /// the engine says `message` (an nfs volume whose server is away, a
     /// full disk); nil starts them again.
-    func failStarts(mounting volume: String, _ message: String?) { locked { startFailures[volume] = message } }
+    package func failStarts(mounting volume: String, _ message: String?) { locked { startFailures[volume] = message } }
 
     /// A volume gone behind the app's back, as `docker volume rm` in a
     /// terminal: no event, no refusal.
-    func dropVolume(_ name: String) {
+    package func dropVolume(_ name: String) {
         locked {
             volumes.removeAll { $0.Name == name }
             volumeFiles[name] = nil
@@ -1365,10 +1365,10 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// Overterm's helpers there are now (`overterm.helper=1`).
-    var helperIDs: [String] { locked { containers.values.filter { $0.summary.labels["overterm.helper"] == "1" }.map(\.summary.Id).sorted() } }
+    package var helperIDs: [String] { locked { containers.values.filter { $0.summary.labels["overterm.helper"] == "1" }.map(\.summary.Id).sorted() } }
 
     /// What a container's create asked for.
-    func created(_ id: String) -> CreateRequest? { locked { containers[id]?.created } }
+    package func created(_ id: String) -> CreateRequest? { locked { containers[id]?.created } }
 
     /// The volume a path is in, and where in it: `/volume/conf/a` in a
     /// helper with `pgdata` at `/volume` → (pgdata, `conf/a`); the mount
@@ -1415,7 +1415,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         locked { images.first { $0.Id == idOrName || $0.tags.contains(idOrName) || $0.shortID == idOrName } }
     }
 
-    static func history(of image: ImageSummary) -> [ImageLayer] {
+    package static func history(of image: ImageSummary) -> [ImageLayer] {
         [
             ImageLayer(Id: image.Id, Created: image.Created, CreatedBy: "/bin/sh -c #(nop)  CMD [\"sleep\" \"infinity\"]", Size: 0),
             ImageLayer(Id: "<missing>", Created: image.Created, CreatedBy: "/bin/sh -c apt-get update &&     apt-get install -y curl", Size: image.Size / 2),
@@ -1602,7 +1602,7 @@ final class FakeDockerEngine: @unchecked Sendable {
         return report
     }
 
-    static func detail(_ container: Container) -> ContainerDetail {
+    package static func detail(_ container: Container) -> ContainerDetail {
         let summary = container.summary
         let probes = container.probes.map { ContainerDetail.Health.Probe(Start: nil, End: nil, ExitCode: 1, Output: $0) }
         // What it publishes, as inspect keeps it whatever its state.
@@ -1650,7 +1650,7 @@ final class FakeDockerEngine: @unchecked Sendable {
 
     /// The engine's sample for a container it has none for: its zero
     /// time, zero counters, no system usage.
-    static let emptyStats = ContainerStatsSample(
+    package static let emptyStats = ContainerStatsSample(
         read: "0001-01-01T00:00:00Z", cpu_stats: .init(cpu_usage: .init(total_usage: 0)), precpu_stats: .init(cpu_usage: .init(total_usage: 0)),
         memory_stats: .init())
 
@@ -1675,7 +1675,7 @@ final class FakeDockerEngine: @unchecked Sendable {
     }
 
     /// One sample, the CPU's numbers moving on each time.
-    func statsSample(_ id: String, tick: Int) -> Data {
+    package func statsSample(_ id: String, tick: Int) -> Data {
         let sample = ContainerStatsSample(
             read: Self.timestamp(),
             cpu_stats: .init(cpu_usage: .init(total_usage: 2_000_000 * (tick + 1)), system_cpu_usage: 100_000_000 * (tick + 1), online_cpus: 4),
@@ -1823,7 +1823,7 @@ extension FakeDockerEngine {
     /// Scout 1.17's shape: four CVEs, one of each severity — a fix for two,
     /// none yet for the others. Scout isn't the Engine API: a scenario's
     /// stub `docker` prints it, and the store's tests read it.
-    static let scoutReport = #"""
+    package static let scoutReport = #"""
         {
           "version": "2.1.0",
           "$schema": "https://json.schemastore.org/sarif-2.1.0-rtm.5.json",

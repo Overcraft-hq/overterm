@@ -3,10 +3,10 @@ import Foundation
 /// Which engine is answering: what its socket and its `/info` say. The
 /// engine bar names it, says whether it is up while the socket is silent,
 /// and knows how to start and stop it.
-enum DockerRuntime: String, Equatable, Sendable {
+package enum DockerRuntime: String, Equatable, Sendable {
     case dockerDesktop, orbStack, colima, rancherDesktop, podman, engine
 
-    var name: String {
+    package var name: String {
         switch self {
         case .dockerDesktop: "Docker Desktop"
         case .orbStack: "OrbStack"
@@ -21,7 +21,7 @@ enum DockerRuntime: String, Equatable, Sendable {
     /// OperatingSystem (Docker Desktop and OrbStack say who they are there).
     /// A remote engine is an engine: what starts Docker Desktop here would
     /// start this Mac's, not the host's.
-    static func of(_ endpoint: DockerEndpoint, operatingSystem: String? = nil) -> DockerRuntime {
+    package static func of(_ endpoint: DockerEndpoint, operatingSystem: String? = nil) -> DockerRuntime {
         if endpoint.remoteHost != nil { return .engine }
         let os = operatingSystem?.lowercased() ?? ""
         let path: String = {
@@ -39,7 +39,7 @@ enum DockerRuntime: String, Equatable, Sendable {
 
     /// What starts it, stops it and restarts it, as commands — run in a
     /// terminal tab so the user sees them. Nil where there is no command.
-    func command(_ action: Action, context: String? = nil) -> String? {
+    package func command(_ action: Action, context: String? = nil) -> String? {
         let profile = Self.colimaProfile(context).map { " --profile \($0)" } ?? ""
         switch (self, action) {
         case (.dockerDesktop, _): return "docker desktop \(action.rawValue)"
@@ -56,12 +56,12 @@ enum DockerRuntime: String, Equatable, Sendable {
         }
     }
 
-    enum Action: String, Sendable { case start, stop, restart }
+    package enum Action: String, Sendable { case start, stop, restart }
 
     /// The rest of what the runtime's own CLI does for it — updates,
     /// diagnostics, Kubernetes — run in a terminal tab where the user sees
     /// it ask and answer.
-    func extras(context: String? = nil) -> [(title: String, command: String)] {
+    package func extras(context: String? = nil) -> [(title: String, command: String)] {
         let profile = Self.colimaProfile(context).map { " --profile \($0)" } ?? ""
         switch self {
         case .dockerDesktop:
@@ -79,7 +79,7 @@ enum DockerRuntime: String, Equatable, Sendable {
     }
 
     /// `colima-work` → work; Colima's default profile's context is `colima`.
-    static func colimaProfile(_ context: String?) -> String? {
+    package static func colimaProfile(_ context: String?) -> String? {
         guard let context, context.hasPrefix("colima-") else { return nil }
         return String(context.dropFirst("colima-".count))
     }
@@ -87,7 +87,7 @@ enum DockerRuntime: String, Equatable, Sendable {
     /// Where the engine's own settings live as its runtime keeps them —
     /// edited in the editor, applied when it restarts. Docker Desktop's
     /// Settings ▸ Docker Engine is `~/.docker/daemon.json`.
-    func configFile(context: String? = nil, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
+    package func configFile(context: String? = nil, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
         switch self {
         case .dockerDesktop: home.appendingPathComponent(".docker/daemon.json")
         case .orbStack: home.appendingPathComponent(".orbstack/config/docker.json")
@@ -100,7 +100,7 @@ enum DockerRuntime: String, Equatable, Sendable {
 
     /// What the runtime says of itself — asked only while its socket is
     /// silent, to tell "stopped" from "starting" from "not installed".
-    enum Status: Equatable, Sendable {
+    package enum Status: Equatable, Sendable {
         case running, starting, stopped
         /// Docker Desktop's Resource Saver: the engine wakes on the first call.
         case paused
@@ -108,7 +108,7 @@ enum DockerRuntime: String, Equatable, Sendable {
     }
 
     /// The tool and its arguments that ask (`docker desktop status`…).
-    func statusCommand(context: String? = nil) -> (tool: String, arguments: [String])? {
+    package func statusCommand(context: String? = nil) -> (tool: String, arguments: [String])? {
         switch self {
         case .dockerDesktop: ("docker", ["desktop", "status", "--format", "json"])
         case .orbStack: ("orb", ["status"])
@@ -122,7 +122,7 @@ enum DockerRuntime: String, Equatable, Sendable {
 
     /// What that command printed. Colima prints JSON only while running
     /// (and exits 1, saying so on stderr, when not).
-    func status(fromOutput output: String) -> Status {
+    package func status(fromOutput output: String) -> Status {
         let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
         switch self {
         case .dockerDesktop:

@@ -4,8 +4,8 @@ import GhosttyKit
 /// Translation between AppKit input and libghostty's input structs. Ported
 /// from Ghostty's own macOS app (Ghostty.Input.swift, NSEvent+Extension.swift),
 /// which is the reference for how libghostty expects to be fed.
-enum GhosttyInput {
-    static func mods(_ flags: NSEvent.ModifierFlags) -> ghostty_input_mods_e {
+package enum GhosttyInput {
+    package static func mods(_ flags: NSEvent.ModifierFlags) -> ghostty_input_mods_e {
         var mods = GHOSTTY_MODS_NONE.rawValue
         if flags.contains(.shift) { mods |= GHOSTTY_MODS_SHIFT.rawValue }
         if flags.contains(.control) { mods |= GHOSTTY_MODS_CTRL.rawValue }
@@ -22,7 +22,7 @@ enum GhosttyInput {
         return ghostty_input_mods_e(mods)
     }
 
-    static func modifierFlags(_ mods: ghostty_input_mods_e) -> NSEvent.ModifierFlags {
+    package static func modifierFlags(_ mods: ghostty_input_mods_e) -> NSEvent.ModifierFlags {
         var flags = NSEvent.ModifierFlags()
         if mods.rawValue & GHOSTTY_MODS_SHIFT.rawValue != 0 { flags.insert(.shift) }
         if mods.rawValue & GHOSTTY_MODS_CTRL.rawValue != 0 { flags.insert(.control) }
@@ -32,7 +32,7 @@ enum GhosttyInput {
     }
 
     /// Packed scroll mods: bit 0 = precise (trackpad), bits 1-3 = momentum phase.
-    static func scrollMods(_ event: NSEvent) -> ghostty_input_scroll_mods_t {
+    package static func scrollMods(_ event: NSEvent) -> ghostty_input_scroll_mods_t {
         var value: Int32 = event.hasPreciseScrollingDeltas ? 1 : 0
         let momentum: ghostty_input_mouse_momentum_e
         switch event.momentumPhase {
@@ -48,7 +48,7 @@ enum GhosttyInput {
         return ghostty_input_scroll_mods_t(value)
     }
 
-    static func mouseButton(_ buttonNumber: Int) -> ghostty_input_mouse_button_e {
+    package static func mouseButton(_ buttonNumber: Int) -> ghostty_input_mouse_button_e {
         switch buttonNumber {
         case 0: GHOSTTY_MOUSE_LEFT
         case 1: GHOSTTY_MOUSE_RIGHT
@@ -61,7 +61,7 @@ enum GhosttyInput {
 extension NSEvent {
     /// A libghostty key event without `text`/`composing` — the caller sets
     /// those, since `text` is a C string whose lifetime it has to own.
-    func ghosttyKeyEvent(_ action: ghostty_input_action_e, translationMods: NSEvent.ModifierFlags? = nil) -> ghostty_input_key_s {
+    package func ghosttyKeyEvent(_ action: ghostty_input_action_e, translationMods: NSEvent.ModifierFlags? = nil) -> ghostty_input_key_s {
         var ev = ghostty_input_key_s()
         ev.action = action
         ev.keycode = UInt32(keyCode)
@@ -84,7 +84,7 @@ extension NSEvent {
     /// The text to send with a key event. Control characters are encoded by
     /// libghostty itself, and function keys arrive in the private-use area, so
     /// neither is passed through as text.
-    var ghosttyCharacters: String? {
+    package var ghosttyCharacters: String? {
         guard let characters else { return nil }
         if characters.count == 1, let scalar = characters.unicodeScalars.first {
             if scalar.value < 0x20 {

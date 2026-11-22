@@ -2,14 +2,14 @@ import SwiftUI
 
 /// Health findings as rows (3.9): the check's code, its object (a link to
 /// its detail), the sentence; the worst first.
-struct KubeHealthFindingRows: View {
-    let findings: [KubeHealth.Finding]
+package struct KubeHealthFindingRows: View {
+    package let findings: [KubeHealth.Finding]
     /// Whether the object is said on each row (the Overview's) or not (a detail's own).
-    var showsObject = true
-    @ObservedObject var theme: ChromeTheme
-    let open: (KubeHealth.Subject) -> Void
+    package var showsObject = true
+    @ObservedObject package var theme: ChromeTheme
+    package let open: (KubeHealth.Subject) -> Void
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(findings) { finding in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -45,14 +45,14 @@ struct KubeHealthFindingRows: View {
 /// found problems open at first), each finding a link to its object;
 /// what couldn't be read said. Read once while the Overview shows
 /// (`KubeHealthSession`), Refresh again.
-struct KubeOverviewHealthView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var session: KubeHealthSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeOverviewHealthView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var session: KubeHealthSession
+    @ObservedObject package var theme: ChromeTheme
     /// The checks opened or closed against their first state.
     @State private var toggled: Set<KubeHealth.Check> = []
 
-    var body: some View {
+    package var body: some View {
         if session.state != .idle {
             VStack(alignment: .leading, spacing: 10) {
                 header
@@ -150,16 +150,16 @@ struct KubeOverviewHealthView: View {
         .padding(.vertical, 2)
     }
 
-    static let shown = 8
+    package static let shown = 8
 }
 
 /// The health checks' count as a pill in the Overview's header (the
 /// findings are further down): `Health: 3 problems, 12 warnings`.
-struct KubeHealthCount: View {
-    @ObservedObject var session: KubeHealthSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeHealthCount: View {
+    @ObservedObject package var session: KubeHealthSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if session.state == .loaded {
             let report = session.report
             ResourcePill(
@@ -174,21 +174,21 @@ struct KubeHealthCount: View {
 
 /// A detail's own findings, and its tree's (a Service's pods, an Ingress's
 /// Services) once that is read.
-struct KubeObjectHealthView: View {
-    @ObservedObject var page: KubernetesPageModel
-    let own: [KubeHealth.Finding]
-    @ObservedObject var tree: KubeTreeSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeObjectHealthView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    package let own: [KubeHealth.Finding]
+    @ObservedObject package var tree: KubeTreeSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View { KubeObjectHealthList(page: page, findings: own + tree.findings, theme: theme) }
+    package var body: some View { KubeObjectHealthList(page: page, findings: own + tree.findings, theme: theme) }
 }
 
-struct KubeObjectHealthList: View {
-    @ObservedObject var page: KubernetesPageModel
-    let findings: [KubeHealth.Finding]
-    @ObservedObject var theme: ChromeTheme
+package struct KubeObjectHealthList: View {
+    @ObservedObject package var page: KubernetesPageModel
+    package let findings: [KubeHealth.Finding]
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if !findings.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: "Health checks").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
@@ -202,12 +202,12 @@ struct KubeObjectHealthList: View {
 /// The pinned contexts' cards across the Overview's top: each one's pods
 /// failing, workloads and nodes not ready, or why it wasn't read; a press
 /// shows that context on the page.
-struct KubePinnedHealthView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var session: KubePinnedHealthSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubePinnedHealthView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var session: KubePinnedHealthSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if !session.cards.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 ResourceCardCaption(text: "Pinned contexts", theme: theme)

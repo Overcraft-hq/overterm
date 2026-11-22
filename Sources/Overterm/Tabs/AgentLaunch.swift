@@ -31,43 +31,43 @@ import Foundation
 ///   (`AgentScreenCheck`) covers it.
 ///
 /// Pure: the files' paths and the facts come in.
-struct AgentLaunch: Equatable, Sendable {
+package struct AgentLaunch: Equatable, Sendable {
     /// `NAME='value'` words before the program.
-    var environment: [String] = []
+    package var environment: [String] = []
     /// After the program: Settings ▸ Agents' arguments, then the handoffs'.
-    var arguments: String = ""
+    package var arguments: String = ""
 
     /// `program` (its command, or its resume) with all of it.
-    func line(_ program: String) -> String {
+    package func line(_ program: String) -> String {
         let extra = arguments.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
         return (environment + [program] + (extra.isEmpty ? [] : [extra])).joined(separator: " ")
     }
 
     /// The bridge's server name, the same for every agent.
-    static let serverName = "overterm-browser"
+    package static let serverName = "overterm-browser"
 
     /// What the launch needs to know.
-    struct Facts: Equatable, Sendable {
+    package struct Facts: Equatable, Sendable {
         /// Settings ▸ Agents' arguments for the agent.
-        var arguments = ""
+        package var arguments = ""
         /// The bridge serves (a pane made now has `OVERTERM_MCP_*`).
-        var serving = false
+        package var serving = false
         /// Gemini CLI's defaults files (`AgentLaunchFiles`): with the
         /// bridge's server, without it.
-        var geminiDefaults: (mcp: String, plain: String)? = nil
+        package var geminiDefaults: (mcp: String, plain: String)? = nil
         /// A real Gemini system defaults file is there: not replaced.
-        var geminiSystemDefaultsInUse = false
+        package var geminiSystemDefaultsInUse = false
         /// pi's notify extension.
-        var piNotify: String? = nil
+        package var piNotify: String? = nil
 
-        static func == (a: Facts, b: Facts) -> Bool {
+        package static func == (a: Facts, b: Facts) -> Bool {
             a.arguments == b.arguments && a.serving == b.serving && a.geminiDefaults?.mcp == b.geminiDefaults?.mcp
                 && a.geminiDefaults?.plain == b.geminiDefaults?.plain && a.geminiSystemDefaultsInUse == b.geminiSystemDefaultsInUse
                 && a.piNotify == b.piNotify
         }
     }
 
-    static func make(_ agent: Agent, _ facts: Facts) -> AgentLaunch {
+    package static func make(_ agent: Agent, _ facts: Facts) -> AgentLaunch {
         var launch = AgentLaunch(arguments: facts.arguments)
         func add(_ words: String) { launch.arguments = (launch.arguments + " " + words).trimmingCharacters(in: .whitespaces) }
         switch agent {
@@ -89,12 +89,12 @@ struct AgentLaunch: Equatable, Sendable {
 
     /// Codex's two overrides: the URL from the pane's variable (in double
     /// quotes for the shell, TOML's own inside), the token by name.
-    static let codexBridge =
+    package static let codexBridge =
         "-c \"mcp_servers.\(serverName).url=\\\"$\(BrowserBridge.urlVariable)\\\"\" -c 'mcp_servers.\(serverName).bearer_token_env_var=\"\(BrowserBridge.tokenVariable)\"'"
 
     /// opencode's inline config: substitutions only, so it is the same
     /// text for every pane.
-    static let opencodeBridge: String = json([
+    package static let opencodeBridge: String = json([
         "mcp": [
             serverName: [
                 "type": "remote", "enabled": true, "url": "{env:\(BrowserBridge.urlVariable)}",
@@ -106,7 +106,7 @@ struct AgentLaunch: Equatable, Sendable {
     /// Gemini CLI's defaults file: notifications on (OSC 777, which
     /// Overterm reads as a desktop notification), and the bridge's server
     /// when `serving`.
-    static func geminiDefaults(serving: Bool) -> String {
+    package static func geminiDefaults(serving: Bool) -> String {
         var settings: [String: Any] = ["general": ["enableNotifications": true, "notificationMethod": "osc777"]]
         if serving {
             settings["mcpServers"] = [
@@ -120,7 +120,7 @@ struct AgentLaunch: Equatable, Sendable {
 
     /// pi's extension: OSC 777 when a turn ends — pi's own example
     /// (`examples/extensions/notify.ts`), its one terminal's branch.
-    static let piNotifyExtension = """
+    package static let piNotifyExtension = """
         // Overterm: tells the terminal when pi is done and waiting (OSC 777).
         // Loaded for one launch with -e; written by Overterm, never edited by hand.
         export default function (pi: any) {
@@ -131,13 +131,13 @@ struct AgentLaunch: Equatable, Sendable {
 
         """
 
-    static func json(_ object: Any) -> String {
+    package static func json(_ object: Any) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]) else { return "{}" }
         return String(decoding: data, as: UTF8.self)
     }
 
     /// One word for zsh.
-    static func quoted(_ word: String) -> String {
+    package static func quoted(_ word: String) -> String {
         "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
@@ -147,17 +147,17 @@ struct AgentLaunch: Equatable, Sendable {
 /// Gemini's Terraform deny policy. In Overterm's support folder, 0600, the
 /// same text for every pane — no token, no URL: those are the pane's
 /// variables, expanded by the agent. Written when a launch needs them.
-enum AgentLaunchFiles {
-    static var directory: URL { AppEnvironment.supportDirectory.appendingPathComponent("agents", isDirectory: true) }
+package enum AgentLaunchFiles {
+    package static var directory: URL { AppEnvironment.supportDirectory.appendingPathComponent("agents", isDirectory: true) }
 
     /// Gemini CLI's system defaults file when no override names one.
-    static let geminiSystemDefaults = "/Library/Application Support/GeminiCli/system-defaults.json"
+    package static let geminiSystemDefaults = "/Library/Application Support/GeminiCli/system-defaults.json"
     /// Where Gemini CLI's administrator policies live: `.toml` there and
     /// it ignores `--admin-policy`.
-    static let geminiSystemPolicies = "/Library/Application Support/GeminiCli/policies"
+    package static let geminiSystemPolicies = "/Library/Application Support/GeminiCli/policies"
 
     /// The facts a launch is made from, its files written.
-    @MainActor static func facts(for agent: Agent, arguments: String, serving: Bool) -> AgentLaunch.Facts {
+    @MainActor package static func facts(for agent: Agent, arguments: String, serving: Bool) -> AgentLaunch.Facts {
         var facts = AgentLaunch.Facts(arguments: arguments, serving: serving)
         switch agent {
         case .gemini:
@@ -178,15 +178,15 @@ enum AgentLaunchFiles {
     }
 
     /// Gemini's Terraform deny policy (`TerraformAgentGuard.geminiPolicy`).
-    static func geminiPolicy() -> String? { write("gemini-terraform-deny.toml", TerraformAgentGuard.geminiPolicy) }
+    package static func geminiPolicy() -> String? { write("gemini-terraform-deny.toml", TerraformAgentGuard.geminiPolicy) }
 
     /// Whether an administrator's Gemini policies are in place.
-    static func geminiAdminPoliciesDefined(at folder: String = geminiSystemPolicies) -> Bool {
+    package static func geminiAdminPoliciesDefined(at folder: String = geminiSystemPolicies) -> Bool {
         ((try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []).contains { $0.hasSuffix(".toml") }
     }
 
     /// `name` with `text`, 0600, unless it already says exactly that.
-    static func write(_ name: String, _ text: String) -> String? {
+    package static func write(_ name: String, _ text: String) -> String? {
         let file = directory.appendingPathComponent(name)
         if (try? String(contentsOf: file, encoding: .utf8)) == text { return file.path }
         do {

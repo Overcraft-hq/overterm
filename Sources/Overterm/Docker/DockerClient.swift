@@ -6,12 +6,12 @@ import Foundation
 /// the command says `"$POSTGRES_PASSWORD"` inside `sh -c '…'` and the
 /// container's shell expands it, so no secret is on the tab's command line,
 /// in its history or in Overterm. Pure.
-enum DockerClient {
-    enum Kind: String, CaseIterable, Sendable {
+package enum DockerClient {
+    package enum Kind: String, CaseIterable, Sendable {
         case postgres, mysql, mariadb, redis, valkey, mongo, clickhouse, cassandra, neo4j, mssql
 
         /// The client, as its button says it.
-        var program: String {
+        package var program: String {
             switch self {
             case .postgres: "psql"
             case .mysql: "mysql"
@@ -28,7 +28,7 @@ enum DockerClient {
 
         /// The Database panel's kind and the port it serves on inside
         /// (`DockerDatabaseGuess`); nil for what the panel doesn't speak.
-        var database: (DatabaseKind, port: Int)? {
+        package var database: (DatabaseKind, port: Int)? {
             switch self {
             case .postgres: (.postgres, 5432)
             case .mysql: (.mysql, 3306)
@@ -45,7 +45,7 @@ enum DockerClient {
         /// The words of an image's name that mean it. The first kind that
         /// has one wins: percona-server-mongodb is Mongo, and
         /// percona-distribution-postgresql PostgreSQL.
-        static let imageWords: [(Kind, Set<String>)] = [
+        package static let imageWords: [(Kind, Set<String>)] = [
             (.mongo, ["mongo", "mongodb"]),
             (.postgres, ["postgres", "postgresql", "postgis", "timescaledb", "pgvector"]),
             (.mariadb, ["mariadb"]),
@@ -61,7 +61,7 @@ enum DockerClient {
 
     /// Words that make an image a tool beside a database rather than the
     /// database: an exporter, a UI, a proxy, a keeper.
-    static let toolWords: Set<String> = [
+    package static let toolWords: Set<String> = [
         "exporter", "express", "commander", "insight", "redisinsight", "admin", "ui", "web", "gui", "studio", "operator", "backup", "xtrabackup",
         "proxy", "router", "bouncer", "maxscale", "keeper", "sentinel", "manager", "meta", "client", "tools", "monitor", "agent", "connector",
         "migrate", "pmm",
@@ -71,7 +71,7 @@ enum DockerClient {
     /// lowercased, the digest dropped, the registry dropped (a first
     /// component with a `.` or a `:`, or `localhost`, when more follow),
     /// the last component's tag dropped.
-    static func components(of image: String) -> [String] {
+    package static func components(of image: String) -> [String] {
         let name = image.lowercased().split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
         var components = name.split(separator: "/").map(String.init)
         if components.count > 1, let first = components.first, first.contains(".") || first.contains(":") || first == "localhost" {
@@ -84,7 +84,7 @@ enum DockerClient {
     }
 
     /// The components' words: each split on `-`, `_` and `.`.
-    static func words(of image: String) -> [String] { split(components(of: image)) }
+    package static func words(of image: String) -> [String] { split(components(of: image)) }
 
     private static func split(_ components: [String]) -> [String] {
         components.flatMap { $0.split(whereSeparator: { "-_.".contains($0) }).map(String.init) }
@@ -92,7 +92,7 @@ enum DockerClient {
 
     /// The kind an image is, by the words of its name; nil for one named
     /// for a tool beside a database (`postgres-exporter`, `mongo-express`).
-    static func kind(of image: String) -> Kind? { kind(words: words(of: image)) }
+    package static func kind(of image: String) -> Kind? { kind(words: words(of: image)) }
 
     private static func kind(words: [String]) -> Kind? {
         let words = Set(words)
@@ -109,13 +109,13 @@ enum DockerClient {
     /// `admin-panel` keeps its built `postgres`'s psql. Docker lists an
     /// image by its ID once its tag has moved on to a newer one (a pull):
     /// then `reference` says, the name inspect keeps (`Config.Image`).
-    static func kind(of container: ContainerSummary, reference: String? = nil) -> Kind? {
+    package static func kind(of container: ContainerSummary, reference: String? = nil) -> Kind? {
         imageWords(of: container, reference: reference).flatMap(kind(words:))
     }
 
     /// A container's image's words, by that rule — nil when the list
     /// names it by its ID and nothing else does.
-    static func imageWords(of container: ContainerSummary, reference: String? = nil) -> [String]? {
+    package static func imageWords(of container: ContainerSummary, reference: String? = nil) -> [String]? {
         var image = container.Image
         if listsImageByID(container) {
             guard let reference else { return nil }
@@ -132,13 +132,13 @@ enum DockerClient {
 
     /// Whether the list names the image only by its ID: what Docker's
     /// says once the tag the container was made from names another image.
-    static func listsImageByID(_ container: ContainerSummary) -> Bool {
+    package static func listsImageByID(_ container: ContainerSummary) -> Bool {
         container.Image.hasPrefix("sha256:") || container.Image == container.ImageID
     }
 
     /// The names the env gives a non-empty value. Only the names, never the
     /// values, go any further.
-    static func names(in env: [(key: String, value: String)]) -> Set<String> {
+    package static func names(in env: [(key: String, value: String)]) -> Set<String> {
         Set(env.filter { !$0.value.isEmpty }.map(\.key))
     }
 
@@ -146,9 +146,9 @@ enum DockerClient {
     /// `"$NAME"`, or `"$(cat "$NAME_FILE")"` for a Docker secret's file (the
     /// images' `_FILE` convention). Each name is tried bare, then with
     /// `_FILE`, before the next.
-    static func word(_ names: String..., in env: Set<String>) -> String? { word(names, in: env) }
+    package static func word(_ names: String..., in env: Set<String>) -> String? { word(names, in: env) }
 
-    static func word(_ names: [String], in env: Set<String>) -> String? {
+    package static func word(_ names: [String], in env: Set<String>) -> String? {
         for name in names {
             if env.contains(name) { return "\"$\(name)\"" }
             if env.contains(name + "_FILE") { return "\"$(cat \"$\(name)_FILE\")\"" }
@@ -158,7 +158,7 @@ enum DockerClient {
 
     /// Shell statements first, then the client's words: literals, or what
     /// `word` gives.
-    static func invocation(_ kind: Kind, env: Set<String>) -> (setup: [String], words: [String]) {
+    package static func invocation(_ kind: Kind, env: Set<String>) -> (setup: [String], words: [String]) {
         func word(_ names: String...) -> String? { DockerClient.word(names, in: env) }
         switch kind {
         case .postgres:
@@ -237,14 +237,14 @@ enum DockerClient {
 
     /// What runs in the container: the client's own words when nothing in
     /// them is for a shell to expand, else `sh -c` and a script.
-    static func arguments(_ kind: Kind, env: Set<String>) -> [String] {
+    package static func arguments(_ kind: Kind, env: Set<String>) -> [String] {
         let (setup, words) = invocation(kind, env: env)
         if setup.isEmpty, !words.contains(where: { $0.contains { "$\"'".contains($0) } }) { return words }
         return ["sh", "-c", (setup + ["exec " + words.joined(separator: " ")]).joined(separator: "; ")]
     }
 
     /// `docker exec -it <name> …`, as typed into a terminal tab.
-    static func command(_ kind: Kind, in container: ContainerSummary, env: Set<String>, endpoint: DockerEndpoint? = nil) -> String {
+    package static func command(_ kind: Kind, in container: ContainerSummary, env: Set<String>, endpoint: DockerEndpoint? = nil) -> String {
         DockerCommands.prefix(for: endpoint) + (["docker", "exec", "-it", container.name] + arguments(kind, env: env)).map(DockerCommands.quote).joined(separator: " ")
     }
 }

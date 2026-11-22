@@ -2,15 +2,15 @@ import Foundation
 
 /// One container's cpu and memory, its requests and limits, as its pod's
 /// spec says them (`"250m"`, `"512Mi"`; absent, nil). Pure.
-struct KubeContainerResources: Equatable, Sendable {
-    var name: String
-    var cpuRequest: String?
-    var cpuLimit: String?
-    var memoryRequest: String?
-    var memoryLimit: String?
+package struct KubeContainerResources: Equatable, Sendable {
+    package var name: String
+    package var cpuRequest: String?
+    package var cpuLimit: String?
+    package var memoryRequest: String?
+    package var memoryLimit: String?
 
     /// One of its four values, by place.
-    subscript(_ field: KubeResize.Field) -> String? {
+    package subscript(_ field: KubeResize.Field) -> String? {
         get {
             switch field {
             case .cpuRequest: cpuRequest
@@ -39,12 +39,12 @@ struct KubeContainerResources: Equatable, Sendable {
 /// nor so that the pod's QoS class changes (`qos`), which the server
 /// refuses. The kubelet then applies it, or
 /// says why not in the pod's `PodResizePending` condition. Pure.
-enum KubeResize {
+package enum KubeResize {
     /// The four values a container's row edits.
-    enum Field: String, CaseIterable, Sendable {
+    package enum Field: String, CaseIterable, Sendable {
         case cpuRequest, cpuLimit, memoryRequest, memoryLimit
 
-        var resource: String {
+        package var resource: String {
             switch self {
             case .cpuRequest, .cpuLimit: "cpu"
             case .memoryRequest, .memoryLimit: "memory"
@@ -52,7 +52,7 @@ enum KubeResize {
         }
 
         /// `requests` or `limits`, as the spec groups them.
-        var group: String {
+        package var group: String {
             switch self {
             case .cpuRequest, .memoryRequest: "requests"
             case .cpuLimit, .memoryLimit: "limits"
@@ -60,10 +60,10 @@ enum KubeResize {
         }
 
         /// `cpu request`, `memory limit`.
-        var spoken: String { resource + " " + (group == "requests" ? "request" : "limit") }
+        package var spoken: String { resource + " " + (group == "requests" ? "request" : "limit") }
 
         /// What its field shows empty.
-        var placeholder: String {
+        package var placeholder: String {
             switch self {
             case .cpuRequest: "cpu req"
             case .cpuLimit: "cpu limit"
@@ -74,30 +74,30 @@ enum KubeResize {
     }
 
     /// One value changed.
-    struct Change: Equatable, Sendable {
-        var container: String
-        var field: Field
+    package struct Change: Equatable, Sendable {
+        package var container: String
+        package var field: Field
         /// What it is now; nil: unset.
-        var from: String?
-        var to: String
+        package var from: String?
+        package var to: String
 
         /// `app: cpu request 100m → 250m`.
-        var said: String { "\(container): \(field.spoken) \(from ?? "unset") → \(to)" }
+        package var said: String { "\(container): \(field.spoken) \(from ?? "unset") → \(to)" }
     }
 
     /// Why a server can't: the subresource isn't served.
-    static let unsupported =
+    package static let unsupported =
         "This cluster doesn't serve in-place resize (pods/resize, Kubernetes 1.33 and later): change the controller's template, or delete the pod to have it made again."
 
     /// Whether `kind` is pods as a server that resizes in place serves them.
-    static func supported(_ kind: KubeResourceKind) -> Bool { kind.subresources.contains("resize") }
+    package static func supported(_ kind: KubeResourceKind) -> Bool { kind.subresources.contains("resize") }
 
     /// A pod's regular containers' values — not init or ephemeral ones.
-    static func containers(of pod: [String: Any]) -> [KubeContainerResources] { resources(of: pod, "containers") }
+    package static func containers(of pod: [String: Any]) -> [KubeContainerResources] { resources(of: pod, "containers") }
 
     /// Its init containers' values: never resized, but counted in its QoS
     /// class, as the server counts them.
-    static func initContainers(of pod: [String: Any]) -> [KubeContainerResources] { resources(of: pod, "initContainers") }
+    package static func initContainers(of pod: [String: Any]) -> [KubeContainerResources] { resources(of: pod, "initContainers") }
 
     private static func resources(of pod: [String: Any], _ key: String) -> [KubeContainerResources] {
         let spec = pod["spec"] as? [String: Any] ?? [:]
@@ -120,7 +120,7 @@ enum KubeResize {
     }
 
     /// A pod's quality of service class, which a resize may not change.
-    enum QoS: String, Sendable {
+    package enum QoS: String, Sendable {
         case guaranteed = "Guaranteed"
         case burstable = "Burstable"
         case bestEffort = "BestEffort"
@@ -132,7 +132,7 @@ enum KubeResize {
     /// API server defaults it; BestEffort with none at all, Guaranteed when
     /// every container has both limits and the summed requests equal the
     /// summed limits, Burstable otherwise.
-    static func qos(_ containers: [KubeContainerResources]) -> QoS {
+    package static func qos(_ containers: [KubeContainerResources]) -> QoS {
         var requests: [String: Double] = [:]
         var limits: [String: Double] = [:]
         var guaranteed = true
@@ -161,7 +161,7 @@ enum KubeResize {
     }
 
     /// Why a class can't go from one to the other in place.
-    static func classChange(from before: QoS, to after: QoS) -> String {
+    package static func classChange(from before: QoS, to after: QoS) -> String {
         switch (before, after) {
         case (.guaranteed, _):
             "The pod is Guaranteed (each request equals its limit): change a request and its limit together — its QoS class can't change in place."
@@ -178,7 +178,7 @@ enum KubeResize {
     /// do — a value that isn't a quantity or is in the wrong unit, a value
     /// removed, a request over its limit, the pod's QoS class changed
     /// (`others`: its init containers, counted in it), nothing changed.
-    static func plan(current: [KubeContainerResources], typed: [KubeContainerResources], others: [KubeContainerResources] = []) -> Result<
+    package static func plan(current: [KubeContainerResources], typed: [KubeContainerResources], others: [KubeContainerResources] = []) -> Result<
         [Change], KubeWriteRefused
     > {
         switch check(current: current, typed: typed, others: others) {
@@ -234,7 +234,7 @@ enum KubeResize {
     /// Why a quantity is in the wrong unit for its resource: cpu in bytes
     /// or in thousands, millions… of cores (`1Gi`, `2G`, `500M`), memory in
     /// millibytes (`512m`, a slip for `512Mi`).
-    static func wrongUnit(_ field: Field, _ text: String) -> String? {
+    package static func wrongUnit(_ field: Field, _ text: String) -> String? {
         if field.resource == "cpu" {
             if text.hasSuffix("i") { return "cpu is in cores or millicores (500m, 2), not bytes." }
             if let last = text.last, "kMGTPE".contains(last) {
@@ -252,7 +252,7 @@ enum KubeResize {
     /// says already dropped (none left: an empty list), refused for what
     /// the read makes wrong (a limit lowered under a request, a class
     /// changed); nil for a container no longer there.
-    static func rebase(_ changes: [Change], on containers: [KubeContainerResources], others: [KubeContainerResources] = []) -> Result<
+    package static func rebase(_ changes: [Change], on containers: [KubeContainerResources], others: [KubeContainerResources] = []) -> Result<
         [Change], KubeWriteRefused
     >? {
         var typed = containers
@@ -265,7 +265,7 @@ enum KubeResize {
 
     /// The patch: each container by name (the strategic merge key), only
     /// what changed.
-    static func patch(_ changes: [Change]) -> [String: Any] {
+    package static func patch(_ changes: [Change]) -> [String: Any] {
         var order: [String] = []
         var resources: [String: [String: [String: String]]] = [:]
         for change in changes {
@@ -278,28 +278,28 @@ enum KubeResize {
     /// `PATCH …/pods/NAME/resize?fieldManager=overterm`, a strategic merge
     /// patch, as `kubectl patch --subresource resize` sends it (RBAC:
     /// `patch pods/resize`).
-    static func request(_ ref: KubeObjectRef, _ changes: [Change]) -> KubeWriteRequest {
+    package static func request(_ ref: KubeObjectRef, _ changes: [Change]) -> KubeWriteRequest {
         KubeWriteRequest(
             method: .PATCH, path: KubePath.query(KubeWrites.path(ref) + "/resize", [("fieldManager", KubeWrites.fieldManager)]),
             body: KubeWrites.encode(patch(changes)), contentType: KubeWrites.strategicPatch)
     }
 
     /// The patch as kubectl's `-p` takes it.
-    static func patchText(_ changes: [Change]) -> String { String(decoding: KubeWrites.encode(patch(changes)), as: UTF8.self) }
+    package static func patchText(_ changes: [Change]) -> String { String(decoding: KubeWrites.encode(patch(changes)), as: UTF8.self) }
 
     /// What the confirmation lists, one line a change.
-    static func said(_ changes: [Change]) -> String { changes.map(\.said).joined(separator: "\n") }
+    package static func said(_ changes: [Change]) -> String { changes.map(\.said).joined(separator: "\n") }
 }
 
 /// Resize…'s sheet: the pod's containers' values, before the write is asked for.
-struct KubeResizeDraft: Equatable {
-    var ref: KubeObjectRef
+package struct KubeResizeDraft: Equatable {
+    package var ref: KubeObjectRef
     /// What the pod says now; nil until read.
-    var current: [KubeContainerResources]?
+    package var current: [KubeContainerResources]?
     /// What is typed, a row a container; filled from `current` once read.
-    var typed: [KubeContainerResources] = []
+    package var typed: [KubeContainerResources] = []
     /// Its init containers' values: not edited, counted in its QoS class.
-    var others: [KubeContainerResources] = []
+    package var others: [KubeContainerResources] = []
     /// Why what is typed won't do, or why the pod couldn't be read.
-    var problem: String?
+    package var problem: String?
 }

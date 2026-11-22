@@ -6,16 +6,16 @@ import Foundation
 /// from the example or one made from the schema — the servers' first URL
 /// as `{{baseUrl}}` in a Local environment, and the security scheme as the
 /// collection's auth with its secret in that environment's secrets.
-enum OpenAPIImporter {
-    static func isOpenAPI(_ document: [String: Any]) -> Bool {
+package enum OpenAPIImporter {
+    package static func isOpenAPI(_ document: [String: Any]) -> Bool {
         document["openapi"] != nil || document["swagger"] != nil
     }
 
-    static let methods = ["get", "post", "put", "patch", "delete", "head", "options", "trace"]
+    package static let methods = ["get", "post", "put", "patch", "delete", "head", "options", "trace"]
 
     /// - Parameter baseURL: where the API is, when it was found serving
     ///   (overrides `servers`, and makes a relative server URL absolute).
-    static func make(_ document: [String: Any], baseURL: String? = nil) throws -> APIImport {
+    package static func make(_ document: [String: Any], baseURL: String? = nil) throws -> APIImport {
         let info = document["info"] as? [String: Any] ?? [:]
         let name = (info["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "API"
         var notes: [String] = []
@@ -119,7 +119,7 @@ enum OpenAPIImporter {
     }
 
     /// `servers[0].url` with its variables' defaults; Swagger 2's scheme, host and basePath.
-    static func serverURL(_ document: [String: Any]) -> String? {
+    package static func serverURL(_ document: [String: Any]) -> String? {
         if let server = (document["servers"] as? [[String: Any]])?.first, var url = server["url"] as? String {
             for (name, variable) in server["variables"] as? [String: [String: Any]] ?? [:] {
                 url = url.replacingOccurrences(of: "{\(name)}", with: "\(variable["default"] ?? "")")
@@ -286,7 +286,7 @@ enum OpenAPIImporter {
     }
 
     /// A value the schema allows, for a body to start from.
-    static func sample(_ schema: Any?, resolver: Resolver, depth: Int = 0) -> Any? {
+    package static func sample(_ schema: Any?, resolver: Resolver, depth: Int = 0) -> Any? {
         guard depth < 6 else { return nil }
         let schema = flatten(schema, resolver: resolver)
         guard !schema.isEmpty else { return nil }
@@ -320,10 +320,10 @@ enum OpenAPIImporter {
     }
 
     /// `$ref: '#/components/schemas/Pet'` followed, within the document.
-    struct Resolver {
-        let document: [String: Any]
+    package struct Resolver {
+        package let document: [String: Any]
 
-        func resolve(_ value: Any?, depth: Int = 0) -> Any? {
+        package func resolve(_ value: Any?, depth: Int = 0) -> Any? {
             guard let map = value as? [String: Any], let ref = map["$ref"] as? String else { return value }
             guard depth < 16, ref.hasPrefix("#/") else { return nil }
             var node: Any? = document
@@ -337,7 +337,7 @@ enum OpenAPIImporter {
 }
 
 extension String {
-    func trimmingSuffix(_ suffix: String) -> String {
+    package func trimmingSuffix(_ suffix: String) -> String {
         var text = self
         while text.hasSuffix(suffix) && text != suffix { text.removeLast(suffix.count) }
         return text

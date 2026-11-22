@@ -1,43 +1,43 @@
 import Foundation
 
 /// `=`: how many replicas, before the write is asked for.
-struct KubeScaleDraft: Equatable {
-    var ref: KubeObjectRef
+package struct KubeScaleDraft: Equatable {
+    package var ref: KubeObjectRef
     /// What the scale subresource says now; nil until read.
-    var current: Int?
-    var replicas: String = ""
+    package var current: Int?
+    package var replicas: String = ""
     /// Why what is typed won't do.
-    var problem: String?
+    package var problem: String?
 }
 
 /// What a write's reads found, carried from the access review to the
 /// request: the verb as it stands (a toggle turned round), a scale's
 /// replicas, the metadata, a trigger's Job, a namespace's counts.
-struct KubeWriteFacts {
-    var verb: KubeWriteVerb
-    var meta: KubeObjectMeta?
-    var from: Int?
-    var to: Int?
+package struct KubeWriteFacts {
+    package var verb: KubeWriteVerb
+    package var meta: KubeObjectMeta?
+    package var from: Int?
+    package var to: Int?
     /// A trigger's Job: its name and the request that makes it.
-    var job: String?
-    var request: KubeWriteRequest?
-    var contents: KubeNamespaceContents?
+    package var job: String?
+    package var request: KubeWriteRequest?
+    package var contents: KubeNamespaceContents?
     /// What a GitOps object's delete takes with it (gitops.md, G0b).
-    var gitOps: KubeGitOpsDelete?
+    package var gitOps: KubeGitOpsDelete?
     /// What a namespace's GitOps objects take with its delete.
-    var gitOpsHeld: KubeNamespaceGitOps?
+    package var gitOpsHeld: KubeNamespaceGitOps?
     /// What a Flux object's resume on production applies (gitops.md, G0d).
-    var resume: KubeFluxResume?
+    package var resume: KubeFluxResume?
     /// A resize's changes, against the pod as read after the review.
-    var resize: [KubeResize.Change] = []
+    package var resize: [KubeResize.Change] = []
     /// The context the access review and the reads were made on: the
     /// confirmation and the request go only to the same cluster, user and
     /// class (`KubernetesModel.sameAccess`).
-    var reviewed: KubeContext?
+    package var reviewed: KubeContext?
 }
 
 /// How a scale changes the replicas.
-enum KubeScaleChange: Equatable {
+package enum KubeScaleChange: Equatable {
     case by(Int)
     case to(Int)
 }
@@ -58,14 +58,14 @@ enum KubeScaleChange: Equatable {
 ///    plain words (`KubeWriteOutcome`). The list follows by its watch.
 extension KubernetesPageModel {
     /// The verbs in the order a menu shows them.
-    static let writeVerbOrder: [KubeWriteVerb] = [
+    package static let writeVerbOrder: [KubeWriteVerb] = [
         .restart, .scale, .resize, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon, .reconcile, .fluxSuspend, .fluxResume, .refresh,
         .recreate, .evict, .removeFinalizers, .forceDelete, .delete,
     ]
 
     /// What a write key means: the object the detail shows, while it
     /// shows one; else the list's one selected row.
-    var writeTarget: KubeObjectRef? {
+    package var writeTarget: KubeObjectRef? {
         // The GitOps section: its row picked (gitops.md 2.7).
         if section == .gitops { return gitOpsSelectedRef }
         if let detail { return detail.ref }
@@ -74,7 +74,7 @@ extension KubernetesPageModel {
     }
 
     /// One row picked: its writes.
-    func writeVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+    package func writeVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
         guard picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
         return writeVerbs(for: ref)
     }
@@ -82,7 +82,7 @@ extension KubernetesPageModel {
     /// The object's writes — its detail's buttons and its right-click
     /// menu — each greyed with why: a read-only context (its `writable`
     /// setting), the access review's no (asked as the verbs are shown).
-    func writeVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
+    package func writeVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         guard let context = model.contexts.context(named: ref.context) else { return [] }
         return Self.writeVerbOrder.filter { KubeWriteCheck.offered($0, on: ref.kind) }.map { verb in
             let key: String? =
@@ -118,7 +118,7 @@ extension KubernetesPageModel {
 
     /// Why `verb` can't be done on the object now; nil when it can. Asks
     /// the access review when its answer isn't known.
-    func writeUnavailable(_ verb: KubeWriteVerb, _ context: KubeContext, _ ref: KubeObjectRef) -> String? {
+    package func writeUnavailable(_ verb: KubeWriteVerb, _ context: KubeContext, _ ref: KubeObjectRef) -> String? {
         let rule = KubeWriteCheck.rule(verb, for: context, kind: ref.kind)
         if let refused = rule.refused { return refused }
         if let (toggle, on) = verb.toggle, let state = knownState(toggle, of: ref), state == on {
@@ -133,7 +133,7 @@ extension KubernetesPageModel {
 
     /// One row picked on a writable context: its verbs' reviews asked,
     /// so the menu is ready.
-    func askWriteAccess(for ids: Set<String>) {
+    package func askWriteAccess(for ids: Set<String>) {
         guard ids.count == 1, let id = ids.first, let ref = ref(for: id), let context = model.contexts.context(named: ref.context),
             context.isWritable
         else { return }
@@ -147,7 +147,7 @@ extension KubernetesPageModel {
     // MARK: Keys
 
     /// ⌫: delete the object.
-    func deleteKey() -> Bool {
+    package func deleteKey() -> Bool {
         guard let ref = writeTarget, KubeWriteCheck.offered(.delete, on: ref.kind) else { return false }
         write(.delete, on: ref)
         return true
@@ -155,7 +155,7 @@ extension KubernetesPageModel {
 
     /// `r`: a rollout restarted; a pod deleted so its controller makes it
     /// again; a Flux object reconciled, an Argo CD Application refreshed.
-    func restartKey() -> Bool {
+    package func restartKey() -> Bool {
         guard let ref = writeTarget else { return false }
         if let verb = [KubeWriteVerb.recreate, .restart, .reconcile, .refresh].first(where: { KubeWriteCheck.offered($0, on: ref.kind) }) {
             write(verb, on: ref)
@@ -166,7 +166,7 @@ extension KubernetesPageModel {
     }
 
     /// `+`, `-`: by one; `=` (nil): the sheet.
-    func scaleKey(_ change: KubeScaleChange?) -> Bool {
+    package func scaleKey(_ change: KubeScaleChange?) -> Bool {
         guard let ref = writeTarget, KubeWriteCheck.offered(.scale, on: ref.kind) else { return false }
         if let change { write(.scale, on: ref, scale: change) } else { openScaleSheet(ref) }
         return true
@@ -176,7 +176,7 @@ extension KubernetesPageModel {
     /// or resumed, Flux's reconciliation of one suspended or resumed —
     /// whichever it isn't, as far as is known now (a CronJob's row says; a
     /// Deployment's or a Flux object's is read after its access review).
-    func pauseKey() -> Bool {
+    package func pauseKey() -> Bool {
         guard let ref = writeTarget else { return false }
         guard let pair = [KubeWriteVerb.pause, .suspend, .fluxSuspend].first(where: { KubeWriteCheck.offered($0, on: ref.kind) }) else {
             return false
@@ -187,7 +187,7 @@ extension KubernetesPageModel {
 
     /// `s`: a CronJob run now — a Job made from its template; an Argo CD
     /// Application synced, by argocd in a tab.
-    func triggerKey() -> Bool {
+    package func triggerKey() -> Bool {
         guard let ref = writeTarget else { return false }
         if KubeWriteCheck.offered(.trigger, on: ref.kind) {
             write(.trigger, on: ref)
@@ -200,7 +200,7 @@ extension KubernetesPageModel {
     }
 
     /// `u`: a node cordoned, or uncordoned if it is.
-    func cordonKey() -> Bool {
+    package func cordonKey() -> Bool {
         guard let ref = writeTarget, KubeWriteCheck.offered(.cordon, on: ref.kind) else { return false }
         toggleWrite(.cordon, on: ref)
         return true
@@ -220,7 +220,7 @@ extension KubernetesPageModel {
     /// server's columns say it — they follow the watch. Not the detail's
     /// object: it is read once as the detail opens, and a pause from its
     /// own button would leave it saying the opposite.
-    func knownState(_ toggle: KubeWriteToggle, of ref: KubeObjectRef) -> Bool? {
+    package func knownState(_ toggle: KubeWriteToggle, of ref: KubeObjectRef) -> Bool? {
         guard ref.context == model.selectedName, ref.kind.fullName == model.kind.fullName,
             let row = model.rows[KubeRowID(namespace: ref.namespace, name: ref.name)]
         else { return nil }
@@ -233,14 +233,14 @@ extension KubernetesPageModel {
     // MARK: The namespace sheet
 
     /// The namespaces kind as the context serves it (its verbs).
-    var namespacesKind: KubeResourceKind {
+    package var namespacesKind: KubeResourceKind {
         model.selectedName.flatMap { model.knownDiscovery(of: $0)?.kind("namespaces") } ?? .namespaces
     }
 
     /// `N`, the palette's New Namespace…: the sheet, on a context that
     /// may take one — refused with why on one that can't.
     @discardableResult
-    func openNamespaceSheet() -> Bool {
+    package func openNamespaceSheet() -> Bool {
         writeStatus = nil
         guard let context = model.selected else { return false }
         if let refused = KubeWriteCheck.rule(.createNamespace, for: context, kind: namespacesKind).refused {
@@ -251,13 +251,13 @@ extension KubernetesPageModel {
         return true
     }
 
-    func closeNamespaceSheet() {
+    package func closeNamespaceSheet() {
         namespaceDraft = nil
         giveListTheKeyboard()
     }
 
     /// The sheet's Create: a DNS label — then the write's own confirmation.
-    func confirmNamespace() {
+    package func confirmNamespace() {
         guard let draft = namespaceDraft else { return }
         let name = draft.name.trimmingCharacters(in: .whitespaces)
         if let problem = KubeNamespaceName.problem(name) {
@@ -271,7 +271,7 @@ extension KubernetesPageModel {
 
     // MARK: The scale sheet
 
-    func openScaleSheet(_ ref: KubeObjectRef) {
+    package func openScaleSheet(_ ref: KubeObjectRef) {
         writeStatus = nil
         guard let context = model.contexts.context(named: ref.context) else { return }
         if let refused = KubeWriteCheck.rule(.scale, for: context, kind: ref.kind).refused {
@@ -288,14 +288,14 @@ extension KubernetesPageModel {
         }
     }
 
-    func closeScaleSheet() {
+    package func closeScaleSheet() {
         scaleDraft = nil
         giveListTheKeyboard()
     }
 
     /// The sheet's Scale: a whole number, 0 to 10,000 — then the write's
     /// own confirmation.
-    func confirmScale() {
+    package func confirmScale() {
         guard let draft = scaleDraft else { return }
         guard let replicas = Int(draft.replicas.trimmingCharacters(in: .whitespaces)), (0...10_000).contains(replicas) else {
             scaleDraft?.problem = "A whole number of replicas, 0 to 10000."
@@ -311,7 +311,7 @@ extension KubernetesPageModel {
     /// Resize in Place…: the pod's containers' values read into the sheet
     /// — on a server that resizes in place and a writable context; refused
     /// with why elsewhere.
-    func openResizeSheet(_ ref: KubeObjectRef) {
+    package func openResizeSheet(_ ref: KubeObjectRef) {
         writeStatus = nil
         guard let context = model.contexts.context(named: ref.context) else { return }
         if let refused = KubeWriteCheck.rule(.resize, for: context, kind: ref.kind).refused {
@@ -342,7 +342,7 @@ extension KubernetesPageModel {
         }
     }
 
-    func closeResizeSheet() {
+    package func closeResizeSheet() {
         resizeDraft = nil
         giveListTheKeyboard()
     }
@@ -350,7 +350,7 @@ extension KubernetesPageModel {
     /// The sheet's Resize: what is typed checked against what was read —
     /// then the write's own confirmation. While another write is being
     /// checked, said in the sheet, the values kept.
-    func confirmResize() {
+    package func confirmResize() {
         guard let draft = resizeDraft, let current = draft.current else { return }
         guard writeChecking == nil else {
             resizeDraft?.problem = "Another write is being checked: try again once it is asked or done."
@@ -372,7 +372,7 @@ extension KubernetesPageModel {
     /// a key's pause, suspend or cordon, turned to its opposite when the
     /// object read says it is so already. While another write is between
     /// its key and its confirmation, nothing.
-    func write(_ verb: KubeWriteVerb, on ref: KubeObjectRef, scale: KubeScaleChange? = nil, resize: [KubeResize.Change] = [], toggles: Bool = false) {
+    package func write(_ verb: KubeWriteVerb, on ref: KubeObjectRef, scale: KubeScaleChange? = nil, resize: [KubeResize.Change] = [], toggles: Bool = false) {
         guard writeChecking == nil else { return }
         writeStatus = nil
         guard let context = model.contexts.context(named: ref.context) else {
@@ -501,14 +501,14 @@ extension KubernetesPageModel {
         }
     }
 
-    static let writeContextChanged = "The context changed while it was asked (another cluster, user or class): nothing was changed."
+    package static let writeContextChanged = "The context changed while it was asked (another cluster, user or class): nothing was changed."
 
     /// Whether `now` is the cluster, user and class the facts were read on.
-    static func sameAsReviewed(_ facts: KubeWriteFacts, _ now: KubeContext) -> Bool {
+    package static func sameAsReviewed(_ facts: KubeWriteFacts, _ now: KubeContext) -> Bool {
         facts.reviewed.map { KubernetesModel.sameAccess($0, now) } ?? false
     }
 
-    func endChecking(_ token: Int) {
+    package func endChecking(_ token: Int) {
         if writeChecking == token { writeChecking = nil }
     }
 

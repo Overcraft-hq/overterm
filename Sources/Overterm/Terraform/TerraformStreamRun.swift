@@ -7,14 +7,14 @@ import Foundation
 /// the descriptor, handed to `show -json /dev/fd/3` (and, in stage 2a, to
 /// `apply /dev/fd/3`). Nothing is left to swap, sweep after a crash, or
 /// back up. Closed when the record holding it goes.
-final class TerraformPlanFile: @unchecked Sendable {
-    let descriptor: Int32
-    let sha256: String
-    let size: Int
+package final class TerraformPlanFile: @unchecked Sendable {
+    package let descriptor: Int32
+    package let sha256: String
+    package let size: Int
     /// The file's mode as `plan` wrote it: 0600 under the `umask 077` launcher.
-    let mode: mode_t
+    package let mode: mode_t
 
-    init(descriptor: Int32, sha256: String, size: Int, mode: mode_t) {
+    package init(descriptor: Int32, sha256: String, size: Int, mode: mode_t) {
         self.descriptor = descriptor
         self.sha256 = sha256
         self.size = size
@@ -24,7 +24,7 @@ final class TerraformPlanFile: @unchecked Sendable {
     deinit { close(descriptor) }
 
     /// The SHA-256 of what `descriptor` holds, read with `pread`.
-    static func sha256(of descriptor: Int32, size: Int) -> String? {
+    package static func sha256(of descriptor: Int32, size: Int) -> String? {
         var hasher = SHA256()
         var offset = 0
         var buffer = [UInt8](repeating: 0, count: 1 << 16)
@@ -39,7 +39,7 @@ final class TerraformPlanFile: @unchecked Sendable {
 
     /// Opens `url` as `plan` left it (a regular file, never a link),
     /// hashes it and unlinks the path. Nil when there is none to hold.
-    static func hold(_ url: URL, limit: Int) -> TerraformPlanFile? {
+    package static func hold(_ url: URL, limit: Int) -> TerraformPlanFile? {
         let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { return nil }
         unlink(url.path)
@@ -65,26 +65,26 @@ final class TerraformPlanFile: @unchecked Sendable {
 /// 1 (failed, even when a plan file was written, spike 23). Stopped with
 /// one SIGINT to its group (`TerraformRun.live`, `stopAll`): a plan holding
 /// the lock lets it go. Never a `ManagedProcess`, never SIGKILL while it runs.
-enum TerraformStreamRun {
-    struct Outcome: Sendable {
-        var status: Int32
-        var stderr: String
+package enum TerraformStreamRun {
+    package struct Outcome: Sendable {
+        package var status: Int32
+        package var stderr: String
         /// The plan, held by its descriptor: only for exit 0 or 2.
-        var file: TerraformPlanFile?
+        package var file: TerraformPlanFile?
         /// Exit 0 or 2 with a plan file past `maxPlanBytes`: planned, not held.
-        var tooLarge = false
+        package var tooLarge = false
     }
 
-    static let batchInterval: UInt64 = 120_000_000
-    static let maxPending = 4 << 20
+    package static let batchInterval: UInt64 = 120_000_000
+    package static let maxPending = 4 << 20
     /// The plan file's bound (`terraform.maxPlanBytes`): what `show` reads too.
-    static let maxPlanBytes = 64 << 20
+    package static let maxPlanBytes = 64 << 20
 
-    static let umaskLauncher = "umask 077; exec \"$0\" \"$@\""
+    package static let umaskLauncher = "umask 077; exec \"$0\" \"$@\""
 
     /// Runs `arguments` with `binary` in `folder`; blocking (a GCD thread's).
     /// `planFile`: where the plan writes, held once it exits 0 or 2.
-    static func run(
+    package static func run(
         _ binary: URL, _ arguments: [String], in folder: URL, environment: [String: String], planFile: URL? = nil,
         started: @Sendable (pid_t) -> Void = { _ in }, batch: @Sendable ([TerraformUIMessage]) -> Void
     ) throws -> Outcome {
@@ -160,7 +160,7 @@ enum TerraformStreamRun {
     }
 
     /// Stops a run going: one SIGINT to its group, as Ctrl-C does (D-3).
-    static func interrupt(_ pid: pid_t) {
+    package static func interrupt(_ pid: pid_t) {
         guard TerraformRun.live.all.contains(pid) else { return }
         killpg(pid, SIGINT)
     }

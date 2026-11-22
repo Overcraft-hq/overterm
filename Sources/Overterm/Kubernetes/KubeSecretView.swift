@@ -5,12 +5,12 @@ import SwiftUI
 /// its keys with every value masked — its length shown — one revealed at
 /// a time, Copy for one, Hide for all, and a TLS Secret's certificate.
 /// The revealed value isn't selectable: Copy is the one way out of it.
-struct KubeSecretView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var secret: KubeSecretSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeSecretView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var secret: KubeSecretSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: secret.state == .shown ? "lock.open.fill" : "lock.fill").foregroundStyle(theme.text3)

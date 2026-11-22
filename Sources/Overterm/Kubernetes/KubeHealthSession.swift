@@ -11,21 +11,21 @@ import Foundation
 /// Refresh reads again. Hidden — another section, the page or its window
 /// off screen — what was read goes. Reads only.
 @MainActor
-final class KubeHealthSession: ObservableObject {
-    enum State: Equatable {
+package final class KubeHealthSession: ObservableObject {
+    package enum State: Equatable {
         case idle, loading, loaded
     }
 
-    @Published private(set) var state: State = .idle
-    @Published private(set) var report = KubeHealth.Report()
-    private(set) var context: String?
-    private(set) var scope: KubeScope?
+    @Published package private(set) var state: State = .idle
+    @Published package private(set) var report = KubeHealth.Report()
+    package private(set) var context: String?
+    package private(set) var scope: KubeScope?
 
     private var task: Task<Void, Never>?
     private var generation = 0
     /// How many of its lists are asked at once (the scale scenario's 1 is
     /// the one-after-the-other it was).
-    static var readWidth = 4
+    package static var readWidth = 4
     /// What it read for, to read again only when that changes.
     private struct Key: Equatable {
         var context: String
@@ -36,7 +36,7 @@ final class KubeHealthSession: ObservableObject {
 
     /// Shown on `context` in `scope`: read once there — again only when
     /// the context, the namespace or what it serves changed (or `again`).
-    func show(context: String, scope: KubeScope, discovery: KubeDiscovery?, client: KubeClient?, again: Bool = false) {
+    package func show(context: String, scope: KubeScope, discovery: KubeDiscovery?, client: KubeClient?, again: Bool = false) {
         let kinds = Self.kinds(discovery)
         let key = Key(context: context, scope: scope, kinds: kinds.map(\.1.fullName))
         if key == shown, !again { return }
@@ -76,13 +76,13 @@ final class KubeHealthSession: ObservableObject {
     }
 
     /// Refresh: the same place read again.
-    func refresh(discovery: KubeDiscovery?, client: KubeClient?) {
+    package func refresh(discovery: KubeDiscovery?, client: KubeClient?) {
         guard let context, let scope else { return }
         show(context: context, scope: scope, discovery: discovery, client: client, again: true)
     }
 
     /// Off screen: nothing read, nothing kept.
-    func hide() {
+    package func hide() {
         generation += 1
         task?.cancel()
         task = nil
@@ -96,7 +96,7 @@ final class KubeHealthSession: ObservableObject {
     /// What it reads of a cluster that serves `discovery`: each of
     /// `KubeHealth.reads` it serves and lets be listed, at its version;
     /// before discovery, pods alone.
-    nonisolated static func kinds(_ discovery: KubeDiscovery?) -> [(KubeHealth.Read, KubeResourceKind)] {
+    package nonisolated static func kinds(_ discovery: KubeDiscovery?) -> [(KubeHealth.Read, KubeResourceKind)] {
         guard let discovery else { return [(KubeHealth.reads[0], .pods)] }
         return KubeHealth.reads.compactMap { read in
             discovery.kinds.first { $0.group == read.group && $0.resource == read.resource && $0.canList }.map { (read, $0) }
@@ -104,11 +104,11 @@ final class KubeHealthSession: ObservableObject {
     }
 
     /// One bounded list's GET, its objects whole (the checks read their specs).
-    nonisolated static func path(_ read: KubeHealth.Read, kind: KubeResourceKind, scope: KubeScope) -> String {
+    package nonisolated static func path(_ read: KubeHealth.Read, kind: KubeResourceKind, scope: KubeScope) -> String {
         path(read, kind: kind, namespace: scope.namespace(for: kind))
     }
 
-    nonisolated static func path(_ read: KubeHealth.Read, kind: KubeResourceKind, namespace: String?) -> String {
+    package nonisolated static func path(_ read: KubeHealth.Read, kind: KubeResourceKind, namespace: String?) -> String {
         KubePath.query(kind.path(namespace: kind.namespaced ? namespace : nil), [("limit", String(read.limit))])
     }
 }

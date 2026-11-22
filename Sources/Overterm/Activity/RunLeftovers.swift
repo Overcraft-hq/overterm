@@ -3,8 +3,8 @@ import Foundation
 
 /// A process an Overterm run left running, and how it is known to be the
 /// run's (docs/design/activity/analysis.md, 10.5).
-struct RunLeftover: Hashable, Sendable {
-    enum Why: Hashable, Sendable {
+package struct RunLeftover: Hashable, Sendable {
+    package enum Why: Hashable, Sendable {
         /// It carries the run's `OVERTERM_RUN`.
         case marker
         /// The run recorded it at spawn: a stand-in wrote its pid in the
@@ -21,16 +21,16 @@ struct RunLeftover: Hashable, Sendable {
         case descendant
     }
 
-    let identity: ActivityProcessID
+    package let identity: ActivityProcessID
     /// `p_comm`: the run's own process's name — never another's.
-    let name: String
-    let why: Why
+    package let name: String
+    package let why: Why
     /// Its argv, masked (`ActivityText.command`), said by its last 160 characters:
     /// the run's own process's, so a failure says which one it was.
-    var command: String? = nil
+    package var command: String? = nil
 
     /// One line for a check's failure: pid, name and why.
-    var said: String {
+    package var said: String {
         let how: String =
             switch why {
             case .marker: "carries the run's OVERTERM_RUN"
@@ -63,10 +63,10 @@ struct RunLeftover: Hashable, Sendable {
 /// Only the user's own processes are read, argv masked inside the read and
 /// the environment scanned for the four names alone (`ProcessArguments`);
 /// nothing of a process that isn't the run's is kept or said.
-enum RunLeftovers {
+package enum RunLeftovers {
     /// Why `identity` is `run`'s, from what was read of it; nil when it
     /// isn't — pure.
-    static func why(
+    package static func why(
         _ identity: ActivityProcessID, run: OvertermRun, scratch: String?, marker: String?, command: String?, recordedBy: UInt64?
     ) -> RunLeftover.Why? {
         guard identity.pid != run.pid, identity.start >= run.start else { return nil }
@@ -81,7 +81,7 @@ enum RunLeftovers {
 
     /// Where a process sits relative to `run`, by start-checked parent
     /// links in `table`.
-    enum Lineage: Hashable, Sendable {
+    package enum Lineage: Hashable, Sendable {
         /// Its parents lead to the run itself.
         case underRun
         /// Its parents lead to launchd, each started since the run: what an
@@ -93,7 +93,7 @@ enum RunLeftovers {
     /// the run — a person's own shell, a terminal app — or later than its
     /// child (its pid taken again), or the walk can't be followed: then it
     /// is never the run's, whatever its argv names. Pure, bounded.
-    static func lineage(of process: ActivityProcess, run: OvertermRun, table: [pid_t: ActivityProcess]) -> Lineage? {
+    package static func lineage(of process: ActivityProcess, run: OvertermRun, table: [pid_t: ActivityProcess]) -> Lineage? {
         var child = process
         for _ in 0..<ActivitySignalLineage.maximumDepth {
             let parentPID = child.parentPID
@@ -107,7 +107,7 @@ enum RunLeftovers {
     }
 
     /// The scratch folder's id: `overterm-e2e-<UUID>`'s UUID.
-    static func scratchID(of folder: URL) -> String? {
+    package static func scratchID(of folder: URL) -> String? {
         let name = folder.lastPathComponent
         guard name.hasPrefix(ArgvSign.scratchPrefix) else { return nil }
         return String(name.dropFirst(ArgvSign.scratchPrefix.count))
@@ -115,17 +115,17 @@ enum RunLeftovers {
 
     /// Where a stand-in records its pid at spawn: `<scratch>/spawned/<pid>`,
     /// written by the process itself before it `exec`s.
-    static func recordFolder(in scratch: URL) -> URL { scratch.appendingPathComponent("spawned", isDirectory: true) }
+    package static func recordFolder(in scratch: URL) -> URL { scratch.appendingPathComponent("spawned", isDirectory: true) }
 
     /// The shell line a stand-in runs first to record itself.
-    static func recordLine(in scratch: URL) -> String {
+    package static func recordLine(in scratch: URL) -> String {
         let folder = recordFolder(in: scratch).path
         return "mkdir -p '\(folder)' && : > '\(folder)'/$$"
     }
 
     /// The pids recorded in `scratch`, each with the latest start it may
     /// have — its record's time: a pid taken again later starts after it.
-    static func recorded(in scratch: URL) -> [pid_t: UInt64] {
+    package static func recorded(in scratch: URL) -> [pid_t: UInt64] {
         let folder = recordFolder(in: scratch)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         var found: [pid_t: UInt64] = [:]
@@ -146,7 +146,7 @@ enum RunLeftovers {
     /// so whatever is still under it is its own (6.9) — what has neither
     /// a readable environment nor a sign, a `/bin/sleep` a pane left, is
     /// known that way.
-    static func find(
+    package static func find(
         run: OvertermRun, scratch: URL?, kernel: some ActivityKernel = LiveActivityKernel(), registered: Set<pid_t> = [], descendants: Bool = false
     ) -> [RunLeftover] {
         let scratchID = scratch.flatMap(scratchID(of:))

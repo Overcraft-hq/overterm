@@ -1,7 +1,7 @@
 import Foundation
 
 /// A setting's value as settings.json holds it.
-enum SettingValue: Equatable, Sendable {
+package enum SettingValue: Equatable, Sendable {
     case bool(Bool)
     case int(Int)
     case double(Double)
@@ -18,7 +18,7 @@ enum SettingValue: Equatable, Sendable {
     /// From what JSONSerialization made of the file; nil for anything else
     /// (null, a list holding something other than strings, an object that
     /// isn't one of objects). A field that isn't a plain value is passed over.
-    init?(json: Any) {
+    package init?(json: Any) {
         if let object = json as? [String: Any] {
             var entries: [String: [String: SettingValue]] = [:]
             for (name, raw) in object {
@@ -69,7 +69,7 @@ enum SettingValue: Equatable, Sendable {
     }
 
     /// As a JSON value, written into settings.json.
-    var json: String {
+    package var json: String {
         switch self {
         case .bool(let value): value ? "true" : "false"
         case .int(let value): String(value)
@@ -97,7 +97,7 @@ enum SettingValue: Equatable, Sendable {
     /// value a person wrote over several lines, written back one a line
     /// with the comments of those still there (`SettingsJSON.setting`).
     /// Nil for a plain value.
-    var members: [(name: String, json: String)]? {
+    package var members: [(name: String, json: String)]? {
         switch self {
         case .list(let values): return values.map { ($0, SettingValue.string($0).json) }
         case .entries(let entries):
@@ -109,19 +109,19 @@ enum SettingValue: Equatable, Sendable {
         }
     }
 
-    var bool: Bool? { if case .bool(let value) = self { value } else { nil } }
-    var string: String? { if case .string(let value) = self { value } else { nil } }
-    var list: [String]? { if case .list(let value) = self { value } else { nil } }
-    var entries: [String: [String: SettingValue]]? { if case .entries(let value) = self { value } else { nil } }
+    package var bool: Bool? { if case .bool(let value) = self { value } else { nil } }
+    package var string: String? { if case .string(let value) = self { value } else { nil } }
+    package var list: [String]? { if case .list(let value) = self { value } else { nil } }
+    package var entries: [String: [String: SettingValue]]? { if case .entries(let value) = self { value } else { nil } }
     /// A list of objects; `[]` too (which reads as an empty list).
-    var records: [[String: String]]? {
+    package var records: [[String: String]]? {
         switch self {
         case .records(let value): value
         case .list(let value) where value.isEmpty: []
         default: nil
         }
     }
-    var number: Double? {
+    package var number: Double? {
         switch self {
         case .int(let value): Double(value)
         case .double(let value): value
@@ -131,15 +131,15 @@ enum SettingValue: Equatable, Sendable {
 }
 
 /// One choice of a setting that picks among fixed values.
-struct SettingOption: Sendable {
-    let value: String
-    let label: String
+package struct SettingOption: Sendable {
+    package let value: String
+    package let label: String
     /// For an `order`: the toggle that shows this one, if it can be hidden.
-    var toggle: String? = nil
+    package var toggle: String? = nil
 }
 
 /// What a setting is, and so how Settings shows it and what the file may hold.
-enum SettingKind: Sendable {
+package enum SettingKind: Sendable {
     case toggle
     case choice([SettingOption])
     /// A choice among values found at run time (installed fonts, themes).
@@ -169,23 +169,23 @@ enum SettingKind: Sendable {
 }
 
 /// What a `SettingKind.entries` setting's entries are and may hold.
-struct SettingEntries: Sendable {
+package struct SettingEntries: Sendable {
     /// What an entry is named by, for the page: "context".
-    let noun: String
-    let fields: [SettingField]
+    package let noun: String
+    package let fields: [SettingField]
 }
 
 /// One field of an entry: its name in the file and what it may hold
 /// (`toggle`, `choice`, `text` or `list`).
-struct SettingField: Sendable {
-    let name: String
-    let kind: SettingKind
-    var help: String? = nil
+package struct SettingField: Sendable {
+    package let name: String
+    package let kind: SettingKind
+    package var help: String? = nil
     /// A record's field it must hold (`SettingKind.records`).
-    var required = false
+    package var required = false
 }
 
-enum SettingSource: Sendable {
+package enum SettingSource: Sendable {
     case monospacedFonts
     case themes
 }
@@ -193,18 +193,18 @@ enum SettingSource: Sendable {
 /// One line of settings.json: its key, where Settings shows it, its default.
 /// A nil default means "unset": for Ghostty's settings, the user's own
 /// Ghostty config decides.
-struct SettingSpec: Identifiable, Sendable {
-    let key: String
-    let section: SettingsSection
-    let group: String
-    let title: String
-    var help: String? = nil
-    let kind: SettingKind
-    let defaultValue: SettingValue?
+package struct SettingSpec: Identifiable, Sendable {
+    package let key: String
+    package let section: SettingsSection
+    package let group: String
+    package let title: String
+    package var help: String? = nil
+    package let kind: SettingKind
+    package let defaultValue: SettingValue?
     /// The Ghostty option this sets, written to the overrides file when set.
-    var ghostty: String? = nil
+    package var ghostty: String? = nil
     /// Greyed out unless this toggle is on.
-    var requires: String? = nil
+    package var requires: String? = nil
     /// A security setting — what makes something production, writable, or
     /// an agent's to change. Any agent can write settings.json, so a change
     /// made there outside the Settings page is held until a window's banner
@@ -216,12 +216,12 @@ struct SettingSpec: Identifiable, Sendable {
     /// agents' access and writes, and the kubectl and helm it runs (a path
     /// in an agent's checkout would run outside any sandbox, with the
     /// user's kubeconfig).
-    var heldWhenEditedOutside = false
+    package var heldWhenEditedOutside = false
 
-    var id: String { key }
+    package var id: String { key }
 
     /// Whether `value` is one this setting can hold; nil when it can, else why not.
-    func problem(with value: SettingValue) -> String? {
+    package func problem(with value: SettingValue) -> String? {
         switch kind {
         case .toggle:
             return value.bool == nil ? "must be true or false" : nil
@@ -279,7 +279,7 @@ struct SettingSpec: Identifiable, Sendable {
     /// `value` with each entry's fields that don't fit left out, and why —
     /// for `entries`; anything else comes back as it is. A typo in one
     /// field must not drop a context's hand-set class with it.
-    func fitted(_ value: SettingValue) -> (value: SettingValue, problems: [String]) {
+    package func fitted(_ value: SettingValue) -> (value: SettingValue, problems: [String]) {
         guard case .entries(let kind) = self.kind, let entries = value.entries else { return (value, []) }
         var kept: [String: [String: SettingValue]] = [:]
         var problems: [String] = []
@@ -304,7 +304,7 @@ struct SettingSpec: Identifiable, Sendable {
     }
 
     /// Searchable text: Settings' search matches the title, the help and the key.
-    func matches(_ query: String) -> Bool {
+    package func matches(_ query: String) -> Bool {
         let query = query.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return true }
         return [title, help ?? "", key, group, section.title].contains { $0.lowercased().contains(query) }
@@ -312,17 +312,17 @@ struct SettingSpec: Identifiable, Sendable {
 }
 
 /// Every setting, in the order Settings shows them.
-enum SettingsSchema {
-    static let all: [SettingSpec] =
+package enum SettingsSchema {
+    package static let all: [SettingSpec] =
         general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + terraform + activity + notifications
         + updates
 
-    static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
+    package static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 
     /// The security settings: changed outside the page, held (`Settings.held`).
-    static let heldKeys: [String] = all.filter(\.heldWhenEditedOutside).map(\.key)
+    package static let heldKeys: [String] = all.filter(\.heldWhenEditedOutside).map(\.key)
 
-    static func specs(in section: SettingsSection) -> [SettingSpec] { all.filter { $0.section == section } }
+    package static func specs(in section: SettingsSection) -> [SettingSpec] { all.filter { $0.section == section } }
 
     private static let general: [SettingSpec] = [
         SettingSpec(
@@ -555,7 +555,7 @@ enum SettingsSchema {
 
     /// What each agent's arguments field says: where they go, and what
     /// Overterm adds to that agent's launch (`AgentLaunch`).
-    static func argumentsHelp(_ agent: Agent) -> String {
+    package static func argumentsHelp(_ agent: Agent) -> String {
         switch agent {
         case .claude:
             "Added wherever the agent starts or picks up again: ⌥⌘C / ⌥⌘X, New Task, tabs reopened at launch, and Sessions' resume. Overterm's tools (the browser, API client, notes…) come with --mcp-config."
@@ -994,7 +994,7 @@ enum SettingsSchema {
 
     /// UserDefaults keys (under "settings.") before settings.json, and their
     /// keys now: carried over once.
-    static let legacyKeys: [String: String] = [
+    package static let legacyKeys: [String: String] = [
         "restoreTabs": "general.restoreTabs", "restoreScrollback": "general.restoreScrollback",
         "newTabDirectory": "general.newTabDirectory", "confirmClose": "general.confirmClose",
         "notifications": "notifications.enabled", "dockBadge": "notifications.dockBadge",
@@ -1008,15 +1008,15 @@ enum SettingsSchema {
 }
 
 /// `#rrggbb`, as settings.json and Ghostty write a colour.
-enum SettingsColor {
-    static func parse(_ text: String) -> (red: Double, green: Double, blue: Double)? {
+package enum SettingsColor {
+    package static func parse(_ text: String) -> (red: Double, green: Double, blue: Double)? {
         var hex = text.trimmingCharacters(in: .whitespaces)
         if hex.hasPrefix("#") { hex.removeFirst() }
         guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
         return (Double((value >> 16) & 0xFF) / 255, Double((value >> 8) & 0xFF) / 255, Double(value & 0xFF) / 255)
     }
 
-    static func format(red: Double, green: Double, blue: Double) -> String {
+    package static func format(red: Double, green: Double, blue: Double) -> String {
         func byte(_ value: Double) -> Int { Int((min(max(value, 0), 1) * 255).rounded()) }
         return String(format: "#%02x%02x%02x", byte(red), byte(green), byte(blue))
     }

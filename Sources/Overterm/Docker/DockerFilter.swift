@@ -16,13 +16,13 @@ import Foundation
 ///     -status:exited         not exited
 ///
 /// Pure: `ResourceFilter`'s words, with Docker's keys and their meaning.
-typealias DockerFilter = ResourceFilter<DockerFilterKey>
+package typealias DockerFilter = ResourceFilter<DockerFilterKey>
 
 /// The Docker lists' filter keys, and every name they go by.
-enum DockerFilterKey: String, ResourceFilterKey {
+package enum DockerFilterKey: String, ResourceFilterKey {
     case text, status, project, service, image, port, session
 
-    static let names: [String: DockerFilterKey] = [
+    package static let names: [String: DockerFilterKey] = [
         "status": .status, "state": .status, "is": .status,
         "project": .project, "p": .project, "stack": .project,
         "service": .service, "s": .service,
@@ -33,18 +33,18 @@ enum DockerFilterKey: String, ResourceFilterKey {
 }
 
 extension ResourceFilter where Key == DockerFilterKey {
-    func matches(_ container: ContainerSummary) -> Bool {
+    package func matches(_ container: ContainerSummary) -> Bool {
         matches(by: { $0.matches(container) })
     }
 
     /// A service of a project before it runs: by its compose file's words.
-    func matches(_ service: ComposeService) -> Bool {
+    package func matches(_ service: ComposeService) -> Bool {
         matches(by: { $0.matches(service) })
     }
 }
 
 extension ResourceFilter.Term where Key == DockerFilterKey {
-    func matches(_ container: ContainerSummary) -> Bool {
+    package func matches(_ container: ContainerSummary) -> Bool {
         switch key {
         case .text:
             return [container.name, container.Image, container.composeProject ?? "", container.composeService ?? ""]
@@ -71,7 +71,7 @@ extension ResourceFilter.Term where Key == DockerFilterKey {
     }
 
     /// Not created: only `stopped` (`down`) is its status.
-    func matches(_ service: ComposeService) -> Bool {
+    package func matches(_ service: ComposeService) -> Bool {
         let image = service.spec?.image ?? ""
         switch key {
         case .text: return [service.name, service.project, image].contains { $0.lowercased().contains(value) }

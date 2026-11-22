@@ -10,40 +10,40 @@ import Foundation
 /// why). Previous (the last terminated instance) is read whole, once.
 /// Only reads: every request is a GET.
 @MainActor
-final class KubePodLogSource: LogSource {
-    let namespace: String
-    let pod: String
-    let container: String?
-    let previous: Bool
-    let since: KubeLogSince
+package final class KubePodLogSource: LogSource {
+    package let namespace: String
+    package let pod: String
+    package let container: String?
+    package let previous: Bool
+    package let since: KubeLogSince
     /// From this time on ("Logs from here"): the first stream's `sinceTime`.
-    let from: Date?
+    package let from: Date?
     private let client: KubeClient
     /// The stream's failure, set before its consumer hears of it.
     private let failure = Failure()
     /// How long until the pod is asked again, while the container waits —
     /// the first wait, after a steady stream.
-    var retryDelay: Duration = .milliseconds(300)
-    var maxRetryDelay: Duration = .seconds(5)
+    package var retryDelay: Duration = .milliseconds(300)
+    package var maxRetryDelay: Duration = .seconds(5)
     /// A stream open this long was a steady one: the wait after it starts
     /// at `retryDelay` again. One that ends sooner — a server or proxy that
     /// closes every follow as it opens, while the pod reads Running — waits
     /// longer each time, up to `maxRetryDelay`: no storm of GETs. Lines it
     /// brought don't count (a resume brings its second's lines again).
-    var steadyAfter: Duration = .seconds(5)
+    package var steadyAfter: Duration = .seconds(5)
     /// The next wait, across streams: grown by each that ended quickly.
     private var backoff: Duration?
     /// When the stream now open was opened.
     private var opened: ContinuousClock.Instant?
     /// The pod as each read after a stream ended found it: its
     /// containers' states and restarts, for the tab's picker and Previous.
-    var onPod: ([String: Any]) -> Void = { _ in }
+    package var onPod: ([String: Any]) -> Void = { _ in }
     /// Followed again this many times: a stream dropped and resumed.
-    private(set) var resumes = 0
+    package private(set) var resumes = 0
     /// Why it isn't followed now (waiting for the container), or ended.
-    var onState: (KubePodLogSession.Reading) -> Void = { _ in }
+    package var onState: (KubePodLogSession.Reading) -> Void = { _ in }
 
-    init(client: KubeClient, namespace: String, pod: String, container: String?, previous: Bool, since: KubeLogSince, from: Date? = nil) {
+    package init(client: KubeClient, namespace: String, pod: String, container: String?, previous: Bool, since: KubeLogSince, from: Date? = nil) {
         self.client = client
         self.namespace = namespace
         self.pod = pod
@@ -63,7 +63,7 @@ final class KubePodLogSource: LogSource {
     /// ones from it, and on a pod that logged more than the feed keeps since
     /// the spike the lines around it would never come — but `limitBytes`,
     /// which stops the answer after its first `fromReadBytes`.
-    nonisolated static func query(container: String?, previous: Bool, since: KubeLogSince, tail: Int, after: String?, from: Date? = nil) -> KubeLogQuery {
+    package nonisolated static func query(container: String?, previous: Bool, since: KubeLogSince, tail: Int, after: String?, from: Date? = nil) -> KubeLogQuery {
         var query = KubeLogQuery(container: container, previous: previous, follow: !previous)
         if let after, !previous {
             query.sinceTime = KubeLogQuery.sinceTime(after: after)
@@ -81,19 +81,19 @@ final class KubePodLogSource: LogSource {
 
     /// What "Logs from here" reads at most: the feed's 5,000 lines at
     /// well over a kilobyte each — the feed keeps no more lines.
-    nonisolated static let fromReadBytes = 8 << 20
+    package nonisolated static let fromReadBytes = 8 << 20
 
     /// "Logs from here" had more since than it shows: the feed's
     /// `LogFeed.keep` lines, or `fromReadBytes`, reached first.
-    var onCut: () -> Void = {}
+    package var onCut: () -> Void = {}
 
     /// Whether "Logs from here"'s read was cut: more than the feed's worth
     /// of lines came (the rest dropped, so the head stays), or it stopped at
     /// its byte limit (`bytes` counts the lines as shown, a little under
     /// what the server sent: within a tenth of it counts).
-    nonisolated static func cut(lines: Int, bytes: Int) -> Bool { lines > LogFeed.keep || bytes >= fromReadBytes * 9 / 10 }
+    package nonisolated static func cut(lines: Int, bytes: Int) -> Bool { lines > LogFeed.keep || bytes >= fromReadBytes * 9 / 10 }
 
-    func follow(tail: Int, after: String?) async -> AsyncThrowingStream<[LogLine], any Error>? {
+    package func follow(tail: Int, after: String?) async -> AsyncThrowingStream<[LogLine], any Error>? {
         guard !Task.isCancelled else { return nil }
         failure.set(nil)
         onState(.following)
@@ -146,7 +146,7 @@ final class KubePodLogSource: LogSource {
     /// of the pod, waiting while it waits (a restart's back-off) — and not
     /// once the pod is gone, the container ended for good, or the server
     /// refused the log; Previous's log, read whole, isn't followed.
-    func followsAgain() async -> Bool {
+    package func followsAgain() async -> Bool {
         // Previous's whole log, and "Logs from here"'s head, read once.
         if previous || from != nil {
             if let error = failure.value { onState(.ended(KubernetesModel.said(error))) } else { onState(.ended(nil)) }
@@ -205,7 +205,7 @@ final class KubePodLogSource: LogSource {
     /// it has no log of, a 403) ends it — but "waiting to start", which
     /// passes; a pod not found is gone; a credential failure stops; the
     /// rest (a dropped connection, a 5xx) is asked again.
-    static func after(_ error: Error?) -> KubeLogResume {
+    package static func after(_ error: Error?) -> KubeLogResume {
         switch error {
         case nil: return .follow
         case let error as KubeAPIError where error.isNotFound: return .stop(KubeLogResume.podGone)
@@ -234,9 +234,9 @@ final class KubePodLogSource: LogSource {
 /// It reads only while the tab shows (`show`/`hide`), and the stream
 /// closes with the detail, the page hidden or another context.
 @MainActor
-final class KubePodLogSession: ObservableObject {
+package final class KubePodLogSession: ObservableObject {
     /// How it reads now.
-    enum Reading: Equatable {
+    package enum Reading: Equatable {
         case idle
         case following
         /// The stream ended and the container runs: followed again.
@@ -246,49 +246,49 @@ final class KubePodLogSession: ObservableObject {
         case ended(String?)
     }
 
-    let namespace: String
-    let pod: String
-    let feed = LogFeed()
-    @Published private(set) var containers: [KubeLogContainer] = []
-    @Published private(set) var container: String?
-    @Published private(set) var previous = false
-    @Published private(set) var since: KubeLogSince = .all
+    package let namespace: String
+    package let pod: String
+    package let feed = LogFeed()
+    @Published package private(set) var containers: [KubeLogContainer] = []
+    @Published package private(set) var container: String?
+    @Published package private(set) var previous = false
+    @Published package private(set) var since: KubeLogSince = .all
     /// "Logs from here" (a chart's menu): the log from this time on, until
     /// another container, Previous or Since is picked.
-    @Published private(set) var from: Date?
+    @Published package private(set) var from: Date?
     /// "Logs from here" had more since than the feed keeps: its first ones shown.
-    @Published private(set) var fromCut = false
-    @Published private(set) var reading: Reading = .idle
-    @Published private(set) var loadingOlder = false
+    @Published package private(set) var fromCut = false
+    @Published package private(set) var reading: Reading = .idle
+    @Published package private(set) var loadingOlder = false
     /// An older answer had fewer lines than asked: the log starts there.
-    @Published private(set) var reachedStart = false
+    @Published package private(set) var reachedStart = false
     /// What a read of older lines couldn't do.
-    @Published private(set) var olderProblem: String?
+    @Published package private(set) var olderProblem: String?
     /// The pod's own env, for scrubbing what an agent is given.
-    private(set) var env: [(key: String, value: String)] = []
+    package private(set) var env: [(key: String, value: String)] = []
 
     private let client: KubeClient?
     private var follower: LogFollower?
-    private(set) var source: KubePodLogSource?
+    package private(set) var source: KubePodLogSource?
     private var wanted = false
     /// A container picked before the pod was read, and whether its previous instance's log.
     private var pendingPick: (String, Bool)?
     private var olderTask: Task<Void, Never>?
     /// The tail asked for: the first one, then larger for older lines.
-    private(set) var tail = KubePodLogSession.firstTail
+    package private(set) var tail = KubePodLogSession.firstTail
 
-    nonisolated static let firstTail = 500
+    package nonisolated static let firstTail = 500
     /// The most asked for at once: what the feed keeps.
-    nonisolated static let maxTail = LogFeed.keep
+    package nonisolated static let maxTail = LogFeed.keep
 
-    init(namespace: String, pod: String, client: KubeClient?) {
+    package init(namespace: String, pod: String, client: KubeClient?) {
         self.namespace = namespace
         self.pod = pod
         self.client = client
     }
 
     /// The pod read (its detail's one GET): its containers, the default one picked.
-    func podRead(_ object: [String: Any]) {
+    package func podRead(_ object: [String: Any]) {
         containers = KubePodContainers.of(object)
         env = KubeLogScrub.env(of: object)
         // Picked before the pod was read (a workload's marker): applied now, Previous only where there was one.
@@ -306,22 +306,22 @@ final class KubePodLogSession: ObservableObject {
     /// The pod read again after a stream ended (it crashed, it restarted):
     /// its containers' states and restarts — Previous offered once it
     /// restarted — the container picked kept.
-    func podChanged(_ object: [String: Any]) {
+    package func podChanged(_ object: [String: Any]) {
         let read = KubePodContainers.of(object)
         if read != containers { containers = read }
         env = KubeLogScrub.env(of: object)
     }
 
     /// The pod couldn't be read: neither can its log be.
-    func podFailed(_ reason: String) {
+    package func podFailed(_ reason: String) {
         reading = .ended(reason)
     }
 
     /// The container shown.
-    var shown: KubeLogContainer? { containers.first { $0.name == container } }
+    package var shown: KubeLogContainer? { containers.first { $0.name == container } }
 
     /// The tab shows: followed (from where it was, if it was).
-    func show(since: KubeLogSince) {
+    package func show(since: KubeLogSince) {
         let was = wanted
         wanted = true
         if since != self.since {
@@ -335,7 +335,7 @@ final class KubePodLogSession: ObservableObject {
     }
 
     /// The tab is gone, the page hidden: the stream closes.
-    func hide() {
+    package func hide() {
         wanted = false
         follower?.stop()
         olderTask?.cancel()
@@ -345,7 +345,7 @@ final class KubePodLogSession: ObservableObject {
     }
 
     /// Another container, Previous on or off: its log from the start.
-    func pick(container: String? = nil, previous: Bool? = nil) {
+    package func pick(container: String? = nil, previous: Bool? = nil) {
         // Not read yet: what it has is known once it is.
         if containers.isEmpty, let container {
             pendingPick = (container, previous ?? false)
@@ -363,7 +363,7 @@ final class KubePodLogSession: ObservableObject {
 
     /// "Logs from here": `container`'s current log from `time` on — not
     /// its previous instance's, which ended before.
-    func read(from time: Date, container name: String?) {
+    package func read(from time: Date, container name: String?) {
         if let name, containers.contains(where: { $0.name == name }) { container = name }
         previous = false
         from = time
@@ -371,7 +371,7 @@ final class KubePodLogSession: ObservableObject {
     }
 
     /// Back to the log as Since says it.
-    func clearFrom() {
+    package func clearFrom() {
         guard from != nil else { return }
         from = nil
         restart()
@@ -412,7 +412,7 @@ final class KubePodLogSession: ObservableObject {
     /// Scrolled to the oldest line: the log asked for again with twice the
     /// tail (up to `maxTail`), and what it has before the first line shown
     /// put in front.
-    func loadOlder() {
+    package func loadOlder() {
         // From a time on, there is nothing older to ask for.
         guard let client, let container, from == nil, !loadingOlder, !reachedStart, tail < Self.maxTail, feed.lines.count < LogFeed.keep else { return }
         let wanted = min(max(tail, feed.lines.count) * 2, Self.maxTail)
@@ -437,13 +437,13 @@ final class KubePodLogSession: ObservableObject {
     }
 
     /// What Save As suggests.
-    var fileName: String { KubeLogText.fileName(pod: pod, container: container, previous: previous) }
+    package var fileName: String { KubeLogText.fileName(pod: pod, container: container, previous: previous) }
 
     /// Lines picked out of it, for an agent: scrubbed.
-    func scrubbed(_ text: String) -> String { KubeLogScrub.scrub(text, env: env) }
+    package func scrubbed(_ text: String) -> String { KubeLogScrub.scrub(text, env: env) }
 
     /// The detail closed or moved on: nothing more is read.
-    func cancel() {
+    package func cancel() {
         hide()
         follower = nil
         source = nil

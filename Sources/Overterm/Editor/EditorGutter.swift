@@ -2,34 +2,34 @@ import AppKit
 
 /// A change against the last commit, for the gutter: lines added or
 /// modified (0-based, in the text now), or removed after `lines.lowerBound`.
-struct GitGutterMark: Equatable {
-    enum Kind: Equatable { case added, modified, deleted }
-    let kind: Kind
-    let lines: Range<Int>
+package struct GitGutterMark: Equatable {
+    package enum Kind: Equatable { case added, modified, deleted }
+    package let kind: Kind
+    package let lines: Range<Int>
 }
 
 /// The editor's left margin: line numbers (the caret's brighter, or counted
 /// from it for vim), a bar where the file differs from the last commit, and
 /// a dot on lines with problems. A click on a number selects its line.
 @MainActor
-final class EditorGutter: NSRulerView {
+package final class EditorGutter: NSRulerView {
     private weak var codeView: CodeTextView?
-    private(set) var lineStarts: [Int] = [0]
-    var theme = EditorTheme(dark: true, background: .black) {
+    package private(set) var lineStarts: [Int] = [0]
+    package var theme = EditorTheme(dark: true, background: .black) {
         didSet { needsDisplay = true }
     }
-    var relativeNumbers = false {
+    package var relativeNumbers = false {
         didSet { if relativeNumbers != oldValue { needsDisplay = true } }
     }
-    var gitMarks: [GitGutterMark] = [] {
+    package var gitMarks: [GitGutterMark] = [] {
         didSet { if gitMarks != oldValue { needsDisplay = true } }
     }
     /// Worst severity per 0-based line.
-    var problemLines: [Int: EditorDiagnostic.Severity] = [:] {
+    package var problemLines: [Int: EditorDiagnostic.Severity] = [:] {
         didSet { if problemLines != oldValue { needsDisplay = true } }
     }
 
-    init(textView: CodeTextView) {
+    package init(textView: CodeTextView) {
         codeView = textView
         super.init(scrollView: textView.enclosingScrollView, orientation: .verticalRuler)
         clientView = textView
@@ -40,19 +40,19 @@ final class EditorGutter: NSRulerView {
         if #available(macOS 14, *) { clipsToBounds = true }
     }
 
-    required init(coder: NSCoder) {
+    package required init(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
     /// Call after every text change.
-    func textDidChange() {
+    package func textDidChange() {
         guard let codeView else { return }
         lineStarts = LineIndex.starts(of: codeView.string as NSString)
         updateThickness()
         needsDisplay = true
     }
 
-    func updateThickness() {
+    package func updateThickness() {
         let digits = max(3, String(lineStarts.count).count)
         let width = (CGFloat(digits) * digitWidth + 30).rounded()
         if abs(ruleThickness - width) > 0.5 { ruleThickness = width }
@@ -65,7 +65,7 @@ final class EditorGutter: NSRulerView {
 
     private var digitWidth: CGFloat { ("8" as NSString).size(withAttributes: [.font: numberFont]).width }
 
-    override func drawHashMarksAndLabels(in rect: NSRect) {
+    package override func drawHashMarksAndLabels(in rect: NSRect) {
         theme.background.setFill()
         rect.intersection(bounds).fill()
         guard let codeView, let layoutManager = codeView.layoutManager, let container = codeView.textContainer else { return }
@@ -116,7 +116,7 @@ final class EditorGutter: NSRulerView {
         }
     }
 
-    override func mouseDown(with event: NSEvent) {
+    package override func mouseDown(with event: NSEvent) {
         guard let codeView else { return }
         let point = convert(event.locationInWindow, from: nil)
         let inText = codeView.convert(NSPoint(x: 0, y: point.y), from: self)

@@ -14,21 +14,21 @@ import Foundation
 /// What a pane carries: the names it was pinned to, and the files its
 /// `KUBECONFIG` was built from (paths only, for a restored session). Never
 /// a credential: a kubeconfig's cluster and user are named, not copied.
-struct KubeTerminalPin: Codable, Equatable, Sendable {
-    var context: String
+package struct KubeTerminalPin: Codable, Equatable, Sendable {
+    package var context: String
     /// The context's cluster and user, by name — the pin's context entry
     /// points at the user's own entries, which hold the server and the
     /// credentials.
-    var cluster: String
-    var user: String
+    package var cluster: String
+    package var user: String
     /// The tab's namespace; nil, kubectl's `default`.
-    var namespace: String?
-    var displayName: String
-    var isProduction: Bool
+    package var namespace: String?
+    package var displayName: String
+    package var isProduction: Bool
     /// The kubeconfig files after the pin's, in kubectl's order.
-    var kubeconfigs: [String]
+    package var kubeconfigs: [String]
 
-    init(
+    package init(
         context: String, cluster: String, user: String, namespace: String?, displayName: String, isProduction: Bool, kubeconfigs: [String] = []
     ) {
         self.context = context
@@ -42,7 +42,7 @@ struct KubeTerminalPin: Codable, Equatable, Sendable {
 
     /// Pinned to `context`, in `namespace` — else the one the page opens
     /// it on (`defaultNamespace`), else the context's own.
-    init(_ context: KubeContext, namespace: String? = nil, kubeconfigs: [URL] = []) {
+    package init(_ context: KubeContext, namespace: String? = nil, kubeconfigs: [URL] = []) {
         self.init(
             context: context.name, cluster: context.cluster, user: context.user,
             namespace: namespace ?? context.settings.defaultNamespace ?? context.namespace, displayName: context.displayName,
@@ -50,10 +50,10 @@ struct KubeTerminalPin: Codable, Equatable, Sendable {
     }
 
     /// The tab strip's and the pane header's words: `⎈ fake-dev · shop`.
-    var label: String { "⎈ " + displayName + (namespace.map { " · " + $0 } ?? "") }
+    package var label: String { "⎈ " + displayName + (namespace.map { " · " + $0 } ?? "") }
 
     /// The tooltip: what a plain kubectl in the tab reaches.
-    var help: String {
+    package var help: String {
         let scope = namespace.map { "namespace \($0)" } ?? "the default namespace"
         return "Pinned to \(context)\(isProduction ? " — PRODUCTION" : ""), \(scope): a plain kubectl here goes there. Your current context is unchanged."
     }
@@ -72,8 +72,8 @@ struct KubeTerminalPin: Codable, Equatable, Sendable {
 /// set-context --current --namespace=…` typed in the tab writes the pin's
 /// file rather than the user's: kubectl writes a change to the file that
 /// holds the entry. A `use-context` typed there writes the pin's too.
-enum KubeTerminalConfig {
-    static func text(for pin: KubeTerminalPin) -> String {
+package enum KubeTerminalConfig {
+    package static func text(for pin: KubeTerminalPin) -> String {
         var lines = [
             "# Overterm: a terminal tab pinned to this context. No credentials here:",
             "# the cluster and the user are your own kubeconfig's.",
@@ -98,7 +98,7 @@ enum KubeTerminalConfig {
 
     /// A YAML double-quoted scalar: JSON's escapes, which YAML reads the
     /// same — an EKS ARN's `:` and `/`, a quote, a newline stay one name.
-    static func quoted(_ value: String) -> String {
+    package static func quoted(_ value: String) -> String {
         var out = "\""
         for scalar in value.unicodeScalars {
             switch scalar {
@@ -123,13 +123,13 @@ enum KubeTerminalConfig {
     /// typed in one tab changes no other, and the pid of the Overterm that
     /// wrote it, so another Overterm on the same folder (a dev build beside
     /// the installed one) never sweeps a file a live tab of this one uses.
-    static func fileName(for context: String, id: UUID, pid: pid_t = getpid()) -> String {
+    package static func fileName(for context: String, id: UUID, pid: pid_t = getpid()) -> String {
         let hash = SHA256.hash(data: Data(context.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
         return "\(hash)-\(id.uuidString.prefix(8).lowercased())-\(pid).yaml"
     }
 
     /// The pid a file's name says wrote it; nil for a name that isn't one of these.
-    static func owner(ofFile name: String) -> pid_t? {
+    package static func owner(ofFile name: String) -> pid_t? {
         guard name.hasSuffix(".yaml") else { return nil }
         let parts = name.dropLast(5).split(separator: "-", omittingEmptySubsequences: false)
         guard parts.count == 3, parts[0].count == 12, parts[1].count == 8, let pid = pid_t(parts[2]), pid > 0 else { return nil }
@@ -143,8 +143,8 @@ enum KubeTerminalConfig {
 /// Guarded — an isolated run or a unit test — the files are only
 /// `OVERTERM_KUBECONFIG`'s, never one under `~/.kube`; none is no
 /// environment, and no tab opens.
-enum KubeTerminalEnvironment {
-    static func make(pinFile: URL, kubeconfigs: [URL], guarded: Bool, home: URL) -> [String: String]? {
+package enum KubeTerminalEnvironment {
+    package static func make(pinFile: URL, kubeconfigs: [URL], guarded: Bool, home: URL) -> [String: String]? {
         guard !kubeconfigs.isEmpty else { return nil }
         if guarded, kubeconfigs.contains(where: { KubeconfigSources.isUsersOwn($0, home: home) }) { return nil }
         var seen: Set<String> = [pinFile.standardizedFileURL.path]
@@ -153,7 +153,7 @@ enum KubeTerminalEnvironment {
     }
 
     /// The first file of a `KUBECONFIG`, as kubectl reads it.
-    static func firstFile(of value: String?) -> String? {
+    package static func firstFile(of value: String?) -> String? {
         value?.split(separator: ":").first.map(String.init)
     }
 }
@@ -161,8 +161,8 @@ enum KubeTerminalEnvironment {
 /// Where the tab starts: the context's `terminalDirectory` when it is a
 /// folder, else the checkout bound to the context (`KubeBinding`), else
 /// the home folder. Pure.
-enum KubeTerminalDirectory {
-    static func choose(
+package enum KubeTerminalDirectory {
+    package static func choose(
         setting: String?, checkout: URL?, home: URL,
         isFolder: (String) -> Bool = { path in
             var folder: ObjCBool = false
@@ -185,16 +185,16 @@ enum KubeTerminalDirectory {
 /// this run writes its first, only the files of an Overterm that is gone
 /// (the pid in the name) go; another one's, alive on the same folder, stay
 /// (a restored tab gets a new file).
-struct KubeTerminalFiles: Sendable {
-    let folder: URL
+package struct KubeTerminalFiles: Sendable {
+    package let folder: URL
 
-    init(folder: URL = KubeTerminalFiles.defaultFolder) {
+    package init(folder: URL = KubeTerminalFiles.defaultFolder) {
         self.folder = folder
     }
 
     /// The support folder's — an isolated run's own, a unit test's too:
     /// never the user's, where the running app's pins live.
-    static var defaultFolder: URL {
+    package static var defaultFolder: URL {
         AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/Contexts", isDirectory: true)
     }
 
@@ -202,7 +202,7 @@ struct KubeTerminalFiles: Sendable {
     private static let lock = NSLock()
 
     /// Writes `pin`'s file for the tab `id` and gives its URL.
-    func write(_ pin: KubeTerminalPin, id: UUID = UUID()) throws -> URL {
+    package func write(_ pin: KubeTerminalPin, id: UUID = UUID()) throws -> URL {
         try prepare()
         let file = folder.appendingPathComponent(KubeTerminalConfig.fileName(for: pin.context, id: id))
         let data = Data(KubeTerminalConfig.text(for: pin).utf8)
@@ -218,7 +218,7 @@ struct KubeTerminalFiles: Sendable {
 
     /// The folder, 0700 — and, once a run, the files of Overterms that are
     /// gone removed. A file whose name says no pid is left alone.
-    func prepare(isAlive: (pid_t) -> Bool = KubeTerminalFiles.isAlive) throws {
+    package func prepare(isAlive: (pid_t) -> Bool = KubeTerminalFiles.isAlive) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         guard chmod(folder.path, 0o700) == 0 else { throw Self.error("\(folder.path) couldn't be made private.") }
         Self.lock.lock()
@@ -232,7 +232,7 @@ struct KubeTerminalFiles: Sendable {
     }
 
     /// Whether a process `pid` runs: one of another user's answers EPERM.
-    static func isAlive(_ pid: pid_t) -> Bool {
+    package static func isAlive(_ pid: pid_t) -> Bool {
         kill(pid, 0) == 0 || errno == EPERM
     }
 
@@ -242,15 +242,15 @@ struct KubeTerminalFiles: Sendable {
 }
 
 /// A pinned tab made ready: its file written, its shell's environment.
-enum KubeTerminalLaunch {
-    enum Problem: LocalizedError, Equatable, CustomStringConvertible {
+package enum KubeTerminalLaunch {
+    package enum Problem: LocalizedError, Equatable, CustomStringConvertible {
         /// No kubeconfig to read — guarded, none but `OVERTERM_KUBECONFIG`'s.
         case noKubeconfig
         /// Guarded, and a file under `~/.kube` came: refused, nothing written.
         case usersOwn
         case file(String)
 
-        var description: String {
+        package var description: String {
             switch self {
             case .noKubeconfig: "There is no kubeconfig to pin a terminal to."
             case .usersOwn: "An isolated run never hands the user's own kubeconfig to a terminal."
@@ -258,12 +258,12 @@ enum KubeTerminalLaunch {
             }
         }
 
-        var errorDescription: String? { description }
+        package var errorDescription: String? { description }
     }
 
     /// What `prepare` refuses before it writes anything: no kubeconfig,
     /// or — guarded — one under `~/.kube`.
-    static func check(
+    package static func check(
         kubeconfigs: [URL], guarded: Bool = AppEnvironment.guardsKubeconfig, home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) throws {
         guard !kubeconfigs.isEmpty else { throw Problem.noKubeconfig }
@@ -273,7 +273,7 @@ enum KubeTerminalLaunch {
     /// `pin` with the files its `KUBECONFIG` names after its own, its file
     /// written, and what the shell is given. Checked before anything is
     /// written: guarded, only files outside `~/.kube`.
-    static func prepare(
+    package static func prepare(
         _ pin: KubeTerminalPin, kubeconfigs: [URL], files: KubeTerminalFiles = KubeTerminalFiles(),
         guarded: Bool = AppEnvironment.guardsKubeconfig, home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) throws -> (environment: [String: String], pin: KubeTerminalPin) {
@@ -300,7 +300,7 @@ enum KubeTerminalLaunch {
     /// names: a context of the same name elsewhere is another cluster,
     /// with the user's credentials, than the one reviewed and confirmed.
     /// Only the line itself can be sure. Nil without one to export.
-    static func pinnedLine(_ command: String, environment: [String: String]) -> String? {
+    package static func pinnedLine(_ command: String, environment: [String: String]) -> String? {
         guard let kubeconfig = environment["KUBECONFIG"], !kubeconfig.isEmpty else { return nil }
         return "export KUBECONFIG=" + KubectlLine.quoted(kubeconfig) + "; " + command
     }
@@ -312,16 +312,16 @@ enum KubeTerminalLaunch {
 /// context: its `KUBECONFIG` is `/dev/null`, which reaches no cluster (and
 /// takes a `use-context` nowhere), and its header and tab say the pin is
 /// lost. Saved again as it was, so the next launch tries again.
-struct KubeTerminalLost: Equatable, Sendable {
-    var pin: KubeTerminalPin
-    var reason: String
+package struct KubeTerminalLost: Equatable, Sendable {
+    package var pin: KubeTerminalPin
+    package var reason: String
 
     /// What its shell is given: nothing a kubectl can reach.
-    static let environment = ["KUBECONFIG": "/dev/null"]
+    package static let environment = ["KUBECONFIG": "/dev/null"]
 
-    var label: String { "⎈ " + pin.displayName + " — pin lost" }
+    package var label: String { "⎈ " + pin.displayName + " — pin lost" }
 
-    var help: String {
+    package var help: String {
         "This pane was pinned to \(pin.context) and couldn't be pinned again: \(reason) "
             + "Its KUBECONFIG is /dev/null, so a plain kubectl here reaches no cluster. Open a new Terminal in this context."
     }
@@ -332,29 +332,29 @@ struct KubeTerminalLost: Equatable, Sendable {
 /// their files, the context's cluster, user and class (production now, the
 /// band now) — never as the session file had them. A context no longer
 /// there, or a pin that can't be written, is a lost pane.
-enum KubeTerminalRestore {
-    enum Outcome: Equatable {
+package enum KubeTerminalRestore {
+    package enum Outcome: Equatable {
         case pinned(environment: [String: String], pin: KubeTerminalPin)
         case lost(KubeTerminalLost)
 
-        var environment: [String: String] {
+        package var environment: [String: String] {
             switch self {
             case .pinned(let environment, _): environment
             case .lost: KubeTerminalLost.environment
             }
         }
-        var pin: KubeTerminalPin? {
+        package var pin: KubeTerminalPin? {
             if case .pinned(_, let pin) = self { return pin }
             return nil
         }
-        var lost: KubeTerminalLost? {
+        package var lost: KubeTerminalLost? {
             if case .lost(let lost) = self { return lost }
             return nil
         }
     }
 
     /// `list` is `kubeconfigs` read now (`KubeContextList.load`).
-    static func pane(
+    package static func pane(
         _ saved: KubeTerminalPin, list: KubeContextList, kubeconfigs: [URL], files: KubeTerminalFiles = KubeTerminalFiles(),
         guarded: Bool = AppEnvironment.guardsKubeconfig, home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> Outcome {
@@ -378,13 +378,13 @@ enum KubeTerminalRestore {
 /// file: its `KUBECONFIG` read as kubectl merges it (`KubeContextList.load`
 /// — the first `current-context`, the first entry naming it), the class
 /// from the current settings. Pure over the list.
-enum KubeTerminalFollow {
+package enum KubeTerminalFollow {
     /// The files a pane's `KUBECONFIG` names, in order.
-    static func files(of value: String?) -> [URL] {
+    package static func files(of value: String?) -> [URL] {
         (value ?? "").split(separator: ":").map { URL(fileURLWithPath: String($0)) }
     }
 
-    static func pin(from list: KubeContextList, was: KubeTerminalPin, settings: [String: KubeContextSettings]) -> KubeTerminalPin {
+    package static func pin(from list: KubeContextList, was: KubeTerminalPin, settings: [String: KubeContextSettings]) -> KubeTerminalPin {
         guard let current = list.current else {
             // Unset in the tab: kubectl has no context — none is reached.
             return KubeTerminalPin(
@@ -409,18 +409,18 @@ enum KubeTerminalFollow {
 /// it says `mixed` (red if any of them is production) rather than one
 /// pane's context — an unpinned pane among pinned ones reaches the
 /// current context.
-struct KubeTabBadge: Equatable {
-    var text: String
-    var help: String
+package struct KubeTabBadge: Equatable {
+    package var text: String
+    package var help: String
     /// In the page's red: production, a lost pin, or a mix holding either.
-    var alert: Bool
+    package var alert: Bool
 
-    struct Pane: Equatable {
-        var pin: KubeTerminalPin?
-        var lost: KubeTerminalLost?
+    package struct Pane: Equatable {
+        package var pin: KubeTerminalPin?
+        package var lost: KubeTerminalLost?
     }
 
-    static func of(_ panes: [Pane]) -> KubeTabBadge? {
+    package static func of(_ panes: [Pane]) -> KubeTabBadge? {
         guard panes.contains(where: { $0.pin != nil || $0.lost != nil }) else { return nil }
         if let lost = panes.lazy.compactMap(\.lost).first {
             return KubeTabBadge(text: "⎈ pin lost", help: lost.help, alert: true)
@@ -441,26 +441,26 @@ struct KubeTabBadge: Equatable {
 /// default rather than to the user's current one — production, often.
 /// Production is never offered here: an agent's tab pinned there is a
 /// Terminal in this context of its own, asked first. Pure.
-enum KubeTaskPin {
-    struct Choice: Identifiable, Equatable, Sendable {
-        var context: String
-        var title: String
+package enum KubeTaskPin {
+    package struct Choice: Identifiable, Equatable, Sendable {
+        package var context: String
+        package var title: String
         /// The binding's namespace on its context; nil, the context's own.
-        var namespace: String?
-        var id: String { context }
+        package var namespace: String?
+        package var id: String { context }
     }
 
-    struct Offer: Equatable, Sendable {
-        var choices: [Choice] = []
+    package struct Offer: Equatable, Sendable {
+        package var choices: [Choice] = []
         /// Picked as the sheet opens: the checkout's bound context, when it isn't production.
-        var suggested: String?
+        package var suggested: String?
         /// Said under the picker: why the bound context isn't offered.
-        var note: String?
+        package var note: String?
     }
 
     /// The contexts a task may pin to — every one but production, the
     /// checkout's bound one first and suggested.
-    static func offer(_ list: KubeContextList, binding: KubeBinding?) -> Offer {
+    package static func offer(_ list: KubeContextList, binding: KubeBinding?) -> Offer {
         var offer = Offer()
         var bound: Choice?
         for context in list.contexts where !context.isProduction {
@@ -481,7 +481,7 @@ enum KubeTaskPin {
 
     /// Whether `name` may be pinned to — read again as the task is made:
     /// a context that became production since the sheet opened is refused.
-    static func refused(_ name: String, in list: KubeContextList) -> String? {
+    package static func refused(_ name: String, in list: KubeContextList) -> String? {
         guard let context = list.context(named: name) else { return "No kubeconfig of Overterm's names \(name) any more." }
         return context.isProduction ? "\(context.displayName) is production: a task's tab isn't pinned there." : nil
     }

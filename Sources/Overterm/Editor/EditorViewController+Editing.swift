@@ -2,49 +2,49 @@ import AppKit
 
 /// What the completion list holds: the word being completed and the
 /// candidates for it — the language server's, then the file's own words.
-struct CompletionState {
-    struct Candidate {
-        let label: String
-        let filterText: String
-        let insertText: String
-        let isSnippet: Bool
-        let badge: String
-        let badgeColor: NSColor
-        let detail: String
-        let edit: LSP.TextEdit?
-        let additionalEdits: [LSP.TextEdit]
-        let sortText: String
-        let fromServer: Bool
+package struct CompletionState {
+    package struct Candidate {
+        package let label: String
+        package let filterText: String
+        package let insertText: String
+        package let isSnippet: Bool
+        package let badge: String
+        package let badgeColor: NSColor
+        package let detail: String
+        package let edit: LSP.TextEdit?
+        package let additionalEdits: [LSP.TextEdit]
+        package let sortText: String
+        package let fromServer: Bool
     }
 
     /// Where the word being completed starts.
-    var anchor: Int
+    package var anchor: Int
     /// The caret when the server was asked: its edits are about that text.
-    var requestedAt: Int
+    package var requestedAt: Int
     /// The file asked about — an answer for another is dropped.
-    weak var buffer: EditorBuffer?
+    package weak var buffer: EditorBuffer?
     /// The server said the list isn't all: typing on asks again.
-    var incomplete = false
-    var candidates: [Candidate]
+    package var incomplete = false
+    package var candidates: [Candidate]
     /// Indices into `candidates`, as the list shows them.
-    var shown: [Int] = []
+    package var shown: [Int] = []
     /// Answers for an older request are dropped.
-    var generation: Int
+    package var generation: Int
     /// A note's `[[link` or `#tag`, not code: filtered and accepted by
     /// EditorViewController+Notes.
-    var isNote = false
+    package var isNote = false
     /// A console's tables and columns, from its connection's catalog
     /// (EditorViewController+Database): filtered there, accepted as any.
-    var isSQL = false
+    package var isSQL = false
     /// A Kubernetes manifest's fields, from its cluster's docs
     /// (EditorViewController+Kubernetes): filtered there, accepted as any.
-    var isKube = false
+    package var isKube = false
 }
 
 extension EditorViewController: CodeTextViewHost {
     // MARK: Keys
 
-    func codeTextView(_ view: CodeTextView, handleKey event: NSEvent, equivalent: Bool) -> Bool {
+    package func codeTextView(_ view: CodeTextView, handleKey event: NSEvent, equivalent: Bool) -> Bool {
         if !equivalent, completionPopup.isVisible, handleCompletionKey(event) { return true }
         let combo = KeyCombo(pressed: event)
         // Before the menu only ⌘ keys: the rest come back through keyDown,
@@ -70,7 +70,7 @@ extension EditorViewController: CodeTextViewHost {
     /// Runs an editor command; false when it doesn't apply here (so the key
     /// does what it would have).
     @discardableResult
-    func perform(_ id: String) -> Bool {
+    package func perform(_ id: String) -> Bool {
         guard let buffer = active, buffer.document.unavailable == nil || ["editor.closeFile", "editor.toggleZoom"].contains(id) else {
             return false
         }
@@ -144,14 +144,14 @@ extension EditorViewController: CodeTextViewHost {
     }
 
     /// An editing command's result, as one undoable change.
-    func apply(_ edit: TextEdit?) {
+    package func apply(_ edit: TextEdit?) {
         guard let edit else { return }
         textView.apply(edit.changes.map { (range: $0.range, text: $0.replacement) }, selecting: edit.selections)
     }
 
     // MARK: Typing
 
-    func codeTextView(_ view: CodeTextView, willInsert text: String) -> Bool {
+    package func codeTextView(_ view: CodeTextView, willInsert text: String) -> Bool {
         guard let buffer = active else { return false }
         let selections = textView.selectedRanges.map(\.rangeValue)
         var handled = false
@@ -164,7 +164,7 @@ extension EditorViewController: CodeTextViewHost {
         return handled
     }
 
-    func codeTextViewInsertNewline(_ view: CodeTextView) -> Bool {
+    package func codeTextViewInsertNewline(_ view: CodeTextView) -> Bool {
         guard let buffer = active else { return false }
         apply(
             EditCommands.newline(
@@ -173,7 +173,7 @@ extension EditorViewController: CodeTextViewHost {
         return true
     }
 
-    func codeTextView(_ view: CodeTextView, indent backwards: Bool) -> Bool {
+    package func codeTextView(_ view: CodeTextView, indent backwards: Bool) -> Bool {
         guard let buffer = active else { return false }
         let text = textView.string as NSString
         let selections = textView.selectedRanges.map(\.rangeValue)
@@ -188,7 +188,7 @@ extension EditorViewController: CodeTextViewHost {
         return true
     }
 
-    func codeTextViewDeleteBackward(_ view: CodeTextView) -> Bool {
+    package func codeTextViewDeleteBackward(_ view: CodeTextView) -> Bool {
         defer { DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.refilterCompletion() } } }
         guard let edit = EditCommands.deleteBackward(in: textView.string as NSString, selections: textView.selectedRanges.map(\.rangeValue))
         else { return false }
@@ -196,28 +196,28 @@ extension EditorViewController: CodeTextViewHost {
         return true
     }
 
-    func codeTextView(_ view: CodeTextView, commandClickAt index: Int) -> Bool {
+    package func codeTextView(_ view: CodeTextView, commandClickAt index: Int) -> Bool {
         guard let buffer = active, server(for: buffer) != nil else { return false }
         textView.setSelectedRange(NSRange(location: index, length: 0))
         goToDefinition(at: index)
         return true
     }
 
-    func codeTextView(_ view: CodeTextView, liveClickAt index: Int) -> Bool {
+    package func codeTextView(_ view: CodeTextView, liveClickAt index: Int) -> Bool {
         liveClick(at: index)
     }
 
-    func codeTextView(_ view: CodeTextView, paste pasteboard: NSPasteboard) -> Bool {
+    package func codeTextView(_ view: CodeTextView, paste pasteboard: NSPasteboard) -> Bool {
         guard let buffer = active, buffer.isNote else { return false }
         return pasteIntoNote(from: pasteboard)
     }
 
-    func codeTextView(_ view: CodeTextView, hoverAt index: Int?) {
+    package func codeTextView(_ view: CodeTextView, hoverAt index: Int?) {
         guard let index else { return }
         showHover(at: index, fromKeyboard: false)
     }
 
-    func codeTextViewContextMenu(_ view: CodeTextView, for menu: NSMenu) -> NSMenu {
+    package func codeTextViewContextMenu(_ view: CodeTextView, for menu: NSMenu) -> NSMenu {
         var items: [(String, String)] = [
             ("Go to Definition", "editor.goToDefinition"), ("Find All References", "editor.findReferences"),
             ("Go to Symbol in File…", "editor.goToSymbol"), ("Format Document", "editor.format"),
@@ -297,7 +297,7 @@ extension EditorViewController: CodeTextViewHost {
 
     /// `skipKube`: a manifest's cluster had no fields to offer (its docs
     /// couldn't be read): the language server's and the buffer's words instead.
-    func triggerCompletion(manual: Bool, character: String? = nil, skipKube: Bool = false) {
+    package func triggerCompletion(manual: Bool, character: String? = nil, skipKube: Bool = false) {
         guard let buffer = active, textView.selectedRanges.count == 1, textView.selectedRange().length == 0 else { return }
         // A manifest's key: its cluster's fields (read on ⌃Space, else as cached).
         if !skipKube, buffer.kubeManifest != nil, character == nil, updateKubeCompletion(manual: manual) { return }
@@ -343,7 +343,7 @@ extension EditorViewController: CodeTextViewHost {
 
     /// Re-ranks the list for the word as it now is; gone when the caret
     /// left the word or nothing matches.
-    func refilterCompletion(manual: Bool = false) {
+    package func refilterCompletion(manual: Bool = false) {
         guard var state = completion else { return }
         if state.isNote {
             if !updateNoteCompletion() { dismissCompletion() }
@@ -392,13 +392,13 @@ extension EditorViewController: CodeTextViewHost {
         completionPopup.show(items, details: details, at: textView.screenRect(forCharacterAt: state.anchor), in: window)
     }
 
-    func updateCompletionForSelection() {
+    package func updateCompletionForSelection() {
         guard let state = completion else { return }
         let caret = textView.selectedRange().location
         if textView.selectedRanges.count != 1 || textView.selectedRange().length > 0 || caret < state.anchor { dismissCompletion() }
     }
 
-    func dismissCompletion() {
+    package func dismissCompletion() {
         completion = nil
         completionPopup.hide()
     }
@@ -417,7 +417,7 @@ extension EditorViewController: CodeTextViewHost {
         return true
     }
 
-    func acceptCompletion(at index: Int) {
+    package func acceptCompletion(at index: Int) {
         guard let state = completion, state.shown.indices.contains(index), active != nil else { return dismissCompletion() }
         let candidate = state.candidates[state.shown[index]]
         dismissCompletion()
@@ -448,7 +448,7 @@ extension EditorViewController: CodeTextViewHost {
 
     /// A snippet as plain text: placeholders keep their default, the
     /// caret goes to `$0` (else the first stop, else the end).
-    static func expandSnippet(_ snippet: String) -> (String, Int?) {
+    package static func expandSnippet(_ snippet: String) -> (String, Int?) {
         var out = ""
         var firstStop: Int?
         var finalStop: Int?
@@ -523,7 +523,7 @@ extension EditorViewController: CodeTextViewHost {
         return (out, finalStop ?? firstStop)
     }
 
-    static func badge(forCompletionKind kind: Int?, theme: EditorTheme) -> (String, NSColor) {
+    package static func badge(forCompletionKind kind: Int?, theme: EditorTheme) -> (String, NSColor) {
         let keyword = theme.style(for: "keyword")?.color ?? theme.text
         let function = theme.style(for: "function")?.color ?? theme.text
         let type = theme.style(for: "type")?.color ?? theme.text
@@ -548,7 +548,7 @@ extension EditorViewController: CodeTextViewHost {
 
     // MARK: Vim
 
-    func startVim() {
+    package func startVim() {
         let engine = VimEngine(buffer: self)
         engine.onModeChange = { [weak self] _ in self?.updateVimChrome() }
         engine.onStatusChange = { [weak self] _ in self?.updateVimChrome() }
@@ -558,12 +558,12 @@ extension EditorViewController: CodeTextViewHost {
         updateVimChrome()
     }
 
-    func stopVim() {
+    package func stopVim() {
         vim = nil
         updateVimChrome()
     }
 
-    func updateVimChrome() {
+    package func updateVimChrome() {
         guard isViewLoaded else { return }
         guard let vim else {
             textView.blockCursor = false
@@ -595,7 +595,7 @@ extension EditorViewController: CodeTextViewHost {
         return nil
     }
 
-    static func vimKey(_ event: NSEvent) -> VimKey? {
+    package static func vimKey(_ event: NSEvent) -> VimKey? {
         var modifiers: VimKey.Modifiers = []
         let flags = event.modifierFlags
         if flags.contains(.control) { modifiers.insert(.control) }
@@ -628,9 +628,9 @@ extension EditorViewController: CodeTextViewHost {
 }
 
 extension EditorViewController: VimBuffer {
-    var text: NSString { textView.string as NSString }
+    package var text: NSString { textView.string as NSString }
 
-    var selection: NSRange {
+    package var selection: NSRange {
         get { textView.selectedRange() }
         set {
             settingSelection = true
@@ -640,7 +640,7 @@ extension EditorViewController: VimBuffer {
         }
     }
 
-    func replace(_ range: NSRange, with string: String) {
+    package func replace(_ range: NSRange, with string: String) {
         textView.apply([(range: range, text: string)], selecting: nil)
     }
 
@@ -649,19 +649,19 @@ extension EditorViewController: VimBuffer {
     /// vim's, from an insert, leaving its own open (and undo then raised).
     /// One key's command is one event, so one group already; an insert's
     /// typing coalesces into one step, cut at its start and end here.
-    func beginUndoGroup() { textView.breakUndoCoalescing() }
+    package func beginUndoGroup() { textView.breakUndoCoalescing() }
 
-    func endUndoGroup() { textView.breakUndoCoalescing() }
+    package func endUndoGroup() { textView.breakUndoCoalescing() }
 
-    func undo() { active?.undo.undo() }
-    func redo() { active?.undo.redo() }
+    package func undo() { active?.undo.undo() }
+    package func redo() { active?.undo.redo() }
 
-    var visibleCharacterRange: NSRange {
+    package var visibleCharacterRange: NSRange {
         guard let layout = textView.layoutManager, let container = textView.textContainer else { return NSRange(location: 0, length: 0) }
         return layout.characterRange(forGlyphRange: layout.glyphRange(forBoundingRect: textView.visibleRect, in: container), actualGlyphRange: nil)
     }
 
-    func scroll(_ request: VimScroll) {
+    package func scroll(_ request: VimScroll) {
         let line = textView.lineRect(at: textView.selectedRange().location)
         let clip = scrollView.contentView
         var origin = clip.bounds.origin
@@ -676,9 +676,9 @@ extension EditorViewController: VimBuffer {
         scrollView.reflectScrolledClipView(clip)
     }
 
-    func indentUnit() -> String { active?.indentUnit ?? "    " }
+    package func indentUnit() -> String { active?.indentUnit ?? "    " }
 
-    var clipboard: String? {
+    package var clipboard: String? {
         get { NSPasteboard.general.string(forType: .string) }
         set {
             NSPasteboard.general.clearContents()

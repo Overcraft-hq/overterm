@@ -9,7 +9,7 @@ import Foundation
 /// says where the listener it reaches is published. Read from the masked
 /// argv's words, past an interpreter that runs the tool's script
 /// (`python3 …/kubectl …`), never run. Pure.
-enum ActivityTypedForwards {
+package enum ActivityTypedForwards {
     /// `kubectl`'s options that take the next word.
     private static let kubectlValued: Set<String> = [
         "-n", "--namespace", "--context", "--kubeconfig", "--cluster", "--user", "--address", "--pod-running-timeout", "-s", "--server",
@@ -28,7 +28,7 @@ enum ActivityTypedForwards {
 
     /// What `command`'s forward on local `port` reaches; nil when it is
     /// neither, or forwards another port.
-    static func target(of command: String?, port: Int) -> String? {
+    package static func target(of command: String?, port: Int) -> String? {
         guard let command, port > 0 else { return nil }
         if let arguments = words(command, tool: "kubectl") { return kubectl(arguments, port: port) }
         if let arguments = words(command, tool: "ssh") { return sshLocal(arguments, port: port) }
@@ -36,7 +36,7 @@ enum ActivityTypedForwards {
     }
 
     /// `kubectl port-forward [flags] TYPE/NAME [LOCAL:]REMOTE…`.
-    static func kubectl(_ arguments: [String], port: Int) -> String? {
+    package static func kubectl(_ arguments: [String], port: Int) -> String? {
         var positionals: [String] = []
         var namespace: String?
         var context: String?
@@ -86,7 +86,7 @@ enum ActivityTypedForwards {
 
     /// `ssh -L [bind:]port:host:hostport destination`: the spec whose
     /// local port is `port`.
-    static func sshLocal(_ arguments: [String], port: Int) -> String? {
+    package static func sshLocal(_ arguments: [String], port: Int) -> String? {
         let (options, destination) = ssh(arguments)
         for spec in options["-L"] ?? [] {
             let parts = spec.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
@@ -103,7 +103,7 @@ enum ActivityTypedForwards {
 
     /// An `ssh -R`'s published side for the local `port` it reaches:
     /// "ssh -R to bastion:8080"; nil when it doesn't reach that port.
-    static func remoteForward(of command: String?, port: Int) -> String? {
+    package static func remoteForward(of command: String?, port: Int) -> String? {
         guard let command, let arguments = words(command, tool: "ssh") else { return nil }
         let (options, destination) = ssh(arguments)
         for spec in options["-R"] ?? [] {

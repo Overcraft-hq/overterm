@@ -2,8 +2,8 @@ import Foundation
 
 /// What typing in a note asks to complete — a `[[link`, its `#heading`, or
 /// a `#tag` — and what the vault offers for it. Pure.
-enum NoteCompletion {
-    enum Context: Equatable {
+package enum NoteCompletion {
+    package enum Context: Equatable {
         /// `[[Pla|`: the query, and where it starts (UTF-16, in the line).
         case link(query: String, start: Int)
         /// `[[Plan#Go|`: the note, the heading typed so far, where that starts.
@@ -12,14 +12,14 @@ enum NoteCompletion {
         case tag(query: String, start: Int)
     }
 
-    struct Candidate: Equatable {
-        var label: String
-        var insert: String
-        var detail: String
+    package struct Candidate: Equatable {
+        package var label: String
+        package var insert: String
+        package var detail: String
     }
 
     /// From the line up to the caret.
-    static func context(before line: String) -> Context? {
+    package static func context(before line: String) -> Context? {
         let ns = line as NSString
         let open = ns.range(of: "[[", options: .backwards)
         if open.location != NSNotFound {
@@ -44,7 +44,7 @@ enum NoteCompletion {
 
     private static let cache = RegexCache()
 
-    static func candidates(_ context: Context, index: NotesIndex, source: String, settings: ObsidianSettings) -> [Candidate] {
+    package static func candidates(_ context: Context, index: NotesIndex, source: String, settings: ObsidianSettings) -> [Candidate] {
         switch context {
         case .link(let query, _):
             var paths = index.notes(matching: query, limit: 40)

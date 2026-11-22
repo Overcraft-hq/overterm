@@ -3,7 +3,7 @@ import Foundation
 /// What a stored file is shown as, from its name and its first bytes:
 /// rows (CSV, TSV, JSON Lines), JSON pretty-printed, text, an image, a PDF
 /// — or nothing to show. Pure.
-enum FilePreview: Equatable {
+package enum FilePreview: Equatable {
     case table(QueryResult)
     case text(String, truncated: Bool)
     case image
@@ -11,13 +11,13 @@ enum FilePreview: Equatable {
     case none
 
     /// The first this many bytes are read for a text-like preview.
-    static let textLimit: Int64 = 2 << 20
+    package static let textLimit: Int64 = 2 << 20
     /// Images and PDFs are read whole up to this.
-    static let fileLimit: Int64 = 30 << 20
+    package static let fileLimit: Int64 = 30 << 20
 
-    enum Kind: Equatable { case table(Character?), json, text, image, pdf, other }
+    package enum Kind: Equatable { case table(Character?), json, text, image, pdf, other }
 
-    static func kind(of name: String) -> Kind {
+    package static func kind(of name: String) -> Kind {
         switch (name as NSString).pathExtension.lowercased() {
         case "csv": .table(",")
         case "tsv", "tab": .table("\t")
@@ -34,7 +34,7 @@ enum FilePreview: Equatable {
     }
 
     /// The preview of `data` — the file's first bytes when `truncated`.
-    static func make(name: String, data: Data, truncated: Bool, rowLimit: Int = 5000) -> FilePreview {
+    package static func make(name: String, data: Data, truncated: Bool, rowLimit: Int = 5000) -> FilePreview {
         switch kind(of: name) {
         case .image: return .image
         case .pdf: return .pdf
@@ -64,7 +64,7 @@ enum FilePreview: Equatable {
 
     /// CSV (RFC 4180: quotes, doubled quotes, newlines inside quotes) or TSV;
     /// the first row is the header.
-    static func delimited(_ text: String, separator: Character, limit: Int) -> QueryResult {
+    package static func delimited(_ text: String, separator: Character, limit: Int) -> QueryResult {
         var rows: [[String?]] = []
         var row: [String?] = []
         var field = ""
@@ -117,7 +117,7 @@ enum FilePreview: Equatable {
     }
 
     /// JSON Lines: an object a line; the columns are every key seen, in order.
-    static func jsonLines(_ text: String, limit: Int) -> QueryResult {
+    package static func jsonLines(_ text: String, limit: Int) -> QueryResult {
         var columns: [String] = []
         var objects: [[String: Any]] = []
         var more = false
@@ -134,10 +134,10 @@ enum FilePreview: Equatable {
         return QueryResult(columns: columns, types: [], rows: rows, truncated: more)
     }
 
-    static func size(_ bytes: Int64) -> String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
+    package static func size(_ bytes: Int64) -> String { ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
 
     /// A file's type for an upload, from its name.
-    static func contentType(of name: String) -> String {
+    package static func contentType(of name: String) -> String {
         switch (name as NSString).pathExtension.lowercased() {
         case "json": "application/json"
         case "csv": "text/csv"

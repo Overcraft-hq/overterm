@@ -2,46 +2,46 @@ import SwiftUI
 
 /// What an island asks its window to do. Closures, as `TabBarActions` is,
 /// so the hosting view never retains the controller.
-struct TabGroupActions {
-    var select: (TabGroup) -> Void
-    var toggleCollapsed: (TabGroup) -> Void
-    var rename: (TabGroup) -> Void
-    var setColor: (TabGroup, TabColor) -> Void
-    var newTab: (TabGroup) -> Void
-    var broadcast: (TabGroup) -> Void
-    var closeIdle: (TabGroup) -> Void
-    var focus: (TabGroup) -> Void
-    var stash: (TabGroup) -> Void
-    var restore: (TabGroup) -> Void
-    var ungroup: (TabGroup) -> Void
-    var close: (TabGroup) -> Void
-    var setRestoresOnLaunch: (TabGroup, Bool) -> Void
+package struct TabGroupActions {
+    package var select: (TabGroup) -> Void
+    package var toggleCollapsed: (TabGroup) -> Void
+    package var rename: (TabGroup) -> Void
+    package var setColor: (TabGroup, TabColor) -> Void
+    package var newTab: (TabGroup) -> Void
+    package var broadcast: (TabGroup) -> Void
+    package var closeIdle: (TabGroup) -> Void
+    package var focus: (TabGroup) -> Void
+    package var stash: (TabGroup) -> Void
+    package var restore: (TabGroup) -> Void
+    package var ungroup: (TabGroup) -> Void
+    package var close: (TabGroup) -> Void
+    package var setRestoresOnLaunch: (TabGroup, Bool) -> Void
     /// Hovering a collapsed chip peeks into it; nil ends the peek.
-    var peek: (TabGroup?) -> Void
+    package var peek: (TabGroup?) -> Void
     /// A rename in the chip ended: the keyboard back to the terminal.
-    var renameEnded: () -> Void = {}
+    package var renameEnded: () -> Void = {}
     /// A press, drag or release on the chip (`StripPressView`).
-    var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
+    package var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
 }
 
 /// One island: a chip with the group's name, then its tabs, all on a tint
 /// of the group's colour so the run reads as one thing.
-struct GroupIslandView: View {
+package struct GroupIslandView: View {
     /// The selected tab's branch, shown only on it (`TabItemView.branch`).
-    var branch: String?
-    @ObservedObject var group: TabGroup
-    let tabs: [Tab]
-    @ObservedObject var store: TabStore
-    @ObservedObject var theme: ChromeTheme
-    let actions: TabBarActions
-    let groupActions: TabGroupActions
+    package var branch: String?
+    @ObservedObject package var group: TabGroup
+    package let tabs: [Tab]
+    @ObservedObject package var store: TabStore
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: TabBarActions
+    package let groupActions: TabGroupActions
 
     private var tint: Color { group.color.color }
     private var holdsSelection: Bool { tabs.contains { $0.id == store.selectedID } }
     /// The tab being dragged would land here: say so before it is dropped.
     private var isDropTarget: Bool { store.draggingID != nil && store.dropGroupID == group.id }
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 0) {
             GroupChip(
                 group: group, tabs: tabs, store: store, theme: theme,

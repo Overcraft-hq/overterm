@@ -16,16 +16,16 @@ import Foundation
 /// and tags. A `WRITE` statement's line protocol is the only write it
 /// sends outside the query languages; a read-only connection refuses it,
 /// and every statement that isn't a read, before sending.
-actor InfluxDBDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor InfluxDBDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let password: String?
     private let http: HTTPDriverTransport
-    private(set) var version: InfluxVersion?
+    package private(set) var version: InfluxVersion?
     /// The database (a bucket on 2.x) statements run in: the connection's,
     /// until a `USE`.
-    private(set) var database: String
+    package private(set) var database: String
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
         http = HTTPDriverTransport(connection, timeout: 300)
@@ -33,7 +33,7 @@ actor InfluxDBDriver: DatabaseDriver {
         database = connection.database
     }
 
-    var organization: String { config.project.trimmingCharacters(in: .whitespaces) }
+    package var organization: String { config.project.trimmingCharacters(in: .whitespaces) }
 
     /// 1.x: Basic with a user; 2.x: `Token`; 3.x: `Bearer`.
     private func authorize(_ request: inout URLRequest, _ version: InfluxVersion) {
@@ -50,7 +50,7 @@ actor InfluxDBDriver: DatabaseDriver {
         }
     }
 
-    func send(
+    package func send(
         _ method: String, _ path: String, _ query: [(String, String)] = [], body: Data? = nil, contentType: String? = nil,
         accept: String = "application/json"
     ) async throws -> Data {
@@ -81,7 +81,7 @@ actor InfluxDBDriver: DatabaseDriver {
 
     /// The connection's version, else `/ping`'s word, else a guess from
     /// what the connection has: an organization is 2.x, a token alone 3.x.
-    func resolvedVersion() async throws -> InfluxVersion {
+    package func resolvedVersion() async throws -> InfluxVersion {
         if let version { return version }
         guard let url = http.url("/ping") else { throw DatabaseError.failed("The host isn't a valid address.") }
         var request = URLRequest(url: url)
@@ -94,7 +94,7 @@ actor InfluxDBDriver: DatabaseDriver {
         return found
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         let version = try await resolvedVersion()
         switch version {
         case .v1: _ = try await influxQL("SHOW DATABASES", database: nil, write: false)
@@ -105,9 +105,9 @@ actor InfluxDBDriver: DatabaseDriver {
         }
     }
 
-    func close() async { http.close() }
+    package func close() async { http.close() }
 
-    func execute(_ text: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ text: String, limit: Int) async throws -> QueryResult {
         var statement = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !statement.isEmpty else { throw DatabaseError.failed("No statement.") }
         if config.readOnly, !InfluxText.onlyReads(statement) { throw DatabaseError.readOnly(InfluxText.verb(of: statement)) }
@@ -149,7 +149,7 @@ actor InfluxDBDriver: DatabaseDriver {
     /// InfluxQL at `/query`: a read a GET, a write a POST (1.x refuses
     /// those as a GET). `db` the database, a bucket through 2.x's
     /// compatibility API.
-    func influxQL(_ q: String, database: String?, write: Bool) async throws -> [[InfluxParse.Series]] {
+    package func influxQL(_ q: String, database: String?, write: Bool) async throws -> [[InfluxParse.Series]] {
         var query: [(String, String)] = []
         if let database, !database.isEmpty { query.append(("db", database)) }
         let data: Data
@@ -206,7 +206,7 @@ actor InfluxDBDriver: DatabaseDriver {
     // MARK: The catalog
 
     /// Databases (buckets on 2.x), the connection's first, InfluxDB's own (`_…`) last.
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         let names: [String]
         switch try await resolvedVersion() {
         case .v1:
@@ -237,7 +237,7 @@ actor InfluxDBDriver: DatabaseDriver {
         return rows.compactMap { ($0["iox::database"] ?? $0["database"]) as? String }
     }
 
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         let names: [String]
         switch try await resolvedVersion() {
         case .v1:
@@ -258,7 +258,7 @@ actor InfluxDBDriver: DatabaseDriver {
     }
 
     /// Each measurement's fields (with their types) and tags (`tag`).
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         switch try await resolvedVersion() {
         case .v1:
             return try await influxQLColumns(schema)

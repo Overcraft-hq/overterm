@@ -12,12 +12,12 @@ import Foundation
 /// (P3) and restarts (P4), a workload's restarts (W5), and the OOMKills
 /// kube-state-metrics saw, marked. In Live with metrics-server, only those
 /// are added to the sampled charts (`mixed`). Pure.
-enum KubePromTabCharts {
+package enum KubePromTabCharts {
     /// More than this share of CPU periods throttled is high (the mixin's `CPUThrottlingHigh`).
-    static let throttlingGuide = 0.25
+    package static let throttlingGuide = 0.25
 
     /// The families a source asks of Prometheus for a subject.
-    static func families(_ subject: KubeMetricsSubject, source: KubeChartSource) -> Set<KubeTabFamily> {
+    package static func families(_ subject: KubeMetricsSubject, source: KubeChartSource) -> Set<KubeTabFamily> {
         let all: Set<KubeTabFamily>
         switch subject {
         case .pod: all = [.cpu, .memory, .throttling, .network, .restarts, .oom, .cpuPeak, .rss, .fs, .gpu]
@@ -36,21 +36,21 @@ enum KubePromTabCharts {
     // MARK: Shared
 
     /// A query's series by one of their labels' values.
-    static func by(_ series: [KubeSeries]?, _ label: String) -> [String: [KubeSeriesPoint]] {
+    package static func by(_ series: [KubeSeries]?, _ label: String) -> [String: [KubeSeriesPoint]] {
         var out: [String: [KubeSeriesPoint]] = [:]
         for one in series ?? [] { out[one.labels[label] ?? "", default: []] += one.points }
         return out.mapValues { $0.sorted { $0.time < $1.time } }
     }
 
     /// Points summed at each time any of them has.
-    static func sum(_ lines: [[KubeSeriesPoint]]) -> [KubeSeriesPoint] {
+    package static func sum(_ lines: [[KubeSeriesPoint]]) -> [KubeSeriesPoint] {
         var sums: [Date: Double] = [:]
         for line in lines { for point in line { sums[point.time, default: 0] += point.value } }
         return sums.keys.sorted().map { KubeSeriesPoint(time: $0, value: sums[$0] ?? 0) }
     }
 
     /// What the caption says of a reading: whose, over what, at which step, the tier.
-    static func caption(_ reading: KubeTabReading, window: KubeChartWindow?) -> String {
+    package static func caption(_ reading: KubeTabReading, window: KubeChartWindow?) -> String {
         guard let span = reading.span else { return "Asking Prometheus…" }
         var parts: [String] = []
         if let service = reading.service { parts.append("Prometheus \(service)") }
@@ -61,13 +61,13 @@ enum KubePromTabCharts {
         return parts.joined(separator: " · ")
     }
 
-    static func tier(_ reading: KubeTabReading, selection: Bool = false) -> String {
+    package static func tier(_ reading: KubeTabReading, selection: Bool = false) -> String {
         (reading.tier?.title ?? "raw cAdvisor") + (selection ? reading.selection.map { " · \($0.title)" } ?? "" : "")
     }
 
     /// The top N's lines, as ranked: those the ranking named and the range
     /// query answered, largest first; nil where the ranking said nothing.
-    static func ranked(_ reading: KubeTabReading, _ measure: String, by key: (KubeSeries) -> String?) -> [(id: String, points: [KubeSeriesPoint])] {
+    package static func ranked(_ reading: KubeTabReading, _ measure: String, by key: (KubeSeries) -> String?) -> [(id: String, points: [KubeSeriesPoint])] {
         var lines: [String: [KubeSeriesPoint]] = [:]
         for series in reading.results[measure + "Top"] ?? [] {
             guard let id = key(series) else { continue }
@@ -77,7 +77,7 @@ enum KubePromTabCharts {
     }
 
     /// What is said under the charts: why a family wasn't asked, what failed, Prometheus' notes.
-    static func notes(_ reading: KubeTabReading, leaving: Set<KubeTabFamily> = []) -> [String] {
+    package static func notes(_ reading: KubeTabReading, leaving: Set<KubeTabFamily> = []) -> [String] {
         var out = reading.refused.filter { !leaving.contains($0.key) }.sorted { $0.key.rawValue < $1.key.rawValue }.map(\.value)
         if let problem = reading.problem { out.append("Prometheus couldn't be read: \(problem)") }
         out += reading.notes
@@ -86,12 +86,12 @@ enum KubePromTabCharts {
     }
 
     /// Sentences once each, in order.
-    static func unique(_ sentences: [String]) -> [String] {
+    package static func unique(_ sentences: [String]) -> [String] {
         var seen = Set<String>()
         return sentences.filter { seen.insert($0).inserted }
     }
 
-    static func data(
+    package static func data(
         id: String, title: String, unit: KubeChartUnit, series: [KubeChartSeries], span: KubePromSpan, stacked: Bool = false, tier: String,
         bands: [KubeChartBand] = [], stepped: Bool = false
     ) -> KubeChartData {
@@ -103,7 +103,7 @@ enum KubePromTabCharts {
     /// The steps kube-state-metrics (or cAdvisor) saw an OOMKill in, as
     /// markers: on the step, not the second (its reason carries no time) —
     /// those a container's `lastState` already marks exactly within a step left out.
-    static func ooms(_ reading: KubeTabReading, namesPods: Bool, exact: [KubeChartMarker] = []) -> [KubeChartMarker] {
+    package static func ooms(_ reading: KubeTabReading, namesPods: Bool, exact: [KubeChartMarker] = []) -> [KubeChartMarker] {
         guard let span = reading.span else { return [] }
         var out: [KubeChartMarker] = []
         for series in reading.results["oom"] ?? [] {
@@ -131,7 +131,7 @@ enum KubePromTabCharts {
     }
 
     /// A counter's changes a step, as a stepped count.
-    static func restartsChart(id: String, _ reading: KubeTabReading, span: KubePromSpan) -> KubePodCharts.Chart? {
+    package static func restartsChart(id: String, _ reading: KubeTabReading, span: KubePromSpan) -> KubePodCharts.Chart? {
         guard let series = reading.results["restarts"] else { return nil }
         let points = sum(series.map(\.points)).map { KubeSeriesPoint(time: $0.time, value: $0.value.rounded()) }
         let total = Int(points.reduce(0) { $0 + $1.value })
@@ -143,7 +143,7 @@ enum KubePromTabCharts {
     // MARK: A pod
 
     /// A pod's charts, every one from Prometheus.
-    static func pod(namespace: String, pod name: String, object: [String: Any], reading: KubeTabReading, changes: KubeChartChanges, window: KubeChartWindow?)
+    package static func pod(namespace: String, pod name: String, object: [String: Any], reading: KubeTabReading, changes: KubeChartChanges, window: KubeChartWindow?)
         -> KubePodCharts
     {
         let containers = KubePodCharts.containers(of: object)
@@ -238,7 +238,7 @@ enum KubePromTabCharts {
     }
 
     /// A container's throttling against the 25% guide, where it has a CPU limit.
-    static func throttlingChart(
+    package static func throttlingChart(
         _ container: String, spec: KubePodCharts.Container?, throttling: [String: [KubeSeriesPoint]], reading: KubeTabReading, span: KubePromSpan, id: String
     ) -> KubePodCharts.Chart? {
         guard reading.results["throttling"] != nil, spec?.cpuLimit != nil || spec == nil, let points = throttling[container] else { return nil }
@@ -257,7 +257,7 @@ enum KubePromTabCharts {
     /// C4: a container's ephemeral storage — cAdvisor's filesystem use, a
     /// device each once — against its ephemeral-storage limit; nil where
     /// the answer has none of it.
-    static func fsChart(_ container: String, reading: KubeTabReading, span: KubePromSpan, id: String) -> KubePodCharts.Chart? {
+    package static func fsChart(_ container: String, reading: KubeTabReading, span: KubePromSpan, id: String) -> KubePodCharts.Chart? {
         let arms = reading.tagged("fs")
         guard let points = by(arms["usage"], "container")[container], !points.isEmpty else { return nil }
         let limit = by(arms["limit"], "container")[container]?.last?.value
@@ -273,13 +273,13 @@ enum KubePromTabCharts {
 
     /// C4's sentence where the probe found the metric but this pod's node
     /// reports none of it (a containerd node in a mixed cluster).
-    static func fsNotes(_ reading: KubeTabReading) -> [String] {
+    package static func fsNotes(_ reading: KubeTabReading) -> [String] {
         guard let answer = reading.results["fs"], !answer.contains(where: { $0.labels["overterm_s"] == "usage" && !$0.points.isEmpty }) else { return [] }
         return [KubeChartEmpty.noContainerFS.sentence]
     }
 
     /// What only Prometheus has of a pod: its network (P3) and its restarts (P4).
-    static func only(namespace: String, pod name: String, reading: KubeTabReading, span: KubePromSpan) -> [KubePodCharts.Chart] {
+    package static func only(namespace: String, pod name: String, reading: KubeTabReading, span: KubePromSpan) -> [KubePodCharts.Chart] {
         var out: [KubePodCharts.Chart] = []
         let subject = "\(namespace).\(name)"
         let network = reading.tagged("network")
@@ -306,7 +306,7 @@ enum KubePromTabCharts {
     /// Live with metrics-server: the sampled charts, and what only
     /// Prometheus has added — its throttling to each container, its
     /// network and restarts to the pod, its OOMKills marked.
-    static func addOnly(_ sampled: KubePodCharts, namespace: String, pod name: String, object: [String: Any], reading: KubeTabReading?, changes: KubeChartChanges)
+    package static func addOnly(_ sampled: KubePodCharts, namespace: String, pod name: String, object: [String: Any], reading: KubeTabReading?, changes: KubeChartChanges)
         -> KubePodCharts
     {
         guard let reading, let span = reading.span else {
@@ -366,7 +366,7 @@ enum KubePromTabCharts {
     /// (the total less the five) against them × its replicas; by revision
     /// (a Deployment's ReplicaSets); its replicas from kube-state-metrics,
     /// its restarts; its HPA's.
-    static func workload(_ input: KubeWorkloadCharts.Input, reading: KubeTabReading) -> KubeObjectCharts {
+    package static func workload(_ input: KubeWorkloadCharts.Input, reading: KubeTabReading) -> KubeObjectCharts {
         guard let span = reading.span else {
             return KubeObjectCharts(range: .hour, groups: [], caption: caption(reading, window: input.window), span: "", hasSamples: false, notes: notes(reading))
         }
@@ -478,7 +478,7 @@ enum KubePromTabCharts {
     }
 
     /// Live with metrics-server: the sampled charts, its restarts (W5) and OOMKills from Prometheus added.
-    static func addOnly(_ sampled: KubeObjectCharts, subject: String, reading: KubeTabReading?, changes: KubeChartChanges, namesPods: Bool) -> KubeObjectCharts {
+    package static func addOnly(_ sampled: KubeObjectCharts, subject: String, reading: KubeTabReading?, changes: KubeChartChanges, namesPods: Bool) -> KubeObjectCharts {
         guard let reading, let span = reading.span else {
             var charts = sampled
             if let reading { charts.notes += notes(reading) }
@@ -512,7 +512,7 @@ enum KubePromTabCharts {
 
     // MARK: An HPA
 
-    static func hpaCharts(namespace: String, name: String, reading: KubeTabReading, span: KubePromSpan) -> [KubePodCharts.Chart] {
+    package static func hpaCharts(namespace: String, name: String, reading: KubeTabReading, span: KubePromSpan) -> [KubePodCharts.Chart] {
         let arms = reading.tagged("hpa")
         guard !arms.isEmpty else { return [] }
         let subject = "hpa.\(namespace).\(name)"
@@ -550,7 +550,7 @@ enum KubePromTabCharts {
         return out
     }
 
-    static func hpa(namespace: String, name: String, reading: KubeTabReading, changes: KubeChartChanges, window: KubeChartWindow?) -> KubeObjectCharts {
+    package static func hpa(namespace: String, name: String, reading: KubeTabReading, changes: KubeChartChanges, window: KubeChartWindow?) -> KubeObjectCharts {
         guard let span = reading.span else {
             return KubeObjectCharts(range: .hour, groups: [], caption: caption(reading, window: window), span: "", hasSamples: false, notes: notes(reading))
         }
@@ -564,7 +564,7 @@ enum KubePromTabCharts {
     // MARK: A node
 
     /// A condition's stretches: its runs of answered steps.
-    static func bands(_ reading: KubeTabReading, span: KubePromSpan) -> [KubeChartBand] {
+    package static func bands(_ reading: KubeTabReading, span: KubePromSpan) -> [KubeChartBand] {
         var out: [KubeChartBand] = []
         for series in reading.results["conditions"] ?? [] {
             let title = series.labels["condition"] ?? "condition"
@@ -576,17 +576,17 @@ enum KubePromTabCharts {
         return out.sorted { $0.start < $1.start }
     }
 
-    static let topPodsTitle = "Top pods (by the range's mean)"
-    static let nodeExporterTitle = "Disks and network (node-exporter)"
+    package static let topPodsTitle = "Top pods (by the range's mean)"
+    package static let nodeExporterTitle = "Disks and network (node-exporter)"
     /// A node's families read only while their group is on screen, by the
     /// group's title: its top pods (K3, a series a pod on the node), its
     /// disks and network (K6, K7, the lowest of its charts: scrolled to);
     /// a workload's saved queries (M8d, last on its tab).
-    static let readWhenShown: [String: Set<KubeTabFamily>] = [
+    package static let readWhenShown: [String: Set<KubeTabFamily>] = [
         topPodsTitle: [.topCPU, .topMemory], nodeExporterTitle: [.disks, .nodeNetwork], KubeSavedCharts.groupTitle: [.saved],
     ]
 
-    static func node(node: String, facts: KubeNodeFacts, reading: KubeTabReading, changes: KubeChartChanges, window: KubeChartWindow?) -> KubeObjectCharts {
+    package static func node(node: String, facts: KubeNodeFacts, reading: KubeTabReading, changes: KubeChartChanges, window: KubeChartWindow?) -> KubeObjectCharts {
         guard let span = reading.span else {
             return KubeObjectCharts(range: .hour, groups: [], caption: caption(reading, window: window), span: "", hasSamples: false, notes: notes(reading))
         }
@@ -683,7 +683,7 @@ enum KubePromTabCharts {
     /// none where the profile found node-exporter unmapped (the sentence
     /// says so instead). `profile`: the reading's, or the page's where
     /// nothing is read yet (Live, the group off screen).
-    static func nodeExporterGroup(node: String, reading: KubeTabReading?, profile: KubePromProfile) -> (group: KubeObjectCharts.Group?, notes: [String]) {
+    package static func nodeExporterGroup(node: String, reading: KubeTabReading?, profile: KubePromProfile) -> (group: KubeObjectCharts.Group?, notes: [String]) {
         // Decided by the profile alone, whether shown or not (as the top pods'):
         // the plan refuses only what is asked, so a group dropped on the
         // reading's refusals would come back off screen, be shown, and loop.
@@ -712,7 +712,7 @@ enum KubePromTabCharts {
     }
 
     /// K6: a chart a mount (`/` first), used against size.
-    static func diskCharts(subject: String, reading: KubeTabReading, span: KubePromSpan) -> [KubePodCharts.Chart] {
+    package static func diskCharts(subject: String, reading: KubeTabReading, span: KubePromSpan) -> [KubePodCharts.Chart] {
         let arms = reading.tagged("disks")
         let used = by(arms["used"], "mountpoint")
         let size = by(arms["size"], "mountpoint")
@@ -735,7 +735,7 @@ enum KubePromTabCharts {
     }
 
     /// K7: the node's own interfaces' received and sent bytes a second.
-    static func nodeNetworkChart(subject: String, reading: KubeTabReading, span: KubePromSpan) -> KubePodCharts.Chart? {
+    package static func nodeNetworkChart(subject: String, reading: KubeTabReading, span: KubePromSpan) -> KubePodCharts.Chart? {
         guard reading.results["nodeNetwork"] != nil else { return nil }
         let arms = reading.tagged("nodeNetwork")
         let rx = sum((arms["rx"] ?? []).map(\.points))
@@ -753,7 +753,7 @@ enum KubePromTabCharts {
 
     /// Live with metrics-server: a node's sampled charts, its disks and
     /// network from Prometheus added as their own group.
-    static func addNodeExporter(_ sampled: KubeObjectCharts, node: String, reading: KubeTabReading?, profile: KubePromProfile) -> KubeObjectCharts {
+    package static func addNodeExporter(_ sampled: KubeObjectCharts, node: String, reading: KubeTabReading?, profile: KubePromProfile) -> KubeObjectCharts {
         var charts = sampled
         let known = reading.flatMap { $0.profile.known ? $0.profile : nil } ?? profile
         let exporter = nodeExporterGroup(node: node, reading: reading, profile: known)
@@ -771,7 +771,7 @@ enum KubePromTabCharts {
     /// time (kube-state-metrics'; else the quota read as the tab opened),
     /// what it requests but leaves idle on average over the range as a
     /// chip; its pods by phase.
-    static func namespace(namespace: String, reading: KubeTabReading, quota looked: KubeQuota?, changes: KubeChartChanges, window: KubeChartWindow?)
+    package static func namespace(namespace: String, reading: KubeTabReading, quota looked: KubeQuota?, changes: KubeChartChanges, window: KubeChartWindow?)
         -> KubeObjectCharts
     {
         guard let span = reading.span else {
@@ -850,7 +850,7 @@ enum KubePromTabCharts {
 
     /// A namespace's quota over time: the tightest hard request, and its use
     /// — `requests.cpu` before the bare `cpu` it stands for.
-    static func quotaLines(_ reading: KubeTabReading) -> (cpuHard: [KubeSeriesPoint], cpuUsed: [KubeSeriesPoint], memoryHard: [KubeSeriesPoint], memoryUsed: [KubeSeriesPoint]) {
+    package static func quotaLines(_ reading: KubeTabReading) -> (cpuHard: [KubeSeriesPoint], cpuUsed: [KubeSeriesPoint], memoryHard: [KubeSeriesPoint], memoryUsed: [KubeSeriesPoint]) {
         let answer = reading.results["quota"] ?? []
         func line(_ resource: String, _ type: String) -> [KubeSeriesPoint] {
             for name in ["requests." + resource, resource] {

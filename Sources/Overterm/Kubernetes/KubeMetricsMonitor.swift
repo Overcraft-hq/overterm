@@ -35,45 +35,45 @@ import Foundation
 /// cluster serves, or the model's `retry` after a sign-in. Reads only,
 /// through the context's proxy.
 @MainActor
-final class KubeMetricsMonitor: ObservableObject {
+package final class KubeMetricsMonitor: ObservableObject {
     /// Where usage is read: the model's context, as it stands.
-    struct Situation: Equatable {
-        var context: String
-        var scope: KubeScope
-        var labels: String?
-        var availability: KubeMetricsAvailability
+    package struct Situation: Equatable {
+        package var context: String
+        package var scope: KubeScope
+        package var labels: String?
+        package var availability: KubeMetricsAvailability
         /// Which cluster, as which user, the context is
         /// (`KubePrometheusMonitor.cluster(of:)`): the same name pointed
         /// elsewhere is another context's samples.
-        var cluster = ""
+        package var cluster = ""
     }
 
-    var interval: Duration = .seconds(15)
+    package var interval: Duration = .seconds(15)
     /// A node's allocatable is read again every this many polls (5 minutes at 15 s).
-    var allocatableEvery = 20
+    package var allocatableEvery = 20
     /// How long a sample may stand before it is a dash: three missed reads.
-    var staleAfter: TimeInterval { Double(interval.components.seconds) * 3 + 15 }
+    package var staleAfter: TimeInterval { Double(interval.components.seconds) * 3 + 15 }
     /// When a sample's own stamp is this old, the page says its age.
-    var oldAfter: TimeInterval = 60
+    package var oldAfter: TimeInterval = 60
 
     /// The most targets the details of one context poll at once.
-    static let maxDetailTargets = 3
+    package static let maxDetailTargets = 3
 
-    @Published private(set) var availability: KubeMetricsAvailability = .unknown
-    @Published private(set) var readings: [KubeMetricsTarget: KubeMetricsReading] = [:]
+    @Published package private(set) var availability: KubeMetricsAvailability = .unknown
+    @Published package private(set) var readings: [KubeMetricsTarget: KubeMetricsReading] = [:]
     /// The samples taken while shown, the context's (`last`'s, kept while
     /// nothing is shown): changed as `readings` is (which publishes), so it
     /// needn't publish itself.
-    private(set) var ring = KubeUsageRing() { didSet { ringChanges &+= 1 } }
+    package private(set) var ring = KubeUsageRing() { didSet { ringChanges &+= 1 } }
     /// The numbers objects' status gave while their tab showed (an HPA's,
     /// a workload's replicas, a node's pods, a namespace's phases): kept,
     /// dropped and changed as the ring is.
-    private(set) var statuses = KubeStatusHistory()
+    package private(set) var statuses = KubeStatusHistory()
     /// Counts the ring's changes: a merge made off the main thread over a
     /// copy is assigned only if nothing changed it meanwhile.
     private var ringChanges = 0
     /// How many metrics requests were made, for the tests.
-    private(set) var requests = 0
+    package private(set) var requests = 0
 
     private var wanted: [ObjectIdentifier: KubeMetricsWant] = [:]
     /// What each detail wants polled for it.
@@ -91,7 +91,7 @@ final class KubeMetricsMonitor: ObservableObject {
     /// Whether the ring's samples (`last`'s, shown or not) are `context`'s:
     /// its name, and the cluster and user it points at — an agent's
     /// `k8s_metrics` reads them only for that one.
-    func ringHolds(_ context: KubeContext) -> Bool {
+    package func ringHolds(_ context: KubeContext) -> Bool {
         guard let last else { return false }
         return last.context == context.name && last.cluster == KubePrometheusMonitor.cluster(of: context)
     }
@@ -106,7 +106,7 @@ final class KubeMetricsMonitor: ObservableObject {
     private var stopped: [KubeMetricsTarget: String] = [:]
 
     /// What `owner` shows now that needs usage; nil, nothing.
-    func want(_ want: KubeMetricsWant?, for owner: AnyObject) {
+    package func want(_ want: KubeMetricsWant?, for owner: AnyObject) {
         let id = ObjectIdentifier(owner)
         guard wanted[id] != want else { return }
         wanted[id] = want
@@ -116,7 +116,7 @@ final class KubeMetricsMonitor: ObservableObject {
     /// What a detail shows now that needs its own usage read (a pod's, a
     /// node's, an HPA's); empty, nothing. Its samples stay in the ring for
     /// an hour after.
-    func wantDetail(_ details: [KubeMetricsDetail], for owner: AnyObject) {
+    package func wantDetail(_ details: [KubeMetricsDetail], for owner: AnyObject) {
         let id = ObjectIdentifier(owner)
         let details = details.isEmpty ? nil : details
         guard detailWanted[id] != details else { return }
@@ -128,7 +128,7 @@ final class KubeMetricsMonitor: ObservableObject {
     }
 
     /// The details polled now: the last `maxDetailTargets` wanted.
-    var details: [KubeMetricsDetail] {
+    package var details: [KubeMetricsDetail] {
         var targets: [KubeMetricsTarget] = []
         var polled: [KubeMetricsDetail] = []
         for detail in detailOrder.reversed() {
@@ -142,7 +142,7 @@ final class KubeMetricsMonitor: ObservableObject {
     }
 
     /// Where usage is read now; nil: nowhere (nobody looks, Kubernetes off, no context).
-    func update(_ situation: Situation?, client: @escaping () -> KubeClient?) {
+    package func update(_ situation: Situation?, client: @escaping () -> KubeClient?) {
         self.client = client
         guard situation != self.situation else { return }
         if let situation, situation.context != last?.context || situation.cluster != last?.cluster {
@@ -171,7 +171,7 @@ final class KubeMetricsMonitor: ObservableObject {
     }
 
     /// The pages' targets (the lists', the Overview's), where they are read now.
-    var listTargets: Set<KubeMetricsTarget> {
+    package var listTargets: Set<KubeMetricsTarget> {
         guard let situation else { return [] }
         return Set(
             wanted.values.map { want in
@@ -183,16 +183,16 @@ final class KubeMetricsMonitor: ObservableObject {
     }
 
     /// Every target wanted: the pages' and the details' polled.
-    var targets: Set<KubeMetricsTarget> {
+    package var targets: Set<KubeMetricsTarget> {
         guard situation != nil else { return [] }
         return listTargets.union(details.map(\.target))
     }
 
     /// The reading behind a detail.
-    func reading(_ detail: KubeMetricsDetail) -> KubeMetricsReading? { readings[detail.target] }
+    package func reading(_ detail: KubeMetricsDetail) -> KubeMetricsReading? { readings[detail.target] }
 
     /// The reading behind what `want` shows now.
-    func reading(_ want: KubeMetricsWant) -> KubeMetricsReading? {
+    package func reading(_ want: KubeMetricsWant) -> KubeMetricsReading? {
         guard let situation else { return nil }
         switch want {
         case .pods: return readings[.pods(situation.scope, labels: situation.labels)]
@@ -203,17 +203,17 @@ final class KubeMetricsMonitor: ObservableObject {
     /// Whether what `want` shows was refused, whole or some of its
     /// namespaces: Try Again (the model's `retry`) asks again — after an
     /// RBAC grant, which changes no credentials.
-    func isRefused(_ want: KubeMetricsWant) -> Bool {
+    package func isRefused(_ want: KubeMetricsWant) -> Bool {
         guard let reading = reading(want) else { return false }
         return reading.refused != nil || reading.sample?.refusal != nil
     }
 
     /// Whether anything is polled now.
-    var isPolling: Bool { !polls.isEmpty }
+    package var isPolling: Bool { !polls.isEmpty }
 
     /// After a sign-in, or a failure put right (`KubernetesModel.retry`):
     /// what a credential failure stopped is polled again, if still wanted.
-    func retry() {
+    package func retry() {
         guard !stopped.isEmpty || !refused.isEmpty || !partlyRefused.isEmpty else { return }
         stopped = [:]
         refused = [:]
@@ -312,8 +312,8 @@ final class KubeMetricsMonitor: ObservableObject {
 
     /// How many merges were assigned, and how many of them were made on
     /// the main thread, for the tests.
-    private(set) var merges = 0
-    private(set) var mergesOnMain = 0
+    package private(set) var merges = 0
+    package private(set) var mergesOnMain = 0
 
     /// One sample's merge into a ring: pure, made wherever.
     private struct Merge: Sendable {
@@ -474,7 +474,7 @@ final class KubeMetricsMonitor: ObservableObject {
     }
 
     /// A namespace's pods as Metadata rows, paged (`KubeNamespacePods.pages` at most).
-    nonisolated static func namespacePods(_ client: KubeClient, path: String) async throws -> KubeNamespacePods {
+    package nonisolated static func namespacePods(_ client: KubeClient, path: String) async throws -> KubeNamespacePods {
         var pods: [KubeNamespacePods.Pod] = []
         var token: String?
         var pages = 0
@@ -490,12 +490,12 @@ final class KubeMetricsMonitor: ObservableObject {
 
     /// Every node's allocatable: the NodeList, paged, read whole for its
     /// `status.allocatable` (the Table's rows don't carry it).
-    nonisolated static func allocatable(_ client: KubeClient) async throws -> [String: KubeUsage] {
+    package nonisolated static func allocatable(_ client: KubeClient) async throws -> [String: KubeUsage] {
         try await nodeResources(client).allocatable
     }
 
     /// Every node's allocatable and capacity, from the same pages.
-    nonisolated static func nodeResources(_ client: KubeClient) async throws -> (allocatable: [String: KubeUsage], capacity: [String: KubeUsage]) {
+    package nonisolated static func nodeResources(_ client: KubeClient) async throws -> (allocatable: [String: KubeUsage], capacity: [String: KubeUsage]) {
         var nodes: [String: KubeUsage] = [:]
         var capacity: [String: KubeUsage] = [:]
         var token: String?
@@ -512,14 +512,14 @@ final class KubeMetricsMonitor: ObservableObject {
     }
 
     /// The cell a row's column shows now.
-    func cell(_ measure: KubeUsageCell.Measure, row id: KubeRowID, want: KubeMetricsWant, now: Date = Date()) -> KubeUsageCell {
+    package func cell(_ measure: KubeUsageCell.Measure, row id: KubeRowID, want: KubeMetricsWant, now: Date = Date()) -> KubeUsageCell {
         KubeUsageCell.of(
             measure, row: id, isNode: want == .nodes, availability: availability, reading: reading(want), now: now, staleAfter: staleAfter)
     }
 
     /// What the page says of the usage shown: why there is none, or how
     /// old it is when it is old; nil while it is fresh.
-    func note(_ want: KubeMetricsWant, now: Date = Date()) -> String? {
+    package func note(_ want: KubeMetricsWant, now: Date = Date()) -> String? {
         if let reason = availability.reason, availability != .unknown { return reason }
         guard let reading = reading(want) else { return nil }
         if let refused = reading.refused { return refused }

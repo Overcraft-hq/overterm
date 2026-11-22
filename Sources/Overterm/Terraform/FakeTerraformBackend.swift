@@ -27,28 +27,28 @@ import NIOPosix
 /// Every request is recorded (method, path, query, whether it carried
 /// credentials — never their value), so a test shows which reached it:
 /// that a lock probe locked and unlocked, that a plan never wrote.
-final class FakeTerraformBackend: @unchecked Sendable {
+package final class FakeTerraformBackend: @unchecked Sendable {
     /// A lock as Terraform's `statemgr.LockInfo` says it.
-    struct Lock: Equatable, Sendable {
-        var id: String
-        var operation: String
-        var info: String
-        var who: String
-        var version: String
+    package struct Lock: Equatable, Sendable {
+        package var id: String
+        package var operation: String
+        package var info: String
+        package var who: String
+        package var version: String
         /// As Terraform writes it (`statemgr.NewLockInfo`: `time.Now().UTC()`,
         /// marshalled RFC 3339 with up to nine fraction digits, trailing
         /// zeros dropped — on a Mac, microseconds): `2026-11-08T11:42:46.353924Z`.
-        var created: String
-        var path: String
+        package var created: String
+        package var path: String
 
-        var json: Data {
+        package var json: Data {
             let object: [String: String] = [
                 "ID": id, "Operation": operation, "Info": info, "Who": who, "Version": version, "Created": created, "Path": path,
             ]
             return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
         }
 
-        init(id: String, operation: String, info: String = "", who: String, version: String, created: String, path: String = "") {
+        package init(id: String, operation: String, info: String = "", who: String, version: String, created: String, path: String = "") {
             self.id = id
             self.operation = operation
             self.info = info
@@ -59,7 +59,7 @@ final class FakeTerraformBackend: @unchecked Sendable {
         }
 
         /// The lock info Terraform sent; nil when it isn't one (no `ID`).
-        init?(json: Data) {
+        package init?(json: Data) {
             guard let object = try? JSONSerialization.jsonObject(with: json) as? [String: Any], let id = object["ID"] as? String, !id.isEmpty
             else { return nil }
             func text(_ key: String) -> String { object[key] as? String ?? "" }
@@ -69,18 +69,18 @@ final class FakeTerraformBackend: @unchecked Sendable {
         }
     }
 
-    struct Request: Equatable, Sendable, CustomStringConvertible {
-        var method: String
-        var path: String
-        var query: [String: String]
+    package struct Request: Equatable, Sendable, CustomStringConvertible {
+        package var method: String
+        package var path: String
+        package var query: [String: String]
         /// Whether it carried an `Authorization` header (the backend's
         /// `username`/`password`). Never its value.
-        var authorized: Bool
-        var body: Data
+        package var authorized: Bool
+        package var body: Data
 
-        var description: String { "\(method) \(path)" }
+        package var description: String { "\(method) \(path)" }
         /// The lock info of a LOCK or an UNLOCK; nil for an empty body.
-        var lock: Lock? { Lock(json: body) }
+        package var lock: Lock? { Lock(json: body) }
     }
 
     private let lock = NSLock()
@@ -91,9 +91,9 @@ final class FakeTerraformBackend: @unchecked Sendable {
     private var channels: [Channel] = []
     private var boundPort = 0
     /// The port it listens on; 0 before `start`.
-    var port: Int { locked { boundPort } }
+    package var port: Int { locked { boundPort } }
 
-    init() {}
+    package init() {}
 
     private func locked<T>(_ body: () throws -> T) rethrows -> T {
         lock.lock()
@@ -105,7 +105,7 @@ final class FakeTerraformBackend: @unchecked Sendable {
 
     /// Listens on 127.0.0.1 at a port of the system's; returns it.
     @discardableResult
-    func start() throws -> Int {
+    package func start() throws -> Int {
         let bound = try ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
@@ -123,7 +123,7 @@ final class FakeTerraformBackend: @unchecked Sendable {
         return port
     }
 
-    func stop() {
+    package func stop() {
         let listening = locked {
             defer { channels = [] }
             return channels
@@ -132,13 +132,13 @@ final class FakeTerraformBackend: @unchecked Sendable {
     }
 
     /// The state `name`'s address: `http://127.0.0.1:<port>/state/<name>`.
-    func address(_ name: String) -> String {
+    package func address(_ name: String) -> String {
         "http://127.0.0.1:\(port)/state/\(name)"
     }
 
     /// A root's backend block for state `name`, with its lock and unlock
     /// addresses (without them the http backend doesn't lock at all).
-    func backendBlock(_ name: String) -> String {
+    package func backendBlock(_ name: String) -> String {
         let address = TerraformGuards.hclString(address(name))
         return """
             terraform {
@@ -155,18 +155,18 @@ final class FakeTerraformBackend: @unchecked Sendable {
     // MARK: What a test sets and reads
 
     /// The state `name` as last written; nil when there is none.
-    func state(_ name: String) -> Data? { locked { states["/state/\(name)"] } }
+    package func state(_ name: String) -> Data? { locked { states["/state/\(name)"] } }
 
     /// Puts a state in place, as another machine's apply would have.
-    func setState(_ name: String, _ data: Data?) { locked { states["/state/\(name)"] = data } }
+    package func setState(_ name: String, _ data: Data?) { locked { states["/state/\(name)"] = data } }
 
     /// The lock held on `name` now.
-    func heldLock(_ name: String) -> Lock? { locked { locks["/state/\(name)"] } }
+    package func heldLock(_ name: String) -> Lock? { locked { locks["/state/\(name)"] } }
 
     /// Holds `name`'s lock as someone else's run would: `who` (`user@host`),
     /// an apply by default, by Terraform 1.17.1, since `created`.
     @discardableResult
-    func holdLock(
+    package func holdLock(
         _ name: String, who: String, operation: String = "OperationTypeApply", id: String = "8a3c1e52-acme-0000-0000-0000000f00d5",
         version: String = "1.17.1", created: Date = Date(), info: String = ""
     ) -> Lock {
@@ -177,25 +177,25 @@ final class FakeTerraformBackend: @unchecked Sendable {
     }
 
     /// Lets go of `name`'s lock, whoever holds it.
-    func releaseLock(_ name: String) { _ = locked { locks.removeValue(forKey: "/state/\(name)") } }
+    package func releaseLock(_ name: String) { _ = locked { locks.removeValue(forKey: "/state/\(name)") } }
 
     /// Every answer `status` (401: credentials needed; 403: refused) until
     /// set back to nil.
-    var failCredentials: Int? {
+    package var failCredentials: Int? {
         get { locked { credentialFailure } }
         set { locked { credentialFailure = newValue } }
     }
 
-    var requests: [Request] { locked { asked } }
+    package var requests: [Request] { locked { asked } }
     /// What changed something: anything but a GET.
-    var writes: [Request] { requests.filter { $0.method != "GET" } }
+    package var writes: [Request] { requests.filter { $0.method != "GET" } }
 
-    func forgetRequests() { locked { asked = [] } }
+    package func forgetRequests() { locked { asked = [] } }
 
     /// A date as Terraform's lock info carries it: Go's `time.Time` in UTC
     /// marshalled to JSON (RFC 3339 with nanoseconds, trailing zeros and an
     /// all-zero fraction dropped, `Z`). Microseconds here, a Mac's clock's.
-    static func goTime(_ date: Date) -> String {
+    package static func goTime(_ date: Date) -> String {
         var seconds = date.timeIntervalSince1970.rounded(.down)
         var micros = Int(((date.timeIntervalSince1970 - seconds) * 1_000_000).rounded())
         if micros >= 1_000_000 {
@@ -215,14 +215,14 @@ final class FakeTerraformBackend: @unchecked Sendable {
 
     // MARK: Answering
 
-    enum Answer: Equatable, Sendable {
+    package enum Answer: Equatable, Sendable {
         case empty(Int)
         case json(Int, Data)
         case text(Int, String)
     }
 
     /// The answer to one request, recorded first. Called on the event loop.
-    func answer(method: String, uri: String, authorized: Bool, body: Data) -> Answer {
+    package func answer(method: String, uri: String, authorized: Bool, body: Data) -> Answer {
         let components = URLComponents(string: "http://127.0.0.1" + uri)
         let path = components?.path ?? uri
         var query: [String: String] = [:]

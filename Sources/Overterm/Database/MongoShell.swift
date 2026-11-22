@@ -7,19 +7,19 @@ import Foundation
 /// into the command the server is sent. No JavaScript runs: a statement is
 /// read, not evaluated — variables, loops and functions are said to be
 /// unsupported rather than guessed at.
-struct MongoShellError: LocalizedError, Equatable {
-    let message: String
-    var errorDescription: String? { message }
+package struct MongoShellError: LocalizedError, Equatable {
+    package let message: String
+    package var errorDescription: String? { message }
 }
 
 /// Values: the shell's object literals, read into BSON.
-struct MongoShellParser {
+package struct MongoShellParser {
     private let chars: [Character]
-    private(set) var at = 0
+    package private(set) var at = 0
 
-    init(_ text: String) { chars = Array(text) }
+    package init(_ text: String) { chars = Array(text) }
 
-    var atEnd: Bool {
+    package var atEnd: Bool {
         var copy = self
         copy.skipSpace()
         return copy.at >= copy.chars.count
@@ -30,7 +30,7 @@ struct MongoShellParser {
         return MongoShellError(message: message + near)
     }
 
-    mutating func skipSpace() {
+    package mutating func skipSpace() {
         while at < chars.count {
             let c = chars[at]
             if c.isWhitespace {
@@ -47,25 +47,25 @@ struct MongoShellParser {
         }
     }
 
-    mutating func peek() -> Character? {
+    package mutating func peek() -> Character? {
         skipSpace()
         return at < chars.count ? chars[at] : nil
     }
 
-    mutating func eat(_ c: Character) -> Bool {
+    package mutating func eat(_ c: Character) -> Bool {
         guard peek() == c else { return false }
         at += 1
         return true
     }
 
-    mutating func expect(_ c: Character) throws {
+    package mutating func expect(_ c: Character) throws {
         guard eat(c) else { throw fail("Expected “\(c)”") }
     }
 
     private static func isIdentifierStart(_ c: Character) -> Bool { c.isLetter || c == "_" || c == "$" }
     private static func isIdentifierPart(_ c: Character) -> Bool { c.isLetter || c.isNumber || c == "_" || c == "$" }
 
-    mutating func identifier() -> String? {
+    package mutating func identifier() -> String? {
         skipSpace()
         guard at < chars.count, Self.isIdentifierStart(chars[at]) else { return nil }
         let start = at
@@ -86,7 +86,7 @@ struct MongoShellParser {
         throw fail("Expected a field name")
     }
 
-    mutating func stringLiteral() throws -> String {
+    package mutating func stringLiteral() throws -> String {
         guard let quote = peek(), quote == "\"" || quote == "'" || quote == "`" else { throw fail("Expected a string") }
         at += 1
         var out = ""
@@ -211,7 +211,7 @@ struct MongoShellParser {
         return .regex(pattern: pattern, options: options)
     }
 
-    mutating func value() throws -> BSONValue {
+    package mutating func value() throws -> BSONValue {
         guard let c = peek() else { throw fail("Expected a value") }
         switch c {
         case "{": return MongoExtendedJSON.converted(try object())
@@ -236,7 +236,7 @@ struct MongoShellParser {
         }
     }
 
-    mutating func object() throws -> BSONDocument {
+    package mutating func object() throws -> BSONDocument {
         try expect("{")
         var document = BSONDocument()
         while true {
@@ -250,7 +250,7 @@ struct MongoShellParser {
         }
     }
 
-    mutating func array() throws -> [BSONValue] {
+    package mutating func array() throws -> [BSONValue] {
         try expect("[")
         var items: [BSONValue] = []
         while true {
@@ -263,7 +263,7 @@ struct MongoShellParser {
     }
 
     /// `(a, b)`: a call's arguments.
-    mutating func arguments() throws -> [BSONValue] {
+    package mutating func arguments() throws -> [BSONValue] {
         try expect("(")
         var items: [BSONValue] = []
         while true {
@@ -358,7 +358,7 @@ struct MongoShellParser {
         }
     }
 
-    static func uuidBytes(_ uuid: UUID) -> Data { withUnsafeBytes(of: uuid.uuid) { Data($0) } }
+    package static func uuidBytes(_ uuid: UUID) -> Data { withUnsafeBytes(of: uuid.uuid) { Data($0) } }
 
     private static func dashed(_ hex: String) -> String {
         guard hex.count == 32 else { return hex }
@@ -369,7 +369,7 @@ struct MongoShellParser {
 
     /// ISODate's text: a date, a time with or without its fraction and
     /// zone (none is UTC, as the shell has it), or a space for the T.
-    static func date(_ text: String) -> Int64? {
+    package static func date(_ text: String) -> Int64? {
         var s = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: " ", with: "T")
         if s.count == 10 { s += "T00:00:00Z" }
         if let t = s.firstIndex(of: "T") {
@@ -389,8 +389,8 @@ struct MongoShellParser {
 /// Extended JSON's wrappers (`{"$oid": …}`, `{"$date": …}`…), as relaxed
 /// and canonical mode write them, read as the values they stand for — what
 /// Compass, mongoexport and the drivers print.
-enum MongoExtendedJSON {
-    static func converted(_ document: BSONDocument) -> BSONValue {
+package enum MongoExtendedJSON {
+    package static func converted(_ document: BSONDocument) -> BSONValue {
         if let value = wrapped(document) { return value }
         return .document(document)
     }
@@ -445,8 +445,8 @@ enum MongoExtendedJSON {
 // MARK: Statements
 
 /// One statement, read: what goes to the server, and how its answer is shown.
-struct MongoCommand: Equatable {
-    enum Action: Equatable {
+package struct MongoCommand: Equatable {
+    package enum Action: Equatable {
         /// Send it; show what came back, a field a row.
         case command
         /// A cursor's documents, a row each (find, aggregate, listIndexes…).
@@ -469,21 +469,21 @@ struct MongoCommand: Equatable {
     }
 
     /// nil: the console's database.
-    var database: String?
-    var collection: String?
+    package var database: String?
+    package var collection: String?
     /// What it is called in the console: find, insertOne, show dbs, runCommand.
-    var method: String
-    var body: BSONDocument
-    var action: Action
+    package var method: String
+    package var body: BSONDocument
+    package var action: Action
     /// find's own `.limit(n)`; the row limit keeps fewer.
-    var limit: Int?
+    package var limit: Int?
 
     /// The command's name — the body's first key.
-    var name: String { body.fields.first?.key ?? "" }
+    package var name: String { body.fields.first?.key ?? "" }
 
     /// Commands that never change data or the server: what a read-only
     /// connection and an agent may send. Anything not here writes.
-    static let readCommands: Set<String> = [
+    package static let readCommands: Set<String> = [
         "find", "aggregate", "count", "distinct", "listCollections", "listIndexes", "listDatabases", "collStats", "dbStats", "serverStatus",
         "buildInfo", "hello", "isMaster", "ismaster", "ping", "connectionStatus", "hostInfo", "explain", "getParameter", "listCommands",
         "dataSize", "replSetGetStatus", "usersInfo", "rolesInfo", "getMore", "currentOp", "top", "whatsmyuri", "getLog", "features",
@@ -492,7 +492,7 @@ struct MongoCommand: Equatable {
 
     /// Whether it only reads. An aggregate ending in `$out` or `$merge`
     /// writes; so does explain of nothing — explain never applies a write.
-    var onlyReads: Bool {
+    package var onlyReads: Bool {
         switch action {
         case .use, .showDatabases, .showCollections, .collectionNames: return true
         default: break
@@ -506,7 +506,7 @@ struct MongoCommand: Equatable {
         return true
     }
 
-    static func writesStage(_ pipeline: BSONValue?) -> Bool {
+    package static func writesStage(_ pipeline: BSONValue?) -> Bool {
         guard let stages = pipeline?.array else { return false }
         return stages.contains { stage in
             guard let key = stage.document?.fields.first?.key else { return false }
@@ -515,7 +515,7 @@ struct MongoCommand: Equatable {
     }
 
     /// Why it should be asked about first; nil when it needn't be.
-    var danger: String? {
+    package var danger: String? {
         let where_ = collection.map { " in \($0)" } ?? ""
         func empty(_ value: BSONValue?) -> Bool { value?.document?.isEmpty ?? (value == nil) }
         switch name {
@@ -553,11 +553,11 @@ struct MongoCommand: Equatable {
     }
 }
 
-enum MongoText {
+package enum MongoText {
     /// Each statement: a line, or a bracketed block over several, `;` ending
     /// one early; a line starting with `.` goes on with the one above
     /// (`.sort({…})`). `//` and `/* */` comments are skipped.
-    static func statements(in text: String) -> [NSRange] {
+    package static func statements(in text: String) -> [NSRange] {
         let u = Array(text.utf16)
         let n = u.count
         var found: [NSRange] = []
@@ -658,23 +658,23 @@ enum MongoText {
     }
 
     /// The statement the caret is in or at the end of.
-    static func statement(at caret: Int, in text: String) -> NSRange? {
+    package static func statement(at caret: Int, in text: String) -> NSRange? {
         statements(in: text).first { $0.location <= caret && caret <= NSMaxRange($0) }
     }
 
-    static func command(_ statement: String) throws -> MongoCommand { try MongoStatement.read(statement) }
+    package static func command(_ statement: String) throws -> MongoCommand { try MongoStatement.read(statement) }
 
     /// A collection's first documents, as the console writes it: its
     /// database named (`getSiblingDB`) — the console's `use` may have moved
     /// `db` elsewhere —, `getCollection("…")` for a name that isn't a word.
-    static func find(_ collection: String, in database: String, limit: Int) -> String {
+    package static func find(_ collection: String, in database: String, limit: Int) -> String {
         let db = "db.getSiblingDB(\(BSONText.quoted(database)))"
         let bare = collection.range(of: #"^[A-Za-z_$][A-Za-z0-9_$]*$"#, options: .regularExpression) != nil
         let reached = bare ? "\(db).\(collection)" : "\(db).getCollection(\(BSONText.quoted(collection)))"
         return "\(reached).find({}).limit(\(limit))"
     }
 
-    static func verb(of statement: String) -> String {
+    package static func verb(of statement: String) -> String {
         if let command = try? command(statement) { return command.method }
         let trimmed = statement.trimmingCharacters(in: .whitespacesAndNewlines)
         // What it would be, even unread: `db.c.insertOne(` → insertOne.
@@ -685,11 +685,11 @@ enum MongoText {
     }
 
     /// A statement that can't be read writes, as far as anyone can tell.
-    static func onlyReads(_ statement: String) -> Bool { (try? command(statement))?.onlyReads ?? false }
+    package static func onlyReads(_ statement: String) -> Bool { (try? command(statement))?.onlyReads ?? false }
 
-    static func danger(of statement: String) -> String? { (try? command(statement))?.danger }
+    package static func danger(of statement: String) -> String? { (try? command(statement))?.danger }
 
-    static func subject(of statement: String) -> String? {
+    package static func subject(of statement: String) -> String? {
         guard let command = try? command(statement) else { return nil }
         if let collection = command.collection { return collection }
         if let value = command.body.fields.first?.value.string, !value.isEmpty { return value }
@@ -699,13 +699,13 @@ enum MongoText {
 
 /// A statement read into a command: `show dbs`, `use shop`,
 /// `db.orders.find({…}).sort({…}).limit(10)`, `db.runCommand({…})`.
-enum MongoStatement {
-    struct Call {
-        var name: String
-        var args: [BSONValue]
+package enum MongoStatement {
+    package struct Call {
+        package var name: String
+        package var args: [BSONValue]
     }
 
-    static func read(_ text: String) throws -> MongoCommand {
+    package static func read(_ text: String) throws -> MongoCommand {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: ";"))
         let words = trimmed.split(whereSeparator: \.isWhitespace).map(String.init)
         if let first = words.first, first == "show" || first == "use" {
@@ -1036,7 +1036,7 @@ enum MongoStatement {
     }
 
     /// An index's name as the server would make it: `email_1_age_-1`.
-    static func indexName(_ keys: BSONDocument) -> String {
+    package static func indexName(_ keys: BSONDocument) -> String {
         keys.fields.map { field in
             let direction = field.value.string ?? field.value.int.map(String.init) ?? field.value.shell
             return "\(field.key)_\(direction)"
@@ -1049,8 +1049,8 @@ enum MongoStatement {
 /// An answer as the grid shows it: documents a row each, their top-level
 /// fields as columns across the page (the first one's order, then each new
 /// one as it is met; `_id` first), nested values as the shell writes them.
-enum MongoResult {
-    static func rows(_ documents: [BSONDocument], limit: Int) -> QueryResult {
+package enum MongoResult {
+    package static func rows(_ documents: [BSONDocument], limit: Int) -> QueryResult {
         var columns: [String] = []
         var types: [String: String] = [:]
         var seen: Set<String> = []
@@ -1080,7 +1080,7 @@ enum MongoResult {
     }
 
     /// One document as `field | value` rows: a command's answer.
-    static func fields(_ document: BSONDocument) -> QueryResult {
+    package static func fields(_ document: BSONDocument) -> QueryResult {
         var result = QueryResult()
         result.columns = ["field", "value"]
         result.types = ["", ""]
@@ -1089,7 +1089,7 @@ enum MongoResult {
     }
 
     /// Values a row each: distinct's.
-    static func values(_ values: [BSONValue], limit: Int) -> QueryResult {
+    package static func values(_ values: [BSONValue], limit: Int) -> QueryResult {
         var result = QueryResult()
         result.columns = ["value"]
         result.types = [values.first?.typeName ?? ""]
@@ -1099,7 +1099,7 @@ enum MongoResult {
     }
 
     /// A write's answer: what it did, said.
-    static func write(_ reply: BSONDocument, command: MongoCommand) -> QueryResult {
+    package static func write(_ reply: BSONDocument, command: MongoCommand) -> QueryResult {
         var result = QueryResult()
         let n = reply["n"]?.int ?? 0
         switch command.name {
@@ -1143,8 +1143,8 @@ enum MongoResult {
 
 /// What a MongoDB console completes: a collection after `db.`, a method
 /// after `db.<collection>.`, and a statement's start.
-enum MongoCompletion {
-    static let collectionMethods: [(String, String)] = [
+package enum MongoCompletion {
+    package static let collectionMethods: [(String, String)] = [
         ("find", "({ filter }, { projection }).sort({ … }).limit(n)"), ("findOne", "({ filter })"), ("aggregate", "([{ $match: … }, …])"),
         ("countDocuments", "({ filter })"), ("estimatedDocumentCount", "()"), ("distinct", "(\"field\", { filter })"),
         ("insertOne", "({ … })"), ("insertMany", "([{ … }, …])"), ("updateOne", "({ filter }, { $set: { … } })"),
@@ -1154,17 +1154,17 @@ enum MongoCompletion {
         ("dropIndex", "(\"name\")"), ("stats", "()"), ("drop", "()"),
     ]
 
-    static let databaseMethods: [(String, String)] = [
+    package static let databaseMethods: [(String, String)] = [
         ("runCommand", "({ ping: 1 })"), ("adminCommand", "({ … })"), ("getCollection", "(\"name\")"), ("getSiblingDB", "(\"name\")"),
         ("getCollectionNames", "()"), ("createCollection", "(\"name\")"), ("stats", "()"), ("dropDatabase", "()"),
     ]
 
-    struct Answer: Equatable {
-        var typed: String
-        var candidates: [SQLCompletion.Candidate]
+    package struct Answer: Equatable {
+        package var typed: String
+        package var candidates: [SQLCompletion.Candidate]
     }
 
-    static func complete(_ before: String, collections: [String]) -> Answer? {
+    package static func complete(_ before: String, collections: [String]) -> Answer? {
         let line = String(before.split(separator: "\n", omittingEmptySubsequences: false).last ?? "")
         if let match = line.range(of: #"\bdb\.([A-Za-z0-9_$]+)\.([A-Za-z]*)$"#, options: .regularExpression) {
             let typed = String(line[match].split(separator: ".", omittingEmptySubsequences: false).last ?? "")

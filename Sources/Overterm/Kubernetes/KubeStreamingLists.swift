@@ -17,8 +17,8 @@ import os
 /// its name stops naming the same cluster (`KubernetesModel.loaded`).
 /// One for the app's model; every client it makes for a context asks it
 /// when a follow starts.
-final class KubeStreamingLists: Sendable {
-    enum State: Equatable, Sendable {
+package final class KubeStreamingLists: Sendable {
+    package enum State: Equatable, Sendable {
         /// No version read: list and watch.
         case unknown
         /// Its version serves them.
@@ -38,9 +38,9 @@ final class KubeStreamingLists: Sendable {
 
     private let entries = OSAllocatedUnfairLock<[String: Entry]>(initialState: [:])
 
-    init() {}
+    package init() {}
 
-    func state(of context: String) -> State {
+    package func state(of context: String) -> State {
         entries.withLock { entries in
             guard let entry = entries[context], let minor = entry.minor else { return .unknown }
             if entry.refused { return .refused }
@@ -49,10 +49,10 @@ final class KubeStreamingLists: Sendable {
     }
 
     /// Whether a follow on `context` starts with a streaming list.
-    func uses(_ context: String) -> Bool { state(of: context) == .served }
+    package func uses(_ context: String) -> Bool { state(of: context) == .served }
 
     /// What `/version` said. Nil (no minor in it) changes nothing.
-    func learn(_ context: String, minor: Int?) {
+    package func learn(_ context: String, minor: Int?) {
         guard let minor else { return }
         entries.withLock { entries in
             var entry = entries[context] ?? Entry()
@@ -65,7 +65,7 @@ final class KubeStreamingLists: Sendable {
     }
 
     /// The server refused a streaming list, or never ended one.
-    func refuse(_ context: String) {
+    package func refuse(_ context: String) {
         entries.withLock { entries in
             var entry = entries[context] ?? Entry()
             entry.refused = true
@@ -74,11 +74,11 @@ final class KubeStreamingLists: Sendable {
     }
 
     /// The kind's Table columns from the last list on the context.
-    func columns(of kind: KubeResourceKind, on context: String) -> [KubeColumn]? {
+    package func columns(of kind: KubeResourceKind, on context: String) -> [KubeColumn]? {
         entries.withLock { $0[context]?.columns[Self.key(kind)] }
     }
 
-    func remember(_ columns: [KubeColumn], of kind: KubeResourceKind, on context: String) {
+    package func remember(_ columns: [KubeColumn], of kind: KubeResourceKind, on context: String) {
         guard !columns.isEmpty else { return }
         entries.withLock { entries in
             var entry = entries[context] ?? Entry()
@@ -91,7 +91,7 @@ final class KubeStreamingLists: Sendable {
 
     /// Forgotten, the columns with it: the next follow lists and watches
     /// until a version is read.
-    func forget(_ context: String) {
+    package func forget(_ context: String) {
         _ = entries.withLock { $0.removeValue(forKey: context) }
     }
 }

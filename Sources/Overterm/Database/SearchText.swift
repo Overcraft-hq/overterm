@@ -6,25 +6,25 @@ import Foundation
 /// as the grid's rows, a mapping as columns, a pasted address or Cloud ID.
 
 /// One request: `GET /orders/_search` and the JSON under it.
-struct SearchRequest: Equatable, Sendable {
-    var method: String
+package struct SearchRequest: Equatable, Sendable {
+    package var method: String
     /// Always from the root: `/orders/_search?q=x`.
-    var path: String
+    package var path: String
     /// nil: none. `_bulk` and `_msearch`'s are a JSON object a line.
-    var body: String?
+    package var body: String?
 
-    static let methods: Set<String> = ["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"]
+    package static let methods: Set<String> = ["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"]
 
     /// The path without its query: `/orders/_search`.
-    var route: String { String(path.prefix { $0 != "?" }) }
+    package var route: String { String(path.prefix { $0 != "?" }) }
 
     /// The path's parts: `["orders", "_search"]`.
-    var parts: [String] { route.split(separator: "/").map { $0.removingPercentEncoding ?? String($0) } }
+    package var parts: [String] { route.split(separator: "/").map { $0.removingPercentEncoding ?? String($0) } }
 
     /// The API a path names: its first part that starts with `_`
     /// (`_search`, `_doc`, `_cat`); OpenSearch's plugins by the one after
     /// (`_plugins/_sql` → `_sql`). nil for an index itself (`/orders`).
-    var endpoint: String? {
+    package var endpoint: String? {
         let parts = parts
         guard let at = parts.firstIndex(where: { $0.hasPrefix("_") }) else { return nil }
         if ["_plugins", "_opendistro"].contains(parts[at]), at + 1 < parts.count { return parts[at + 1] }
@@ -32,16 +32,16 @@ struct SearchRequest: Equatable, Sendable {
     }
 
     /// The indices it names before its endpoint: `orders,returns` → two.
-    var indices: [String] {
+    package var indices: [String] {
         guard let first = parts.first, !first.hasPrefix("_") else { return [] }
         return first.split(separator: ",").map(String.init)
     }
 
     /// Bodies a JSON object a line: what Kibana sends compacted.
-    var isNDJSON: Bool { ["_bulk", "_msearch", "_mtermvectors"].contains(endpoint ?? "") || route.hasSuffix("/_msearch/template") }
+    package var isNDJSON: Bool { ["_bulk", "_msearch", "_mtermvectors"].contains(endpoint ?? "") || route.hasSuffix("/_msearch/template") }
 
     /// `METHOD path` on its first line, the body on the rest.
-    static func parse(_ text: String) throws -> SearchRequest {
+    package static func parse(_ text: String) throws -> SearchRequest {
         let lines = SearchText.clean(text).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         guard let first = lines.first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else {
             throw DatabaseError.failed("No request.")
@@ -71,7 +71,7 @@ struct SearchRequest: Equatable, Sendable {
     }
 
     /// Only reads: GET and HEAD, and a POST to an API that only reads.
-    var onlyReads: Bool {
+    package var onlyReads: Bool {
         switch method {
         case "GET", "HEAD": return true
         case "POST":
@@ -84,21 +84,21 @@ struct SearchRequest: Equatable, Sendable {
 
     /// POSTs that only read. Not `_mapping` (a POST there changes it), not
     /// `_pit` or `_async_search` (each keeps something on the server).
-    static let readingPosts: Set<String> = [
+    package static let readingPosts: Set<String> = [
         "_search", "_count", "_msearch", "_cat", "_field_caps", "_validate", "_explain", "_mget", "_termvectors", "_mtermvectors",
         "_render", "_rank_eval", "_knn_search", "_terms_enum", "_sql", "_ppl", "_eql", "_query", "_analyze",
     ]
 
     /// What an agent may run without asking: what only reads, but not the
     /// security APIs (who has which key and role is not an agent's to list).
-    var agentReads: Bool {
+    package var agentReads: Bool {
         guard onlyReads else { return false }
         // `_security/…`, and OpenSearch's `_plugins/_security/…`.
         return !parts.prefix(2).contains("_security")
     }
 
     /// Why it is asked about first, or nil.
-    var danger: String? {
+    package var danger: String? {
         switch endpoint {
         case "_delete_by_query": return "It deletes every document the query matches."
         case "_update_by_query": return "It changes every document the query matches."
@@ -115,12 +115,12 @@ struct SearchRequest: Equatable, Sendable {
     }
 
     /// For the read-only refusal: `PUT /orders`.
-    var verb: String { "\(method) \(route)" }
+    package var verb: String { "\(method) \(route)" }
 }
 
-enum SearchText {
+package enum SearchText {
     /// A line that starts a request.
-    static func isMethodLine(_ line: Substring) -> Bool {
+    package static func isMethodLine(_ line: Substring) -> Bool {
         let trimmed = line.drop { $0 == " " || $0 == "\t" }
         guard let space = trimmed.firstIndex(where: { $0 == " " || $0 == "\t" }) else {
             return SearchRequest.methods.contains(trimmed.uppercased()) && trimmed == trimmed.uppercased()
@@ -130,7 +130,7 @@ enum SearchText {
     }
 
     /// A line of comment: Kibana's `#` and `//`.
-    static func isComment(_ line: Substring) -> Bool {
+    package static func isComment(_ line: Substring) -> Bool {
         let trimmed = line.drop { $0 == " " || $0 == "\t" }
         return trimmed.hasPrefix("#") || trimmed.hasPrefix("//")
     }
@@ -138,7 +138,7 @@ enum SearchText {
     /// Requests: each from its method line to the next one, or to a blank
     /// line where its body's braces are closed — a blank line inside a
     /// body, or inside a string, doesn't end it.
-    static func statements(in text: String) -> [NSRange] {
+    package static func statements(in text: String) -> [NSRange] {
         let ns = text as NSString
         var found: [NSRange] = []
         var start: Int?
@@ -212,17 +212,17 @@ enum SearchText {
         inString = false
     }
 
-    static func statement(at caret: Int, in text: String) -> NSRange? {
+    package static func statement(at caret: Int, in text: String) -> NSRange? {
         statements(in: text).first { caret >= $0.location && caret <= NSMaxRange($0) }
     }
 
     /// The request without its comment lines.
-    static func clean(_ text: String) -> String {
+    package static func clean(_ text: String) -> String {
         text.split(separator: "\n", omittingEmptySubsequences: false).filter { !isComment($0) }.joined(separator: "\n")
     }
 
     /// Kibana's `"""…"""`: a string over lines, as a JSON string.
-    static func tripleQuoted(_ body: String) -> String {
+    package static func tripleQuoted(_ body: String) -> String {
         guard body.contains("\"\"\"") else { return body }
         var out = ""
         var rest = Substring(body)
@@ -243,7 +243,7 @@ enum SearchText {
 
     /// The JSON values one after another in an NDJSON body, each whole
     /// however it was laid out over lines.
-    static func objects(in body: String) throws -> [String] {
+    package static func objects(in body: String) throws -> [String] {
         var found: [String] = []
         var depth = 0
         var inString = false
@@ -275,7 +275,7 @@ enum SearchText {
     }
 
     /// A JSON value on one line.
-    static func compact(_ json: String) throws -> String {
+    package static func compact(_ json: String) throws -> String {
         guard let object = try? JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed]),
             let data = try? JSONSerialization.data(withJSONObject: object, options: [.fragmentsAllowed, .withoutEscapingSlashes])
         else { throw DatabaseError.failed("Not JSON: \(json.prefix(80))") }
@@ -283,7 +283,7 @@ enum SearchText {
     }
 
     /// A tab's name: the index, else the API.
-    static func subject(of statement: String) -> String? {
+    package static func subject(of statement: String) -> String? {
         guard let request = try? SearchRequest.parse(statement) else { return nil }
         if let index = request.indices.first { return index }
         let parts = request.parts
@@ -294,10 +294,10 @@ enum SearchText {
 // MARK: Answers
 
 /// What a server answered, as the grid's rows.
-enum SearchResults {
+package enum SearchResults {
     /// A value as one cell: text as it is, numbers as JSON says them, an
     /// object or an array as compact JSON; null is NULL.
-    static func cell(_ value: Any?) -> String? {
+    package static func cell(_ value: Any?) -> String? {
         switch value {
         case nil, is NSNull: return nil
         case let text as String: return text
@@ -312,7 +312,7 @@ enum SearchResults {
         }
     }
 
-    static func pretty(_ value: Any) -> String {
+    package static func pretty(_ value: Any) -> String {
         guard JSONSerialization.isValidJSONObject(value),
             let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
         else { return cell(value) ?? "" }
@@ -333,7 +333,7 @@ enum SearchResults {
 
     /// An answer's rows: a search's hits, SQL's and ES|QL's columns, a
     /// `_cat`'s rows, a count; anything else its JSON in one cell.
-    static func result(_ data: Data, request: SearchRequest, status: Int, limit: Int) -> QueryResult {
+    package static func result(_ data: Data, request: SearchRequest, status: Int, limit: Int) -> QueryResult {
         if request.method == "HEAD" {
             return QueryResult(message: status == 404 ? "404 — it doesn't exist." : "\(status) — it exists.")
         }
@@ -359,7 +359,7 @@ enum SearchResults {
     }
 
     /// The JSON whole in one cell, and what it said in the message.
-    static func whole(_ object: [String: Any]) -> QueryResult {
+    package static func whole(_ object: [String: Any]) -> QueryResult {
         var result = QueryResult(columns: ["response"], types: ["json"], rows: [[pretty(object)]])
         if object["acknowledged"] as? Bool == true {
             result.message = "Acknowledged."
@@ -425,7 +425,7 @@ enum SearchResults {
     /// The JSON type of a field's values — string, number, boolean, object,
     /// array —, "mixed" for several, "" when every one is null: how an
     /// edited cell's text is read back (`SearchEdits`).
-    static func jsonType(_ values: [Any]) -> String {
+    package static func jsonType(_ values: [Any]) -> String {
         var found: Set<String> = []
         for value in values {
             switch value {
@@ -448,7 +448,7 @@ enum SearchResults {
 
     /// One aggregation of buckets: a row a bucket — its key, its count,
     /// each sub-aggregation's value. Else the aggregations' JSON.
-    static func aggregations(_ aggregations: [String: Any], limit: Int) -> QueryResult {
+    package static func aggregations(_ aggregations: [String: Any], limit: Int) -> QueryResult {
         if aggregations.count == 1, let (name, value) = aggregations.first, let aggregation = value as? [String: Any] {
             if let buckets = aggregation["buckets"] as? [[String: Any]] {
                 let subs = keys(of: buckets.map { $0.filter { $0.key != "key" && $0.key != "doc_count" && $0.key != "key_as_string" } })
@@ -485,7 +485,7 @@ enum SearchResults {
 
     /// An array of objects (`_cat/*?format=json`): a row each, their keys
     /// the columns in the server's order.
-    static func rows(_ array: [[String: Any]], limit: Int, order: [[String]] = []) -> QueryResult {
+    package static func rows(_ array: [[String: Any]], limit: Int, order: [[String]] = []) -> QueryResult {
         let columns = keys(of: array, order: order)
         let rows = array.prefix(limit).map { object in columns.map { cell(object[$0]) } }
         return QueryResult(columns: columns, types: columns.map { _ in "" }, rows: rows, truncated: array.count > limit)
@@ -493,7 +493,7 @@ enum SearchResults {
 
     /// Each object's keys in the order the text has them (Foundation's
     /// dictionaries forget it): `_cat`'s columns as the server lists them.
-    static func orderedKeys(_ data: Data) -> [[String]] {
+    package static func orderedKeys(_ data: Data) -> [[String]] {
         var out: [[String]] = []
         var current: [String] = []
         var depth = 0
@@ -541,7 +541,7 @@ enum SearchResults {
     }
 
     /// The server's error in its own words: `type: reason`, and what caused it.
-    static func error(_ data: Data, status: Int) -> String {
+    package static func error(_ data: Data, status: Int) -> String {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             let text = String(decoding: data.prefix(1000), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? "The server answered \(status)." : text
@@ -571,15 +571,15 @@ enum SearchResults {
 
 // MARK: The catalog
 
-enum SearchCatalog {
+package enum SearchCatalog {
     /// The tree's folders.
-    static let indices = "indices"
-    static let dataStreams = "data streams"
-    static let aliases = "aliases"
+    package static let indices = "indices"
+    package static let dataStreams = "data streams"
+    package static let aliases = "aliases"
 
     /// A mapping's fields, dotted (`address.city`), each its type; an
     /// object's fields under its name, a multi-field (`name.keyword`) too.
-    static func fields(_ properties: [String: Any], prefix: String = "") -> [(String, String)] {
+    package static func fields(_ properties: [String: Any], prefix: String = "") -> [(String, String)] {
         var out: [(String, String)] = []
         for name in properties.keys.sorted() {
             guard let field = properties[name] as? [String: Any] else { continue }
@@ -599,7 +599,7 @@ enum SearchCatalog {
     }
 
     /// `GET /_mapping`'s answer: each index's fields.
-    static func mappings(_ data: Data) -> [String: [(String, String)]] {
+    package static func mappings(_ data: Data) -> [String: [(String, String)]] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
         var out: [String: [(String, String)]] = [:]
         for (index, value) in object {
@@ -614,7 +614,7 @@ enum SearchCatalog {
     }
 
     /// A count as the tree says it: 1.2M docs.
-    static func docs(_ text: String?) -> String? {
+    package static func docs(_ text: String?) -> String? {
         guard let text, let n = Int(text) else { return nil }
         switch n {
         case 1_000_000_000...: return String(format: "%.1fB docs", Double(n) / 1e9)
@@ -625,22 +625,22 @@ enum SearchCatalog {
     }
 
     /// Hidden and system indices (`.kibana`, `.ds-…`, `.security`) aren't the user's.
-    static func isHidden(_ name: String) -> Bool { name.hasPrefix(".") }
+    package static func isHidden(_ name: String) -> Bool { name.hasPrefix(".") }
 }
 
 // MARK: Addresses
 
 /// A pasted address: `https://user:pass@host:9243/path`, or Elastic
 /// Cloud's Cloud ID (`name:base64(domain$es-id$kibana-id)`).
-struct SearchAddress: Equatable {
-    var host: String
-    var port: Int
-    var tls: Bool
-    var path = ""
-    var user = ""
-    var password: String?
+package struct SearchAddress: Equatable {
+    package var host: String
+    package var port: Int
+    package var tls: Bool
+    package var path = ""
+    package var user = ""
+    package var password: String?
 
-    init?(_ text: String) {
+    package init?(_ text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !text.contains("://"), let cloud = Self.cloudID(text) {
             self = cloud
@@ -663,7 +663,7 @@ struct SearchAddress: Equatable {
     }
 
     /// `deployment:dXMtZWFzdC0xLmF3cy5mb3VuZC5pbyRhYmMkZGVm` → `abc.us-east-1.aws.found.io:443`.
-    static func cloudID(_ text: String) -> SearchAddress? {
+    package static func cloudID(_ text: String) -> SearchAddress? {
         guard let colon = text.firstIndex(of: ":") else { return nil }
         var encoded = String(text[text.index(after: colon)...])
         while encoded.count % 4 != 0 { encoded += "=" }
@@ -683,8 +683,8 @@ struct SearchAddress: Equatable {
 /// How a request is signed in: Basic with a user; without one, the secret
 /// is an API key (`ApiKey`, Elastic's encoded form or its `id:key`) or,
 /// written `Bearer …`, a token.
-enum SearchAuth {
-    static func header(user: String, secret: String?) -> String? {
+package enum SearchAuth {
+    package static func header(user: String, secret: String?) -> String? {
         let secret = secret ?? ""
         if !user.isEmpty { return "Basic " + Data("\(user):\(secret)".utf8).base64EncodedString() }
         let trimmed = secret.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -700,10 +700,10 @@ enum SearchAuth {
 /// AWS's managed OpenSearch: its region from the endpoint's name
 /// (`search-x-abc.eu-west-1.es.amazonaws.com`), its service — `es`, or
 /// `aoss` for Serverless.
-enum SearchAWS {
-    static func service(host: String) -> String { host.contains(".aoss.") ? "aoss" : "es" }
+package enum SearchAWS {
+    package static func service(host: String) -> String { host.contains(".aoss.") ? "aoss" : "es" }
 
-    static func region(host: String) -> String? {
+    package static func region(host: String) -> String? {
         let parts = host.lowercased().split(separator: ".").map(String.init)
         guard let at = parts.firstIndex(where: { $0 == "es" || $0 == "aoss" }), at >= 1, parts.dropFirst(at).contains("amazonaws") else { return nil }
         return parts[at - 1]

@@ -3,43 +3,43 @@ import Foundation
 /// The file open in the editor pane: its text, whether it has unsaved
 /// edits, and why it can't be shown when it can't.
 @MainActor
-final class EditorDocument: ObservableObject {
-    @Published private(set) var url: URL?
-    @Published private(set) var isDirty = false
+package final class EditorDocument: ObservableObject {
+    @Published package private(set) var url: URL?
+    @Published package private(set) var isDirty = false
     /// Set instead of text for binary, huge or unreadable files.
-    @Published private(set) var unavailable: String?
+    @Published package private(set) var unavailable: String?
     /// The text as loaded or last saved. The text view owns the live text.
-    private(set) var text = ""
+    package private(set) var text = ""
     /// On-disk modification date at load/save, to notice outside changes.
     private var loadedModification: Date?
     /// Why this file is never saved, when it isn't: Overterm's copy of a
     /// cluster object (`KubeManifestEdits`) — a value retyped in it stays in
     /// memory, never in the file. Nothing writes it, and its edits ask
     /// nothing on close.
-    var unsaveable: String?
+    package var unsaveable: String?
     /// Text that lives in memory only, under a name no file has: a cluster
     /// object's YAML (`KubeResourceBuffer`). Nothing reads or writes the
     /// disk for it, and `unsaveable` says why a save is refused.
-    private(set) var isVirtual = false
+    package private(set) var isVirtual = false
 
     /// Refused: `unsaveable` says why.
-    struct Unsaveable: LocalizedError {
-        let reason: String
-        var errorDescription: String? { reason }
+    package struct Unsaveable: LocalizedError {
+        package let reason: String
+        package var errorDescription: String? { reason }
     }
 
     /// Bigger than this is a log or a dump, not something to edit here.
-    static let maxBytes = 5 * 1024 * 1024
+    package static let maxBytes = 5 * 1024 * 1024
 
-    var name: String { url?.lastPathComponent ?? "" }
+    package var name: String { url?.lastPathComponent ?? "" }
 
     /// The file was renamed (the sidebar's Rename…): the same file, so its
     /// text and edits stay, under its new name.
-    func moved(to newURL: URL) {
+    package func moved(to newURL: URL) {
         url = newURL
     }
 
-    func load(_ url: URL) {
+    package func load(_ url: URL) {
         self.url = url
         isDirty = false
         unavailable = nil
@@ -76,7 +76,7 @@ final class EditorDocument: ObservableObject {
     }
 
     /// `text`, in memory, under `url` — never read from it, never written.
-    func loadVirtual(_ url: URL, text: String) {
+    package func loadVirtual(_ url: URL, text: String) {
         self.url = url
         isVirtual = true
         isDirty = false
@@ -86,13 +86,13 @@ final class EditorDocument: ObservableObject {
     }
 
     /// A virtual document's text as its source has it now: no edits of its own.
-    func replaceVirtual(_ text: String) {
+    package func replaceVirtual(_ text: String) {
         guard isVirtual else { return }
         self.text = text
         isDirty = false
     }
 
-    func markEdited() {
+    package func markEdited() {
         // A virtual document's edits are its source's to say (`setVirtualEdited`):
         // undone back to it, it has none, whichever editor typed.
         guard url != nil, unavailable == nil, !isVirtual else { return }
@@ -101,22 +101,22 @@ final class EditorDocument: ObservableObject {
 
     /// A virtual document's edits, as its source says: a cluster object's
     /// text against what the cluster had — the same for every editor showing it.
-    func setVirtualEdited(_ edited: Bool) {
+    package func setVirtualEdited(_ edited: Bool) {
         guard isVirtual, isDirty != edited else { return }
         isDirty = edited
     }
 
     /// The file changed on disk while it had unsaved edits here: saving would
     /// silently throw away what changed it (usually an agent).
-    struct ChangedOnDisk: LocalizedError {
-        let name: String
-        var errorDescription: String? { "“\(name)” changed on disk since you opened it." }
+    package struct ChangedOnDisk: LocalizedError {
+        package let name: String
+        package var errorDescription: String? { "“\(name)” changed on disk since you opened it." }
     }
 
     /// Writes `newText`. Refuses with `ChangedOnDisk` when the file changed
     /// meanwhile, unless `overwriting`. Written through a symlink to its
     /// target — an atomic write to the link would replace it with a file.
-    func save(_ newText: String, overwriting: Bool = false) throws {
+    package func save(_ newText: String, overwriting: Bool = false) throws {
         guard let url, unavailable == nil else { return }
         if let unsaveable { throw Unsaveable(reason: unsaveable) }
         if changedOnDisk, !overwriting { throw ChangedOnDisk(name: name) }
@@ -129,7 +129,7 @@ final class EditorDocument: ObservableObject {
 
     /// The file changed on disk since it was loaded or saved (an agent
     /// edited it).
-    var changedOnDisk: Bool {
+    package var changedOnDisk: Bool {
         guard let url, let loadedModification, let current = Self.modification(of: url) else { return false }
         return current > loadedModification
     }
@@ -138,7 +138,7 @@ final class EditorDocument: ObservableObject {
         (try? FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path))?[.modificationDate] as? Date
     }
 
-    func close() {
+    package func close() {
         isVirtual = false
         url = nil
         isDirty = false
@@ -149,9 +149,9 @@ final class EditorDocument: ObservableObject {
 }
 
 /// Where each line starts, for the line-number gutter.
-enum LineIndex {
+package enum LineIndex {
     /// UTF-16 offsets of every line start (the first is 0).
-    static func starts(of text: NSString) -> [Int] {
+    package static func starts(of text: NSString) -> [Int] {
         var starts = [0]
         let length = text.length
         // In chunks: character(at:) per character is a message send each,
@@ -171,7 +171,7 @@ enum LineIndex {
     }
 
     /// 1-based line number of a UTF-16 offset.
-    static func line(of offset: Int, in starts: [Int]) -> Int {
+    package static func line(of offset: Int, in starts: [Int]) -> Int {
         var low = 0
         var high = starts.count - 1
         while low < high {

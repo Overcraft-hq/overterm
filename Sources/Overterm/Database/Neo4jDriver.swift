@@ -6,14 +6,14 @@ import Foundation
 /// mode (`access-mode: READ`) — and a clause that writes is refused before
 /// it is sent. The tree: databases (`SHOW DATABASES`) → labels and
 /// relationship types (`[:TYPE]`) → their property keys with their types.
-actor Neo4jDriver: DatabaseDriver {
-    let config: DatabaseConnection
-    let password: String?
-    let http: HTTPDriverTransport
+package actor Neo4jDriver: DatabaseDriver {
+    package let config: DatabaseConnection
+    package let password: String?
+    package let http: HTTPDriverTransport
     /// Where statements run: the connection's database (else `neo4j`), until a `:use`.
-    private(set) var database: String
+    package private(set) var database: String
 
-    init(_ connection: DatabaseConnection, password: String?, api: API = .transactional) {
+    package init(_ connection: DatabaseConnection, password: String?, api: API = .transactional) {
         self.api = api
         config = connection
         self.password = password
@@ -24,13 +24,13 @@ actor Neo4jDriver: DatabaseDriver {
     /// Which HTTP API answers: the transactional one (every Neo4j 4 and 5
     /// server), else the Query API (5.19 and later, Aura) where the first
     /// is off.
-    enum API: Sendable { case transactional, query }
-    private(set) var api: API
+    package enum API: Sendable { case transactional, query }
+    package private(set) var api: API
     /// The property types of a label's nodes, from the catalog, by database and label — what an edited cell is written as.
-    var editTypes: [String: [String: [String]]] = [:]
+    package var editTypes: [String: [String: [String]]] = [:]
 
     /// One statement in its own transaction, the raw answer.
-    func post(_ statement: String, database: String, graph: Bool) async throws -> Data {
+    package func post(_ statement: String, database: String, graph: Bool) async throws -> Data {
         do {
             return try await post(statement, database: database, graph: graph, api: api)
         } catch let missing as Missing where api == .transactional {
@@ -99,19 +99,19 @@ actor Neo4jDriver: DatabaseDriver {
     }
 
     /// The rows' raw values, for the catalog.
-    func rows(_ statement: String, database: String) async throws -> [[Any]] {
+    package func rows(_ statement: String, database: String) async throws -> [[Any]] {
         let data = try await post(statement, database: database, graph: false)
         if let error = try Neo4jParse.answer(data, limit: 0).errors.first { throw DatabaseError.failed(Neo4jParse.explain(error.code, error.message)) }
         return Neo4jParse.rawRows(data)
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         _ = try await rows("RETURN 1", database: database)
     }
 
-    func close() async { http.close() }
+    package func close() async { http.close() }
 
-    func execute(_ text: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ text: String, limit: Int) async throws -> QueryResult {
         var statement = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !statement.isEmpty else { throw DatabaseError.failed("No statement.") }
         if config.readOnly, !CypherText.onlyReads(statement) { throw DatabaseError.readOnly(CypherText.verb(of: statement)) }
@@ -136,7 +136,7 @@ actor Neo4jDriver: DatabaseDriver {
     // MARK: The catalog
 
     /// The databases this user sees, the connection's first; `system` left out.
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         var names: [String] = []
         if let found = try? await rows("SHOW DATABASES YIELD name RETURN DISTINCT name ORDER BY name", database: "system") {
             names = found.compactMap { $0.first as? String }.filter { $0 != "system" }
@@ -146,7 +146,7 @@ actor Neo4jDriver: DatabaseDriver {
     }
 
     /// Labels, then relationship types as `[:TYPE]`.
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         let labels = try await rows("CALL db.labels() YIELD label RETURN label ORDER BY label", database: schema).compactMap { $0.first as? String }
         let types = try await rows(
             "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType ORDER BY relationshipType", database: schema
@@ -155,7 +155,7 @@ actor Neo4jDriver: DatabaseDriver {
     }
 
     /// Each label's and type's property keys, with the types Neo4j has seen.
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         var columns: [CatalogColumn] = []
         for row in try await rows(
             "CALL db.schema.nodeTypeProperties() YIELD nodeLabels, propertyName, propertyTypes, mandatory RETURN nodeLabels, propertyName, propertyTypes, mandatory",

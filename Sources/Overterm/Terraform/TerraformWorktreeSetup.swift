@@ -5,28 +5,28 @@ import Foundation
 /// stage 2b): "aws 5.80.0 here, 6.2.0 in `main`". Read from the files
 /// themselves — what each worktree's `init` and plan use, committed or
 /// not — never written. Pure but for `versions(at:)`'s bounded read.
-enum TerraformLockDrift {
-    struct Difference: Equatable, Sendable {
+package enum TerraformLockDrift {
+    package struct Difference: Equatable, Sendable {
         /// The provider as a person says it: `aws`, `globex/acme` off the
         /// `hashicorp` namespace, the whole address off the public registry.
-        var provider: String
+        package var provider: String
         /// The version this worktree locks, nil when it locks none.
-        var here: String?
-        var there: String?
+        package var here: String?
+        package var there: String?
     }
 
     /// The differences with one other worktree.
-    struct Drift: Equatable, Sendable, Identifiable {
-        var worktree: String
-        var differences: [Difference]
+    package struct Drift: Equatable, Sendable, Identifiable {
+        package var worktree: String
+        package var differences: [Difference]
         /// This worktree has no lock file; the other has one.
-        var missingHere = false
+        package var missingHere = false
         /// The other worktree's path: names repeat (two detached HEADs).
-        var worktreePath = ""
+        package var worktreePath = ""
 
-        var id: String { worktreePath.isEmpty ? worktree : worktreePath }
+        package var id: String { worktreePath.isEmpty ? worktree : worktreePath }
 
-        var sentence: String {
+        package var sentence: String {
             if missingHere {
                 let locked = differences.compactMap { d in d.there.map { "\(d.provider) \($0)" } }
                 return "no lock file here; \(worktree)'s locks " + locked.prefix(4).joined(separator: ", ") + (locked.count > 4 ? ", \(locked.count - 4) more" : "")
@@ -43,7 +43,7 @@ enum TerraformLockDrift {
     }
 
     /// `registry.terraform.io/hashicorp/aws` → `aws`.
-    static func shortName(_ address: String) -> String {
+    package static func shortName(_ address: String) -> String {
         let parts = address.lowercased().split(separator: "/").map(String.init)
         guard parts.count == 3 else { return address }
         guard parts[0] == "registry.terraform.io" || parts[0] == "registry.opentofu.org" else { return address }
@@ -51,7 +51,7 @@ enum TerraformLockDrift {
     }
 
     /// Each provider's locked version, by address; nil without a lock file.
-    static func versions(in text: String) -> [String: String] {
+    package static func versions(in text: String) -> [String: String] {
         var result: [String: String] = [:]
         for (address, version) in TerraformLockFile.versions(in: text) { result[address.lowercased()] = version }
         return result
@@ -59,7 +59,7 @@ enum TerraformLockDrift {
 
     /// A root's drifts as one line: the first, and how many other
     /// worktrees differ too — up to 12 worktrees would make 12 lines.
-    static func summary(_ drifts: [Drift]) -> String? {
+    package static func summary(_ drifts: [Drift]) -> String? {
         guard let first = drifts.first else { return nil }
         let rest = drifts.count - 1
         return first.sentence + (rest > 0 ? " — and \(rest) other worktree\(rest == 1 ? "" : "s")" : "")
@@ -67,7 +67,7 @@ enum TerraformLockDrift {
 
     /// What differs between `here` and `there` (each nil without a lock
     /// file), or nil when nothing does — or neither has one.
-    static func drift(here: [String: String]?, there: [String: String]?, worktree: String) -> Drift? {
+    package static func drift(here: [String: String]?, there: [String: String]?, worktree: String) -> Drift? {
         switch (here, there) {
         case (nil, nil): return nil
         case (nil, let there?):
@@ -89,7 +89,7 @@ enum TerraformLockDrift {
     /// A root's lock file's versions, nil when it has none: bounded (1 MB),
     /// kept by the file's size and modification time, so a read of the
     /// panel stats another worktree's file rather than reading it again.
-    static func versions(at root: URL) -> [String: String]? {
+    package static func versions(at root: URL) -> [String: String]? {
         let url = root.appendingPathComponent(".terraform.lock.hcl")
         var info = stat()
         guard stat(url.path, &info) == 0 else { return nil }
@@ -113,8 +113,8 @@ enum TerraformLockDrift {
 /// stage 2b): whose checkout has its state, the workspace another
 /// worktree selects — never copied here —, how its lock file differs,
 /// and its init without the backend, for validate and the editor. Pure.
-struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
-    enum Preparation: Equatable, Sendable {
+package struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
+    package enum Preparation: Equatable, Sendable {
         /// `terraform.newWorktreeInit` is off.
         case off
         case waiting
@@ -124,7 +124,7 @@ struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
         case skipped(String)
         case failed(String)
 
-        var words: String {
+        package var words: String {
             switch self {
             case .off: "Not initialised: New Task's init is off in Settings ▸ Terraform."
             case .waiting: "Waiting to initialise without its backend…"
@@ -135,7 +135,7 @@ struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
             }
         }
 
-        var isProblem: Bool {
+        package var isProblem: Bool {
             switch self {
             case .skipped, .failed: true
             default: false
@@ -144,22 +144,22 @@ struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
     }
 
     /// Another worktree's workspace for the same root.
-    struct SourceWorkspace: Equatable, Sendable {
-        var worktree: String
-        var workspace: String
+    package struct SourceWorkspace: Equatable, Sendable {
+        package var worktree: String
+        package var workspace: String
     }
 
-    var path: String
-    var name: String
-    var folder: URL
-    var stateElsewhere: String?
+    package var path: String
+    package var name: String
+    package var folder: URL
+    package var stateElsewhere: String?
     /// Another worktree selects a workspace other than `default` for this
     /// root: its name and the workspace. This one starts at `default`.
-    var sourceWorkspace: SourceWorkspace?
-    var lockDrift: [TerraformLockDrift.Drift] = []
-    var preparation: Preparation
+    package var sourceWorkspace: SourceWorkspace?
+    package var lockDrift: [TerraformLockDrift.Drift] = []
+    package var preparation: Preparation
 
-    var id: String { path }
+    package var id: String { path }
 
     /// What the root needs before New Task initialises it: `.waiting`, or
     /// why it isn't (2.1, 4.13, 5.9). Only where init fetches nothing the
@@ -171,7 +171,7 @@ struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
     /// root. `modules`: the local modules' configs (`localModules`), nil
     /// when they couldn't all be read. Anything else is the person's
     /// Init…, which shows its fetch list first.
-    static func preparation(for card: TerraformRootCard, enabled: Bool, modules: [TerraformConfigFacts]? = []) -> Preparation {
+    package static func preparation(for card: TerraformRootCard, enabled: Bool, modules: [TerraformConfigFacts]? = []) -> Preparation {
         guard enabled else { return .off }
         if let why = TerraformProcessCheck.refused(.initialize, backendType: card.facts.backend.type) { return .skipped(why) }
         let lock = card.facts.lockProviders
@@ -183,7 +183,7 @@ struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
     }
 
     /// Why New Task doesn't initialise for `config`, or nil.
-    static func refusal(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?) -> String? {
+    package static func refusal(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?) -> String? {
         let suffix = " Init… in the panel shows what it fetches."
         let flagged = TerraformInitPlan.items(config: config, lockProviders: lockProviders).filter { $0.flag != nil }
         if let first = flagged.first {
@@ -202,7 +202,7 @@ struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
     /// A provider the configuration uses without `required_providers` — a
     /// resource's prefix, a `provider` block — that the lock file doesn't
     /// pin, or nil. `terraform` is the builtin.
-    static func unlockedImplied(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?) -> String? {
+    package static func unlockedImplied(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?) -> String? {
         let lockedTypes = Set((lockProviders ?? []).map { $0.type.lowercased() })
         return config.providerNames.subtracting(config.requiredProviders.keys).subtracting(["terraform"]).sorted()
             .first { !lockedTypes.contains($0.lowercased()) }
@@ -211,7 +211,7 @@ struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
     /// The configs of the local modules `config` calls from `root`, and
     /// theirs, bounded: nil past `limit` folders, or one that isn't there
     /// or leaves the checkout. Blocking file reads.
-    static func localModules(of config: TerraformConfigFacts, at root: URL, checkout: URL, limit: Int = 24) -> [TerraformConfigFacts]? {
+    package static func localModules(of config: TerraformConfigFacts, at root: URL, checkout: URL, limit: Int = 24) -> [TerraformConfigFacts]? {
         let top = checkout.resolvingSymlinksInPath().standardizedFileURL.path
         var seen: Set<String> = [root.resolvingSymlinksInPath().standardizedFileURL.path]
         var queue: [(URL, TerraformConfigFacts)] = [(root, config)]
@@ -234,13 +234,13 @@ struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
     }
 
     /// The other worktree that selects a workspace for this root, if one does.
-    static func sourceWorkspace(card: TerraformRootCard, others: [(name: String, facts: TerraformRootFacts)]) -> SourceWorkspace? {
+    package static func sourceWorkspace(card: TerraformRootCard, others: [(name: String, facts: TerraformRootFacts)]) -> SourceWorkspace? {
         guard card.workspace == "default" else { return nil }
         let other = others.first { $0.facts.workspaceFromFile && $0.facts.workspace != "default" }
         return other.map { SourceWorkspace(worktree: $0.name, workspace: $0.facts.workspace) }
     }
 
-    static func make(
+    package static func make(
         card: TerraformRootCard, enabled: Bool, others: [(name: String, facts: TerraformRootFacts)], modules: [TerraformConfigFacts]? = []
     ) -> TerraformWorktreeRoot {
         TerraformWorktreeRoot(
@@ -250,7 +250,7 @@ struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
     }
 
     /// The warnings, in the panel's words.
-    var notes: [String] {
+    package var notes: [String] {
         var notes: [String] = []
         if let source = sourceWorkspace {
             notes.append("Workspace default here: \(source.worktree) selects \(source.workspace), which New Task doesn't copy — select it here if you mean it.")
@@ -272,40 +272,40 @@ struct TerraformWorktreeRoot: Equatable, Sendable, Identifiable {
 /// plan there needs Init… first. In memory, a root's entry forgotten once
 /// the person's own Init or a plan ran there.
 @MainActor
-final class TerraformWorktreeSetup: ObservableObject {
-    static let shared = TerraformWorktreeSetup()
+package final class TerraformWorktreeSetup: ObservableObject {
+    package static let shared = TerraformWorktreeSetup()
 
-    struct Report: Equatable, Sendable {
-        var roots: [TerraformWorktreeRoot]
-        var finished = false
+    package struct Report: Equatable, Sendable {
+        package var roots: [TerraformWorktreeRoot]
+        package var finished = false
     }
 
     /// By the worktree's path, symlinks resolved (`key`): New Task's URL
     /// and the panel's checkout spell `/var` and `/private/var` apart.
-    @Published private(set) var reports: [String: Report] = [:]
+    @Published package private(set) var reports: [String: Report] = [:]
     private var tasks: [String: (id: UUID, task: Task<Void, Never>)] = [:]
 
     /// One root's init without its backend, given the plugin cache: the
     /// real one (`initialize`) but in unit tests, which record instead.
-    typealias Initializer = @MainActor (URL, String?) async -> TerraformWorktreeRoot.Preparation
+    package typealias Initializer = @MainActor (URL, String?) async -> TerraformWorktreeRoot.Preparation
     private let initializer: Initializer
     private let registry: TerraformRunRegistry
 
-    init(registry: TerraformRunRegistry = .shared, initializer: Initializer? = nil) {
+    package init(registry: TerraformRunRegistry = .shared, initializer: Initializer? = nil) {
         self.registry = registry
         self.initializer = initializer ?? { root, cache in await TerraformWorktreeSetup.initialize(root, cache: cache) }
     }
 
-    static func key(_ url: URL) -> String { url.resolvingSymlinksInPath().standardizedFileURL.path }
+    package static func key(_ url: URL) -> String { url.resolvingSymlinksInPath().standardizedFileURL.path }
 
-    func report(_ checkout: URL?) -> Report? { checkout.flatMap { reports[Self.key($0)] } }
+    package func report(_ checkout: URL?) -> Report? { checkout.flatMap { reports[Self.key($0)] } }
 
-    func root(_ checkout: URL?, path: String) -> TerraformWorktreeRoot? { report(checkout)?.roots.first { $0.path == path } }
+    package func root(_ checkout: URL?, path: String) -> TerraformWorktreeRoot? { report(checkout)?.roots.first { $0.path == path } }
 
     /// Whether New Task's init is running in `root` (a root's folder): the
     /// panel's Init, Plan, Check Drift, Test and State wait for it — they
     /// write its `.terraform`, or read the providers it is installing.
-    func isInitializing(_ root: URL) -> Bool {
+    package func isInitializing(_ root: URL) -> Bool {
         let path = Self.key(root)
         return reports.values.contains { $0.roots.contains { $0.preparation == .running && Self.key($0.folder) == path } }
     }
@@ -313,15 +313,15 @@ final class TerraformWorktreeSetup: ObservableObject {
     /// What a run of `root` that would read or write its `.terraform` says
     /// while New Task initialises it — Plan, Init, Check Drift, Test, a
     /// state read, the person's or an agent's —, or nil.
-    func refusal(_ root: URL) -> String? {
+    package func refusal(_ root: URL) -> String? {
         isInitializing(root) ? Self.initializingRefusal : nil
     }
 
-    static let initializingRefusal = "New Task is initialising this root without its backend: press again once it is done."
+    package static let initializingRefusal = "New Task is initialising this root without its backend: press again once it is done."
 
     /// Forgets what New Task said of `checkout`'s `root` once the person's
     /// own Init or a plan ran there: it no longer says what the root is.
-    func forget(checkout: URL, root: String) {
+    package func forget(checkout: URL, root: String) {
         let key = Self.key(checkout)
         guard let index = reports[key]?.roots.firstIndex(where: { $0.path == root }) else { return }
         guard reports[key]?.roots[index].preparation != .running else { return }
@@ -333,7 +333,7 @@ final class TerraformWorktreeSetup: ObservableObject {
     /// second prepare of the same worktree waits for the first's init to
     /// end — cancelling a task leaves its terraform running (the init isn't
     /// `interruptible`: never a half-written `.terraform`).
-    func prepare(
+    package func prepare(
         _ worktree: URL, others: [TerraformWorktree], initialize: Bool, finished: @escaping @MainActor () -> Void = {}
     ) {
         let key = Self.key(worktree)
@@ -398,11 +398,11 @@ final class TerraformWorktreeSetup: ObservableObject {
     }
 
     /// The longest an init waits for its providers.
-    static let initTimeout: TimeInterval = 300
+    package static let initTimeout: TimeInterval = 300
 
     /// `init -backend=false` in `root`: its outcome. On a plugin cache, its
     /// turn taken as the panel's inits take it ("not concurrency safe").
-    static func initialize(_ root: URL, cache: String?) async -> TerraformWorktreeRoot.Preparation {
+    package static func initialize(_ root: URL, cache: String?) async -> TerraformWorktreeRoot.Preparation {
         let registry = TerraformRunRegistry.shared
         let turn = cache.map { "cache:" + $0 }
         let id = "worktree-init-" + UUID().uuidString

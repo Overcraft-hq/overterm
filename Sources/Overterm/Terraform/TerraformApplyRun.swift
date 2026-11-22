@@ -7,38 +7,38 @@ import Foundation
 /// Overterm finds it again — and only it, never a pid reused since — and
 /// what the slot says of it. Names and paths only: never the
 /// environment, never a value of the plan.
-struct TerraformApplyMarker: Codable, Equatable, Sendable {
-    var pid: Int32
+package struct TerraformApplyMarker: Codable, Equatable, Sendable {
+    package var pid: Int32
     /// The launcher's start time, µs since 1970 (`ProcessInspector.kinfo`).
-    var started: UInt64
+    package var started: UInt64
     /// The launcher's executable: `/bin/bash`.
-    var executable: String
-    var checkout: String
+    package var executable: String
+    package var checkout: String
     /// The root's path in the checkout.
-    var root: String
+    package var root: String
     /// Its display name.
-    var name: String
-    var workspace: String
-    var rootClass: String
-    var identity: String?
-    var at: Date
+    package var name: String
+    package var workspace: String
+    package var rootClass: String
+    package var identity: String?
+    package var at: Date
 
     /// Now, to the second: what the marker keeps survives its JSON whole.
-    static var now: Date { Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down)) }
+    package static var now: Date { Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down)) }
 
-    static let file = "apply.json"
-    static let stdout = "stdout"
-    static let stderr = "stderr"
-    static let status = "status"
+    package static let file = "apply.json"
+    package static let stdout = "stdout"
+    package static let stderr = "stderr"
+    package static let status = "status"
 
     /// Whether `marker`'s process is still that apply: alive, started then,
     /// the same executable. Pure over what it is told.
-    static func isAlive(_ marker: TerraformApplyMarker, alive: (pid_t) -> Bool, started: (pid_t) -> UInt64?, path: (pid_t) -> String?) -> Bool {
+    package static func isAlive(_ marker: TerraformApplyMarker, alive: (pid_t) -> Bool, started: (pid_t) -> UInt64?, path: (pid_t) -> String?) -> Bool {
         guard marker.pid > 0, alive(marker.pid), let start = started(marker.pid), start == marker.started else { return false }
         return path(marker.pid).map { $0 == marker.executable } ?? false
     }
 
-    static func read(_ folder: URL) -> TerraformApplyMarker? {
+    package static func read(_ folder: URL) -> TerraformApplyMarker? {
         let url = folder.appendingPathComponent(file)
         var info = stat()
         guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(), info.st_size < 64 << 10,
@@ -49,7 +49,7 @@ struct TerraformApplyMarker: Codable, Equatable, Sendable {
         return try? decoder.decode(TerraformApplyMarker.self, from: data)
     }
 
-    func write(to folder: URL) throws {
+    package func write(to folder: URL) throws {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
         let url = folder.appendingPathComponent(Self.file)
@@ -61,11 +61,11 @@ struct TerraformApplyMarker: Codable, Equatable, Sendable {
     }
 
     /// The real process facts.
-    static func liveNow(_ marker: TerraformApplyMarker) -> Bool {
+    package static func liveNow(_ marker: TerraformApplyMarker) -> Bool {
         isAlive(marker, alive: TerraformRunFolder.isAlive, started: { ProcessInspector.kinfo($0)?.start }, path: executablePath)
     }
 
-    static func executablePath(_ pid: pid_t) -> String? {
+    package static func executablePath(_ pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: 4_096)
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
         guard length > 0 else { return nil }
@@ -80,40 +80,40 @@ struct TerraformApplyMarker: Codable, Equatable, Sendable {
 /// earlier than the launcher, in the launcher's session, and never when
 /// the group's leader is there but another process (a pid reused since).
 /// The decisions are pure; `members(of:)` asks the kernel.
-enum TerraformApplyGroup {
-    struct Member: Equatable, Sendable {
-        var pid: pid_t
+package enum TerraformApplyGroup {
+    package struct Member: Equatable, Sendable {
+        package var pid: pid_t
         /// Its start time, µs since 1970 (`ProcessInspector.kinfo`).
-        var started: UInt64
+        package var started: UInt64
         /// Its session's id, when it could be read.
-        var session: pid_t?
+        package var session: pid_t?
         /// Its executable, when it could be read.
-        var path: String?
+        package var path: String?
     }
 
     /// The members that are the apply's.
-    static func ours(_ members: [Member], marker: TerraformApplyMarker) -> [Member] {
+    package static func ours(_ members: [Member], marker: TerraformApplyMarker) -> [Member] {
         guard marker.pid > 0, marker.started > 0 else { return [] }
         if let leader = members.first(where: { $0.pid == marker.pid }), leader.started != marker.started { return [] }
         return members.filter { $0.started >= marker.started && ($0.session.map { $0 == marker.pid } ?? true) }
     }
 
     /// A provider plugin: what terraform starts and leaves behind only if it dies.
-    static func isPlugin(_ member: Member) -> Bool {
+    package static func isPlugin(_ member: Member) -> Bool {
         guard let path = member.path else { return false }
         return URL(fileURLWithPath: path).lastPathComponent.hasPrefix("terraform-provider-")
     }
 
     /// Whether anything but a plugin is still there: terraform, its
     /// launcher, a provisioner's command. Nothing is killed while one is.
-    static func terraformRuns(_ ours: [Member]) -> Bool { ours.contains { !isPlugin($0) } }
+    package static func terraformRuns(_ ours: [Member]) -> Bool { ours.contains { !isPlugin($0) } }
 
     /// The plugins to sweep once terraform is gone (4.7: "SIGKILL only
     /// after terraform has exited"): none while anything else runs.
-    static func strays(_ ours: [Member]) -> [pid_t] { terraformRuns(ours) ? [] : ours.filter(isPlugin).map(\.pid) }
+    package static func strays(_ ours: [Member]) -> [pid_t] { terraformRuns(ours) ? [] : ours.filter(isPlugin).map(\.pid) }
 
     /// The group `pgid`'s members now.
-    static func members(of pgid: pid_t) -> [Member] {
+    package static func members(of pgid: pid_t) -> [Member] {
         guard pgid > 0 else { return [] }
         var pids = [pid_t](repeating: 0, count: 256)
         let bytes = pids.withUnsafeMutableBytes { proc_listpids(UInt32(PROC_PGRP_ONLY), UInt32(pgid), $0.baseAddress, Int32($0.count)) }
@@ -126,7 +126,7 @@ enum TerraformApplyGroup {
     }
 
     /// The apply's members now.
-    static func live(_ marker: TerraformApplyMarker) -> [Member] { ours(members(of: marker.pid), marker: marker) }
+    package static func live(_ marker: TerraformApplyMarker) -> [Member] { ours(members(of: marker.pid), marker: marker) }
 }
 
 /// Starting the detached apply (4.7, D-1): `apply -input=false -json
@@ -141,19 +141,19 @@ enum TerraformApplyGroup {
 /// is still written. It starts terraform only once its marker is written
 /// (`go` on fd 4): an app that dies between the spawn and the marker, or
 /// a marker that can't be written, leaves no apply nobody could find.
-enum TerraformApplyLaunch {
-    static let shell = "/bin/bash"
-    static let launcher =
+package enum TerraformApplyLaunch {
+    package static let shell = "/bin/bash"
+    package static let launcher =
         #"status=$0; tf=$1; shift; IFS= read -r go <&4; exec 4<&-; [ "$go" = go ] || exit 125; trap ':' INT TERM; "$tf" "$@"; code=$?; (umask 077; printf '%s\n' "$code" > "$status.part") && /bin/mv -f "$status.part" "$status""#
 
-    enum Failure: Error, CustomStringConvertible {
+    package enum Failure: Error, CustomStringConvertible {
         case refused(String)
         case files(Int32)
         case spawn(Int32)
         /// Its marker couldn't be written, or its start time read: not started.
         case marker(String)
 
-        var description: String {
+        package var description: String {
             switch self {
             case .refused(let why): "refused: \(why)"
             case .files(let code): "the apply's files can't be made: \(String(cString: strerror(code)))"
@@ -166,24 +166,24 @@ enum TerraformApplyLaunch {
     /// The environment an apply runs in: the plan's, as it was built, with
     /// whatever injects flags or logs values taken out again — never
     /// trusted to the record alone (5.13 rule 3). Pure.
-    static func environment(_ recorded: [String: String]) -> [String: String] {
+    package static func environment(_ recorded: [String: String]) -> [String: String] {
         recorded.filter { name, _ in !TerraformEnvironment.isAlwaysRemoved(name) || name == "TF_WORKSPACE" || name == "TF_DATA_DIR" }
     }
 
     /// What the launcher is started with, and the terraform it starts:
     /// `environment`, marked as this run's apply (D-15).
-    static func launchedEnvironment(_ recorded: [String: String]) -> [String: String] {
+    package static func launchedEnvironment(_ recorded: [String: String]) -> [String: String] {
         OvertermRun.current.marking(environment(recorded), helper: .terraformApply)
     }
 
     /// The launcher's argv: its script, the status file, the binary, the apply.
-    static func arguments(status: URL, binary: URL) -> [String] {
+    package static func arguments(status: URL, binary: URL) -> [String] {
         ["-p", "-c", launcher, status.path, binary.path] + TerraformCommands.apply
     }
 
     /// Spawns it, its marker written, then lets it start terraform.
     /// Blocking, briefly. Nothing runs when the marker can't be written.
-    static func spawn(
+    package static func spawn(
         binary: URL, root: URL, environment recorded: [String: String], plan descriptor: Int32, folder: URL,
         marker: (pid_t, UInt64) -> TerraformApplyMarker, write: (TerraformApplyMarker, URL) throws -> Void = { try $0.write(to: $1) }
     ) throws -> TerraformApplyMarker {
@@ -236,7 +236,7 @@ enum TerraformApplyLaunch {
     }
 
     /// The exit code the launcher wrote, once it has.
-    static func status(in folder: URL) -> Int32? {
+    package static func status(in folder: URL) -> Int32? {
         guard let text = try? String(contentsOf: folder.appendingPathComponent(TerraformApplyMarker.status), encoding: .utf8) else { return nil }
         return Int32(text.trimmingCharacters(in: .whitespacesAndNewlines))
     }
@@ -245,7 +245,7 @@ enum TerraformApplyLaunch {
     /// folder of this user's — another Overterm's that died, or this one's
     /// when `includingOwn` (a scenario's "crash") — never one already
     /// followed (`followed`). Blocking.
-    static func detached(base: URL = AppEnvironment.terraformRunsBase, includingOwn: Bool, followed: Set<String>) -> [(folder: URL, marker: TerraformApplyMarker)] {
+    package static func detached(base: URL = AppEnvironment.terraformRunsBase, includingOwn: Bool, followed: Set<String>) -> [(folder: URL, marker: TerraformApplyMarker)] {
         let manager = FileManager.default
         var found: [(URL, TerraformApplyMarker)] = []
         let own = TerraformRunFolder.name()
@@ -268,21 +268,21 @@ enum TerraformApplyLaunch {
 /// line at a time, decoded on its thread (`TerraformUIMessage`), handed on
 /// in 120 ms batches; when the apply is gone, the rest read, and its exit
 /// code. `cancel` stops following, never the apply.
-final class TerraformApplyTail: @unchecked Sendable {
+package final class TerraformApplyTail: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
 
-    var isCancelled: Bool { lock.withLock { cancelled } }
-    func cancel() { lock.withLock { cancelled = true } }
+    package var isCancelled: Bool { lock.withLock { cancelled } }
+    package func cancel() { lock.withLock { cancelled = true } }
 
-    static let poll: UInt32 = 150_000
-    static let batchInterval: UInt64 = 120_000_000
+    package static let poll: UInt32 = 150_000
+    package static let batchInterval: UInt64 = 120_000_000
 
     /// Blocking: a GCD thread's. `done` gets the exit code (nil: none was
     /// written) and stderr's last lines, scrubbed — unless cancelled.
     /// `scrub`: every string of a line, as it is decoded — the plan's
     /// sensitive values masked first (`TerraformValueMask`).
-    func follow(
+    package func follow(
         folder: URL, scrub: @Sendable (String) -> String = TerraformPlan.scrub, alive: @Sendable () -> Bool,
         batch: @Sendable ([TerraformUIMessage]) -> Void, done: @Sendable (Int32?, String) -> Void
     ) {
@@ -333,7 +333,7 @@ final class TerraformApplyTail: @unchecked Sendable {
     }
 
     /// The last 16 KB of a file, scrubbed.
-    static func lastLines(of url: URL, scrub: (String) -> String = TerraformPlan.scrub) -> String {
+    package static func lastLines(of url: URL, scrub: (String) -> String = TerraformPlan.scrub) -> String {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return "" }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
@@ -351,18 +351,18 @@ final class TerraformApplyTail: @unchecked Sendable {
 /// Activity's signal path, which refuses what is in one as Overterm's own:
 /// an apply's way out is its own Stop (docs/design/activity/analysis.md,
 /// 6.5 rule 2, 6.10's helpers row).
-final class TerraformApplyGroupRegistry: @unchecked Sendable {
-    static let shared = TerraformApplyGroupRegistry()
+package final class TerraformApplyGroupRegistry: @unchecked Sendable {
+    package static let shared = TerraformApplyGroupRegistry()
 
     private let lock = NSLock()
     private var groups: [ObjectIdentifier: pid_t] = [:]
 
     /// Every group a run follows now.
-    var all: Set<pid_t> { lock.withLock { Set(groups.values) } }
+    package var all: Set<pid_t> { lock.withLock { Set(groups.values) } }
 
-    func insert(_ group: pid_t, for run: ObjectIdentifier) { lock.withLock { groups[run] = group } }
+    package func insert(_ group: pid_t, for run: ObjectIdentifier) { lock.withLock { groups[run] = group } }
 
-    func remove(_ run: ObjectIdentifier) { _ = lock.withLock { groups.removeValue(forKey: run) } }
+    package func remove(_ run: ObjectIdentifier) { _ = lock.withLock { groups.removeValue(forKey: run) } }
 }
 
 /// One apply of a shown plan (6.4), in memory only: the plan's rows, each
@@ -373,8 +373,8 @@ final class TerraformApplyGroupRegistry: @unchecked Sendable {
 /// stream alone. Stop is one SIGINT to its group (D-3); a second, asked,
 /// another. Never SIGKILL while it runs.
 @MainActor
-final class TerraformApplyRun: ObservableObject, Identifiable {
-    enum Phase: Equatable, Sendable {
+package final class TerraformApplyRun: ObservableObject, Identifiable {
+    package enum Phase: Equatable, Sendable {
         case running
         /// Stop sent: once, or twice.
         case stopping(Int)
@@ -383,53 +383,53 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
         case stopped(String)
     }
 
-    enum RowState: String, Sendable {
+    package enum RowState: String, Sendable {
         case waiting, running, done, errored
     }
 
-    struct Row: Identifiable, Equatable, Sendable {
-        var address: String
-        var action: TerraformPlan.Action
-        var state: RowState = .waiting
+    package struct Row: Identifiable, Equatable, Sendable {
+        package var address: String
+        package var action: TerraformPlan.Action
+        package var state: RowState = .waiting
         /// Steps done: a replace has two.
-        var completed = 0
-        var expected = 1
-        var elapsed: Int?
+        package var completed = 0
+        package var expected = 1
+        package var elapsed: Int?
         /// Its provisioners' output, scrubbed, the last lines.
-        var output: [String] = []
-        var error: String?
+        package var output: [String] = []
+        package var error: String?
         /// The diagnostic's file and line: "Open at main.tf:67".
-        var file: String?
-        var line: Int?
+        package var file: String?
+        package var line: Int?
 
-        var id: String { address }
+        package var id: String { address }
     }
 
-    static let maxLog = 2_000
-    static let maxOutput = 40
+    package static let maxLog = 2_000
+    package static let maxOutput = 40
     /// A silence this long is said, never acted on (4.7).
-    static let silence: TimeInterval = 120
+    package static let silence: TimeInterval = 120
 
-    let id: String
-    let marker: TerraformApplyMarker
-    let folder: URL
+    package let id: String
+    package let marker: TerraformApplyMarker
+    package let folder: URL
     /// Found again after Overterm last quit, or after its record was lost.
-    let reattached: Bool
-    let identity: TerraformStateIdentity?
+    package let reattached: Bool
+    package let identity: TerraformStateIdentity?
     /// The turn's key in the registry: the state's identity, else the root.
-    let key: String
-    weak var planRun: TerraformPlanRun?
+    package let key: String
+    package weak var planRun: TerraformPlanRun?
 
-    @Published private(set) var phase: Phase = .running
-    @Published private(set) var rows: [Row] = []
-    @Published private(set) var log: [String] = []
-    @Published private(set) var diagnostics: [TerraformDiagnostic] = []
-    @Published private(set) var lastHeard = Date()
-    @Published private(set) var finished: Date?
+    @Published package private(set) var phase: Phase = .running
+    @Published package private(set) var rows: [Row] = []
+    @Published package private(set) var log: [String] = []
+    @Published package private(set) var diagnostics: [TerraformDiagnostic] = []
+    @Published package private(set) var lastHeard = Date()
+    @Published package private(set) var finished: Date?
     /// The apply's `change_summary`.
-    private(set) var summary: (add: Int, change: Int, remove: Int)?
+    package private(set) var summary: (add: Int, change: Int, remove: Int)?
     /// What the window does when it ends: the state written, the turn given back.
-    var onEnd: ((TerraformApplyRun) -> Void)?
+    package var onEnd: ((TerraformApplyRun) -> Void)?
 
     private let tail = TerraformApplyTail()
     private var child: ProcessGroup.Child?
@@ -439,19 +439,19 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
     /// (Section 10), never a scan of 2,000 rows per hook line.
     private var rowIndexes: [String: Int] = [:]
     /// The plan's sensitive values, over what the stream prints in clear (5.6).
-    let mask: TerraformValueMask
+    package let mask: TerraformValueMask
 
-    var started: Date { marker.at }
-    var isGoing: Bool {
+    package var started: Date { marker.at }
+    package var isGoing: Bool {
         switch phase {
         case .running, .stopping: true
         default: false
         }
     }
 
-    var worktree: String { URL(fileURLWithPath: marker.checkout).lastPathComponent }
+    package var worktree: String { URL(fileURLWithPath: marker.checkout).lastPathComponent }
 
-    init(
+    package init(
         id: String? = nil, marker: TerraformApplyMarker, folder: URL, plan: TerraformPlan?, identity: TerraformStateIdentity?, key: String, reattached: Bool,
         child: ProcessGroup.Child?, mask: TerraformValueMask = .none
     ) {
@@ -472,14 +472,14 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
     deinit { TerraformApplyGroupRegistry.shared.remove(ObjectIdentifier(self)) }
 
     /// The plan's rows that apply does something to, risky first.
-    nonisolated static func rows(of plan: TerraformPlan) -> [Row] {
+    package nonisolated static func rows(of plan: TerraformPlan) -> [Row] {
         let changing = plan.resourceChanges.filter { [.create, .update, .delete, .replace].contains($0.action) }
         let ordered = changing.filter(\.isRisky) + changing.filter { !$0.isRisky }
         return ordered.map { Row(address: $0.address, action: $0.action, expected: $0.action == .replace ? 2 : 1) }
     }
 
     /// "7 of 12 · 2 running · 1m 12s".
-    func progressText(now: Date = Date()) -> String {
+    package func progressText(now: Date = Date()) -> String {
         let done = rows.filter { $0.state == .done }.count
         let running = rows.filter { $0.state == .running }.count
         let errored = rows.filter { $0.state == .errored }.count
@@ -491,12 +491,12 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
     }
 
     /// The silence said, past two minutes with nothing from Terraform.
-    func silenceText(now: Date = Date()) -> String? {
+    package func silenceText(now: Date = Date()) -> String? {
         guard isGoing, now.timeIntervalSince(lastHeard) > Self.silence else { return nil }
         return "Nothing from Terraform for \(Self.elapsed(now.timeIntervalSince(lastHeard))): it may be waiting on a provider. Nothing is done about it."
     }
 
-    nonisolated static func elapsed(_ seconds: TimeInterval) -> String {
+    package nonisolated static func elapsed(_ seconds: TimeInterval) -> String {
         let total = max(0, Int(seconds))
         if total < 60 { return "\(total)s" }
         if total < 3_600 { return "\(total / 60)m \(total % 60)s" }
@@ -505,7 +505,7 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
 
     // MARK: The stream
 
-    func absorb(_ messages: [TerraformUIMessage]) {
+    package func absorb(_ messages: [TerraformUIMessage]) {
         lastHeard = Date()
         var lines: [String] = []
         for message in messages {
@@ -571,7 +571,7 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
     // MARK: Following
 
     /// Follows the files until the apply is gone (or `detach`).
-    func follow() {
+    package func follow() {
         let folder = self.folder
         let marker = self.marker
         let child = self.child
@@ -608,13 +608,13 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
 
     /// Stops following without touching the apply or its folder: what a
     /// crash leaves (the scenario's), found again by `TerraformApplyLaunch.detached`.
-    func detach() {
+    package func detach() {
         tail.cancel()
         TerraformApplyGroupRegistry.shared.remove(ObjectIdentifier(self))
     }
 
     /// The end: the exit code and an `apply` summary decide (spike 24).
-    func ended(status: Int32?, stderr: String) {
+    package func ended(status: Int32?, stderr: String) {
         guard isGoing else { return }
         TerraformApplyGroupRegistry.shared.remove(ObjectIdentifier(self))
         // terraform is gone: a provider plugin it left in its group goes
@@ -649,7 +649,7 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
     /// What an agent is told of a failed apply: the apply's own
     /// diagnostics by address and its log — never the plan's — and the
     /// lock it couldn't take, if that was it. Masked as the stream was.
-    func brief(backend: String?, version: String?, providers: [String]) -> TerraformAgentBrief {
+    package func brief(backend: String?, version: String?, providers: [String]) -> TerraformAgentBrief {
         var lock: TerraformLockInfo?
         for diagnostic in diagnostics where lock == nil { lock = TerraformLockInfo.parse(summary: diagnostic.summary, detail: diagnostic.detail) }
         var log = self.log
@@ -663,7 +663,7 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
     }
 
     /// The root's folder: the checkout's, at the root's path.
-    var rootFolder: URL {
+    package var rootFolder: URL {
         let checkout = URL(fileURLWithPath: marker.checkout, isDirectory: true)
         return marker.root.isEmpty ? checkout : checkout.appendingPathComponent(marker.root, isDirectory: true)
     }
@@ -673,14 +673,14 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
     /// Stop (D-3): the first is one SIGINT to the group, as Ctrl-C; true.
     /// False when it was sent already — the caller asks before `interruptAgain`.
     @discardableResult
-    func stop() -> Bool {
+    package func stop() -> Bool {
         guard isGoing, interrupts == 0 else { return false }
         interrupt()
         return true
     }
 
     /// The second Stop, asked first: SIGINT again, "exit now, data loss may occur".
-    func interruptAgain() {
+    package func interruptAgain() {
         guard isGoing else { return }
         interrupt()
     }
@@ -700,7 +700,7 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
 
     /// Spawns the apply of `record` (its checks done, its sheet answered),
     /// in `card`'s root. Off the main thread for the spawn.
-    static func start(
+    package static func start(
         record: TerraformPlanRecord, plan: TerraformPlan, card: TerraformRootCard, checkout: URL, identity: TerraformStateIdentity?, key: String,
         id: String? = nil
     ) async -> Result<TerraformApplyRun, TerraformReadFailure> {
@@ -752,7 +752,7 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
 
     /// An apply found running after Overterm last quit (or its record lost):
     /// followed again from its files' start.
-    static func reattach(folder: URL, marker: TerraformApplyMarker) -> TerraformApplyRun {
+    package static func reattach(folder: URL, marker: TerraformApplyMarker) -> TerraformApplyRun {
         let key = marker.identity ?? URL(fileURLWithPath: marker.checkout).appendingPathComponent(marker.root).standardizedFileURL.path
         // Masked as before the crash: the plan's values, as its folder keeps them.
         let run = TerraformApplyRun(

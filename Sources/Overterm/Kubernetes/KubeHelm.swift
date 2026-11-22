@@ -13,7 +13,7 @@ import Foundation
 // All of this file is pure.
 
 /// Where Helm keeps a release.
-enum KubeHelmStorage: String, Sendable, Equatable, CaseIterable {
+package enum KubeHelmStorage: String, Sendable, Equatable, CaseIterable {
     /// `HELM_DRIVER=secret`, Helm 3's and 4's default.
     case secret
     /// `HELM_DRIVER=configmap`: the same record, in a ConfigMap.
@@ -22,13 +22,13 @@ enum KubeHelmStorage: String, Sendable, Equatable, CaseIterable {
     /// record — listed by its labels, never decoded.
     case tiller
 
-    var kind: KubeResourceKind { self == .secret ? KubeHelm.secrets : KubeHelm.configMaps }
+    package var kind: KubeResourceKind { self == .secret ? KubeHelm.secrets : KubeHelm.configMaps }
 
     /// What the list asks the server for: Helm's records and nothing else.
-    var labelSelector: String { self == .tiller ? "OWNER=TILLER" : "owner=helm" }
-    var fieldSelector: String? { self == .secret ? "type=\(KubeHelm.secretType)" : nil }
+    package var labelSelector: String { self == .tiller ? "OWNER=TILLER" : "owner=helm" }
+    package var fieldSelector: String? { self == .secret ? "type=\(KubeHelm.secretType)" : nil }
 
-    var said: String {
+    package var said: String {
         switch self {
         case .secret: "Secret"
         case .configMap: "ConfigMap"
@@ -38,46 +38,46 @@ enum KubeHelmStorage: String, Sendable, Equatable, CaseIterable {
 }
 
 /// One revision's record, as its metadata says it: never its data.
-struct KubeHelmRecord: Equatable, Sendable, Identifiable {
-    var storage: KubeHelmStorage
-    var namespace: String
+package struct KubeHelmRecord: Equatable, Sendable, Identifiable {
+    package var storage: KubeHelmStorage
+    package var namespace: String
     /// The Secret's or ConfigMap's name: `sh.helm.release.v1.web.v3`.
-    var object: String
-    var release: String
-    var revision: Int
+    package var object: String
+    package var release: String
+    package var revision: Int
     /// Helm's word: `deployed`, `superseded`, `failed`, `pending-upgrade`…
-    var status: String
+    package var status: String
     /// `modifiedAt`, else `createdAt` (Unix seconds), else the object's creation.
-    var updated: Date?
+    package var updated: Date?
 
-    var id: String { "\(storage.rawValue)/\(namespace)/\(object)" }
+    package var id: String { "\(storage.rawValue)/\(namespace)/\(object)" }
 }
 
 /// A release: every record of one name in a namespace, newest first.
-struct KubeHelmRelease: Equatable, Sendable, Identifiable {
-    var name: String
-    var namespace: String
-    var storage: KubeHelmStorage
+package struct KubeHelmRelease: Equatable, Sendable, Identifiable {
+    package var name: String
+    package var namespace: String
+    package var storage: KubeHelmStorage
     /// Newest revision first; never empty.
-    var history: [KubeHelmRecord]
+    package var history: [KubeHelmRecord]
 
-    var latest: KubeHelmRecord { history[0] }
-    var revision: Int { latest.revision }
-    var status: String { latest.status }
-    var updated: Date? { latest.updated }
-    var id: String { "\(storage.rawValue)/\(namespace)/\(name)" }
-    var isFailing: Bool { ["failed", "pending-install", "pending-upgrade", "pending-rollback", "uninstalling"].contains(status) }
+    package var latest: KubeHelmRecord { history[0] }
+    package var revision: Int { latest.revision }
+    package var status: String { latest.status }
+    package var updated: Date? { latest.updated }
+    package var id: String { "\(storage.rawValue)/\(namespace)/\(name)" }
+    package var isFailing: Bool { ["failed", "pending-install", "pending-upgrade", "pending-rollback", "uninstalling"].contains(status) }
 }
 
 /// What a decoded revision says of its chart: kept for the list once a
 /// release was opened — names and versions, no values.
-struct KubeHelmChart: Equatable, Sendable {
-    var chart: String?
-    var version: String?
-    var appVersion: String?
+package struct KubeHelmChart: Equatable, Sendable {
+    package var chart: String?
+    package var version: String?
+    package var appVersion: String?
 
     /// `web-1.2.3`, as `helm list` says it.
-    var said: String? {
+    package var said: String? {
         guard let chart else { return nil }
         return version.map { "\(chart)-\($0)" } ?? chart
     }
@@ -88,48 +88,48 @@ struct KubeHelmChart: Equatable, Sendable {
 /// what looks secret replaced by `***`, every Secret's `data` and
 /// `stringData` in the manifest masked whatever its keys, the notes
 /// scrubbed. Printed, it says only which release it is.
-struct KubeHelmDetail: Equatable, Sendable {
-    var release: String
-    var namespace: String
-    var revision: Int
-    var status: String
-    var chart: KubeHelmChart
+package struct KubeHelmDetail: Equatable, Sendable {
+    package var release: String
+    package var namespace: String
+    package var revision: Int
+    package var status: String
+    package var chart: KubeHelmChart
     /// The chart's own description.
-    var chartDescription: String?
+    package var chartDescription: String?
     /// Helm's word on the revision: `Install complete`, `Upgrade "web" failed: …` (scrubbed).
-    var summary: String?
-    var firstDeployed: Date?
-    var lastDeployed: Date?
+    package var summary: String?
+    package var firstDeployed: Date?
+    package var lastDeployed: Date?
     /// NOTES.txt as rendered, scrubbed.
-    var notes: String
+    package var notes: String
     /// `helm get values`: what the user supplied, masked.
-    var userValues: String
+    package var userValues: String
     /// `helm get values --all`: the chart's defaults with the user's over them, masked.
-    var computedValues: String
+    package var computedValues: String
     /// `helm get manifest`, masked; a document that couldn't be read whole is left out.
-    var manifest: String
+    package var manifest: String
     /// How many values were masked (user-supplied, computed).
-    var maskedUserValues: Int
-    var maskedComputedValues: Int
+    package var maskedUserValues: Int
+    package var maskedComputedValues: Int
     /// The manifest's Secrets, masked whole.
-    var maskedSecrets: Int
+    package var maskedSecrets: Int
     /// Documents of the manifest left out: unreadable, so unmaskable.
-    var withheldDocuments: Int
+    package var withheldDocuments: Int
 }
 
 extension KubeHelmDetail: CustomStringConvertible {
     /// Never a value: a detail printed (a check's detail, a log) says which release it is.
-    var description: String { "Helm release \(namespace)/\(release) v\(revision) (\(status))" }
+    package var description: String { "Helm release \(namespace)/\(release) v\(revision) (\(status))" }
 }
 
 /// Why a record couldn't be read: said without anything it held.
-enum KubeHelmProblem: Error, Equatable, LocalizedError {
+package enum KubeHelmProblem: Error, Equatable, LocalizedError {
     case notARecord
     case unreadable
     case tooLarge(Int)
     case helm2
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .notARecord: "The answer isn't a Helm release record."
         case .unreadable: "The release record couldn't be read: it isn't Helm's encoding."
@@ -139,15 +139,15 @@ enum KubeHelmProblem: Error, Equatable, LocalizedError {
     }
 }
 
-enum KubeHelm {
-    static let secretType = "helm.sh/release.v1"
+package enum KubeHelm {
+    package static let secretType = "helm.sh/release.v1"
     /// The decompressed size a record may have (Section 4: 32 MB).
-    static let sizeLimit = 32 * 1024 * 1024
+    package static let sizeLimit = 32 * 1024 * 1024
 
-    static let secrets = KubeResourceKind(
+    package static let secrets = KubeResourceKind(
         group: "", version: "v1", resource: "secrets", kind: "Secret", singular: "secret", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"])
-    static let configMaps = KubeResourceKind(
+    package static let configMaps = KubeResourceKind(
         group: "", version: "v1", resource: "configmaps", kind: "ConfigMap", singular: "configmap", namespaced: true,
         verbs: ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"], shortNames: ["cm"])
 
@@ -156,7 +156,7 @@ enum KubeHelm {
     /// A `PartialObjectMetadataList` page's records (a plain List's items
     /// are read for their metadata alone too). An item that isn't one of
     /// Helm's (no release name, no revision) is passed over.
-    static func records(_ body: Data, storage: KubeHelmStorage) throws -> (records: [KubeHelmRecord], continueToken: String?) {
+    package static func records(_ body: Data, storage: KubeHelmStorage) throws -> (records: [KubeHelmRecord], continueToken: String?) {
         guard let list = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
             throw KubeTableReader.Malformed(detail: "not a list")
         }
@@ -171,7 +171,7 @@ enum KubeHelm {
     /// One item's metadata as a record: Helm 3's lowercase labels, Tiller's
     /// uppercase ones; the name and revision from the object's name when a
     /// label is missing (`sh.helm.release.v1.web.v3`, Tiller's `web.v3`).
-    static func record(_ metadata: [String: Any], storage: KubeHelmStorage) -> KubeHelmRecord? {
+    package static func record(_ metadata: [String: Any], storage: KubeHelmStorage) -> KubeHelmRecord? {
         guard let object = metadata["name"] as? String, let namespace = metadata["namespace"] as? String else { return nil }
         let labels = metadata["labels"] as? [String: String] ?? [:]
         func label(_ name: String) -> String? { labels[storage == .tiller ? name.uppercased() : name].flatMap { $0.isEmpty ? nil : $0 } }
@@ -189,7 +189,7 @@ enum KubeHelm {
     }
 
     /// `sh.helm.release.v1.<name>.v<revision>` (Tiller: `<name>.v<revision>`).
-    static func nameAndRevision(_ object: String, storage: KubeHelmStorage) -> (name: String, revision: Int)? {
+    package static func nameAndRevision(_ object: String, storage: KubeHelmStorage) -> (name: String, revision: Int)? {
         let prefix = "sh.helm.release.v1."
         var rest = Substring(object)
         if storage != .tiller {
@@ -204,7 +204,7 @@ enum KubeHelm {
 
     /// The records as releases: by storage, namespace and name, each's
     /// revisions newest first; the releases by namespace, then name.
-    static func releases(_ records: [KubeHelmRecord]) -> [KubeHelmRelease] {
+    package static func releases(_ records: [KubeHelmRecord]) -> [KubeHelmRelease] {
         let grouped = Dictionary(grouping: records) { "\($0.storage.rawValue)\u{0}\($0.namespace)\u{0}\($0.release)" }
         return grouped.values.map { records in
             let history = records.sorted { $0.revision > $1.revision }
@@ -219,7 +219,7 @@ enum KubeHelm {
     /// masked at once: the decoded release is never kept, only what
     /// `KubeHelmDetail` holds.
     /// `isCancelled` is asked between the steps; yes, `CancellationError`.
-    static func decode(_ body: Data, storage: KubeHelmStorage, isCancelled: () -> Bool = { false }) throws -> KubeHelmDetail {
+    package static func decode(_ body: Data, storage: KubeHelmStorage, isCancelled: () -> Bool = { false }) throws -> KubeHelmDetail {
         if isCancelled() { throw CancellationError() }
         let payload = try payload(body, storage: storage)
         if isCancelled() { throw CancellationError() }
@@ -231,7 +231,7 @@ enum KubeHelm {
     /// The release's JSON from its record: the API's base64 for a Secret,
     /// then Helm's base64, then gzip — a payload that doesn't start
     /// `1f 8b 08` is plain JSON (old releases). Capped at `sizeLimit`.
-    static func payload(_ body: Data, storage: KubeHelmStorage, limit: Int = sizeLimit) throws -> Data {
+    package static func payload(_ body: Data, storage: KubeHelmStorage, limit: Int = sizeLimit) throws -> Data {
         guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
             let kind = object["kind"] as? String, kind == (storage == .secret ? "Secret" : "ConfigMap"),
             let encoded = (object["data"] as? [String: Any])?["release"] as? String
@@ -250,10 +250,10 @@ enum KubeHelm {
         return json
     }
 
-    static func isGzip(_ data: Data) -> Bool { data.count >= 3 && data[data.startIndex] == 0x1F && data[data.startIndex + 1] == 0x8B && data[data.startIndex + 2] == 8 }
+    package static func isGzip(_ data: Data) -> Bool { data.count >= 3 && data[data.startIndex] == 0x1F && data[data.startIndex + 1] == 0x8B && data[data.startIndex + 2] == 8 }
 
     /// The decoded release, as the detail shows it.
-    static func detail(_ release: [String: Any], isCancelled: () -> Bool = { false }) throws -> KubeHelmDetail {
+    package static func detail(_ release: [String: Any], isCancelled: () -> Bool = { false }) throws -> KubeHelmDetail {
         let info = release["info"] as? [String: Any] ?? [:]
         let chart = release["chart"] as? [String: Any] ?? [:]
         let metadata = chart["metadata"] as? [String: Any] ?? [:]
@@ -280,7 +280,7 @@ enum KubeHelm {
     /// `helm get values --all`: the chart's values with the user's over
     /// them, maps merged key by key; a user's `null` takes a default away
     /// (Helm's `CoalesceValues`).
-    static func coalesced(_ defaults: [String: Any], _ user: [String: Any]) -> [String: Any] {
+    package static func coalesced(_ defaults: [String: Any], _ user: [String: Any]) -> [String: Any] {
         var out = defaults
         for (key, value) in user {
             if value is NSNull {
@@ -295,7 +295,7 @@ enum KubeHelm {
     }
 
     /// RFC 3339 with or without a fraction (Helm writes nine digits).
-    static func date(_ text: String) -> Date? {
+    package static func date(_ text: String) -> Date? {
         let trimmed = text.replacingOccurrences(of: #"\.[0-9]+"#, with: "", options: .regularExpression)
         return ISO8601DateFormatter().date(from: trimmed)
     }
@@ -304,7 +304,7 @@ enum KubeHelm {
 
     /// A gzip member's data, inflated — at most `limit` bytes, else
     /// `tooLarge`, whatever its header claims.
-    static func gunzip(_ data: Data, limit: Int = sizeLimit) throws -> Data {
+    package static func gunzip(_ data: Data, limit: Int = sizeLimit) throws -> Data {
         let bytes = [UInt8](data)
         guard bytes.count >= 18, isGzip(data) else { throw KubeHelmProblem.unreadable }
         let flags = bytes[3]
@@ -323,7 +323,7 @@ enum KubeHelm {
     }
 
     /// Raw DEFLATE (Compression's `COMPRESSION_ZLIB`), bounded.
-    static func inflate(_ input: [UInt8], limit: Int) throws -> Data {
+    package static func inflate(_ input: [UInt8], limit: Int) throws -> Data {
         try stream(input, operation: COMPRESSION_STREAM_DECODE, limit: limit)
     }
 
@@ -363,13 +363,13 @@ enum KubeHelm {
 
     /// A release as Helm stores it: JSON, gzipped, base64'd — the string a
     /// record's `release` key holds (a Secret's is base64'd once more by the API).
-    static func encode(_ release: [String: Any]) -> String {
+    package static func encode(_ release: [String: Any]) -> String {
         let json = (try? JSONSerialization.data(withJSONObject: release, options: [.sortedKeys])) ?? Data()
         return gzip(json).base64EncodedString()
     }
 
     /// A gzip member around raw DEFLATE, as Go's `gzip.Writer` writes one.
-    static func gzip(_ data: Data) -> Data {
+    package static func gzip(_ data: Data) -> Data {
         let deflated = (try? stream([UInt8](data), operation: COMPRESSION_STREAM_ENCODE, limit: Int.max)) ?? Data()
         var out = Data([0x1F, 0x8B, 0x08, 0, 0, 0, 0, 0, 0, 0xFF])
         out.append(deflated)
@@ -379,7 +379,7 @@ enum KubeHelm {
         return out
     }
 
-    static func crc32(_ data: Data) -> UInt32 {
+    package static func crc32(_ data: Data) -> UInt32 {
         var crc: UInt32 = 0xFFFF_FFFF
         for byte in data {
             crc ^= UInt32(byte)
@@ -406,10 +406,10 @@ enum KubeHelm {
 ///   name, the last-applied annotation gone; a `*List`'s items each so —
 ///   and credentials in text out of every string. A document that can't be read whole is left out,
 ///   said: what it holds can't be masked.
-enum KubeHelmMask {
-    static let mask = KubeObjectStrip.mask
+package enum KubeHelmMask {
+    package static let mask = KubeObjectStrip.mask
 
-    static func values(_ values: [String: Any]) -> (value: [String: Any], masked: Int) {
+    package static func values(_ values: [String: Any]) -> (value: [String: Any], masked: Int) {
         var count = 0
         let out = walk(values, secretPath: false, key: nil, count: &count) as? [String: Any] ?? [:]
         return (out, count)
@@ -451,11 +451,11 @@ enum KubeHelmMask {
 
     /// Text that isn't a value of a secret's own: every URL's password and
     /// what looks like a credential taken out.
-    static func scrubbed(_ text: String) -> String { Secrets.scrubCredentials(Secrets.maskURLs(in: text)) }
+    package static func scrubbed(_ text: String) -> String { Secrets.scrubCredentials(Secrets.maskURLs(in: text)) }
 
     /// `helm get manifest`, masked: its `---` documents one by one, each's
     /// `# Source:` line kept.
-    static func manifest(_ text: String) -> (text: String, secrets: Int, withheld: Int) {
+    package static func manifest(_ text: String) -> (text: String, secrets: Int, withheld: Int) {
         var documents: [[Substring]] = [[]]
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
             if line == "---" || line.hasPrefix("--- ") {
@@ -503,7 +503,7 @@ enum KubeHelmMask {
         return KubeObjectStrip.shown(object, full: false)
     }
 
-    static func scrubbingStrings(_ value: Any) -> Any {
+    package static func scrubbingStrings(_ value: Any) -> Any {
         switch value {
         case let map as [String: Any]: map.mapValues(scrubbingStrings)
         case let list as [Any]: list.map(scrubbingStrings)
@@ -516,10 +516,10 @@ enum KubeHelmMask {
 /// The helm commands the Helm section offers to copy — the user's to run
 /// with their own credentials — always with `--kube-context` and `-n`
 /// (rule 7), quoted for zsh as `KubectlLine`'s are. Pure.
-enum KubeHelmLine {
+package enum KubeHelmLine {
     /// `helm list --kube-context C -n NS` (`-A` across all namespaces).
     /// Several namespaces: a command each, a line each.
-    static func list(context: String, scope: KubeScope) -> String {
+    package static func list(context: String, scope: KubeScope) -> String {
         var words = ["helm", "list", "--kube-context", KubectlLine.quoted(context)]
         switch scope {
         case .all: words.append("-A")
@@ -531,14 +531,14 @@ enum KubeHelmLine {
     }
 
     /// `helm status NAME --kube-context C -n NS [--revision N]`.
-    static func status(context: String, namespace: String, release: String, revision: Int? = nil) -> String {
+    package static func status(context: String, namespace: String, release: String, revision: Int? = nil) -> String {
         var words = ["helm", "status", KubectlLine.quoted(release), "--kube-context", KubectlLine.quoted(context), "-n", KubectlLine.quoted(namespace)]
         if let revision { words += ["--revision", String(revision)] }
         return words.joined(separator: " ")
     }
 
     /// `helm history NAME --kube-context C -n NS`.
-    static func history(context: String, namespace: String, release: String) -> String {
+    package static func history(context: String, namespace: String, release: String) -> String {
         ["helm", "history", KubectlLine.quoted(release), "--kube-context", KubectlLine.quoted(context), "-n", KubectlLine.quoted(namespace)]
             .joined(separator: " ")
     }

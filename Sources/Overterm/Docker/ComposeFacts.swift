@@ -6,40 +6,40 @@ import Foundation
 /// the engine; its JSON is read by `ComposeConfig`, which keeps no
 /// variable's value, and only names are kept here. Pure, but for `stamp`
 /// and `read`.
-struct ComposeFacts: Equatable, Sendable {
+package struct ComposeFacts: Equatable, Sendable {
     /// The project's compose files and its `.env`, each with its size and
     /// modification time: a read is due when this changes.
-    struct Stamp: Equatable, Sendable {
-        var files: [String: String]
+    package struct Stamp: Equatable, Sendable {
+        package var files: [String: String]
     }
 
-    var stamp: Stamp
+    package var stamp: Stamp
     /// The services `up` starts that have a `develop.watch` of their own,
     /// sorted: what `compose watch` watches.
-    var watched: [String] = []
+    package var watched: [String] = []
     /// The services the files build (`build:`), sorted — whatever name
     /// `image:` gives what they build, and wherever its tag has moved
     /// since: an image's name doesn't say. Nil when Compose couldn't say.
-    var built: [String]? = nil
+    package var built: [String]? = nil
     /// Every profile the files name, sorted (`config --profiles`).
-    var profiles: [String] = []
+    package var profiles: [String] = []
     /// What Compose said when it couldn't read them, its first line.
-    var problem: String?
+    package var problem: String?
     /// When the problem isn't the files' — Compose didn't answer in time
     /// or didn't start, or there is no docker — when to ask again: a view's
     /// draw waits till then, a key or a menu item asks at once. One that is
     /// the files' (Compose read them and said no) stands until they change.
-    var retry: Date?
+    package var retry: Date?
 
     /// How long a view waits before asking again about a problem that
     /// isn't the files'.
-    static let retryAfter: TimeInterval = 30
+    package static let retryAfter: TimeInterval = 30
 
     /// `compose -p <name> -f <file>…`: the project by its labels, its files
     /// as `up` was given them — or as given (`ComposePortStore.files(for:)`:
     /// a forgotten override's path left out). Show Resolved Config asks the
     /// same way.
-    static func arguments(_ project: ComposeProject, files: [String]? = nil) -> [String] {
+    package static func arguments(_ project: ComposeProject, files: [String]? = nil) -> [String] {
         ["compose", "-p", project.name] + (files ?? project.configFiles).flatMap { ["-f", $0] }
     }
 
@@ -50,7 +50,7 @@ struct ComposeFacts: Equatable, Sendable {
     /// plan's, `ComposeConfig`), or none of them on this Mac (a remote
     /// engine's project). A link is stamped by what it points at: Compose
     /// names the link, and it is the target that is edited.
-    static func stamp(_ project: ComposeProject) -> Stamp? {
+    package static func stamp(_ project: ComposeProject) -> Stamp? {
         guard !project.planned, let first = project.configFiles.first else { return nil }
         let folder = project.workingDir ?? (first as NSString).deletingLastPathComponent
         var files: [String: String] = [:]
@@ -71,19 +71,19 @@ struct ComposeFacts: Equatable, Sendable {
 
     /// `config --format json` → the services whose `develop.watch` has a
     /// rule; nil when it isn't a project's JSON.
-    static func watched(fromConfig json: String) -> [String]? {
+    package static func watched(fromConfig json: String) -> [String]? {
         (try? ComposeConfig.parse(json))?.services.filter(\.watched).map(\.name)
     }
 
     /// `config --profiles` → each once, sorted.
-    static func profiles(fromList output: String) -> [String] {
+    package static func profiles(fromList output: String) -> [String] {
         Array(Set(output.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })).sorted()
     }
 
     /// Both asked at once. A failure says Compose's first line (`problem`)
     /// and leaves its list empty; one that isn't the files' is asked again
     /// (`retry`).
-    static func read(_ project: ComposeProject, files: [String]? = nil, stamp: Stamp, cli: DockerCLI, timeout: TimeInterval = 15) async -> ComposeFacts {
+    package static func read(_ project: ComposeProject, files: [String]? = nil, stamp: Stamp, cli: DockerCLI, timeout: TimeInterval = 15) async -> ComposeFacts {
         let arguments = Self.arguments(project, files: files)
         async let config = outcome { try await cli.composeConfig(arguments + ["config", "--format", "json"], in: home, timeout: timeout) }
         async let listed = outcome { try await cli.composeConfig(arguments + ["config", "--profiles"], in: home, timeout: timeout) }
@@ -116,7 +116,7 @@ struct ComposeFacts: Equatable, Sendable {
     /// Whether Compose ran and said no: the files' problem, which stands
     /// until they change. No answer in time (status -1), a `docker` that
     /// didn't start (env's 126 and 127) or any other error may pass.
-    static func isTheFiles(_ error: Error) -> Bool {
+    package static func isTheFiles(_ error: Error) -> Bool {
         guard let error = error as? GitError else { return false }
         return error.status > 0 && error.status != 126 && error.status != 127
     }
@@ -129,7 +129,7 @@ struct ComposeFacts: Equatable, Sendable {
     }
 
     /// Compose's own words (`ComposeConfig.message`), its first line, short.
-    static func problem(_ error: Error) -> String {
+    package static func problem(_ error: Error) -> String {
         let line = ComposeConfig.message(error).split(whereSeparator: \.isNewline).first.map(String.init) ?? "docker compose config failed."
         return line.count > 200 ? String(line.prefix(199)) + "…" : line
     }

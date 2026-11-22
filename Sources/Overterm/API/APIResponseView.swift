@@ -4,11 +4,11 @@ import SwiftUI
 /// The lower half of a request: what came back — status, time, size —
 /// and the body, the headers, the timeline (what went out, where the time
 /// went) and the tests.
-struct APIResponseView: View {
-    @ObservedObject var model: APIRequestModel
-    @ObservedObject var theme: ChromeTheme
+package struct APIResponseView: View {
+    @ObservedObject package var model: APIRequestModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             Rectangle().fill(theme.border).frame(height: 1)
             if let result = model.result {
@@ -108,7 +108,7 @@ struct APIResponseView: View {
         .clipped()
     }
 
-    static func statusColor(_ status: Int) -> Color {
+    package static func statusColor(_ status: Int) -> Color {
         switch status {
         case 200..<300: Color(red: 0.35, green: 0.78, blue: 0.45)
         case 300..<400: Color(red: 0.36, green: 0.62, blue: 0.98)

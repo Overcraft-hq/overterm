@@ -9,14 +9,14 @@ import SwiftUI
 /// it has edits, and the banner when the object changed on the cluster
 /// under them. The diff shows here, in place of the text: the right-hand
 /// pane is under the page.
-struct KubeResourceYAMLView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var detail: KubeDetailSession
-    @ObservedObject var resource: KubeResourceBuffer
-    @ObservedObject var theme: ChromeTheme
-    let editor: EditorViewController
+package struct KubeResourceYAMLView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var detail: KubeDetailSession
+    @ObservedObject package var resource: KubeResourceBuffer
+    @ObservedObject package var theme: ChromeTheme
+    package let editor: EditorViewController
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             KubeResourceBarHost(session: resource.session, resource: resource, theme: theme) { page.editYAML(resource.ref) }
             Rectangle().fill(theme.border).frame(height: 1)
@@ -66,13 +66,13 @@ struct KubeResourceYAMLView: View {
 }
 
 /// The bar, as tall as what it says: a status line, the banner.
-struct KubeResourceBarHost: View {
-    @ObservedObject var session: KubeManifestSession
-    @ObservedObject var resource: KubeResourceBuffer
-    @ObservedObject var theme: ChromeTheme
-    let openInEditor: () -> Void
+package struct KubeResourceBarHost: View {
+    @ObservedObject package var session: KubeManifestSession
+    @ObservedObject package var resource: KubeResourceBuffer
+    @ObservedObject package var theme: ChromeTheme
+    package let openInEditor: () -> Void
 
-    var body: some View {
+    package var body: some View {
         KubeManifestBar(session: session, theme: theme, openInEditor: openInEditor)
             .frame(height: KubeManifestBar.height(status: session.state.text != nil || session.applyRefusal != nil, banner: resource.clusterChange != nil))
     }
@@ -80,23 +80,23 @@ struct KubeResourceBarHost: View {
 
 /// The page's editor (`KubernetesPageModel.yamlEditor`) in the tab: its
 /// view moved into this one, showing `buffer` and only it.
-struct KubeEmbeddedEditor: NSViewRepresentable {
-    let editor: EditorViewController
-    let buffer: EditorBuffer
+package struct KubeEmbeddedEditor: NSViewRepresentable {
+    package let editor: EditorViewController
+    package let buffer: EditorBuffer
 
-    func makeNSView(context: Context) -> NSView {
+    package func makeNSView(context: Context) -> NSView {
         let host = NSView()
         host.clipsToBounds = true
         place(in: host)
         return host
     }
 
-    func updateNSView(_ host: NSView, context: Context) {
+    package func updateNSView(_ host: NSView, context: Context) {
         place(in: host)
         editor.showOnly(buffer)
     }
 
-    static func dismantleNSView(_ host: NSView, coordinator: ()) {
+    package static func dismantleNSView(_ host: NSView, coordinator: ()) {
         for view in host.subviews { view.removeFromSuperview() }
     }
 

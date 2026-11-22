@@ -6,22 +6,22 @@ import Darwin
 /// (analysis 3.2): only the names a header shows are read from its
 /// environment — `TF_WORKSPACE`, `TF_DATA_DIR` and the profile's name in
 /// `AWS_PROFILE` — never a credential's value.
-struct TerraformProcess: Equatable, Sendable {
-    var pid: pid_t
-    var line: TerraformCommandLine
-    var cwd: String?
-    var workspaceVariable: String?
-    var dataDirVariable: String?
-    var awsProfile: String?
+package struct TerraformProcess: Equatable, Sendable {
+    package var pid: pid_t
+    package var line: TerraformCommandLine
+    package var cwd: String?
+    package var workspaceVariable: String?
+    package var dataDirVariable: String?
+    package var awsProfile: String?
     /// When it started, µs since 1970.
-    var started: UInt64?
+    package var started: UInt64?
     /// Its `terraform-provider-*` children.
-    var providers = 0
+    package var providers = 0
 
     /// The folder it works in: its cwd, then `-chdir` — unless the cwd is
     /// there already: terraform changes its own folder to `-chdir`'s first
     /// thing, so a running one's cwd is the root.
-    var folder: URL? {
+    package var folder: URL? {
         guard let cwd else { return nil }
         let base = URL(fileURLWithPath: cwd, isDirectory: true)
         guard let chdir = line.chdir, !chdir.isEmpty else { return base.standardizedFileURL }
@@ -36,10 +36,10 @@ struct TerraformProcess: Equatable, Sendable {
     /// The names read from a process's environment, scanned for in place
     /// (`ProcessArguments.facts`): no other entry becomes a `String`, and
     /// only `ProcessArguments.ReaderName`'s may be asked for.
-    static let environmentNames: [ProcessArguments.ReaderName] = [.terraformWorkspace, .terraformDataFolder, .awsProfile]
+    package static let environmentNames: [ProcessArguments.ReaderName] = [.terraformWorkspace, .terraformDataFolder, .awsProfile]
 
     /// Their values, in `environmentNames`' order: an empty one is none.
-    static func environment(_ values: [String?]) -> (workspace: String?, dataDir: String?, profile: String?) {
+    package static func environment(_ values: [String?]) -> (workspace: String?, dataDir: String?, profile: String?) {
         func value(_ index: Int) -> String? { values.indices.contains(index) ? values[index].flatMap { $0.isEmpty ? nil : $0 } : nil }
         return (value(0), value(1), value(2))
     }
@@ -50,11 +50,11 @@ struct TerraformProcess: Equatable, Sendable {
 /// read only for a terraform, tofu or terragrunt (or a script of that name
 /// a shell runs: the recording wrapper). Never `pkill -f`, never a pattern:
 /// by pid. Blocking: a GCD thread's.
-enum TerraformProcesses {
-    static let scriptShells: Set<String> = ["bash", "sh", "dash"]
+package enum TerraformProcesses {
+    package static let scriptShells: Set<String> = ["bash", "sh", "dash"]
 
     /// The descendants of `root`, breadth first, at most `limit`.
-    static func descendants(of root: pid_t, limit: Int = 2_000) -> [pid_t] {
+    package static func descendants(of root: pid_t, limit: Int = 2_000) -> [pid_t] {
         // `found` is the queue too: an index walks it, a set answers "seen".
         var found: [pid_t] = []
         var seen: Set<pid_t> = [root]
@@ -81,7 +81,7 @@ enum TerraformProcesses {
         return found
     }
 
-    static func name(of pid: pid_t) -> String? {
+    package static func name(of pid: pid_t) -> String? {
         var buffer = [UInt8](repeating: 0, count: 256)
         let length = proc_name(pid, &buffer, UInt32(buffer.count))
         guard length > 0 else { return nil }
@@ -94,7 +94,7 @@ enum TerraformProcesses {
     /// inside the read, and of the environment `TF_WORKSPACE`, `TF_DATA_DIR`
     /// and `AWS_PROFILE` alone — an AWS key or a pane's MCP token beside
     /// them never becomes a `String`.
-    static func inspect(
+    package static func inspect(
         _ pid: pid_t, name: String? = nil, children: [pid_t]? = nil, kernel: some ActivityKernel = LiveActivityKernel()
     ) -> TerraformProcess? {
         let name = name ?? self.name(of: pid) ?? ""
@@ -119,7 +119,7 @@ enum TerraformProcesses {
     }
 
     /// The terraform processes under `root` (a pane's `login`), outermost first.
-    static func find(under root: pid_t) -> [TerraformProcess] {
+    package static func find(under root: pid_t) -> [TerraformProcess] {
         var found: [TerraformProcess] = []
         let all = descendants(of: root)
         for pid in all {
@@ -134,7 +134,7 @@ enum TerraformProcesses {
 
     /// The repository `folder` is in: the nearest folder above with a
     /// `.git`, bounded, stopping at `/` (CLAUDE.md).
-    static func checkout(of folder: URL) -> URL? {
+    package static func checkout(of folder: URL) -> URL? {
         var dir = folder.standardizedFileURL
         for _ in 0..<64 where dir.pathComponents.count > 1 {
             if FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path) { return dir }
@@ -144,7 +144,7 @@ enum TerraformProcesses {
     }
 
     /// Whether `folder` holds Terraform's files: a configuration or Terragrunt's.
-    static func hasConfiguration(_ folder: URL) -> Bool {
+    package static func hasConfiguration(_ folder: URL) -> Bool {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
         return names.prefix(2_000).contains { TerraformRootGuess.isConfigFile($0) || $0 == "terragrunt.hcl" || $0 == "root.hcl" }
     }
@@ -155,39 +155,39 @@ enum TerraformProcesses {
 /// a guard: it shows once the command has started. "probably" when the
 /// command is `make`, `just`, `task`, `./deploy*.sh` or `atlantis` and the
 /// folder's files are all that say it. Pure.
-struct TerraformPaneWarning: Equatable, Sendable {
-    var tool: String
-    var operation: String?
-    var root: String
-    var workspace: String
-    var backend: String
-    var awsProfile: String?
-    var rootClass: TerraformClass
-    var reason: String
-    var probably = false
+package struct TerraformPaneWarning: Equatable, Sendable {
+    package var tool: String
+    package var operation: String?
+    package var root: String
+    package var workspace: String
+    package var backend: String
+    package var awsProfile: String?
+    package var rootClass: TerraformClass
+    package var reason: String
+    package var probably = false
     /// `TF_WORKSPACE` or `TF_DATA_DIR` in the process's environment: each decides silently.
-    var inheritedWorkspace: String?
-    var inheritedDataDir = false
-    var isWrite = false
+    package var inheritedWorkspace: String?
+    package var inheritedDataDir = false
+    package var isWrite = false
     /// The state identity to keep as production (`TerraformRootCard.identityToRemember`):
     /// production by the root's own signals, the run's var files among them.
-    var rememberIdentity: TerraformStateIdentity?
+    package var rememberIdentity: TerraformStateIdentity?
     /// The state it touches: a write there makes Overterm's plans of it stale (3.6).
-    var identity: TerraformStateIdentity?
+    package var identity: TerraformStateIdentity?
     /// The checkout it runs in, by its folder's name: "applied from `bump-eks`".
-    var worktree: String?
+    package var worktree: String?
 
-    var isProduction: Bool { rootClass == .production }
+    package var isProduction: Bool { rootClass == .production }
 
     /// `⛰ envs/prod · workspace prod · s3 acme-tfstate/prod/network.tfstate · AWS_PROFILE acme-prod-admin · apply`.
-    var label: String {
+    package var label: String {
         var parts = ["⛰ " + (probably ? "probably " : "") + root, "workspace \(workspace)", backend]
         if let awsProfile { parts.append("AWS_PROFILE \(awsProfile)") }
         if let operation { parts.append(operation) }
         return parts.joined(separator: " · ")
     }
 
-    var help: String {
+    package var help: String {
         var lines = [
             "\(tool)\(operation.map { " " + $0 } ?? "") \(probably ? "probably runs" : "runs") in \(root) — \(rootClass.title.uppercased()): \(reason)."
         ]
@@ -201,7 +201,7 @@ struct TerraformPaneWarning: Equatable, Sendable {
     /// runs terraform) in `folder`, from the folder's facts. `runFiles` are
     /// the var files and backend-config files the run itself names
     /// (`TerraformCommandLine.namedFiles`): signal 4 of 5.1.
-    static func make(
+    package static func make(
         tool: String, operation: String?, isWrite: Bool, folder: URL, checkout: URL?, facts: TerraformRootFacts, workspaceVariable: String?,
         dataDirVariable: String?, awsProfile: String?, runFiles: [String] = [], probably: Bool, settings: TerraformClassSettings,
         identities: Set<TerraformStateIdentity>
@@ -238,7 +238,7 @@ struct TerraformPaneWarning: Equatable, Sendable {
 
     /// The checkout `folder` is in, of the tab's: the same folder or one
     /// below it — `/w/acme-live-bump` is not in `/w/acme-live`.
-    static func contains(_ checkout: URL, _ folder: URL) -> Bool {
+    package static func contains(_ checkout: URL, _ folder: URL) -> Bool {
         let top = checkout.standardizedFileURL.path
         let path = folder.standardizedFileURL.path
         return path == top || path.hasPrefix(top + "/")
@@ -258,25 +258,25 @@ struct TerraformPaneWarning: Equatable, Sendable {
 /// held until confirmed (5.8), so it can't take the header away before an
 /// apply. One for the app; what it finds, by pane (`processTag`).
 @MainActor
-final class TerraformPaneMonitor: ObservableObject {
-    static let shared = TerraformPaneMonitor()
+package final class TerraformPaneMonitor: ObservableObject {
+    package static let shared = TerraformPaneMonitor()
 
-    @Published private(set) var warnings: [String: TerraformPaneWarning] = [:]
+    @Published package private(set) var warnings: [String: TerraformPaneWarning] = [:]
     /// The Terraform writes asked for on the panes' screens (3.3), by pane:
     /// an agent's permission prompt, or Terraform's own.
-    @Published private(set) var asks: [String: TerraformAsk] = [:]
+    @Published package private(set) var asks: [String: TerraformAsk] = [:]
     /// The terraform writes a close's Interrupt signalled, by pane, until
     /// they stop (4.8): the header says "shutting down".
-    @Published private(set) var shutting: [String: String] = [:]
+    @Published package private(set) var shutting: [String: String] = [:]
     /// The terraform processes found, by pane: Tab Info and the close guard (2a) read them.
-    private(set) var processes: [String: [TerraformProcess]] = [:]
+    package private(set) var processes: [String: [TerraformProcess]] = [:]
     private var loop: Task<Void, Never>?
-    static let interval: Duration = .seconds(2)
+    package static let interval: Duration = .seconds(2)
     /// Walks done: a scenario checks a pane at its prompt costs none.
-    private(set) var walks = 0
+    package private(set) var walks = 0
     /// Screens read (`ghostty_surface_read_text`, on the main thread): only
     /// when `readsScreen` says one may hold a prompt.
-    private(set) var screenReads = 0
+    package private(set) var screenReads = 0
     /// Each pane's `PaneBlocks.outputMark` at the last look.
     private var screenMarks: [String: UInt64] = [:]
     /// Each pane's last finished command seen, and the folder a running one ran in.
@@ -288,43 +288,43 @@ final class TerraformPaneMonitor: ObservableObject {
     /// agent (its notification or hook), a terraform runs in its tree
     /// (Terraform's own prompt), an ask stands there (to see it go), or
     /// the pane printed, scrolled, rang or titled since the last look.
-    func shuttingDown(_ running: [TerraformCloseGuard.Running]) {
+    package func shuttingDown(_ running: [TerraformCloseGuard.Running]) {
         for item in running { if let tag = item.tag { shutting[tag] = TerraformCloseGuard.shuttingDown(item) } }
     }
 
-    func stopped(_ running: [TerraformCloseGuard.Running]) {
+    package func stopped(_ running: [TerraformCloseGuard.Running]) {
         for item in running { if let tag = item.tag { shutting[tag] = nil } }
     }
 
-    nonisolated static func readsScreen(waiting: Bool, terraformRunning: Bool, asked: Bool, moved: Bool) -> Bool {
+    package nonisolated static func readsScreen(waiting: Bool, terraformRunning: Bool, asked: Bool, moved: Bool) -> Bool {
         waiting || terraformRunning || asked || moved
     }
 
-    struct Candidate: Sendable {
-        var tag: String
-        var login: pid_t
-        var command: String?
-        var commandFolder: String?
-        var checkout: URL?
+    package struct Candidate: Sendable {
+        package var tag: String
+        package var login: pid_t
+        package var command: String?
+        package var commandFolder: String?
+        package var checkout: URL?
         /// The pane's screen, its last lines: where an ask is read (3.3).
-        var screen: String?
+        package var screen: String?
         /// The folder the pane's shell is in, when no command said one.
-        var folder: String?
+        package var folder: String?
         /// The checkout's production roots, as the agents' guard last read
         /// them: an ask whose folder can't be settled is said against them.
-        var productionRoots: [String] = []
+        package var productionRoots: [String] = []
     }
 
     /// What one look found.
-    struct Found: Sendable {
-        var warnings: [String: TerraformPaneWarning] = [:]
-        var processes: [String: [TerraformProcess]] = [:]
-        var asks: [String: TerraformAsk] = [:]
+    package struct Found: Sendable {
+        package var warnings: [String: TerraformPaneWarning] = [:]
+        package var processes: [String: [TerraformProcess]] = [:]
+        package var asks: [String: TerraformAsk] = [:]
         /// Panes that printed, or were asked for, what Terraform keeps secret (5.6 rule 6).
-        var sensitive: Set<String> = []
+        package var sensitive: Set<String> = []
     }
 
-    func start() {
+    package func start() {
         guard loop == nil else { return }
         loop = Task { [weak self] in
             while !Task.isCancelled {
@@ -334,13 +334,13 @@ final class TerraformPaneMonitor: ObservableObject {
         }
     }
 
-    func stop() {
+    package func stop() {
         loop?.cancel()
         loop = nil
     }
 
     /// One look at every pane that may run terraform.
-    func tick() async {
+    package func tick() async {
         guard Settings.shared.terraformEnabled else {
             if !warnings.isEmpty { warnings = [:] }
             if !asks.isEmpty { asks = [:] }
@@ -419,10 +419,10 @@ final class TerraformPaneMonitor: ObservableObject {
     }
 
     /// A terraform write a pane's command line finished: its folder, its line.
-    struct FinishedWrite: Sendable {
-        var folder: String
-        var line: TerraformCommandLine
-        var worktree: String
+    package struct FinishedWrite: Sendable {
+        package var folder: String
+        package var line: TerraformCommandLine
+        package var worktree: String
     }
 
     /// The writes the pane's ledger finished since the last look — `terraform
@@ -480,7 +480,7 @@ final class TerraformPaneMonitor: ObservableObject {
     }
 
     /// "applied", "destroyed": how the stale note says it.
-    nonisolated static func past(_ operation: String) -> String {
+    package nonisolated static func past(_ operation: String) -> String {
         switch operation.split(separator: " ").first.map(String.init) ?? operation {
         case "apply", "apply-all": "applied"
         case "destroy", "destroy-all": "destroyed"
@@ -497,7 +497,7 @@ final class TerraformPaneMonitor: ObservableObject {
     private nonisolated static let factsLock = NSLock()
     private nonisolated(unsafe) static var factsCache: [String: (at: Date, facts: TerraformRootFacts)] = [:]
 
-    nonisolated static func facts(of folder: URL, checkout: URL) -> TerraformRootFacts {
+    package nonisolated static func facts(of folder: URL, checkout: URL) -> TerraformRootFacts {
         let key = folder.path
         if let cached = factsLock.withLock({ factsCache[key] }), Date().timeIntervalSince(cached.at) < 10 { return cached.facts }
         let facts = TerraformRootFacts.read(root: folder, checkout: checkout)
@@ -508,7 +508,7 @@ final class TerraformPaneMonitor: ObservableObject {
         return facts
     }
 
-    nonisolated static func look(at candidates: [Candidate], settings: TerraformClassSettings, identities: Set<TerraformStateIdentity>) -> Found {
+    package nonisolated static func look(at candidates: [Candidate], settings: TerraformClassSettings, identities: Set<TerraformStateIdentity>) -> Found {
         var result = Found()
         for candidate in candidates {
             let found = TerraformProcesses.find(under: candidate.login)
@@ -528,7 +528,7 @@ final class TerraformPaneMonitor: ObservableObject {
     /// The ask on a pane, with the root it would touch: an agent's command
     /// in the folder it names (where the agent works, `cd`, `-chdir`);
     /// Terraform's own in the folder of the terraform found there.
-    nonisolated static func ask(
+    package nonisolated static func ask(
         _ prompt: TerraformPrompt, candidate: Candidate, processes: [TerraformProcess], settings: TerraformClassSettings,
         identities: Set<TerraformStateIdentity>
     ) -> TerraformAsk {
@@ -559,7 +559,7 @@ final class TerraformPaneMonitor: ObservableObject {
     /// its `cd` from an earlier call, so a bare `terraform apply` may run in
     /// `envs/prod` while the pane's folder is the checkout's top — in a
     /// checkout with production roots: said as production, the roots named.
-    nonisolated static func unsettled(_ prompt: TerraformPrompt, workspace: String?, productionRoots: [String]) -> TerraformPaneWarning? {
+    package nonisolated static func unsettled(_ prompt: TerraformPrompt, workspace: String?, productionRoots: [String]) -> TerraformPaneWarning? {
         guard !productionRoots.isEmpty else { return nil }
         let named = productionRoots.prefix(3).joined(separator: ", ") + (productionRoots.count > 3 ? ", …" : "")
         return TerraformPaneWarning(
@@ -569,7 +569,7 @@ final class TerraformPaneMonitor: ObservableObject {
             isWrite: true)
     }
 
-    nonisolated static func warnings(
+    package nonisolated static func warnings(
         at candidates: [Candidate], processes all: [String: [TerraformProcess]], settings: TerraformClassSettings, identities: Set<TerraformStateIdentity>
     ) -> [String: TerraformPaneWarning] {
         var warnings: [String: TerraformPaneWarning] = [:]
@@ -607,23 +607,23 @@ final class TerraformPaneMonitor: ObservableObject {
 /// One terraform process as Tab Info lists it (analysis 8): its operation,
 /// root and workspace, how long it has run, its provider plugins, and the
 /// root's `.terraform` on disk (`DiskUsage`, kept a minute).
-struct TerraformInfoRow: Equatable, Sendable {
-    var pid: pid_t
-    var operation: String
-    var root: String
-    var workspace: String
-    var production: Bool
-    var started: UInt64?
-    var providers: Int
-    var dataBytes: UInt64?
+package struct TerraformInfoRow: Equatable, Sendable {
+    package var pid: pid_t
+    package var operation: String
+    package var root: String
+    package var workspace: String
+    package var production: Bool
+    package var started: UInt64?
+    package var providers: Int
+    package var dataBytes: UInt64?
     /// What Tab Info's caller keeps as production (`TerraformRootStore`).
-    var rememberIdentity: TerraformStateIdentity?
+    package var rememberIdentity: TerraformStateIdentity?
 
     private static let sizeLock = NSLock()
     nonisolated(unsafe) private static var sizes: [String: (at: Date, bytes: UInt64)] = [:]
 
     /// `.terraform`'s size, measured at most once a minute per root. Blocking.
-    static func dataSize(of folder: URL) -> UInt64? {
+    package static func dataSize(of folder: URL) -> UInt64? {
         let data = folder.appendingPathComponent(".terraform", isDirectory: true)
         if let cached = sizeLock.withLock({ sizes[data.path] }), Date().timeIntervalSince(cached.at) < 60 { return cached.bytes }
         guard FileManager.default.fileExists(atPath: data.path), let report = DiskUsage.measure(data, top: 1) else { return nil }
@@ -631,7 +631,7 @@ struct TerraformInfoRow: Equatable, Sendable {
         return report.total
     }
 
-    static func make(_ process: TerraformProcess, settings: TerraformClassSettings, identities: Set<TerraformStateIdentity>) -> TerraformInfoRow {
+    package static func make(_ process: TerraformProcess, settings: TerraformClassSettings, identities: Set<TerraformStateIdentity>) -> TerraformInfoRow {
         let operation = process.line.tool + (process.line.operation.map { " " + $0 } ?? "")
         guard let folder = process.folder else {
             return TerraformInfoRow(
@@ -650,7 +650,7 @@ struct TerraformInfoRow: Equatable, Sendable {
     }
 
     /// "2m 14s", from a start in µs since 1970.
-    static func elapsed(since started: UInt64, now: Date = Date()) -> String {
+    package static func elapsed(since started: UInt64, now: Date = Date()) -> String {
         let seconds = max(0, Int(now.timeIntervalSince1970 - Double(started) / 1_000_000))
         if seconds < 60 { return "\(seconds)s" }
         if seconds < 3600 { return "\(seconds / 60)m \(seconds % 60)s" }

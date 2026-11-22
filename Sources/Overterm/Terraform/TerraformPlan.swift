@@ -4,7 +4,7 @@ import Foundation
 /// Terraform marks sensitive is `.sensitive` — the value itself never
 /// reaches the model — and what isn't known until apply is `.unknown`.
 /// Pure.
-indirect enum TerraformValue: Equatable, Sendable {
+package indirect enum TerraformValue: Equatable, Sendable {
     case null
     case bool(Bool)
     case number(String)
@@ -16,7 +16,7 @@ indirect enum TerraformValue: Equatable, Sendable {
 
     /// One line of it, strings cut at `cut` characters: what an agent and
     /// a row read. A sensitive value is `(sensitive)`, never its length.
-    func said(cut: Int = 200, depth: Int = 0) -> String {
+    package func said(cut: Int = 200, depth: Int = 0) -> String {
         switch self {
         case .null: return "null"
         case .bool(let value): return value ? "true" : "false"
@@ -42,21 +42,21 @@ indirect enum TerraformValue: Equatable, Sendable {
 /// substring match on `KEY`, `AUTH`, `SESSION`, `TOKEN` would hide
 /// `key_name`, `public_key`, `kms_key_id`, `ssh_keys`, `session_name` and
 /// `auth_mode` — exactly what a reviewer must see change. Pure.
-enum TerraformSecretNames {
-    static let names: Set<String> = [
+package enum TerraformSecretNames {
+    package static let names: Set<String> = [
         "password", "secret", "private_key", "client_secret", "token", "connection_string", "sas_token", "secret_key", "access_key",
         "secret_access_key", "auth_token", "api_key", "master_password", "admin_password",
     ]
-    static let suffixes = ["_password", "_pem", "_secret", "_token"]
+    package static let suffixes = ["_password", "_pem", "_secret", "_token"]
 
-    static func isSecret(_ name: String) -> Bool {
+    package static func isSecret(_ name: String) -> Bool {
         let name = name.lowercased()
         return names.contains(name) || suffixes.contains { name.hasSuffix($0) }
     }
 
     /// What goes to an agent: also `Secrets.isSecret`'s broad match, where
     /// hiding too much costs little (`private_key_id`, `session_key`).
-    static func forAgents(_ name: String) -> Bool { isSecret(name) || Secrets.isSecret(name) }
+    package static func forAgents(_ name: String) -> Bool { isSecret(name) || Secrets.isSecret(name) }
 }
 
 /// A plan's JSON (`terraform show -json <plan>`), decoded through an
@@ -68,33 +68,33 @@ enum TerraformSecretNames {
 /// by Terraform's `*_sensitive` mirrors, then by `TerraformSecretNames`,
 /// and every kept string goes through `scrub` (`Secrets`' rules). The raw
 /// data is not kept. Pure.
-struct TerraformPlan: Equatable, Sendable {
-    enum Action: String, Sendable, CaseIterable {
+package struct TerraformPlan: Equatable, Sendable {
+    package enum Action: String, Sendable, CaseIterable {
         case create, update, delete, replace, read, noop, forget
     }
 
-    struct ResourceChange: Equatable, Sendable {
-        var address: String
-        var previousAddress: String?
-        var module: String?
-        var mode: String
-        var type: String
-        var name: String
-        var index: String?
-        var provider: String
+    package struct ResourceChange: Equatable, Sendable {
+        package var address: String
+        package var previousAddress: String?
+        package var module: String?
+        package var mode: String
+        package var type: String
+        package var name: String
+        package var index: String?
+        package var provider: String
         /// Terraform's `actions`, as it wrote them.
-        var actions: [String]
-        var reason: String?
+        package var actions: [String]
+        package var reason: String?
         /// `replace_paths`, each a path of names and indexes.
-        var replacePaths: [[String]]
-        var importingID: String?
-        var before: TerraformValue?
-        var after: TerraformValue?
+        package var replacePaths: [[String]]
+        package var importingID: String?
+        package var before: TerraformValue?
+        package var after: TerraformValue?
         /// The attribute paths whose values differ — read from the raw
         /// values before they were masked, kept as paths only.
-        var changedPaths: [String]
+        package var changedPaths: [String]
 
-        var action: Action {
+        package var action: Action {
             switch Set(actions) {
             case ["create"]: .create
             case ["update"]: .update
@@ -108,53 +108,53 @@ struct TerraformPlan: Equatable, Sendable {
         }
 
         /// Destroy first (`["delete", "create"]`) or create first.
-        var createsFirst: Bool { actions == ["create", "delete"] }
-        var isMove: Bool { previousAddress != nil && previousAddress != address }
-        var isImport: Bool { importingID != nil }
+        package var createsFirst: Bool { actions == ["create", "delete"] }
+        package var isMove: Bool { previousAddress != nil && previousAddress != address }
+        package var isImport: Bool { importingID != nil }
         /// Replace, delete, forget: first, red (6.3).
-        var isRisky: Bool { [.replace, .delete, .forget].contains(action) }
+        package var isRisky: Bool { [.replace, .delete, .forget].contains(action) }
 
         /// The rows folded into one ×N (2.2): same type, same actions, same
         /// paths changed and forcing, the index aside.
-        var foldKey: String {
+        package var foldKey: String {
             let base = index.map { _ in address.replacingOccurrences(of: #"\[[^\]]*\]$"#, with: "", options: .regularExpression) } ?? address
             return [base, actions.joined(separator: ","), changedPaths.joined(separator: ","), replacePaths.map { $0.joined(separator: ".") }.joined(separator: ",")]
                 .joined(separator: "\u{0}")
         }
     }
 
-    struct OutputChange: Equatable, Sendable {
-        var name: String
-        var actions: [String]
-        var sensitive: Bool
+    package struct OutputChange: Equatable, Sendable {
+        package var name: String
+        package var actions: [String]
+        package var sensitive: Bool
         /// Its value after, only when neither mirror marks it.
-        var after: TerraformValue?
+        package var after: TerraformValue?
     }
 
-    struct Variable: Equatable, Sendable {
-        var name: String
-        var sensitive: Bool
-        var ephemeral: Bool
+    package struct Variable: Equatable, Sendable {
+        package var name: String
+        package var sensitive: Bool
+        package var ephemeral: Bool
     }
 
-    struct ActionInvocation: Equatable, Sendable {
-        var address: String
-        var type: String
-        var trigger: String?
+    package struct ActionInvocation: Equatable, Sendable {
+        package var address: String
+        package var type: String
+        package var trigger: String?
         /// Its configuration, masked by `config_sensitive`.
-        var config: TerraformValue?
+        package var config: TerraformValue?
     }
 
-    struct Check: Equatable, Sendable {
-        var address: String
-        var status: String
+    package struct Check: Equatable, Sendable {
+        package var address: String
+        package var status: String
     }
 
-    enum DecodeError: Error, Equatable, CustomStringConvertible {
+    package enum DecodeError: Error, Equatable, CustomStringConvertible {
         case notJSON
         case unknownFormat(String)
 
-        var description: String {
+        package var description: String {
             switch self {
             case .notJSON: "not a plan's JSON"
             case .unknownFormat(let version): "a plan format Overterm doesn't read (format_version \(version))"
@@ -162,56 +162,56 @@ struct TerraformPlan: Equatable, Sendable {
         }
     }
 
-    var formatVersion: String
-    var terraformVersion: String?
-    var applyable: Bool
-    var complete: Bool
-    var errored: Bool
-    var timestamp: String?
-    var resourceChanges: [ResourceChange] = []
-    var drift: [ResourceChange] = []
-    var outputs: [OutputChange] = []
-    var variables: [Variable] = []
-    var actions: [ActionInvocation] = []
-    var checks: [Check] = []
+    package var formatVersion: String
+    package var terraformVersion: String?
+    package var applyable: Bool
+    package var complete: Bool
+    package var errored: Bool
+    package var timestamp: String?
+    package var resourceChanges: [ResourceChange] = []
+    package var drift: [ResourceChange] = []
+    package var outputs: [OutputChange] = []
+    package var variables: [Variable] = []
+    package var actions: [ActionInvocation] = []
+    package var checks: [Check] = []
     /// `prior_state`'s `terraform_version`: none on an empty workspace (spike 16).
-    var priorStateVersion: String?
-    var hasPriorState = false
+    package var priorStateVersion: String?
+    package var hasPriorState = false
     /// What each resource's attributes read, by address then attribute,
     /// from `configuration` (only `references`, never a `constant_value`):
     /// the first links of a cause chain (3.1).
-    var references: [String: [String: [String]]] = [:]
+    package var references: [String: [String: [String]]] = [:]
     /// Top-level keys this decoder doesn't know (4.15): the plan is only
     /// partly understood.
-    var unknownKeys: [String] = []
+    package var unknownKeys: [String] = []
 
-    var partlyUnderstood: Bool { !unknownKeys.isEmpty }
+    package var partlyUnderstood: Bool { !unknownKeys.isEmpty }
 
     /// The top-level keys read (or knowingly dropped).
-    static let knownKeys: Set<String> = [
+    package static let knownKeys: Set<String> = [
         "format_version", "terraform_version", "variables", "planned_values", "resource_drift", "resource_changes", "output_changes", "prior_state",
         "configuration", "relevant_attributes", "checks", "timestamp", "applyable", "complete", "errored", "action_invocations", "deferred_changes",
         "deferred_action_invocations",
     ]
 
     /// Bounds: a plan is an agent's or a cloud's, of any size.
-    static let maxResources = 20_000
-    static let maxDepth = 32
-    static let maxItems = 2_000
+    package static let maxResources = 20_000
+    package static let maxDepth = 32
+    package static let maxItems = 2_000
 
     // MARK: Decode
 
     /// `secretName`: the attribute names masked though unmarked —
     /// `TerraformSecretNames` for the person's view, `forAgents` for what
     /// an agent reads (5.6 rule 4).
-    static func decode(_ data: Data, scrub: (String) -> String, secretName: (String) -> Bool = TerraformSecretNames.isSecret) throws -> TerraformPlan {
+    package static func decode(_ data: Data, scrub: (String) -> String, secretName: (String) -> Bool = TerraformSecretNames.isSecret) throws -> TerraformPlan {
         guard let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any] else { throw DecodeError.notJSON }
         return try decode(object, scrub: scrub, secretName: secretName)
     }
 
     /// `secrets`: the plan's sensitive values when the caller read them
     /// already (`TerraformValueMask`, an apply's); else read here.
-    static func decode(
+    package static func decode(
         _ object: [String: Any], scrub: (String) -> String, secretName: (String) -> Bool = TerraformSecretNames.isSecret,
         secrets known: TerraformSensitiveValues? = nil
     ) throws -> TerraformPlan {
@@ -261,8 +261,8 @@ struct TerraformPlan: Equatable, Sendable {
 
     /// What `decode` remembers of `scrub`'s answers: this many strings,
     /// this many bytes of them.
-    static let memoEntries = 100_000
-    static let memoBytes = 16 << 20
+    package static let memoEntries = 100_000
+    package static let memoBytes = 16 << 20
 
     private static func decodeMasked(
         _ object: [String: Any], format: String, scrub: (String) -> String, leaf: (String) -> TerraformValue, secrets: TerraformSensitiveValues,
@@ -355,13 +355,13 @@ struct TerraformPlan: Equatable, Sendable {
     private static func strings(_ value: Any?) -> [String] { (value as? [Any] ?? []).compactMap { $0 as? String } }
 
     /// A mirror that marks the whole value (`true`).
-    static func isMarked(_ mirror: Any?) -> Bool { (mirror as? NSNumber).map { CFGetTypeID($0) == CFBooleanGetTypeID() && $0.boolValue } ?? false }
+    package static func isMarked(_ mirror: Any?) -> Bool { (mirror as? NSNumber).map { CFGetTypeID($0) == CFBooleanGetTypeID() && $0.boolValue } ?? false }
 
     /// `raw` masked by its `sensitive` mirror, its `unknown` one, and its
     /// attribute's `name`; nil for an absent value (a delete's `after`).
     /// `leaf`: what scrubs a value's string (`scrub` without the redaction:
     /// a leaf is checked against `secrets` whole first, and masked whole).
-    static func value(
+    package static func value(
         _ raw: Any?, sensitive: Any?, unknown: Any? = nil, name: String? = nil, scrub: (String) -> String, leaf: (String) -> TerraformValue,
         secrets: TerraformSensitiveValues = .none, secretName: (String) -> Bool = TerraformSecretNames.isSecret
     ) -> TerraformValue? {
@@ -466,14 +466,14 @@ struct TerraformPlan: Equatable, Sendable {
     }
 
     /// What runs over every kept string: credentials in text, URLs' passwords.
-    static func scrub(_ text: String) -> String { TerraformValidation.scrub(text) }
+    package static func scrub(_ text: String) -> String { TerraformValidation.scrub(text) }
 
-    static let redaction = "••••••"
+    package static let redaction = "••••••"
     /// A value shorter than this isn't hunted for inside other strings
     /// (`a`, `1`, `true` are everywhere); a leaf equal to it is still masked.
-    static let minimumSecret = 4
+    package static let minimumSecret = 4
     /// Bounds the values collected: a plan of 20,000 `random_password`s still has every one.
-    static let maxSecrets = 50_000
+    package static let maxSecrets = 50_000
 
     /// The strings a plan marks sensitive, wherever it marks them: a
     /// resource's or a drift's `before`/`after` under its mirrors, an
@@ -481,7 +481,7 @@ struct TerraformPlan: Equatable, Sendable {
     /// configuration says `sensitive`, an action's `config_values` under
     /// `config_sensitive`. Numbers by their text. Only what is hunted for;
     /// never kept.
-    static func sensitiveValues(in object: [String: Any]) -> Set<String> {
+    package static func sensitiveValues(in object: [String: Any]) -> Set<String> {
         var found: Set<String> = []
         func collect(_ raw: Any?, _ mirror: Any?, marked: Bool, depth: Int) {
             guard found.count < maxSecrets, depth < maxDepth, let raw, !(raw is NSNull) else { return }
@@ -536,11 +536,11 @@ struct TerraformPlan: Equatable, Sendable {
 
     // MARK: Counts
 
-    struct Counts: Equatable, Sendable {
-        var create = 0, update = 0, delete = 0, replace = 0, forget = 0, moved = 0, imported = 0, drift = 0, actions = 0, reads = 0
+    package struct Counts: Equatable, Sendable {
+        package var create = 0, update = 0, delete = 0, replace = 0, forget = 0, moved = 0, imported = 0, drift = 0, actions = 0, reads = 0
 
         /// `+5 ~1 -3 ±2 →4 ⇣1 ⚠1 ⚡1`: the summary bar (2.2).
-        var bar: String {
+        package var bar: String {
             var parts = ["+\(create)", "~\(update)", "-\(delete)", "±\(replace)"]
             if forget > 0 { parts.append("⊘\(forget)") }
             if moved > 0 { parts.append("→\(moved)") }
@@ -552,7 +552,7 @@ struct TerraformPlan: Equatable, Sendable {
 
         /// The CLI's own sentence, so the numbers match: a replace is one
         /// add and one destroy there.
-        var sentence: String {
+        package var sentence: String {
             var parts: [String] = []
             if imported > 0 { parts.append("\(imported) to import") }
             parts += ["\(create + replace) to add", "\(update) to change", "\(delete + replace) to destroy"]
@@ -563,7 +563,7 @@ struct TerraformPlan: Equatable, Sendable {
         }
     }
 
-    var counts: Counts {
+    package var counts: Counts {
         var counts = Counts()
         for change in resourceChanges {
             if change.isMove { counts.moved += 1 }
@@ -589,17 +589,17 @@ struct TerraformPlan: Equatable, Sendable {
 /// forces it, actions, updates folded ×N with the attribute paths that
 /// change, moves, imports, drift, outputs and variables by name. Only the
 /// masked model is read; strings cut at 200 characters. Pure.
-enum TerraformPlanText {
-    static let cutLength = 200
+package enum TerraformPlanText {
+    package static let cutLength = 200
 
-    static func cut(_ text: String, to length: Int = cutLength) -> String {
+    package static func cut(_ text: String, to length: Int = cutLength) -> String {
         text.count <= length ? text : String(text.prefix(length)) + "…"
     }
 
     /// Non-printables escaped (a `for_each` key may hold bidi or
     /// zero-width characters, 5.4): a control character, a direction mark
     /// or override, a zero-width one as its code point.
-    static func escaped(_ text: String) -> String {
+    package static func escaped(_ text: String) -> String {
         var out = ""
         for scalar in text.unicodeScalars {
             let value = scalar.value
@@ -612,7 +612,7 @@ enum TerraformPlanText {
     }
 
     /// `causes`: each risky row's cause chain, said, by address (3.1, 3.5).
-    static func summary(_ plan: TerraformPlan, root: String, file: String?, causes: [String: String] = [:], limit: Int = 400) -> String {
+    package static func summary(_ plan: TerraformPlan, root: String, file: String?, causes: [String: String] = [:], limit: Int = 400) -> String {
         let counts = plan.counts
         var lines: [String] = []
         var head = "Plan of \(escaped(root))"
@@ -712,7 +712,7 @@ enum TerraformPlanText {
         }
     }
 
-    static func riskyLine(_ change: TerraformPlan.ResourceChange, plan: TerraformPlan) -> String {
+    package static func riskyLine(_ change: TerraformPlan.ResourceChange, plan: TerraformPlan) -> String {
         let symbol: String
         let what: String
         switch change.action {
@@ -740,12 +740,12 @@ enum TerraformPlanText {
     }
 
     /// A resource's address in `configuration`: without its instance key.
-    static func configAddress(_ change: TerraformPlan.ResourceChange) -> String {
+    package static func configAddress(_ change: TerraformPlan.ResourceChange) -> String {
         change.index == nil ? change.address : change.address.replacingOccurrences(of: #"\[[^\]]*\]$"#, with: "", options: .regularExpression)
     }
 
     /// Rows with the same change folded, in first-seen order.
-    static func fold(_ changes: [TerraformPlan.ResourceChange]) -> [[TerraformPlan.ResourceChange]] {
+    package static func fold(_ changes: [TerraformPlan.ResourceChange]) -> [[TerraformPlan.ResourceChange]] {
         var order: [String] = []
         var groups: [String: [TerraformPlan.ResourceChange]] = [:]
         for change in changes {

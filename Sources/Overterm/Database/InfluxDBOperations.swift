@@ -10,9 +10,9 @@ import Foundation
 /// time overwrites it), and a delete is by time range and predicate, not
 /// by a row. docs/architecture.md, Database: Server page, Users and roles.
 extension InfluxDBDriver: DatabaseMonitoring, DatabaseUserManagement {
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .sizes] }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .sizes] }
 
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
         [
             SessionStop(
                 terminate: false, menu: "Kill Query…", title: "Kill query \(session.id)?", command: "KILL QUERY \(session.id)",
@@ -37,7 +37,7 @@ extension InfluxDBDriver: DatabaseMonitoring, DatabaseUserManagement {
         }
     }
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         switch try await resolvedVersion() {
         case .v1:
             var notes: [String] = []
@@ -66,7 +66,7 @@ extension InfluxDBDriver: DatabaseMonitoring, DatabaseUserManagement {
         }
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         switch try await resolvedVersion() {
         case .v1:
             switch try await admin("SHOW QUERIES") {
@@ -81,7 +81,7 @@ extension InfluxDBDriver: DatabaseMonitoring, DatabaseUserManagement {
         }
     }
 
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         switch try await resolvedVersion() {
         case .v1:
             switch try await admin("SHOW STATS FOR 'shard'") {
@@ -105,7 +105,7 @@ extension InfluxDBDriver: DatabaseMonitoring, DatabaseUserManagement {
         }
     }
 
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("KILL QUERY") }
         guard try await resolvedVersion() == .v1 else { throw DatabaseError.failed("Only InfluxDB 1 kills a query.") }
         guard let id = Int(session) else { throw DatabaseError.failed("\(session) isn't a query's id.") }
@@ -117,13 +117,13 @@ extension InfluxDBDriver: DatabaseMonitoring, DatabaseUserManagement {
 
     // MARK: Users
 
-    func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
+    package func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
 
-    func userStatements() async -> any UserStatementMaking {
+    package func userStatements() async -> any UserStatementMaking {
         (try? await resolvedVersion()) == .v2 ? Influx2UserStatements() : InfluxUserStatements()
     }
 
-    func users() async throws -> Monitored<[DatabaseUser]> {
+    package func users() async throws -> Monitored<[DatabaseUser]> {
         switch try await resolvedVersion() {
         case .v1:
             switch try await admin("SHOW USERS") {
@@ -151,7 +151,7 @@ extension InfluxDBDriver: DatabaseMonitoring, DatabaseUserManagement {
         }
     }
 
-    func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
+    package func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
         switch try await resolvedVersion() {
         case .v1:
             if user.superuser { return .value([DatabaseGrant(kind: "admin", object: "every database", privileges: ["ALL PRIVILEGES"], target: .server)]) }
@@ -181,7 +181,7 @@ extension InfluxDBDriver: DatabaseMonitoring, DatabaseUserManagement {
 
     /// 1.x: each statement InfluxQL, a POST. 2.x: each a request, its
     /// `{user:name}` and `{org}` the ids they name, looked up first.
-    func run(_ statements: [UserStatement]) async throws {
+    package func run(_ statements: [UserStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("changing users") }
         let version = try await resolvedVersion()
         for statement in statements {
@@ -224,9 +224,9 @@ extension InfluxDBDriver: DatabaseMonitoring, DatabaseUserManagement {
 }
 
 /// InfluxDB's answers read. Pure.
-enum InfluxOps {
+package enum InfluxOps {
     /// A series' first row as a dictionary.
-    static func fields(_ series: InfluxParse.Series) -> [String: String] {
+    package static func fields(_ series: InfluxParse.Series) -> [String: String] {
         guard let row = series.values.first else { return [:] }
         var fields: [String: String] = [:]
         for (at, column) in series.columns.enumerated() where at < row.count { fields[column] = row[at] }
@@ -234,7 +234,7 @@ enum InfluxOps {
     }
 
     /// Go's duration text: `1h2m3.5s`, `150ms`, `12µs`.
-    static func goDuration(_ text: String) -> Double? {
+    package static func goDuration(_ text: String) -> Double? {
         var total = 0.0
         var number = ""
         var unit = ""
@@ -271,7 +271,7 @@ enum InfluxOps {
         return total
     }
 
-    static func overview1(diagnostics: [InfluxParse.Series], stats: [InfluxParse.Series]) -> ServerOverview {
+    package static func overview1(diagnostics: [InfluxParse.Series], stats: [InfluxParse.Series]) -> ServerOverview {
         var facts: [ServerFact] = []
         let build = diagnostics.first { $0.name == "build" }.map(fields) ?? [:]
         let system = diagnostics.first { $0.name == "system" }.map(fields) ?? [:]
@@ -300,13 +300,13 @@ enum InfluxOps {
     }
 
     /// Prometheus text: each sample's name, labels and value.
-    struct Sample: Equatable {
-        var name: String
-        var labels: [String: String]
-        var value: Double
+    package struct Sample: Equatable {
+        package var name: String
+        package var labels: [String: String]
+        package var value: Double
     }
 
-    static func metrics(_ text: String) -> [Sample] {
+    package static func metrics(_ text: String) -> [Sample] {
         text.split(whereSeparator: \.isNewline).compactMap { line in
             guard !line.hasPrefix("#"), let space = line.lastIndex(of: " ") else { return nil }
             let head = line[..<space]
@@ -324,7 +324,7 @@ enum InfluxOps {
         }
     }
 
-    static func overview2(health: [String: Any], metrics: [Sample]) -> ServerOverview {
+    package static func overview2(health: [String: Any], metrics: [Sample]) -> ServerOverview {
         func sum(_ name: String) -> Double? {
             let found = metrics.filter { $0.name == name }
             return found.isEmpty ? nil : found.reduce(0) { $0 + $1.value }
@@ -350,7 +350,7 @@ enum InfluxOps {
     }
 
     /// `SHOW QUERIES`' rows: qid, query, database, duration, status.
-    static func queries(_ series: [InfluxParse.Series]) -> [DatabaseActivity] {
+    package static func queries(_ series: [InfluxParse.Series]) -> [DatabaseActivity] {
         series.flatMap { s -> [DatabaseActivity] in
             s.values.compactMap { row in
                 var fields: [String: String] = [:]
@@ -365,7 +365,7 @@ enum InfluxOps {
     }
 
     /// `SHOW STATS FOR 'shard'`: disk bytes by database, and by retention policy.
-    static func shardSizes(_ series: [InfluxParse.Series]) -> DatabaseSizes {
+    package static func shardSizes(_ series: [InfluxParse.Series]) -> DatabaseSizes {
         var databases: [String: Int64] = [:]
         var policies: [String: (database: String, policy: String, bytes: Int64, shards: Int)] = [:]
         for s in series where s.name == "shard" {
@@ -386,7 +386,7 @@ enum InfluxOps {
     }
 
     /// Buckets with their retention, and their shards' bytes from `/metrics`.
-    static func bucketSizes(_ buckets: [[String: Any]], metrics: [Sample]?) -> DatabaseSizes {
+    package static func bucketSizes(_ buckets: [[String: Any]], metrics: [Sample]?) -> DatabaseSizes {
         var bytes: [String: Int64] = [:]
         for sample in metrics ?? [] where sample.name == "storage_shard_disk_size" {
             if let bucket = sample.labels["bucket"] { bytes[bucket, default: 0] += Int64(sample.value) }
@@ -404,7 +404,7 @@ enum InfluxOps {
     }
 
     /// `SHOW USERS`: user, admin.
-    static func users1(_ series: [InfluxParse.Series]) -> [DatabaseUser] {
+    package static func users1(_ series: [InfluxParse.Series]) -> [DatabaseUser] {
         series.flatMap { s in
             s.values.compactMap { row -> DatabaseUser? in
                 let user = s.columns.firstIndex(of: "user").flatMap { row[safe: $0] ?? nil }
@@ -415,7 +415,7 @@ enum InfluxOps {
     }
 
     /// `SHOW GRANTS FOR`: database, privilege (NO PRIVILEGES left out).
-    static func grants1(_ series: [InfluxParse.Series]) -> [DatabaseGrant] {
+    package static func grants1(_ series: [InfluxParse.Series]) -> [DatabaseGrant] {
         series.flatMap { s in
             s.values.compactMap { row -> DatabaseGrant? in
                 guard let database = s.columns.firstIndex(of: "database").flatMap({ row[safe: $0] ?? nil }),
@@ -426,7 +426,7 @@ enum InfluxOps {
         }
     }
 
-    static func users2(_ data: Data) -> [DatabaseUser] {
+    package static func users2(_ data: Data) -> [DatabaseUser] {
         let users = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["users"] as? [[String: Any]] ?? []
         return users.compactMap { user in
             guard let name = user["name"] as? String else { return nil }
@@ -437,7 +437,7 @@ enum InfluxOps {
 
     /// A user's tokens as its grants: each one's description and
     /// permissions — never the token itself, which isn't decoded.
-    static func tokens(_ data: Data) -> [DatabaseGrant] {
+    package static func tokens(_ data: Data) -> [DatabaseGrant] {
         let list = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["authorizations"] as? [[String: Any]] ?? []
         return list.compactMap { token in
             guard let id = token["id"] as? String else { return nil }
@@ -456,18 +456,18 @@ enum InfluxOps {
 /// InfluxDB 1.x's user statements in InfluxQL, names in double quotes and
 /// passwords in single, each escaped as InfluxQL reads them. The password
 /// is sent once (InfluxDB redacts it from its own query log). Pure.
-struct InfluxUserStatements: UserStatementMaking {
-    static func name(_ text: String) -> String {
+package struct InfluxUserStatements: UserStatementMaking {
+    package static func name(_ text: String) -> String {
         "\"" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
     }
 
-    static func literal(_ text: String) -> String {
+    package static func literal(_ text: String) -> String {
         "'" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'") + "'"
     }
 
     private static let mask = "'••••••••'"
 
-    var form: UserForm {
+    package var form: UserForm {
         UserForm(
             superuser: "Admin (ALL PRIVILEGES)",
             passwordNote: "The password is sent once, over this connection — InfluxDB keeps it out of its query log — and never kept here.",
@@ -475,31 +475,31 @@ struct InfluxUserStatements: UserStatementMaking {
             noGrants: "No privileges.")
     }
 
-    func create(_ user: NewUser) throws -> [UserStatement] {
+    package func create(_ user: NewUser) throws -> [UserStatement] {
         let head = "CREATE USER \(Self.name(try checked(user.name))) WITH PASSWORD "
         guard !user.password.isEmpty else { throw Self.refusal("A password, please.") }
         let tail = user.superuser ? " WITH ALL PRIVILEGES" : ""
         return [UserStatement(head + Self.literal(user.password) + tail, shown: head + Self.mask + tail)]
     }
 
-    func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
+    package func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
         guard !password.isEmpty else { throw Self.refusal("A password, please.") }
         let head = "SET PASSWORD FOR \(Self.name(try checked(user.name))) = "
         return UserStatement(head + Self.literal(password), shown: head + Self.mask)
     }
 
-    func offers(_ action: UserAction, on user: DatabaseUser) -> Bool { action != .grantRole }
+    package func offers(_ action: UserAction, on user: DatabaseUser) -> Bool { action != .grantRole }
 
-    func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
+    package func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
         kind.title == "Database" ? .database(fields.first ?? "") : .server
     }
 
-    func privileges(on target: GrantTarget) -> [String] {
+    package func privileges(on target: GrantTarget) -> [String] {
         if case .server = target { return ["ALL PRIVILEGES"] }
         return ["READ", "WRITE", "ALL"]
     }
 
-    func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
+    package func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
         let name = Self.name(try checked(user.name))
         guard !privileges.isEmpty else { throw Self.refusal("Pick a privilege.") }
         for privilege in privileges where !self.privileges(on: target).contains(privilege) { throw Self.refusal("\(privilege) isn't an InfluxDB privilege here.") }
@@ -515,7 +515,7 @@ struct InfluxUserStatements: UserStatementMaking {
         }
     }
 
-    func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
+    package func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
         guard let name = try? checked(user.name) else { return nil }
         switch grant.target {
         case .server?: return UserStatement("REVOKE ALL PRIVILEGES FROM \(Self.name(name))")
@@ -526,11 +526,11 @@ struct InfluxUserStatements: UserStatementMaking {
         }
     }
 
-    func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] { [] }
+    package func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] { [] }
 
-    func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement { throw Self.refusal("InfluxDB has no roles.") }
+    package func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement { throw Self.refusal("InfluxDB has no roles.") }
 
-    func drop(_ user: DatabaseUser) throws -> UserStatement { UserStatement("DROP USER \(Self.name(try checked(user.name)))") }
+    package func drop(_ user: DatabaseUser) throws -> UserStatement { UserStatement("DROP USER \(Self.name(try checked(user.name)))") }
 }
 
 /// InfluxDB 2's users over its API: created, a password set, made a member
@@ -539,8 +539,8 @@ struct InfluxUserStatements: UserStatementMaking {
 /// sending. Tokens aren't made here — a token's value would have to be
 /// shown; `influx auth create` makes them. The password goes as InfluxDB 2's
 /// API takes it — in the request body — and is never kept. Pure.
-struct Influx2UserStatements: UserStatementMaking {
-    var form: UserForm {
+package struct Influx2UserStatements: UserStatementMaking {
+    package var form: UserForm {
         UserForm(
             superuser: nil, passwordNote: "The password is sent once, in the request's body as InfluxDB 2's API takes it, and never kept here.",
             grantsNote: "Its tokens, by description and what each may do — never a token's value. Revoke deletes one.",
@@ -550,12 +550,12 @@ struct Influx2UserStatements: UserStatementMaking {
     private static func user(_ name: String) -> String { "{user:\(RabbitText.segment(name))}" }
 
     /// The name a create's body gives.
-    static func newName(_ body: String?) -> String? {
+    package static func newName(_ body: String?) -> String? {
         guard let body, let object = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any] else { return nil }
         return object["name"] as? String
     }
 
-    func create(_ user: NewUser) throws -> [UserStatement] {
+    package func create(_ user: NewUser) throws -> [UserStatement] {
         let name = try checked(user.name)
         guard !user.password.isEmpty else { throw Self.refusal("A password, please.") }
         guard user.password.count >= 8 else { throw Self.refusal("InfluxDB 2 wants a password of 8 characters or more.") }
@@ -566,30 +566,30 @@ struct Influx2UserStatements: UserStatementMaking {
         ]
     }
 
-    func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
+    package func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
         let path = "POST /api/v2/users/\(Self.user(try checked(user.name)))/password "
         guard password.count >= 8 else { throw Self.refusal("InfluxDB 2 wants a password of 8 characters or more.") }
         return UserStatement(path + UserRequest.json(["password": password]), shown: path + UserRequest.json(["password": "••••••••"]))
     }
 
-    func offers(_ action: UserAction, on user: DatabaseUser) -> Bool { action == .password || action == .drop }
+    package func offers(_ action: UserAction, on user: DatabaseUser) -> Bool { action == .password || action == .drop }
 
-    func target(_ kind: GrantKind, fields: [String]) -> GrantTarget { .server }
+    package func target(_ kind: GrantKind, fields: [String]) -> GrantTarget { .server }
 
-    func privileges(on target: GrantTarget) -> [String] { [] }
+    package func privileges(on target: GrantTarget) -> [String] { [] }
 
-    func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
+    package func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
         throw Self.refusal("Tokens are made with `influx auth create`: a new token's value would have to be shown.")
     }
 
-    func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
+    package func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
         guard case .named("token", let id)? = grant.target, !id.isEmpty, id.allSatisfy({ $0.isLetter || $0.isNumber }) else { return nil }
         return UserStatement("DELETE /api/v2/authorizations/\(id)")
     }
 
-    func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] { [] }
+    package func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] { [] }
 
-    func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement { throw Self.refusal("InfluxDB has no roles.") }
+    package func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement { throw Self.refusal("InfluxDB has no roles.") }
 
-    func drop(_ user: DatabaseUser) throws -> UserStatement { UserStatement("DELETE /api/v2/users/\(Self.user(try checked(user.name)))") }
+    package func drop(_ user: DatabaseUser) throws -> UserStatement { UserStatement("DELETE /api/v2/users/\(Self.user(try checked(user.name)))") }
 }

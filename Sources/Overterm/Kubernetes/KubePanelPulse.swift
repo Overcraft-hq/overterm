@@ -11,20 +11,20 @@ import Foundation
 /// Table rows only, `type=Warning` asked of the server. Events that can't
 /// be listed (no right to) are said in one line; the rest of the rail goes on.
 @MainActor
-final class KubePanelPulse: ObservableObject {
-    @Published private(set) var warnings: [KubeClusterOverview.Warning] = []
-    @Published private(set) var problem: String?
+package final class KubePanelPulse: ObservableObject {
+    @Published package private(set) var warnings: [KubeClusterOverview.Warning] = []
+    @Published package private(set) var problem: String?
     /// Where it reads: `context · namespace`.
-    @Published private(set) var scope: String?
+    @Published package private(set) var scope: String?
 
     /// Warnings the rail lists at most; the page has the rest.
-    static let shown = 8
+    package static let shown = 8
 
     private var tasks: [Task<Void, Never>] = []
     private var eventRows = KubeRows()
     private var key: String?
 
-    func follow(_ client: KubeClient, context: String, namespace: String) {
+    package func follow(_ client: KubeClient, context: String, namespace: String) {
         let key = "\(context)|\(namespace)"
         guard key != self.key else { return }
         stop()
@@ -53,7 +53,7 @@ final class KubePanelPulse: ObservableObject {
             })
     }
 
-    func stop() {
+    package func stop() {
         for task in tasks { task.cancel() }
         tasks = []
         key = nil

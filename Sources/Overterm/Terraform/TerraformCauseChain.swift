@@ -14,29 +14,29 @@ import Foundation
 ///     ← var.acme_name          (references)
 ///     ← envs/acme-prod.tfvars:3   changed in this branch
 /// ```
-enum TerraformCauseChain {
+package enum TerraformCauseChain {
     /// A line of a file, relative to the checkout (the diff's spelling).
-    struct Location: Equatable, Hashable, Sendable {
-        var file: String
-        var line: Int
-        var said: String { "\(file):\(line)" }
+    package struct Location: Equatable, Hashable, Sendable {
+        package var file: String
+        package var line: Int
+        package var said: String { "\(file):\(line)" }
     }
 
     /// Where a root's variables and locals get their values, read from its
     /// files by `make`.
-    struct Sources: Equatable, Sendable {
+    package struct Sources: Equatable, Sendable {
         /// A variable's `default` line (its block's when it has none).
-        var defaults: [String: Location] = [:]
+        package var defaults: [String: Location] = [:]
         /// The line of the var file that sets it last, in the run's order.
-        var assignments: [String: Location] = [:]
-        var locals: [String: Location] = [:]
+        package var assignments: [String: Location] = [:]
+        package var locals: [String: Location] = [:]
         /// Resources and modules by address: their block's first line.
-        var blocks: [String: Location] = [:]
+        package var blocks: [String: Location] = [:]
 
         /// From the root's `.tf` files and the var files the run loads, in
         /// the order it loads them (`terraform.tfvars`, `*.auto.tfvars`
         /// alphabetically, then each `-var-file`): paths relative to the checkout.
-        static func make(config: [(path: String, text: String)], varFiles: [(path: String, text: String)]) -> Sources {
+        package static func make(config: [(path: String, text: String)], varFiles: [(path: String, text: String)]) -> Sources {
             var sources = Sources()
             for file in config {
                 let text = file.text as NSString
@@ -66,7 +66,7 @@ enum TerraformCauseChain {
             return sources
         }
 
-        static func line(of offset: Int, in text: NSString) -> Int {
+        package static func line(of offset: Int, in text: NSString) -> Int {
             var line = 1
             var index = 0
             let end = min(offset, text.length)
@@ -79,23 +79,23 @@ enum TerraformCauseChain {
     }
 
     /// One step of a chain.
-    struct Link: Equatable, Sendable {
-        var text: String
+    package struct Link: Equatable, Sendable {
+        package var text: String
         /// What it says comes from: kind of step.
-        var kind: Kind
-        var location: Location?
+        package var kind: Kind
+        package var location: Location?
         /// This branch changed that line.
-        var changed = false
+        package var changed = false
 
-        enum Kind: String, Sendable { case attribute, reference, line, reason }
+        package enum Kind: String, Sendable { case attribute, reference, line, reason }
     }
 
-    static let maxPaths = 3
-    static let maxReferences = 3
+    package static let maxPaths = 3
+    package static let maxReferences = 3
 
     /// The chain of `change`: its forcing attributes, what each reads, the
     /// lines those come from, `changed` the diff's added lines by file.
-    static func chain(
+    package static func chain(
         for change: TerraformPlan.ResourceChange, plan: TerraformPlan, sources: Sources, changed: [String: Set<Int>]
     ) -> [Link] {
         guard change.action == .replace || change.action == .delete || change.action == .forget else { return [] }
@@ -120,7 +120,7 @@ enum TerraformCauseChain {
     /// Where a reference's value comes from: `var.x` the var file line that
     /// sets it, else its default; `local.x` its line. Others (a resource's
     /// attribute) have none here.
-    static func location(of reference: String, in sources: Sources) -> Location? {
+    package static func location(of reference: String, in sources: Sources) -> Location? {
         let parts = reference.split(separator: ".").map(String.init)
         guard parts.count >= 2 else { return nil }
         let name = parts[1].split(separator: "[").first.map(String.init) ?? parts[1]
@@ -132,14 +132,14 @@ enum TerraformCauseChain {
     }
 
     /// The chain as one line: `← length ← var.acme_db_length ← envs/prod/prod.tfvars:7  changed in this branch`.
-    static func said(_ links: [Link]) -> String {
+    package static func said(_ links: [Link]) -> String {
         links.map { "← " + $0.text + ($0.changed ? "  changed in this branch" : "") }.joined(separator: " ")
     }
 
     /// Every replace's and delete's chain, said, by address: Copy
     /// summary's, the plan view's and an agent's (`tf_plan_summary`,
     /// `tf_run_status`) alike — over the whole plan, whatever is filtered.
-    static func texts(plan: TerraformPlan, sources: Sources, changed: [String: Set<Int>]) -> [String: String] {
+    package static func texts(plan: TerraformPlan, sources: Sources, changed: [String: Set<Int>]) -> [String: String] {
         var texts: [String: String] = [:]
         for change in plan.resourceChanges where change.isRisky {
             let links = chain(for: change, plan: plan, sources: sources, changed: changed)

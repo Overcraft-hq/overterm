@@ -6,7 +6,7 @@ extension Notification.Name {
     /// A root's `terraform test` ended: the editors lay its failures over
     /// the test files they name. `userInfo["files"]`: absolute paths, the
     /// ones marked before and now.
-    static let terraformTestDiagnostics = Notification.Name("overterm.terraformTestDiagnostics")
+    package static let terraformTestDiagnostics = Notification.Name("overterm.terraformTestDiagnostics")
 }
 
 /// One `terraform test` of a root (analysis 2.9, stage 2d, D-19): every
@@ -25,8 +25,8 @@ extension Notification.Name {
 /// in the user's environment. It takes no lock and touches none of the
 /// root's state: a test's state lives in memory.
 @MainActor
-final class TerraformTestRun: ObservableObject, Identifiable {
-    enum Phase: Equatable, Sendable {
+package final class TerraformTestRun: ObservableObject, Identifiable {
+    package enum Phase: Equatable, Sendable {
         case preparing
         case running
         case passed(String)
@@ -36,26 +36,26 @@ final class TerraformTestRun: ObservableObject, Identifiable {
         case stopped
     }
 
-    static let maxLog = 2_000
+    package static let maxLog = 2_000
 
-    let id = "tft-" + UUID().uuidString.prefix(8).lowercased()
-    let checkout: URL
-    let card: TerraformRootCard
+    package let id = "tft-" + UUID().uuidString.prefix(8).lowercased()
+    package let checkout: URL
+    package let card: TerraformRootCard
     /// One test file, relative to the root; nil: all of them.
-    let file: String?
+    package let file: String?
     /// Who asked, when an agent's `tf_test` did.
-    let agent: String?
-    @Published private(set) var phase: Phase = .preparing
-    @Published private(set) var report = TerraformTestReport()
-    @Published private(set) var log: [String] = []
+    package let agent: String?
+    @Published package private(set) var phase: Phase = .preparing
+    @Published package private(set) var report = TerraformTestReport()
+    @Published package private(set) var log: [String] = []
     /// What the files said before it ran: mocked, or why not.
-    @Published private(set) var mocking: TerraformTestFiles.Mocking?
-    let started = Date()
-    @Published private(set) var finished: Date?
+    @Published package private(set) var mocking: TerraformTestFiles.Mocking?
+    package let started = Date()
+    @Published package private(set) var finished: Date?
     private var pid: pid_t?
     private var stopping = false
 
-    init(checkout: URL, card: TerraformRootCard, file: String? = nil, agent: String? = nil, mocking: TerraformTestFiles.Mocking? = nil) {
+    package init(checkout: URL, card: TerraformRootCard, file: String? = nil, agent: String? = nil, mocking: TerraformTestFiles.Mocking? = nil) {
         self.checkout = checkout
         self.card = card
         self.file = file
@@ -66,16 +66,16 @@ final class TerraformTestRun: ObservableObject, Identifiable {
     /// A test with real providers (or whose code runs commands) still
     /// going: quitting would cut its cleanup off (`TerraformCloseGuard.testQuestion`).
     /// Not yet read counts as real.
-    var isGoingReal: Bool { isGoing && mocking?.isMocked != true }
+    package var isGoingReal: Bool { isGoing && mocking?.isMocked != true }
 
-    var isGoing: Bool { phase == .preparing || phase == .running }
+    package var isGoing: Bool { phase == .preparing || phase == .running }
 
-    var failed: Bool {
+    package var failed: Bool {
         if case .failed = phase { return true }
         return false
     }
 
-    func age(now: Date = Date()) -> String {
+    package func age(now: Date = Date()) -> String {
         let seconds = Int(max(0, now.timeIntervalSince(finished ?? started)))
         if seconds < 60 { return "just now" }
         if seconds < 3_600 { return "\(seconds / 60) min ago" }
@@ -83,7 +83,7 @@ final class TerraformTestRun: ObservableObject, Identifiable {
     }
 
     /// The card's line about it at `now`, its age always said.
-    func line(now: Date = Date()) -> String {
+    package func line(now: Date = Date()) -> String {
         switch phase {
         case .preparing, .running: "Testing…"
         case .passed(let said): "Tests passed — \(said) · \(age(now: now))"
@@ -94,16 +94,16 @@ final class TerraformTestRun: ObservableObject, Identifiable {
     }
 
     /// What it runs, said: "tests/acme.tftest.hcl" or "every test file".
-    var scope: String { file ?? "every test file" }
+    package var scope: String { file ?? "every test file" }
 
     /// Stops it: one SIGINT to its group, as Ctrl-C does.
-    func stop() {
+    package func stop() {
         guard isGoing else { return }
         stopping = true
         if let pid { TerraformStreamRun.interrupt(pid) }
     }
 
-    func refuse(_ why: String) {
+    package func refuse(_ why: String) {
         phase = .refused(why)
         finished = Date()
         append(["Refused: " + why])
@@ -114,7 +114,7 @@ final class TerraformTestRun: ObservableObject, Identifiable {
         if log.count > Self.maxLog { log.removeFirst(log.count - Self.maxLog) }
     }
 
-    func absorb(_ messages: [TerraformUIMessage]) {
+    package func absorb(_ messages: [TerraformUIMessage]) {
         var lines: [String] = []
         var report = self.report
         for message in messages {
@@ -140,15 +140,15 @@ final class TerraformTestRun: ObservableObject, Identifiable {
     /// What a run needs, read off the main thread: the test files and
     /// whether every provider they start is mocked, the binary, the
     /// environment's base and its scratch folder.
-    struct Prepared: Sendable {
-        var read: TerraformTestFiles.Read
-        var binary: URL?
-        var base: [String: String]?
-        var scratch: TerraformGuards.Scratch?
+    package struct Prepared: Sendable {
+        package var read: TerraformTestFiles.Read
+        package var binary: URL?
+        package var base: [String: String]?
+        package var scratch: TerraformGuards.Scratch?
     }
 
     /// Reads what `prepare` says, for `card`'s root. `binary`: a test's.
-    nonisolated static func prepare(card: TerraformRootCard, checkout: URL, file: String?, settingPath: String, binary given: URL? = nil) async -> Prepared {
+    package nonisolated static func prepare(card: TerraformRootCard, checkout: URL, file: String?, settingPath: String, binary given: URL? = nil) async -> Prepared {
         let root = card.folder
         let hasVersionFile = card.facts.hasVersionFile
         return await TerraformPanelModel.blocking { () -> Prepared in
@@ -167,14 +167,14 @@ final class TerraformTestRun: ObservableObject, Identifiable {
     /// root unless it says no, a remote or production one only where its
     /// entry sets `writable: true` — production refused to agents anyway
     /// (`gate`). Pure.
-    static func writable(rootClass: TerraformClass, setting: Bool?, agent: Bool) -> Bool {
+    package static func writable(rootClass: TerraformClass, setting: Bool?, agent: Bool) -> Bool {
         guard agent, rootClass != .local else { return setting ?? true }
         return setting == true
     }
 
     /// Why a test of `prepared` may not start in a root of `rootClass`,
     /// or nil; `real`: a real provider runs, which the caller asks about.
-    static func refusal(_ prepared: Prepared, file: String?, rootClass: TerraformClass, writable: Bool) -> String? {
+    package static func refusal(_ prepared: Prepared, file: String?, rootClass: TerraformClass, writable: Bool) -> String? {
         if let file, !TerraformCommands.isTestFile(file) { return "\(file) isn't a test file of the root (a .tftest.hcl inside it)." }
         if let outside = prepared.read.outside.first {
             return "\(outside) resolves outside the checkout (a link out of it): not read, not run."
@@ -192,7 +192,7 @@ final class TerraformTestRun: ObservableObject, Identifiable {
     }
 
     /// What starting a test of `prepared` takes (5.3, 5.10, D-21).
-    enum Gate: Equatable, Sendable {
+    package enum Gate: Equatable, Sendable {
         /// Every provider mocked, nothing in its code run: at once.
         case run
         /// Asked first, every time: what it says, and the name to type on production.
@@ -206,7 +206,7 @@ final class TerraformTestRun: ObservableObject, Identifiable {
     /// on production, asked everywhere else — naming the files, what is
     /// real, that quitting cuts its cleanup off — with the root's name
     /// typed on production.
-    static func gate(_ prepared: Prepared, card: TerraformRootCard, file: String?, agent: String?, writable: Bool) -> Gate {
+    package static func gate(_ prepared: Prepared, card: TerraformRootCard, file: String?, agent: String?, writable: Bool) -> Gate {
         // An agent's, on a root not writable for agents (`writable(rootClass:setting:agent:)`): said as agents' rule.
         let agentPlanOnly = agent != nil && !writable && card.rootClass != .local
         if let why = refusal(prepared, file: file, rootClass: card.rootClass, writable: writable || agentPlanOnly) { return .refused(why) }
@@ -245,7 +245,7 @@ final class TerraformTestRun: ObservableObject, Identifiable {
     /// start, mocked ones too); then `gate`, `ask` answering a question
     /// (false: declined, a failure with no message). `show` puts the run
     /// in the window's slot.
-    static func begin(
+    package static func begin(
         card: TerraformRootCard, checkout: URL, file: String?, agent: String?, writable: Bool, settingPath: String, binary: URL? = nil,
         results: TerraformTestResults = .shared, registry: TerraformRunRegistry = .shared, setup: TerraformWorktreeSetup = .shared,
         ask: (TerraformPlanGate.Question) async -> Bool, show: (TerraformTestRun) -> Void
@@ -281,7 +281,7 @@ final class TerraformTestRun: ObservableObject, Identifiable {
 
     /// Runs it, its checks done and its question asked (the caller's):
     /// the stream read, the report built, the failures handed to the editor.
-    func start(_ prepared: Prepared, results: TerraformTestResults = .shared) async {
+    package func start(_ prepared: Prepared, results: TerraformTestResults = .shared) async {
         results.add(self)
         mocking = prepared.read.mocking
         report = TerraformTestReport(planned: prepared.read.files)
@@ -345,37 +345,37 @@ final class TerraformTestRun: ObservableObject, Identifiable {
 /// root, and the failures of each root's last finished run by the file
 /// they name — what the editor lays over a test file's lines.
 @MainActor
-final class TerraformTestResults: ObservableObject {
-    static let shared = TerraformTestResults()
+package final class TerraformTestResults: ObservableObject {
+    package static let shared = TerraformTestResults()
 
-    @Published private(set) var runs: [TerraformTestRun] = []
-    static let keep = 20
+    @Published package private(set) var runs: [TerraformTestRun] = []
+    package static let keep = 20
     /// The roots (`key`) whose test is being prepared or asked about: one at a time.
-    var starting: Set<String> = []
+    package var starting: Set<String> = []
 
     /// Tests with real providers still going: what quitting asks about.
-    var goingReal: [TerraformTestRun] { runs.filter(\.isGoingReal) }
+    package var goingReal: [TerraformTestRun] { runs.filter(\.isGoingReal) }
     /// By absolute path (standardised): the last run's diagnostics of that file.
-    private(set) var diagnostics: [String: [TerraformDiagnostic]] = [:]
+    package private(set) var diagnostics: [String: [TerraformDiagnostic]] = [:]
     /// Which files each root's last run marked, by its run's root key.
     private var marked: [String: Set<String>] = [:]
 
-    func add(_ run: TerraformTestRun) {
+    package func add(_ run: TerraformTestRun) {
         guard !runs.contains(where: { $0 === run }) else { return }
         runs.append(run)
         if runs.count > Self.keep, let drop = runs.firstIndex(where: { !$0.isGoing }) { runs.remove(at: drop) }
     }
 
     /// The newest run of `root` in `checkout`.
-    func latest(checkout: URL, root: String) -> TerraformTestRun? {
+    package func latest(checkout: URL, root: String) -> TerraformTestRun? {
         let path = checkout.standardizedFileURL.path
         return runs.last { $0.card.path == root && $0.checkout.standardizedFileURL.path == path }
     }
 
-    static func key(_ run: TerraformTestRun) -> String { TerraformRootStore.key(checkout: run.checkout, root: run.card.path) }
+    package static func key(_ run: TerraformTestRun) -> String { TerraformRootStore.key(checkout: run.checkout, root: run.card.path) }
 
     /// A run ended: its failures replace its root's last ones, said to the editors.
-    func ended(_ run: TerraformTestRun) {
+    package func ended(_ run: TerraformTestRun) {
         objectWillChange.send()
         let key = Self.key(run)
         let before = marked[key] ?? []
@@ -394,10 +394,10 @@ final class TerraformTestResults: ObservableObject {
     }
 
     /// The last run's diagnostics of `file`.
-    func diagnostics(for file: URL) -> [TerraformDiagnostic] { diagnostics[file.standardizedFileURL.path] ?? [] }
+    package func diagnostics(for file: URL) -> [TerraformDiagnostic] { diagnostics[file.standardizedFileURL.path] ?? [] }
 
     /// Forgets every run: a test's, a scenario's.
-    func reset() {
+    package func reset() {
         runs = []
         starting = []
         let files = Array(diagnostics.keys)

@@ -9,14 +9,14 @@ import Foundation
 /// last, read only while on screen (`KubePromTabCharts.readWhenShown`). A
 /// query refused before it was sent, or by Prometheus, is said under the
 /// charts in its title's name. Pure.
-enum KubeSavedCharts {
-    static let groupTitle = "Saved queries"
+package enum KubeSavedCharts {
+    package static let groupTitle = "Saved queries"
     /// The series a chart draws (metrics.md 6.3), "other" aside.
-    static let seriesAtMost = 12
+    package static let seriesAtMost = 12
 
     /// Prometheus refused the query as sent (`bad_data`, a 422): its
     /// words (the reader's sentence), and that it isn't asked again.
-    static func rejected(_ message: String) -> String {
+    package static func rejected(_ message: String) -> String {
         var said = message.trimmingCharacters(in: .whitespacesAndNewlines)
         if said.isEmpty { said = "Prometheus refused it" }
         if !said.hasSuffix(".") { said += "." }
@@ -24,23 +24,23 @@ enum KubeSavedCharts {
     }
 
     /// It failed for another reason: a timeout, the Service away.
-    static func failed(_ sentence: String) -> String { "it couldn't be read: \(sentence)" }
+    package static func failed(_ sentence: String) -> String { "it couldn't be read: \(sentence)" }
 
     /// What is said of a saved chart that drew nothing.
-    static func sentence(title: String, _ why: String) -> String { "Saved query \u{201C}\(title)\u{201D}: \(why)" }
+    package static func sentence(title: String, _ why: String) -> String { "Saved query \u{201C}\(title)\u{201D}: \(why)" }
 
     /// The entry holds more than are asked.
-    static func beyond(_ count: Int) -> String {
+    package static func beyond(_ count: Int) -> String {
         "\(count) saved quer\(count == 1 ? "y" : "ies") more \(count == 1 ? "isn't" : "aren't") asked: at most \(KubeSavedQueries.atMost) a context."
     }
 
     /// Saved queries, and no Prometheus to ask them of.
-    static let needsPrometheus =
+    package static let needsPrometheus =
         "This context's saved queries are read from Prometheus, which isn't on for it: set \"metrics\": \"prometheus\" in its kubernetes.contexts entry."
 
     /// The workload's group — pending until read, its sentences — for
     /// `saved` (all the entry's, `reading` nil: not read yet); nil without any.
-    static func group(subject: String, saved: [KubeSavedChart], reading: KubeTabReading?) -> (group: KubeObjectCharts.Group?, notes: [String]) {
+    package static func group(subject: String, saved: [KubeSavedChart], reading: KubeTabReading?) -> (group: KubeObjectCharts.Group?, notes: [String]) {
         guard !saved.isEmpty else { return (nil, []) }
         var notes: [String] = []
         if saved.count > KubeSavedQueries.atMost { notes.append(beyond(saved.count - KubeSavedQueries.atMost)) }
@@ -69,7 +69,7 @@ enum KubeSavedCharts {
     }
 
     /// One saved chart from its answer; nil, no series.
-    static func chart(_ saved: KubeSavedChart, index: Int, subject: String, answer: [KubeSeries], span: KubePromSpan) -> (
+    package static func chart(_ saved: KubeSavedChart, index: Int, subject: String, answer: [KubeSeries], span: KubePromSpan) -> (
         chart: KubePodCharts.Chart, notes: [String]
     )? {
         let lines = answer.filter { !$0.points.isEmpty }
@@ -101,7 +101,7 @@ enum KubeSavedCharts {
     /// Each series' name: the values of the labels that tell them apart
     /// (`__name__` and Overterm's own aside), `label=value` where only
     /// one label does; "value" for a lone series.
-    static func names(_ labels: [[String: String]]) -> [String] {
+    package static func names(_ labels: [[String: String]]) -> [String] {
         let keys = Set(labels.flatMap(\.keys)).subtracting(["__name__", "overterm_s"])
         let varying = keys.filter { key in Set(labels.map { $0[key] ?? "" }).count > 1 }.sorted()
         guard labels.count > 1, !varying.isEmpty else {
@@ -113,7 +113,7 @@ enum KubeSavedCharts {
     }
 
     /// The workload's charts with its saved group added, last, and its sentences.
-    static func add(_ charts: KubeObjectCharts, subject: String, saved: [KubeSavedChart], reading: KubeTabReading?) -> KubeObjectCharts {
+    package static func add(_ charts: KubeObjectCharts, subject: String, saved: [KubeSavedChart], reading: KubeTabReading?) -> KubeObjectCharts {
         let made = group(subject: subject, saved: saved, reading: reading)
         var out = charts
         if let group = made.group { out.groups.append(group) }

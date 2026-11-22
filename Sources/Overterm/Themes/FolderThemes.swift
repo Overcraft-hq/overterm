@@ -8,13 +8,13 @@ import Foundation
 ///
 /// A pattern is a folder (it and everything under it) or a glob over the
 /// path (`*` crosses folders). `~` is the home folder.
-enum FolderThemes {
-    struct Rule: Equatable {
-        var pattern: String
-        var theme: String
+package enum FolderThemes {
+    package struct Rule: Equatable {
+        package var pattern: String
+        package var theme: String
     }
 
-    static func rules(_ lines: [String]) -> [Rule] {
+    package static func rules(_ lines: [String]) -> [Rule] {
         lines.compactMap { line in
             let text = line.trimmingCharacters(in: .whitespaces)
             guard !text.isEmpty, !text.hasPrefix("#"), let equals = text.lastIndex(of: "=") else { return nil }
@@ -26,7 +26,7 @@ enum FolderThemes {
     }
 
     /// The theme for `path`, by the first rule that takes it.
-    static func theme(for path: String, rules: [Rule], home: String = NSHomeDirectory()) -> String? {
+    package static func theme(for path: String, rules: [Rule], home: String = NSHomeDirectory()) -> String? {
         let path = (path as NSString).standardizingPath
         for rule in rules {
             var pattern = rule.pattern

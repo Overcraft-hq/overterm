@@ -10,7 +10,7 @@ import Foundation
 /// dropped as it is read. The resource list and the counts never come
 /// from here: `planned_change` omits no-ops (4.15), so they are
 /// `show -json`'s. Pure.
-enum TerraformUIMessage: Equatable, Sendable {
+package enum TerraformUIMessage: Equatable, Sendable {
     /// `version`: the binary's version and the UI's.
     case version(terraform: String, ui: String)
     /// `planned_change`: an address and its action.
@@ -39,15 +39,15 @@ enum TerraformUIMessage: Equatable, Sendable {
     /// A `ui` major this doesn't read.
     case unknownMajor(String)
 
-    enum ApplyStep: String, Sendable {
+    package enum ApplyStep: String, Sendable {
         case start, progress, complete, errored
     }
 
-    static let supportedMajor = "1"
+    package static let supportedMajor = "1"
     /// A line past this is kept cut: a stream is an agent's or a cloud's, of any size.
-    static let maxLine = 64 << 10
+    package static let maxLine = 64 << 10
 
-    static func decode(_ line: String, scrub: (String) -> String = TerraformPlan.scrub) -> TerraformUIMessage {
+    package static func decode(_ line: String, scrub: (String) -> String = TerraformPlan.scrub) -> TerraformUIMessage {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("{"), trimmed.utf8.count <= maxLine * 16,
             let object = try? JSONSerialization.jsonObject(with: Data(trimmed.utf8)) as? [String: Any]
@@ -106,7 +106,7 @@ enum TerraformUIMessage: Equatable, Sendable {
     }
 
     /// The line the raw log shows for it.
-    var logLine: String {
+    package var logLine: String {
         switch self {
         case .version(let terraform, _): "Terraform \(terraform)"
         case .plannedChange(let address, let action): "\(address): plan to \(action)"
@@ -140,7 +140,7 @@ enum TerraformUIMessage: Equatable, Sendable {
 
 extension TerraformUIMessage {
     /// "Creating", as the CLI says a hook's action going.
-    static func progressive(_ action: String) -> String {
+    package static func progressive(_ action: String) -> String {
         switch action {
         case "create": "Creating"
         case "update": "Modifying"
@@ -152,7 +152,7 @@ extension TerraformUIMessage {
     }
 
     /// "Creation complete".
-    static func done(_ action: String) -> String {
+    package static func done(_ action: String) -> String {
         switch action {
         case "create": "Creation complete"
         case "update": "Modifications complete"

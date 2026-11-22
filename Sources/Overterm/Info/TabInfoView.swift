@@ -2,29 +2,29 @@ import AppKit
 import SwiftUI
 
 /// Tab Info: where the tab is, and what it is running.
-struct TabInfoView: View {
-    @ObservedObject var model: TabInfoModel
-    @ObservedObject var theme: ChromeTheme
+package struct TabInfoView: View {
+    @ObservedObject package var model: TabInfoModel
+    @ObservedObject package var theme: ChromeTheme
     /// A port's Open: the window's browser when Settings ▸ Browser says so.
-    var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    package var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Show in Activity (6.12): the page at the tab, a process or a port;
     /// nil with Activity off. Tab Info itself signals nothing.
-    var showInActivity: ((ActivityLink) -> Void)? = nil
+    package var showInActivity: ((ActivityLink) -> Void)? = nil
 
     /// A process row's Show in Activity (6.12): Processes, it selected
     /// and followed, in its tab's scope. Pure.
-    nonisolated static func processLink(_ node: ProcessNode, tab: UUID) -> ActivityLink {
+    package nonisolated static func processLink(_ node: ProcessNode, tab: UUID) -> ActivityLink {
         .process(node.identity, tab: tab)
     }
 
     /// A port row's Show in Activity (6.12): Listening at the tab's
     /// checkout, its holder's row when a process holds it — a container's
     /// or a forward's has none. Pure.
-    nonisolated static func portLink(_ port: ListeningPort, tab: UUID) -> ActivityLink {
+    package nonisolated static func portLink(_ port: ListeningPort, tab: UUID) -> ActivityLink {
         .port(port.port, proto: port.proto, pid: port.pid > 0 ? port.pid : nil, tab: tab)
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
             locationSection
@@ -297,7 +297,7 @@ struct TabInfoView: View {
     }
 
     /// 1234 → 1.2K, 38_400_000 → 38M.
-    nonisolated static func tokens(_ n: Int) -> String {
+    package nonisolated static func tokens(_ n: Int) -> String {
         switch n {
         case ..<1_000: return "\(n)"
         case ..<1_000_000: return String(format: n < 10_000 ? "%.1fK" : "%.0fK", Double(n) / 1_000)
@@ -306,7 +306,7 @@ struct TabInfoView: View {
         }
     }
 
-    nonisolated static func duration(_ seconds: TimeInterval) -> String {
+    package nonisolated static func duration(_ seconds: TimeInterval) -> String {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute] : [.minute, .second]
         formatter.unitsStyle = .abbreviated
@@ -314,14 +314,14 @@ struct TabInfoView: View {
     }
 
     /// "—" for none yet: a first sample has no rate, never 0 (7.5).
-    nonisolated static func cpu(_ percent: Double?) -> String { percent.map { String(format: "%.0f%%", $0) } ?? "—" }
+    package nonisolated static func cpu(_ percent: Double?) -> String { percent.map { String(format: "%.0f%%", $0) } ?? "—" }
 
     /// The address said beside a listening port (docs/design/activity/
     /// analysis.md, 6.8): a process's when it is bound to one address that
     /// isn't loopback, a forward's wherever it isn't this Mac's alone — a
     /// pod forwarded to the whole network (`0.0.0.0`, `::`) or to one LAN
     /// address must never look like a loopback one. Pure.
-    nonisolated static func address(of port: ListeningPort) -> String? {
+    package nonisolated static func address(of port: ListeningPort) -> String? {
         if port.forward != nil { return port.scope == .thisMac ? nil : port.address }
         return port.scope == .oneAddress ? port.address : nil
     }
@@ -329,7 +329,7 @@ struct TabInfoView: View {
     /// What a Listening row says of its socket (6.12): "tcp · v4 + v6 ·
     /// This Mac" — its families only when read (a container's and a
     /// forward's aren't). Pure.
-    nonisolated static func portWords(_ port: ListeningPort) -> String {
+    package nonisolated static func portWords(_ port: ListeningPort) -> String {
         var words = [port.proto]
         switch (port.families.contains(.v4), port.families.contains(.v6)) {
         case (true, true): words.append("v4 + v6")
@@ -342,7 +342,7 @@ struct TabInfoView: View {
     }
 
     /// "0 KB", never "Zero KB" (the formatter's default for 0).
-    nonisolated static func memory(_ bytes: UInt64) -> String {
+    package nonisolated static func memory(_ bytes: UInt64) -> String {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .memory
         formatter.allowsNonnumericFormatting = false
@@ -408,7 +408,7 @@ extension TabInfoView {
     /// (9.3) — a password on a command line is never a hover away on a
     /// screen share — then where it works, when the census read it, and
     /// when it started.
-    nonisolated static func help(for node: ProcessNode) -> String {
+    package nonisolated static func help(for node: ProcessNode) -> String {
         var lines = [node.maskedCommand.isEmpty ? node.name : node.maskedCommand]
         if let folder = node.workingDirectory { lines.append((folder as NSString).abbreviatingWithTildeInPath) }
         let started = Date(timeIntervalSince1970: Double(node.identity.start) / 1_000_000)
@@ -418,7 +418,7 @@ extension TabInfoView {
 
     /// The memory cell's: the footprint shown is Activity Monitor's Memory;
     /// real memory, resident, beside it.
-    nonisolated static func memoryHelp(for node: ProcessNode) -> String {
+    package nonisolated static func memoryHelp(for node: ProcessNode) -> String {
         "Memory (footprint): \(memory(node.footprint)) · real memory (RSS): \(memory(node.memory))"
     }
 }

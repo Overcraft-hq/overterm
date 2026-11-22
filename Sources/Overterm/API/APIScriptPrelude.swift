@@ -3,8 +3,8 @@
 /// hands in) and into `__output` (JSON it reads back). Kept to what
 /// scripts in Bruno collections actually call; `require` says plainly that
 /// npm packages need `bru`.
-enum APIScriptPrelude {
-    static let source = #"""
+package enum APIScriptPrelude {
+    package static let source = #"""
         "use strict";
         var __in = JSON.parse(__input);
         var __out = { runtime: {}, deleted: [], env: {}, logs: [], tests: [], next: undefined, skip: false, stop: false,

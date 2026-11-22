@@ -10,58 +10,58 @@ import Foundation
 /// summaries as its peers when the page holds them: nothing is read for
 /// the chain. Ask Why's brief on these kinds (6.2) is said from it too.
 /// Every message went through 5.3 as it was decoded. Pure.
-struct KubeGitOpsDetail: Equatable, Sendable {
-    struct Resource: Equatable, Sendable {
-        var group: String
-        var version: String
-        var kind: String
-        var namespace: String?
-        var name: String
-        var status: String?
-        var health: String?
-        var requiresPruning: Bool
+package struct KubeGitOpsDetail: Equatable, Sendable {
+    package struct Resource: Equatable, Sendable {
+        package var group: String
+        package var version: String
+        package var kind: String
+        package var namespace: String?
+        package var name: String
+        package var status: String?
+        package var health: String?
+        package var requiresPruning: Bool
 
         /// `Deployment shop/api`.
-        var said: String { "\(kind) \(namespace.map { "\($0)/" } ?? "")\(name)" }
+        package var said: String { "\(kind) \(namespace.map { "\($0)/" } ?? "")\(name)" }
 
-        var link: KubeLink {
+        package var link: KubeLink {
             KubeLink(apiVersion: group.isEmpty ? version : "\(group)/\(version)", kind: kind, namespace: namespace, name: name)
         }
     }
 
-    struct HistoryEntry: Equatable, Sendable {
-        var revisions: [String]
-        var deployedAt: Date?
+    package struct HistoryEntry: Equatable, Sendable {
+        package var revisions: [String]
+        package var deployedAt: Date?
     }
 
-    struct Failure: Equatable, Sendable {
-        var kind: String
-        var namespace: String?
-        var name: String
+    package struct Failure: Equatable, Sendable {
+        package var kind: String
+        package var namespace: String?
+        package var name: String
         /// Through 5.3, at most 4 KB.
-        var message: String?
+        package var message: String?
 
-        var said: String { "\(kind) \(namespace.map { "\($0)/" } ?? "")\(name)" + (message.map { ": \($0)" } ?? "") }
+        package var said: String { "\(kind) \(namespace.map { "\($0)/" } ?? "")\(name)" + (message.map { ": \($0)" } ?? "") }
     }
 
     /// The summary of the object itself (its state not yet ranked).
-    var object: KubeGitOpsObject
+    package var object: KubeGitOpsObject
     /// Argo CD's history, newest first, at most 10.
-    var history: [HistoryEntry] = []
+    package var history: [HistoryEntry] = []
     /// Out of sync or needing pruning, at most 50; `resourcesPast` more.
-    var resources: [Resource] = []
-    var resourcesPast = 0
+    package var resources: [Resource] = []
+    package var resourcesPast = 0
     /// The last operation's resources that failed, at most 50; `failuresPast` more.
-    var failures: [Failure] = []
-    var failuresPast = 0
+    package var failures: [Failure] = []
+    package var failuresPast = 0
 
     /// The kinds the detail has a GitOps header for, and Ask Why asks about.
-    static func isGitOps(_ kind: KubeResourceKind) -> Bool { KubeGitOpsDelete.tool(kind) != nil }
+    package static func isGitOps(_ kind: KubeResourceKind) -> Bool { KubeGitOpsDelete.tool(kind) != nil }
 
     /// The detail of one GET's body, parsed once; nil for a kind that
     /// isn't one of the four. Bodies run to megabytes (an Application's
     /// `status.resources`): called off the main thread (`KubeBlocking.run`).
-    static func read(_ data: Data, readAt: Date) -> KubeGitOpsDetail? {
+    package static func read(_ data: Data, readAt: Date) -> KubeGitOpsDetail? {
         guard let read = try? KubeGitOpsWire.detailRead(data), let object = KubeGitOpsObject(read.object, readAt: readAt) else { return nil }
         switch object.role {
         case .application, .applicationSet, .kustomization, .helmRelease: break
@@ -92,14 +92,14 @@ struct KubeGitOpsDetail: Equatable, Sendable {
     // MARK: Its state
 
     /// The ladder's verdict on it, the summaries as its peers.
-    func verdict(peers: KubeGitOpsLadder.Peers, now: Date) -> KubeGitOpsVerdict {
+    package func verdict(peers: KubeGitOpsLadder.Peers, now: Date) -> KubeGitOpsVerdict {
         var verdict = KubeGitOpsLadder.evaluate(object, now: now, peers: peers)
         verdict.tags += object.ownTags
         return verdict
     }
 
     /// `Failed: upgrade to 1.5.0 failed; rolled back to 1.4.2 (4m)`.
-    static func sentence(_ verdict: KubeGitOpsVerdict, now: Date) -> String {
+    package static func sentence(_ verdict: KubeGitOpsVerdict, now: Date) -> String {
         let age = verdict.since.map { " (\(KubeAge.format(now.timeIntervalSince($0))))" } ?? ""
         return "\(verdict.state.word): \(verdict.why)\(age)"
     }
@@ -107,7 +107,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
     // MARK: Links
 
     /// The group and version a key's kind is served at, as references say it.
-    static func apiVersion(of kind: String) -> String {
+    package static func apiVersion(of kind: String) -> String {
         switch kind {
         case "Application", "ApplicationSet": "argoproj.io/v1alpha1"
         case "Kustomization": "kustomize.toolkit.fluxcd.io/v1"
@@ -118,7 +118,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
 
     /// The object a key names: its peer's own version (and namespace, when
     /// the key's marks didn't say it) when summarised.
-    static func link(_ key: KubeGitOpsObject.Key, peer: KubeGitOpsObject?) -> KubeLink {
+    package static func link(_ key: KubeGitOpsObject.Key, peer: KubeGitOpsObject?) -> KubeLink {
         KubeLink(
             apiVersion: peer?.apiVersion.nilIfEmpty ?? apiVersion(of: key.kind), kind: key.kind, namespace: key.namespace ?? peer?.ref.namespace, name: key.name)
     }
@@ -126,7 +126,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
     /// What it takes from and waits for, in order — its source (and a
     /// HelmRelease's chart), each `dependsOn`, the ApplicationSet or the
     /// object that manages it — each with its peer when summarised.
-    func chain(peers: KubeGitOpsLadder.Peers) -> [(role: String, key: KubeGitOpsObject.Key, peer: KubeGitOpsObject?)] {
+    package func chain(peers: KubeGitOpsLadder.Peers) -> [(role: String, key: KubeGitOpsObject.Key, peer: KubeGitOpsObject?)] {
         var links: [(String, KubeGitOpsObject.Key)] = []
         for key in KubeGitOpsLadder.upstream(object) { links.append((key.kind == "HelmChart" ? "Chart" : "Source", key)) }
         for key in object.dependsOn { links.append(("Depends on", key)) }
@@ -148,7 +148,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
 
     /// The first link in the chain that isn't ready, followed while each
     /// is among the peers (at most 5 hops): the cause of a Blocked one.
-    func rootCause(peers: KubeGitOpsLadder.Peers, now: Date) -> (key: KubeGitOpsObject.Key, peer: KubeGitOpsObject, verdict: KubeGitOpsVerdict)? {
+    package func rootCause(peers: KubeGitOpsLadder.Peers, now: Date) -> (key: KubeGitOpsObject.Key, peer: KubeGitOpsObject, verdict: KubeGitOpsVerdict)? {
         var current = object
         var seen: Set<KubeGitOpsObject.Key> = [object.key]
         var found: (KubeGitOpsObject.Key, KubeGitOpsObject, KubeGitOpsVerdict)?
@@ -175,7 +175,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
     /// Its sources as the header says them: the repository with its host,
     /// the path or the chart and its version, the ref; "values from this
     /// repo" for a `ref:` source. A Flux object's through its source's summary.
-    func sourceLines(peers: KubeGitOpsLadder.Peers) -> [String] {
+    package func sourceLines(peers: KubeGitOpsLadder.Peers) -> [String] {
         func repository(_ url: String) -> String { GitRemoteURL(url)?.description ?? GitRemoteURL.withoutUserinfo(url) }
         switch object.role {
         case .application, .applicationSet:
@@ -211,7 +211,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
     }
 
     /// Each revision, with when it was applied, attempted or fetched.
-    func revisionLines(peers: KubeGitOpsLadder.Peers, now: Date) -> [(label: String, value: String, when: String?)] {
+    package func revisionLines(peers: KubeGitOpsLadder.Peers, now: Date) -> [(label: String, value: String, when: String?)] {
         func ago(_ date: Date?, _ verb: String) -> String? { date.map { "\(verb) \(KubeAge.format(now.timeIntervalSince($0))) ago" } }
         func said(_ revisions: [String]) -> String { revisions.filter { !$0.isEmpty }.map(KubeGitOpsRevision.shown).joined(separator: " · ") }
         var lines: [(String, String, String?)] = []
@@ -258,7 +258,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
     }
 
     /// Where it deploys, how often, auto-sync or suspension.
-    func settingLines(now: Date) -> [(label: String, value: String)] {
+    package func settingLines(now: Date) -> [(label: String, value: String)] {
         var lines: [(String, String)] = []
         if let remote = object.remote {
             lines.append(("Into", "⇢ \(GitRemoteURL.withoutUserinfo(remote)) — another cluster, not followed"))
@@ -300,7 +300,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
 
     /// Argo CD's last operation: its phase, who started it, how long ago,
     /// its retries, its message.
-    func operationLines(now: Date) -> [(label: String, value: String)] {
+    package func operationLines(now: Date) -> [(label: String, value: String)] {
         guard let operation = object.operation else { return [] }
         var lines: [(String, String)] = []
         var phase = operation.phase
@@ -316,7 +316,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
     }
 
     /// Each condition as one line: `Ready=False BuildFailed — …` (5.3's already).
-    var conditionLines: [String] {
+    package var conditionLines: [String] {
         object.conditions.map { condition in
             let words = [condition.reason, condition.message].compactMap { $0 }.joined(separator: ": ")
             return "\(condition.type)=\(condition.status)" + (words.isEmpty ? "" : " — \(words)")
@@ -324,7 +324,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
     }
 
     /// The whole conditions text Copy puts on the clipboard: at most 4 KB.
-    var conditionsText: String {
+    package var conditionsText: String {
         let text = conditionLines.joined(separator: "\n")
         guard text.utf8.count > KubeGitOpsMessage.hoverLimit else { return text }
         return String(text.prefix(KubeGitOpsMessage.hoverLimit - 1)) + "…"
@@ -337,7 +337,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
     /// failed or are out of sync, Flux's attempted against applied, a
     /// HelmRelease's history head, the chain's root cause. Not yet scrubbed
     /// as a whole: `KubeAgentBriefing.gitOps` puts every word through `Secrets`.
-    func brief(context: KubeBriefContext, peers: KubeGitOpsLadder.Peers, now: Date) -> (message: String, subject: String, text: String, parts: [AskAgentModel.Part]) {
+    package func brief(context: KubeBriefContext, peers: KubeGitOpsLadder.Peers, now: Date) -> (message: String, subject: String, text: String, parts: [AskAgentModel.Part]) {
         let verdict = self.verdict(peers: peers, now: now)
         let where_ = "\(object.ref.namespace.map { "\($0)/" } ?? "")\(object.ref.name)"
         let what = "\(object.tool.said) \(object.kind) \(where_)"
@@ -399,7 +399,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
     }
 
     /// Why Ask Why isn't offered: it isn't Failed, Blocked or Stuck.
-    static func notAsked(_ object: KubeGitOpsObject, state: KubeGitOpsState, why: String) -> String? {
+    package static func notAsked(_ object: KubeGitOpsObject, state: KubeGitOpsState, why: String) -> String? {
         guard !state.isProblem else { return nil }
         let where_ = "\(object.ref.namespace.map { "\($0)/" } ?? "")\(object.ref.name)"
         return "\(object.kind) \(where_) is \(state.word) (\(why)): Ask Why is for one that is Failed, Blocked or Stuck."

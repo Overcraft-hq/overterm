@@ -3,17 +3,17 @@ import AppKit
 /// What a drawing's tab keeps: the file's parts, the canvas, and the text
 /// it last wrote — to tell its own edit from somebody else's.
 @MainActor
-final class DrawingModel {
-    var file: DrawingFile
-    let view: DrawingView
+package final class DrawingModel {
+    package var file: DrawingFile
+    package let view: DrawingView
     /// The buffer's text as the canvas last made it.
-    var lastText: String
+    package var lastText: String
     /// How the scene is written back: Obsidian Excalidraw's "compress"
     /// for a `.md`, JSON for a plain `.excalidraw`.
-    let saveAs: DrawingFile.Encoding
-    var pendingSave: DispatchWorkItem?
+    package let saveAs: DrawingFile.Encoding
+    package var pendingSave: DispatchWorkItem?
 
-    init(file: DrawingFile, text: String, saveAs: DrawingFile.Encoding) {
+    package init(file: DrawingFile, text: String, saveAs: DrawingFile.Encoding) {
         self.file = file
         self.lastText = text
         self.saveAs = saveAs
@@ -26,7 +26,7 @@ final class DrawingModel {
 /// the text), every change on the canvas written into the text and saved
 /// a moment later — a drawing has no Save to forget, as in Obsidian.
 extension EditorViewController {
-    func attachDrawing(_ buffer: EditorBuffer) {
+    package func attachDrawing(_ buffer: EditorBuffer) {
         guard let url = buffer.url, buffer.document.unavailable == nil else { return }
         let text = buffer.storage.string
         guard DrawingFile.isDrawing(url, text: text) else { return }
@@ -54,7 +54,7 @@ extension EditorViewController {
     }
 
     /// Puts `drawing`'s canvas over the text, or takes the one showing away.
-    func showDrawing(_ drawing: DrawingModel?) {
+    package func showDrawing(_ drawing: DrawingModel?) {
         guard shownDrawing !== drawing?.view else {
             drawing.map { scrollView.isHidden = $0.view.superview != nil }
             return
@@ -78,7 +78,7 @@ extension EditorViewController {
 
     /// The text changed under the canvas — reloaded from disk (Obsidian, an
     /// agent), or typed with the text showing: the canvas shows it.
-    func drawingTextChanged(_ buffer: EditorBuffer) {
+    package func drawingTextChanged(_ buffer: EditorBuffer) {
         guard let model = buffer.drawing, let url = buffer.url else { return }
         let text = buffer.storage.string
         guard text != model.lastText,
@@ -103,7 +103,7 @@ extension EditorViewController {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
     }
 
-    func closeDrawing(_ buffer: EditorBuffer) {
+    package func closeDrawing(_ buffer: EditorBuffer) {
         guard let model = buffer.drawing else { return }
         model.pendingSave?.cancel()
         if shownDrawing === model.view { showDrawing(nil) }

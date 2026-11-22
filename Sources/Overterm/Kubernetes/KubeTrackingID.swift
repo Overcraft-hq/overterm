@@ -25,40 +25,40 @@ import Foundation
 /// `-` —, the group a DNS name or empty, the Kind `[A-Za-z0-9]` up to 63,
 /// the namespace a DNS label or empty, the name a DNS subdomain. Anything
 /// else is no tracking id. Pure.
-struct KubeTrackingID: Equatable, Hashable, Sendable {
+package struct KubeTrackingID: Equatable, Hashable, Sendable {
     /// `Application.InstanceName`: `name`, or `appNamespace_name`.
-    var instance: String
+    package var instance: String
     /// "" for the core group.
-    var group: String
-    var kind: String
+    package var group: String
+    package var kind: String
     /// The object's namespace; a cluster-scoped object's is the
     /// Application's destination namespace, "" when that is empty.
-    var namespace: String
-    var name: String
+    package var namespace: String
+    package var name: String
 
-    static let maxBytes = 1024
-    static let maxName = 253
-    static let maxLabel = 63
+    package static let maxBytes = 1024
+    package static let maxName = 253
+    package static let maxLabel = 63
 
     /// The Application's own namespace, for an `<appNamespace>_<name>`
     /// app; nil means Argo CD's own namespace, unknown from here.
-    var appNamespace: String? {
+    package var appNamespace: String? {
         guard let underscore = instance.firstIndex(of: "_") else { return nil }
         return String(instance[..<underscore])
     }
 
     /// The Application's name.
-    var appName: String {
+    package var appName: String {
         guard let underscore = instance.firstIndex(of: "_") else { return instance }
         return String(instance[instance.index(after: underscore)...])
     }
 
     /// The app as the page names it: `payments/checkout-api`, or a bare
     /// `checkout-api` for one in Argo CD's own namespace.
-    var said: String { appNamespace.map { "\($0)/\(appName)" } ?? appName }
+    package var said: String { appNamespace.map { "\($0)/\(appName)" } ?? appName }
 
     /// The value, checked; nil for anything Argo CD wouldn't write.
-    static func parse(_ value: String) -> KubeTrackingID? {
+    package static func parse(_ value: String) -> KubeTrackingID? {
         guard value.utf8.count <= maxBytes, !value.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else { return nil }
         let parts = value.split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count == 3 else { return nil }
@@ -77,19 +77,19 @@ struct KubeTrackingID: Equatable, Hashable, Sendable {
     /// The object a mark sits on, as its reader knows it: a list's kind
     /// and row, an object's own `apiVersion`, `kind` and metadata — never
     /// a row's embedded `PartialObjectMetadata`, whose kind is meta's.
-    struct Identity: Equatable, Hashable, Sendable {
+    package struct Identity: Equatable, Hashable, Sendable {
         /// "" for the core group.
-        var group: String
-        var kind: String
+        package var group: String
+        package var kind: String
         /// nil for a cluster-scoped object.
-        var namespace: String?
-        var name: String
+        package var namespace: String?
+        package var name: String
 
-        var clusterScoped: Bool { namespace?.isEmpty ?? true }
+        package var clusterScoped: Bool { namespace?.isEmpty ?? true }
 
         /// From an object as the API gives it: its `apiVersion`, `kind` and
         /// metadata; nil when it doesn't say its kind.
-        static func of(_ object: [String: Any]?) -> Identity? {
+        package static func of(_ object: [String: Any]?) -> Identity? {
             guard let object, let kind = object["kind"] as? String, !kind.isEmpty, let apiVersion = object["apiVersion"] as? String else { return nil }
             let metadata = object["metadata"] as? [String: Any]
             guard let name = metadata?["name"] as? String, !name.isEmpty else { return nil }
@@ -102,47 +102,47 @@ struct KubeTrackingID: Equatable, Hashable, Sendable {
     /// Whether the mark names the object it sits on: its group, Kind and
     /// name, and its namespace unless the object is cluster-scoped — Argo
     /// CD's `isSelfReferencedObj`.
-    func isSelf(group: String, kind: String, namespace: String?, name: String, clusterScoped: Bool) -> Bool {
+    package func isSelf(group: String, kind: String, namespace: String?, name: String, clusterScoped: Bool) -> Bool {
         guard self.group == group, self.kind == kind, self.name == name else { return false }
         return clusterScoped || self.namespace == (namespace ?? "")
     }
 
-    func isSelf(_ object: Identity) -> Bool {
+    package func isSelf(_ object: Identity) -> Bool {
         isSelf(group: object.group, kind: object.kind, namespace: object.namespace, name: object.name, clusterScoped: object.clusterScoped)
     }
 
     /// Which app a member belongs to: Argo CD's installation id (two Argo
     /// CDs deploying into one cluster are told apart by it) and the
     /// instance name.
-    struct AppKey: Equatable, Hashable, Sendable, Comparable {
+    package struct AppKey: Equatable, Hashable, Sendable, Comparable {
         /// "" when the mark carries none.
-        var installation: String
-        var instance: String
+        package var installation: String
+        package var instance: String
 
-        static func < (a: AppKey, b: AppKey) -> Bool { (a.installation, a.instance) < (b.installation, b.instance) }
+        package static func < (a: AppKey, b: AppKey) -> Bool { (a.installation, a.instance) < (b.installation, b.instance) }
     }
 
     /// This mark's app under `installation`, the object's
     /// `argocd.argoproj.io/installation-id`; nil when that is malformed.
-    func appKey(installation: String?) -> AppKey? {
+    package func appKey(installation: String?) -> AppKey? {
         guard let installation, !installation.isEmpty else { return AppKey(installation: "", instance: instance) }
         guard let checked = Self.installation(installation) else { return nil }
         return AppKey(installation: checked, instance: instance)
     }
 
-    static let installationAnnotation = "argocd.argoproj.io/installation-id"
+    package static let installationAnnotation = "argocd.argoproj.io/installation-id"
 
     /// An app's instance name as a label carries it
     /// (`argocd.argoproj.io/instance`, `app.kubernetes.io/instance`),
     /// checked as the tracking id's app part is, and at most 63 characters
     /// — a label value's bound; nil for anything else.
-    static func instanceLabel(_ value: String) -> String? {
+    package static func instanceLabel(_ value: String) -> String? {
         value.utf8.count <= maxLabel && isInstance(value) ? value : nil
     }
 
     /// An installation id, checked as the app part is: at most 63
     /// characters of `[a-z0-9._-]`.
-    static func installation(_ value: String) -> String? {
+    package static func installation(_ value: String) -> String? {
         guard !value.isEmpty, value.utf8.count <= maxLabel, value.utf8.allSatisfy({ isLowerAlphanumeric($0) || $0 == dot || $0 == dash || $0 == underscore })
         else { return nil }
         return value
@@ -187,11 +187,11 @@ struct KubeTrackingID: Equatable, Hashable, Sendable {
     }
 
     /// A DNS label (RFC 1123), as a namespace is: one part, at most 63.
-    static func isLabel(_ text: String) -> Bool { text.utf8.count <= maxLabel && isPart(Substring(text)) }
+    package static func isLabel(_ text: String) -> Bool { text.utf8.count <= maxLabel && isPart(Substring(text)) }
 
     /// A DNS subdomain (RFC 1123), as most objects' names are: parts
     /// joined by `.`, at most 253 in all — Kubernetes caps no part alone.
-    static func isSubdomain(_ text: String) -> Bool {
+    package static func isSubdomain(_ text: String) -> Bool {
         guard !text.isEmpty, text.utf8.count <= maxName else { return false }
         return text.split(separator: ".", omittingEmptySubsequences: false).allSatisfy { isPart($0) }
     }

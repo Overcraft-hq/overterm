@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// A severity's colour: red, orange, yellow, then the theme's quieter text.
-enum DockerScoutStyle {
-    @MainActor static func color(_ severity: DockerScoutSeverity, theme: ChromeTheme) -> Color {
+package enum DockerScoutStyle {
+    @MainActor package static func color(_ severity: DockerScoutSeverity, theme: ChromeTheme) -> Color {
         switch severity {
         case .critical: TabStatusStyle.failed
         case .high: TabStatusStyle.waiting
@@ -17,17 +17,17 @@ enum DockerScoutStyle {
 /// sends, until Scan is pressed; then its progress, and what it found —
 /// by severity, worst first, filtered as the window last filtered it. It
 /// reads only what the app's scans hold; nothing runs because it shows.
-struct DockerScoutPane: View {
-    let image: ImageSummary
-    @ObservedObject var scans: DockerScoutScans
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+package struct DockerScoutPane: View {
+    package let image: ImageSummary
+    @ObservedObject package var scans: DockerScoutScans
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
     /// The rows opened on their advisory's words.
     @State private var expanded: Set<String> = []
     @Environment(\.dockerShown) private var shown
 
-    var body: some View {
+    package var body: some View {
         Group {
             if let name = image.tags.first {
                 if let scan = scans.scan(for: image.Id) {
@@ -278,7 +278,7 @@ struct DockerScoutPane: View {
     }
 
     /// `0:07`, `12:30`.
-    static func elapsed(_ seconds: TimeInterval) -> String {
+    package static func elapsed(_ seconds: TimeInterval) -> String {
         let whole = max(0, Int(seconds))
         return String(format: "%d:%02d", whole / 60, whole % 60)
     }

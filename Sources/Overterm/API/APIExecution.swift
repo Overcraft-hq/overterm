@@ -9,49 +9,49 @@ import Foundation
 /// default) runs pre-request scripts collection → folders → request, and
 /// post-response scripts and tests the other way round; "sequential" runs
 /// both from the outside in.
-enum APIExecution {
-    struct Setup: Sendable {
-        var file: BruFile
-        var requestName = ""
-        var collectionName = ""
-        var collectionRoot: URL?
-        var collectionFile: BruFile?
-        var folderFiles: [BruFile] = []
-        var scriptFlow = "sandwich"
-        var environmentName: String?
+package enum APIExecution {
+    package struct Setup: Sendable {
+        package var file: BruFile
+        package var requestName = ""
+        package var collectionName = ""
+        package var collectionRoot: URL?
+        package var collectionFile: BruFile?
+        package var folderFiles: [BruFile] = []
+        package var scriptFlow = "sandwich"
+        package var environmentName: String?
         /// The environment's variables, secrets filled in.
-        var environment: [String: String] = [:]
-        var runtime: [String: String] = [:]
+        package var environment: [String: String] = [:]
+        package var runtime: [String: String] = [:]
         /// The same, as JSON-encoded JavaScript values (APIScriptOutcome).
-        var runtimeJSON: [String: String] = [:]
-        var processEnv: [String: String] = [:]
-        var options = APIClient.Options()
+        package var runtimeJSON: [String: String] = [:]
+        package var processEnv: [String: String] = [:]
+        package var options = APIClient.Options()
     }
 
-    struct Result: Equatable, Sendable {
-        var plan: APIRequestPlan?
-        var response: APIResponse?
+    package struct Result: Equatable, Sendable {
+        package var plan: APIRequestPlan?
+        package var response: APIResponse?
         /// Why nothing came back: a bad URL, a refused connection, a
         /// script that threw before the request left.
-        var error: String?
-        var tests: [APITestResult] = []
-        var logs: [APILogLine] = []
+        package var error: String?
+        package var tests: [APITestResult] = []
+        package var logs: [APILogLine] = []
         /// The runtime variables after the run, for the next one.
-        var runtime: [String: String] = [:]
-        var runtimeJSON: [String: String] = [:]
+        package var runtime: [String: String] = [:]
+        package var runtimeJSON: [String: String] = [:]
         /// What `bru.setEnvVar` changed, for the session.
-        var environment: [String: String] = [:]
-        var nextRequest: String?
-        var stop = false
-        var skipped = false
+        package var environment: [String: String] = [:]
+        package var nextRequest: String?
+        package var stop = false
+        package var skipped = false
 
-        var passed: Int { tests.filter(\.passed).count }
-        var failed: Int { tests.count - passed }
+        package var passed: Int { tests.filter(\.passed).count }
+        package var failed: Int { tests.count - passed }
         /// Sent, answered below 400, and every test passed.
-        var succeeded: Bool { error == nil && (response?.status ?? 0) < 400 && response != nil && failed == 0 }
+        package var succeeded: Bool { error == nil && (response?.status ?? 0) < 400 && response != nil && failed == 0 }
     }
 
-    static func run(_ setup: Setup, client: APIClient, scripts: APIScriptRuntime = .shared) async -> Result {
+    package static func run(_ setup: Setup, client: APIClient, scripts: APIScriptRuntime = .shared) async -> Result {
         var result = Result(runtime: setup.runtime, runtimeJSON: setup.runtimeJSON)
         var file = setup.file
         var environment = setup.environment
@@ -190,7 +190,7 @@ enum APIExecution {
     /// The request as pre-request scripts see it: the URL and headers as
     /// written — the collection's and folders' headers merged in — and
     /// the body's text.
-    static func rawRequest(_ file: BruFile, outer: [BruFile]) -> APIScriptRequest {
+    package static func rawRequest(_ file: BruFile, outer: [BruFile]) -> APIScriptRequest {
         var headers: [String: String] = [:]
         for pairs in outer.map(\.headers) + [file.headers] {
             for pair in pairs where pair.enabled {
@@ -216,7 +216,7 @@ enum APIExecution {
     /// the request (never the file on disk). Returns the headers it deleted
     /// that the collection or a folder set, which the plan then leaves out.
     @discardableResult
-    static func apply(
+    package static func apply(
         _ request: APIScriptRequest, over original: APIScriptRequest, to file: inout BruFile, options: inout APIClient.Options
     ) -> Set<String> {
         func same(_ a: String, _ b: String) -> Bool { a.caseInsensitiveCompare(b) == .orderedSame }

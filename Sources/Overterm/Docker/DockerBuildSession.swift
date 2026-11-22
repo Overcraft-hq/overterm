@@ -8,43 +8,43 @@ import Foundation
 /// running job before; either way it replays from the start, so a follow
 /// stopped (the detail hidden) reads it all again when it shows.
 @MainActor
-final class DockerBuildSession: ObservableObject {
-    enum State: Equatable {
+package final class DockerBuildSession: ObservableObject {
+    package enum State: Equatable {
         case idle, reading, ended, stopped
         case failed(String)
     }
 
     /// The record's own id (`DockerBuildRecord.shortRef`).
-    let ref: String
-    @Published private(set) var state: State = .idle
+    package let ref: String
+    @Published package private(set) var state: State = .idle
     /// `buildx history inspect`'s answer. Until it has come, nothing of
     /// the steps is drawn or copied: a secret build arg's value is taken
     /// out of them by what it says (`secretsKnown`).
-    @Published private(set) var detail: DockerBuildDetail?
+    @Published package private(set) var detail: DockerBuildDetail?
     /// The inspect didn't answer, asked again and again: the steps stay
     /// hidden, and showing the detail again asks once more.
-    @Published private(set) var detailFailed = false
+    @Published package private(set) var detailFailed = false
     /// What the list says of the record: polled, so fresher than the
     /// detail's status, and there when the detail isn't.
-    @Published private(set) var recordRunning: Bool
+    @Published package private(set) var recordRunning: Bool
     /// Bumped when `progress` changed — at most every `publishInterval`:
     /// a big build sends hundreds of messages a second.
-    @Published private(set) var revision = 0
+    @Published package private(set) var revision = 0
     /// A step the user chose; nil follows the build.
-    @Published var picked: String?
+    @Published package var picked: String?
     /// Not @Published: one owner, and no copy of every step's output each
     /// time it is.
-    private(set) var progress = DockerBuildProgress()
+    package private(set) var progress = DockerBuildProgress()
     /// Bumped by each read: the log view draws its text again rather than
     /// adding to what an earlier read drew.
-    private(set) var generation = 0
+    package private(set) var generation = 0
     /// The stream ended: the list reads the record's end at once.
-    var onEnd: (() -> Void)?
+    package var onEnd: (() -> Void)?
 
-    static let publishInterval: TimeInterval = 0.2
+    package static let publishInterval: TimeInterval = 0.2
     /// Between two asks of the inspect: one that didn't answer, or one
     /// that still said running once the stream had ended.
-    static let detailRetry: TimeInterval = 0.5
+    package static let detailRetry: TimeInterval = 0.5
 
     private let cli: DockerCLI?
     private var reading: Task<Void, Never>?
@@ -55,7 +55,7 @@ final class DockerBuildSession: ObservableObject {
     private var publishPending = false
 
     /// `running`: what the list says of its record.
-    init(ref: String, cli: DockerCLI?, running: Bool = false) {
+    package init(ref: String, cli: DockerCLI?, running: Bool = false) {
         self.ref = ref
         self.cli = cli
         self.recordRunning = running
@@ -64,7 +64,7 @@ final class DockerBuildSession: ObservableObject {
     /// Reads while `shown`; hidden, the follow stops — its process
     /// terminated. An ended stream is final. The inspect is asked until it
     /// answers; shown again, once more if it never did.
-    func follow(shown: Bool) {
+    package func follow(shown: Bool) {
         guard shown else {
             if state == .reading {
                 reading?.cancel()
@@ -84,7 +84,7 @@ final class DockerBuildSession: ObservableObject {
     /// that is over has its inspect asked again once the stream is too —
     /// BuildKit writes the error into the record only after the stream
     /// has ended, and an inspect asked before that says "running".
-    func record(running: Bool) {
+    package func record(running: Bool) {
         guard running != recordRunning else { return }
         recordRunning = running
         guard !running, streamOver, detail == nil || detail?.status == "running" else { return }
@@ -98,7 +98,7 @@ final class DockerBuildSession: ObservableObject {
         }
     }
 
-    func close() {
+    package func close() {
         follow(shown: false)
         detailRead?.cancel()
         onEnd = nil
@@ -106,30 +106,30 @@ final class DockerBuildSession: ObservableObject {
 
     /// The step the detail shows: the one picked, else the build's own
     /// (`automaticStep`).
-    var shownStep: DockerBuildProgress.Step? {
+    package var shownStep: DockerBuildProgress.Step? {
         picked.flatMap(progress.step) ?? progress.automaticStep
     }
 
     /// Whether the build args have been read, so a secret one's value can
     /// be taken out of what the steps say: nothing of them is drawn or
     /// copied before.
-    var secretsKnown: Bool { detail != nil }
+    package var secretsKnown: Bool { detail != nil }
 
     /// Text of the build as shown: a secret build arg's value taken out.
-    func shown(_ text: String) -> String { DockerSecrets.redact(text, values: detail?.secrets ?? []) }
+    package func shown(_ text: String) -> String { DockerSecrets.redact(text, values: detail?.secrets ?? []) }
 
     /// Copy Log's: the steps as plain progress, secrets out. Nil until
     /// they are known.
-    var plainText: String? { secretsKnown ? progress.plainText(redacting: detail?.secrets ?? []) : nil }
+    package var plainText: String? { secretsKnown ? progress.plainText(redacting: detail?.secrets ?? []) : nil }
 
     /// Whether BuildKit is still at it: the stream goes on and the record
     /// says so — a finished record's replay is not a build running, nor
     /// one whose inspect hasn't answered.
-    var isRunning: Bool { state == .reading && (recordRunning || detail?.status == "running") }
+    package var isRunning: Bool { state == .reading && (recordRunning || detail?.status == "running") }
 
     /// `Running · 14.2 s · 6 done, 2 cached, 1 running`, `Failed at #7 ·
     /// 1.7 s · 7 steps, 2 cached`.
-    func summaryLine(now: Date) -> String {
+    package func summaryLine(now: Date) -> String {
         let summary = progress.summary
         guard summary.steps > 0 else {
             switch state {

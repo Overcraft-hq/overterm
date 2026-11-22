@@ -5,7 +5,7 @@ import AppKit
 extension TerminalWindowController {
     /// Agents' `tf_test` reaches the window of their pane: shown there, and
     /// asked there when a real provider would run.
-    func wireTerraformTest() {
+    package func wireTerraformTest() {
         TerraformMCP.startTest = { card, checkout, pane, file in
             for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
                 guard controller.store.tabs.contains(where: { $0.terminals.contains { $0.processTag == pane } }) else { continue }
@@ -19,12 +19,12 @@ extension TerminalWindowController {
     /// slot — asked as any plan is (production's first this session, code
     /// not the person's), locked, never on a timer. Its Accept into State
     /// is the apply of that plan, with every check of 5.4.
-    func checkTerraformDrift(_ card: TerraformRootCard, checkout: URL? = nil) {
+    package func checkTerraformDrift(_ card: TerraformRootCard, checkout: URL? = nil) {
         planTerraformRoot(card, checkout: checkout, mode: .refreshOnly)
     }
 
     /// Test (2.9): every test file of the root, or one, in the slot.
-    func testTerraformRoot(_ card: TerraformRootCard, checkout: URL? = nil, file: String? = nil) {
+    package func testTerraformRoot(_ card: TerraformRootCard, checkout: URL? = nil, file: String? = nil) {
         guard let checkout = checkout ?? terraformPanel.checkout else { return NSSound.beep() }
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -42,7 +42,7 @@ extension TerminalWindowController {
     /// typed on production (an agent's there refused: agents never write
     /// there). A failure whose message is empty was declined.
     @discardableResult
-    func startTerraformTest(_ card: TerraformRootCard, checkout: URL, file: String?, agent: String?) async -> Result<TerraformTestRun, TerraformReadFailure> {
+    package func startTerraformTest(_ card: TerraformRootCard, checkout: URL, file: String?, agent: String?) async -> Result<TerraformTestRun, TerraformReadFailure> {
         let entry = Settings.shared.value("terraform.roots")?.entries?[card.path]
         let writable = TerraformTestRun.writable(rootClass: card.rootClass, setting: entry?["writable"]?.bool, agent: agent != nil)
         return await TerraformTestRun.begin(
@@ -68,7 +68,7 @@ extension TerminalWindowController {
     }
 
     /// A test run in the right slot, which takes it (`RightSlot`).
-    func showTerraformTest(_ run: TerraformTestRun) {
+    package func showTerraformTest(_ run: TerraformTestRun) {
         terraformPlanPane.showTest(run)
         rightPane.terraformPlanOpened = true
         rightPane.mode = .terraformPlan

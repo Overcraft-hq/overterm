@@ -10,18 +10,18 @@ import Foundation
 /// JSON body (`SearchText`, `SearchRequest`). A search's hits come back as
 /// rows, `_cat`'s as rows (`format=json` added), SQL's and ES|QL's as their
 /// columns, anything else as its JSON in one cell (`SearchResults`).
-actor SearchDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor SearchDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let password: String?
     private let session: URLSession
     /// What the server said it is, at connect: "Elasticsearch 8.15.0".
-    private(set) var product: String?
+    package private(set) var product: String?
     /// An index's fields, read once a catalog read.
     private var mappingCache: [String: [(String, String)]]?
     private var streamCache: [String: [String]]?
     private var aliasCache: [String: [String]]?
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
         let configuration = URLSessionConfiguration.ephemeral
@@ -29,10 +29,10 @@ actor SearchDriver: DatabaseDriver {
         session = URLSession(configuration: configuration, delegate: ClickHouseTrust(config: connection), delegateQueue: nil)
     }
 
-    nonisolated var kind: DatabaseKind { config.kind }
+    package nonisolated var kind: DatabaseKind { config.kind }
 
     /// `https://host:port/base/path?query` — the path as written, its query kept.
-    nonisolated func url(_ path: String) -> URL? {
+    package nonisolated func url(_ path: String) -> URL? {
         var components = URLComponents()
         components.scheme = config.sslMode == .disable || config.sslMode == .prefer ? "http" : "https"
         components.host = config.host
@@ -49,7 +49,7 @@ actor SearchDriver: DatabaseDriver {
 
     /// A path's characters as they go on the wire: `*` and `,` as they are
     /// (index patterns), a space or a `#` escaped; what is escaped already kept.
-    static func encodePath(_ path: String) -> String {
+    package static func encodePath(_ path: String) -> String {
         if path.range(of: "%[0-9A-Fa-f]{2}", options: .regularExpression) != nil { return path }
         return path.addingPercentEncoding(withAllowedCharacters: pathAllowed) ?? path
     }
@@ -58,7 +58,7 @@ actor SearchDriver: DatabaseDriver {
     private static let queryAllowed = CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "%")).subtracting(CharacterSet(charactersIn: "+#"))
 
     /// One request, signed in, its answer's body and status.
-    func send(_ request: SearchRequest) async throws -> (Data, Int) {
+    package func send(_ request: SearchRequest) async throws -> (Data, Int) {
         guard let url = url(request.path) else { throw DatabaseError.failed("The host isn't a valid address.") }
         var http = URLRequest(url: url)
         http.httpMethod = try Self.wireMethod(request)
@@ -83,7 +83,7 @@ actor SearchDriver: DatabaseDriver {
     /// "resource exceeds maximum size"): a GET with one to an API that
     /// takes POST to read the same — `_search`, `_count`… — goes as that
     /// POST; to any other it is refused rather than sent without its body.
-    static func wireMethod(_ request: SearchRequest) throws -> String {
+    package static func wireMethod(_ request: SearchRequest) throws -> String {
         guard request.method == "GET", request.body != nil else { return request.method }
         guard let endpoint = request.endpoint, SearchRequest.readingPosts.contains(endpoint) else {
             throw DatabaseError.failed("\(request.verb) can't carry a body from here — only the APIs that read by POST too (_search, _count, _msearch…) can.")
@@ -129,7 +129,7 @@ actor SearchDriver: DatabaseDriver {
     }
 
     /// The answer's body, or the server's own words for why not.
-    func checked(_ request: SearchRequest) async throws -> (Data, Int) {
+    package func checked(_ request: SearchRequest) async throws -> (Data, Int) {
         let (data, status) = try await send(request)
         switch status {
         case 200..<300: return (data, status)
@@ -146,12 +146,12 @@ actor SearchDriver: DatabaseDriver {
         }
     }
 
-    func json(_ path: String) async throws -> Any {
+    package func json(_ path: String) async throws -> Any {
         let (data, _) = try await checked(SearchRequest(method: "GET", path: path, body: nil))
         return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         // AWS's Serverless has no root; its indices answer.
         if SearchAWS.service(host: config.serverName ?? config.host) == "aoss" {
             _ = try await checked(SearchRequest(method: "GET", path: "/_cat/indices?format=json", body: nil))
@@ -165,9 +165,9 @@ actor SearchDriver: DatabaseDriver {
         product = "\(name) \(version["number"] as? String ?? "")".trimmingCharacters(in: .whitespaces)
     }
 
-    func close() async { session.invalidateAndCancel() }
+    package func close() async { session.invalidateAndCancel() }
 
-    func execute(_ text: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ text: String, limit: Int) async throws -> QueryResult {
         var request = try SearchRequest.parse(text)
         guard !config.readOnly || request.onlyReads else { throw DatabaseError.readOnly(request.verb) }
         // `_cat`'s text table as rows: its JSON, unless a format is asked for.
@@ -189,7 +189,7 @@ actor SearchDriver: DatabaseDriver {
     // MARK: The catalog
 
     /// Indices, data streams, aliases — the folders that have any.
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         var out = [SearchCatalog.indices]
         if let streams = try? await streams(), !streams.isEmpty { out.append(SearchCatalog.dataStreams) }
         if let aliases = try? await aliases(), !aliases.isEmpty { out.append(SearchCatalog.aliases) }
@@ -197,7 +197,7 @@ actor SearchDriver: DatabaseDriver {
     }
 
     /// A folder's names, each with its documents counted.
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         switch schema {
         case SearchCatalog.dataStreams:
             return try await streams().keys.sorted().map { CatalogTable(schema: schema, name: $0, isView: false, detail: "data stream") }
@@ -217,7 +217,7 @@ actor SearchDriver: DatabaseDriver {
 
     /// Every field of the folder's indices: an index's mapping, a data
     /// stream's newest backing index's, an alias's first index's.
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         let mappings = try await mappings()
         func columns(_ name: String, from index: String?) -> [CatalogColumn] {
             guard let index, let fields = mappings[index] else { return [] }

@@ -7,18 +7,18 @@ import Foundation
 /// as one, the same text made safe for an agent, and an interpreter's
 /// label. Pure, over `Secrets`, which Docker and Kubernetes share: a form
 /// it misses is a residual risk, its tests growing with each one found.
-enum ActivityText {
+package enum ActivityText {
     /// A command's words as every screen and agent sees them: secret flags,
     /// `KEY=value` and the passwords programs take in places of their own
     /// (`Secrets.maskArguments`), joined, then every URL's password, the
     /// credentials free text carries (bearer tokens, vendor prefixes, PEM
     /// blocks) and base64 blobs (`display`).
-    static func command(_ words: [String]) -> String {
+    package static func command(_ words: [String]) -> String {
         command(masked: Secrets.maskArguments(words))
     }
 
     /// Words `Secrets.maskArguments` gave, joined and masked as text.
-    static func command(masked words: [String]) -> String {
+    package static func command(masked words: [String]) -> String {
         display(words.joined(separator: " "))
     }
 
@@ -26,7 +26,7 @@ enum ActivityText {
     /// with what looks secret in text masked: URLs' passwords, then
     /// credentials and base64 blobs. Not for a title: its words aren't
     /// (`title`).
-    static func display(_ text: String) -> String {
+    package static func display(_ text: String) -> String {
         Secrets.scrubCredentials(Secrets.maskURLs(in: text))
     }
 
@@ -34,18 +34,18 @@ enum ActivityText {
     /// its words are masked as a command's first (`Secrets.maskArguments`:
     /// `psql --password x`, `mysql -px`, `docker login -p x`, its spacing
     /// kept), then as text (`display`).
-    static func title(_ text: String) -> String {
+    package static func title(_ text: String) -> String {
         display(Secrets.maskArguments([text]).first ?? text)
     }
 
     /// The most an agent reads of one field of another program's (8.2).
-    static let agentFieldLimit = 120
+    package static let agentFieldLimit = 120
 
     /// `text` for an agent (8.4): `title`'s masking, the home folder as
     /// `~`, one line with every character visible (a control character as
     /// its code, as the asker line shows it), cut at `limit` characters —
     /// none for Overterm's own words.
-    static func forAgents(_ text: String, home: String = ActivityText.home, limit: Int? = agentFieldLimit) -> String {
+    package static func forAgents(_ text: String, home: String = ActivityText.home, limit: Int? = agentFieldLimit) -> String {
         var out = title(text)
         if !home.isEmpty, home != "/" { out = replacingHome(home, in: out) }
         out = DockerMCP.displayed(String(out.map { $0.isNewline || $0 == "\t" ? " " : $0 }))
@@ -55,14 +55,14 @@ enum ActivityText {
 
     /// This user's home folder, as processes' paths spell it — the
     /// password database's, not `$HOME`, which an isolated run moves.
-    static let home: String = {
+    package static let home: String = {
         guard let entry = getpwuid(getuid()), let directory = entry.pointee.pw_dir else { return NSHomeDirectory() }
         return String(cString: directory)
     }()
 
     /// `home` as `~` where a path starts with it: the folder itself or
     /// below it, never `/Users/ann2` for `/Users/ann`.
-    static func replacingHome(_ home: String, in text: String) -> String {
+    package static func replacingHome(_ home: String, in text: String) -> String {
         var out = ""
         var rest = Substring(text)
         while let range = rest.range(of: home) {
@@ -79,15 +79,15 @@ enum ActivityText {
 
     /// Interpreters whose script names what runs: `node …/vite/bin/vite.js`
     /// is vite (6.5). Lowercased, a version cut (`python3.12`).
-    static let interpreters: Set<String> = ["node", "nodejs", "bun", "deno", "python", "pypy", "ruby", "perl", "php", "java"]
+    package static let interpreters: Set<String> = ["node", "nodejs", "bun", "deno", "python", "pypy", "ruby", "perl", "php", "java"]
     /// Package runners, as a command or as the script node runs.
-    static let runners: [String: String] = [
+    package static let runners: [String: String] = [
         "npm": "npm", "npm-cli.js": "npm", "npx": "npx", "npx-cli.js": "npx", "pnpm": "pnpm", "pnpm.cjs": "pnpm", "pnpm.js": "pnpm",
         "pnpx": "pnpx", "yarn": "yarn", "yarn.js": "yarn", "yarn.cjs": "yarn", "yarnpkg": "yarn", "bunx": "bunx", "uvx": "uvx",
         "pipx": "pipx",
     ]
     /// Each interpreter's flags whose value is the next word.
-    static let valuedFlags: [String: Set<String>] = [
+    package static let valuedFlags: [String: Set<String>] = [
         "node": ["-r", "--require", "--import", "--loader", "--experimental-loader", "--inspect-port", "--env-file", "--title", "--conditions", "-C"],
         "python": ["-X", "-W", "-Q"],
         "pypy": ["-X", "-W", "-Q"],
@@ -97,7 +97,7 @@ enum ActivityText {
     ]
 
     /// The longest label, in characters.
-    static let labelLimit = 80
+    package static let labelLimit = 80
 
     /// A short name for what an interpreter or a package runner runs, from
     /// its masked words (6.5): `node …/vite/bin/vite.js` is "vite",
@@ -106,7 +106,7 @@ enum ActivityText {
     /// whose own name says it. The interpreter stays in the Command column.
     /// Masked whole, then cut at `labelLimit`: cut first, a URL's password
     /// lost its `@` and showed.
-    static func label(_ words: [String]) -> String? {
+    package static func label(_ words: [String]) -> String? {
         guard let first = words.first else { return nil }
         let program = (first as NSString).lastPathComponent
         let label: String?
@@ -121,7 +121,7 @@ enum ActivityText {
     }
 
     /// `program` as one of `interpreters`, its version cut; nil when it is none.
-    static func interpreter(_ program: String) -> String? {
+    package static func interpreter(_ program: String) -> String? {
         let lower = program.lowercased()
         let bare = String(lower.prefix { !$0.isNumber && $0 != "." })
         return interpreters.contains(bare) ? bare : nil
@@ -169,7 +169,7 @@ enum ActivityText {
     /// venv's or a system folder's bin its file (`.venv/bin/uvicorn`); a
     /// package's file (`node_modules/@playwright/mcp/cli.js`); else the
     /// file's name.
-    static func scriptLabel(_ path: String) -> String {
+    package static func scriptLabel(_ path: String) -> String {
         let parts = path.split(separator: "/").map(String.init)
         guard let file = parts.last else { return path }
         let folder = parts.count >= 2 ? parts[parts.count - 2] : nil

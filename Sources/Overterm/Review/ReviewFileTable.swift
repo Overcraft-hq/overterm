@@ -2,14 +2,14 @@ import AppKit
 import SwiftUI
 
 /// A row of the review's file list: a folder's name over its files, or a file.
-enum ReviewListRow: Equatable {
+package enum ReviewListRow: Equatable {
     case folder(String)
     case file(ChangedFile, indented: Bool)
 
     /// The list's rows for files already in order (`ReviewModel.ordered`):
     /// each folder named once, above its files; files at the top level
     /// under no name.
-    static func rows(_ files: [ChangedFile]) -> [ReviewListRow] {
+    package static func rows(_ files: [ChangedFile]) -> [ReviewListRow] {
         var rows: [ReviewListRow] = []
         var folder: String?
         for file in files {
@@ -23,7 +23,7 @@ enum ReviewListRow: Equatable {
         return rows
     }
 
-    var path: String? {
+    package var path: String? {
         if case .file(let file, _) = self { file.path } else { nil }
     }
 }
@@ -32,17 +32,17 @@ enum ReviewListRow: Equatable {
 /// views, and a change reloads only the rows it touches. As SwiftUI rows
 /// (a LazyVStack of folders and files, each with a tooltip and a hover),
 /// 250 files took 108 ms a scroll step — every row laid out again each time.
-struct ReviewFileTable: NSViewRepresentable {
-    let rows: [ReviewListRow]
-    let selected: String?
-    let viewed: Set<String>
-    @ObservedObject var theme: ChromeTheme
-    let select: (String) -> Void
-    let toggleViewed: (String) -> Void
+package struct ReviewFileTable: NSViewRepresentable {
+    package let rows: [ReviewListRow]
+    package let selected: String?
+    package let viewed: Set<String>
+    @ObservedObject package var theme: ChromeTheme
+    package let select: (String) -> Void
+    package let toggleViewed: (String) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    package func makeCoordinator() -> Coordinator { Coordinator() }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    package func makeNSView(context: Context) -> NSScrollView {
         let table = NSTableView()
         table.headerView = nil
         table.style = .plain
@@ -68,13 +68,13 @@ struct ReviewFileTable: NSViewRepresentable {
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    package func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.update(self)
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-        weak var table: NSTableView?
+    package final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+        package weak var table: NSTableView?
         private var rows: [ReviewListRow] = []
         private var viewed: Set<String> = []
         private var selected: String?
@@ -84,13 +84,13 @@ struct ReviewFileTable: NSViewRepresentable {
         /// Set while the table's selection is being set from the model.
         private var settingSelection = false
 
-        struct Colors: Equatable {
-            var text = NSColor.textColor
-            var dim = NSColor.secondaryLabelColor
-            var selected = NSColor.selectedContentBackgroundColor
+        package struct Colors: Equatable {
+            package var text = NSColor.textColor
+            package var dim = NSColor.secondaryLabelColor
+            package var selected = NSColor.selectedContentBackgroundColor
         }
 
-        func update(_ view: ReviewFileTable) {
+        package func update(_ view: ReviewFileTable) {
             guard let table else { return }
             select = view.select
             toggleViewed = view.toggleViewed
@@ -120,23 +120,23 @@ struct ReviewFileTable: NSViewRepresentable {
             }
         }
 
-        func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
+        package func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
-        func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        package func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
             if case .folder = rows[row] { return row == 0 ? 22 : 28 }
             return 26
         }
 
-        func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { rows[row].path != nil }
+        package func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool { rows[row].path != nil }
 
-        func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        package func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
             let view = tableView.makeView(withIdentifier: ReviewRowView.identifier, owner: nil) as? ReviewRowView ?? ReviewRowView()
             view.identifier = ReviewRowView.identifier
             view.fill = colors.selected
             return view
         }
 
-        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        package func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
             switch rows[row] {
             case .folder(let name):
                 let cell = tableView.makeView(withIdentifier: ReviewFolderCell.identifier, owner: nil) as? ReviewFolderCell ?? ReviewFolderCell()
@@ -152,7 +152,7 @@ struct ReviewFileTable: NSViewRepresentable {
             }
         }
 
-        func tableViewSelectionDidChange(_ notification: Notification) {
+        package func tableViewSelectionDidChange(_ notification: Notification) {
             guard !settingSelection, let table, rows.indices.contains(table.selectedRow), let path = rows[table.selectedRow].path else { return }
             selected = path
             select(path)
@@ -162,26 +162,26 @@ struct ReviewFileTable: NSViewRepresentable {
 
 /// The picked file's row: a rounded fill inside the list's margins, in the
 /// chrome's colour rather than the system's accent.
-final class ReviewRowView: NSTableRowView {
-    static let identifier = NSUserInterfaceItemIdentifier("review.row")
-    var fill = NSColor.selectedContentBackgroundColor
+package final class ReviewRowView: NSTableRowView {
+    package static let identifier = NSUserInterfaceItemIdentifier("review.row")
+    package var fill = NSColor.selectedContentBackgroundColor
 
-    override func drawSelection(in dirtyRect: NSRect) {
+    package override func drawSelection(in dirtyRect: NSRect) {
         fill.setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 6, dy: 0), xRadius: 5, yRadius: 5).fill()
     }
 
-    override var isEmphasized: Bool {
+    package override var isEmphasized: Bool {
         get { false }
         set {}
     }
 }
 
-final class ReviewFolderCell: NSTableCellView {
-    static let identifier = NSUserInterfaceItemIdentifier("review.folder")
+package final class ReviewFolderCell: NSTableCellView {
+    package static let identifier = NSUserInterfaceItemIdentifier("review.folder")
     private let label = NSTextField(labelWithString: "")
 
-    init() {
+    package init() {
         super.init(frame: .zero)
         label.font = .systemFont(ofSize: 11)
         label.lineBreakMode = .byTruncatingHead
@@ -196,9 +196,9 @@ final class ReviewFolderCell: NSTableCellView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    package required init?(coder: NSCoder) { fatalError() }
 
-    func show(_ name: String, color: NSColor) {
+    package func show(_ name: String, color: NSColor) {
         label.stringValue = name
         label.textColor = color
         toolTip = name
@@ -206,16 +206,16 @@ final class ReviewFolderCell: NSTableCellView {
 }
 
 /// A file's row: viewed, how it changed, its name, its lines added and removed.
-final class ReviewFileCell: NSTableCellView {
-    static let identifier = NSUserInterfaceItemIdentifier("review.file")
-    var onToggleViewed: () -> Void = {}
+package final class ReviewFileCell: NSTableCellView {
+    package static let identifier = NSUserInterfaceItemIdentifier("review.file")
+    package var onToggleViewed: () -> Void = {}
     private let viewedButton = NSButton()
     private let letter = NSTextField(labelWithString: "")
     private let name = NSTextField(labelWithString: "")
     private let counts = NSTextField(labelWithString: "")
     private var leading: NSLayoutConstraint!
 
-    init() {
+    package init() {
         super.init(frame: .zero)
         viewedButton.isBordered = false
         viewedButton.imagePosition = .imageOnly
@@ -251,11 +251,11 @@ final class ReviewFileCell: NSTableCellView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    package required init?(coder: NSCoder) { fatalError() }
 
     @objc private func toggle() { onToggleViewed() }
 
-    func show(_ file: ChangedFile, indented: Bool, viewed: Bool, colors: ReviewFileTable.Coordinator.Colors) {
+    package func show(_ file: ChangedFile, indented: Bool, viewed: Bool, colors: ReviewFileTable.Coordinator.Colors) {
         leading.constant = indented ? 18 : 12
         let symbol = NSImage(systemSymbolName: viewed ? "checkmark.circle.fill" : "circle", accessibilityDescription: viewed ? "Viewed" : "Not viewed")
         viewedButton.image = symbol?.withSymbolConfiguration(.init(pointSize: 11, weight: .regular))

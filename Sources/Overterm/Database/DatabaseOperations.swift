@@ -8,19 +8,20 @@ import Foundation
 // page, Editing rows, Users and roles.
 
 /// What a kind's driver does beyond statements.
-struct DatabaseFeatures: OptionSet, Sendable {
-    let rawValue: Int
+package struct DatabaseFeatures: OptionSet, Sendable {
+    package let rawValue: Int
+    package init(rawValue: Int) { self.rawValue = rawValue }
     /// The Server page: sessions, slow queries, locks, sizes, headline numbers.
-    static let monitoring = DatabaseFeatures(rawValue: 1)
+    package static let monitoring = DatabaseFeatures(rawValue: 1)
     /// A one-table result's rows edited in the grid.
-    static let editing = DatabaseFeatures(rawValue: 2)
+    package static let editing = DatabaseFeatures(rawValue: 2)
     /// The Users page.
-    static let users = DatabaseFeatures(rawValue: 4)
+    package static let users = DatabaseFeatures(rawValue: 4)
 }
 
 extension DatabaseDrivers {
     /// The driver type a kind is made with — what `features` asks.
-    static func driverType(of kind: DatabaseKind) -> any DatabaseDriver.Type {
+    package static func driverType(of kind: DatabaseKind) -> any DatabaseDriver.Type {
         switch kind {
         case .sqlite: SQLiteDriver.self
         case .postgres, .redshift: PostgresDriver.self
@@ -42,7 +43,7 @@ extension DatabaseDrivers {
 
     /// What a kind's driver does, by what its type conforms to and says of
     /// the kind (one driver serves PostgreSQL and Redshift).
-    static func features(of kind: DatabaseKind) -> DatabaseFeatures {
+    package static func features(of kind: DatabaseKind) -> DatabaseFeatures {
         let type = driverType(of: kind)
         var features: DatabaseFeatures = []
         if let monitoring = type as? any DatabaseMonitoring.Type, !monitoring.monitorParts(for: kind).isEmpty { features.insert(.monitoring) }
@@ -53,28 +54,28 @@ extension DatabaseDrivers {
 }
 
 extension DatabaseKind {
-    var features: DatabaseFeatures { DatabaseDrivers.features(of: self) }
+    package var features: DatabaseFeatures { DatabaseDrivers.features(of: self) }
 }
 
 /// Why the engine has nothing to give for a part — said, with the line
 /// that turns it on, never an empty table without a reason.
-struct MonitorGap: Equatable, Sendable, Error {
-    var reason: String
+package struct MonitorGap: Equatable, Sendable, Error {
+    package var reason: String
     /// The setting or statement that turns it on, when there is one.
-    var fix: String?
+    package var fix: String?
 }
 
 /// A read that may find its source missing (an extension, a schema, a privilege).
-enum Monitored<Value: Equatable & Sendable>: Equatable, Sendable {
+package enum Monitored<Value: Equatable & Sendable>: Equatable, Sendable {
     case value(Value)
     case unavailable(MonitorGap)
 
-    var value: Value? {
+    package var value: Value? {
         if case .value(let value) = self { return value }
         return nil
     }
 
-    var gap: MonitorGap? {
+    package var gap: MonitorGap? {
         if case .unavailable(let gap) = self { return gap }
         return nil
     }
@@ -83,7 +84,7 @@ enum Monitored<Value: Equatable & Sendable>: Equatable, Sendable {
 // MARK: Monitoring
 
 /// The Server page's tabs — a driver says which its engine has.
-enum MonitorPart: String, CaseIterable, Sendable {
+package enum MonitorPart: String, CaseIterable, Sendable {
     case overview = "Overview"
     case activity = "Activity"
     case slowQueries = "Slow Queries"
@@ -92,103 +93,103 @@ enum MonitorPart: String, CaseIterable, Sendable {
 }
 
 /// One headline number: version, uptime, connections of max…
-struct ServerFact: Equatable, Sendable {
-    var title: String
-    var value: String
-    var detail: String?
+package struct ServerFact: Equatable, Sendable {
+    package var title: String
+    package var value: String
+    package var detail: String?
 }
 
-struct ServerOverview: Equatable, Sendable {
-    var facts: [ServerFact] = []
+package struct ServerOverview: Equatable, Sendable {
+    package var facts: [ServerFact] = []
     /// What the engine wants said beside them (a privilege missing…).
-    var notes: [String] = []
+    package var notes: [String] = []
 }
 
 /// A session or connection, as the engine lists it: who, from where, doing what.
-struct DatabaseActivity: Equatable, Sendable, Identifiable {
+package struct DatabaseActivity: Equatable, Sendable, Identifiable {
     /// What cancelling it names: a backend's pid, a thread's id.
-    var id: String
-    var user: String?
+    package var id: String
+    package var user: String?
     /// A session may have no database (a document store's, a replication one).
-    var database: String?
-    var client: String?
-    var application: String?
+    package var database: String?
+    package var client: String?
+    package var application: String?
     /// active, idle, idle in transaction, Sleep, Query…
-    var state: String?
-    var statement: String?
+    package var state: String?
+    package var statement: String?
     /// How long the statement has run — or, idle, how long it has been idle.
-    var seconds: Double?
+    package var seconds: Double?
     /// What it waits on (a lock, IO, a client).
-    var waiting: String?
+    package var waiting: String?
     /// This connection's own session: never cancelled from here.
-    var isOwn = false
+    package var isOwn = false
 
     /// Whether it is doing something now, not sitting idle.
-    var isActive: Bool {
+    package var isActive: Bool {
         guard let state = state?.lowercased() else { return statement?.isEmpty == false }
         return !["idle", "sleep", "daemon"].contains(state)
     }
 }
 
 /// A statement as the engine's own record of statements sums it up.
-struct SlowQuery: Equatable, Sendable, Identifiable {
-    var id: String
-    var statement: String
-    var calls: Int
+package struct SlowQuery: Equatable, Sendable, Identifiable {
+    package var id: String
+    package var statement: String
+    package var calls: Int
     /// Seconds, all calls together.
-    var total: Double
+    package var total: Double
     /// Seconds, a call.
-    var mean: Double
-    var rows: Int?
-    var database: String?
-    var user: String?
+    package var mean: Double
+    package var rows: Int?
+    package var database: String?
+    package var user: String?
     /// What else the engine's record says of it (BigQuery's bytes processed
     /// and slot time, Oracle's CPU and buffer gets).
-    var detail: String? = nil
+    package var detail: String? = nil
 }
 
 /// A session waiting on another.
-struct LockWait: Equatable, Sendable, Identifiable {
-    var waiting: String
-    var waitingUser: String?
-    var waitingStatement: String?
-    var blocking: String
-    var blockingUser: String?
-    var blockingStatement: String?
+package struct LockWait: Equatable, Sendable, Identifiable {
+    package var waiting: String
+    package var waitingUser: String?
+    package var waitingStatement: String?
+    package var blocking: String
+    package var blockingUser: String?
+    package var blockingStatement: String?
     /// The lock: its mode and what it is on.
-    var lock: String?
-    var seconds: Double?
-    var id: String { "\(waiting)>\(blocking)" }
+    package var lock: String?
+    package var seconds: Double?
+    package var id: String { "\(waiting)>\(blocking)" }
 }
 
-struct SizeEntry: Equatable, Sendable, Identifiable {
+package struct SizeEntry: Equatable, Sendable, Identifiable {
     /// A database, a table, an index (its table in `detail`).
-    var name: String
-    var schema: String?
-    var bytes: Int64
+    package var name: String
+    package var schema: String?
+    package var bytes: Int64
     /// What else the engine says: rows (estimated), the index's table.
-    var detail: String?
+    package var detail: String?
     /// What `bytes` counts when it isn't bytes — "nodes", "messages" — for
     /// an engine that says how many, not how big.
-    var unit: String?
-    var id: String { "\(schema ?? "")\u{1}\(name)" }
+    package var unit: String?
+    package var id: String { "\(schema ?? "")\u{1}\(name)" }
 
     /// As the page and the agents say it.
-    var size: String { unit.map { "\(bytes) \($0)" } ?? OpsText.bytes(bytes) }
+    package var size: String { unit.map { "\(bytes) \($0)" } ?? OpsText.bytes(bytes) }
 }
 
-struct DatabaseSizes: Equatable, Sendable {
-    var databases: [SizeEntry] = []
-    var tables: [SizeEntry] = []
-    var indexes: [SizeEntry] = []
+package struct DatabaseSizes: Equatable, Sendable {
+    package var databases: [SizeEntry] = []
+    package var tables: [SizeEntry] = []
+    package var indexes: [SizeEntry] = []
     /// What couldn't be read, and why.
-    var notes: [String] = []
+    package var notes: [String] = []
 }
 
 /// A driver whose engine says what it is doing. Every read goes through the
 /// driver's own connection; nothing is read unless asked (the page asks only
 /// while it shows).
-protocol DatabaseMonitoring: DatabaseDriver {
+package protocol DatabaseMonitoring: DatabaseDriver {
     /// The Server page's tabs for a kind; empty, no page.
     static func monitorParts(for kind: DatabaseKind) -> [MonitorPart]
     func overview() async throws -> ServerOverview
@@ -210,29 +211,29 @@ protocol DatabaseMonitoring: DatabaseDriver {
 
 /// One way a session is stopped: Neo4j's TERMINATE TRANSACTION, Redis's
 /// CLIENT KILL, RabbitMQ's connection closed.
-struct SessionStop: Equatable, Sendable {
+package struct SessionStop: Equatable, Sendable {
     /// What `cancel(session:terminate:)` is called with.
-    var terminate: Bool
+    package var terminate: Bool
     /// The menu item: "Terminate Transaction…".
-    var menu: String
+    package var menu: String
     /// The confirmation's question.
-    var title: String
+    package var title: String
     /// What is sent, as the confirmation shows it.
-    var command: String
+    package var command: String
     /// What it does.
-    var effect: String
-    var button: String
+    package var effect: String
+    package var button: String
 }
 
 extension SessionStop {
     /// Who a session is and what it runs, as a confirmation says it.
-    static func said(_ session: DatabaseActivity) -> String {
+    package static func said(_ session: DatabaseActivity) -> String {
         [session.user, session.database, session.client].compactMap { $0 }.joined(separator: " · ") + "\n"
             + OpsText.statement(session.statement, limit: 400)
     }
 
     /// The SQL engines' two: cancel the statement, terminate the session.
-    static func sql(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop] {
+    package static func sql(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop] {
         let mysql = kind == .mysql || kind == .mariadb
         return [
             SessionStop(
@@ -248,27 +249,27 @@ extension SessionStop {
 }
 
 extension DatabaseMonitoring {
-    func activity() async throws -> Monitored<[DatabaseActivity]> { .unavailable(MonitorGap(reason: "This engine doesn't list its sessions.")) }
-    func slowQueries() async throws -> Monitored<[SlowQuery]> { .unavailable(MonitorGap(reason: "This engine keeps no record of slow queries.")) }
-    func locks() async throws -> Monitored<[LockWait]> { .unavailable(MonitorGap(reason: "This engine doesn't say who waits on whom.")) }
-    func sizes() async throws -> Monitored<DatabaseSizes> { .unavailable(MonitorGap(reason: "This engine doesn't say its sizes.")) }
-    func cancel(session: String, terminate: Bool) async throws { throw DatabaseError.failed("Sessions can't be cancelled here.") }
-    func integrityCheck() async throws -> String? { nil }
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? { nil }
+    package func activity() async throws -> Monitored<[DatabaseActivity]> { .unavailable(MonitorGap(reason: "This engine doesn't list its sessions.")) }
+    package func slowQueries() async throws -> Monitored<[SlowQuery]> { .unavailable(MonitorGap(reason: "This engine keeps no record of slow queries.")) }
+    package func locks() async throws -> Monitored<[LockWait]> { .unavailable(MonitorGap(reason: "This engine doesn't say who waits on whom.")) }
+    package func sizes() async throws -> Monitored<DatabaseSizes> { .unavailable(MonitorGap(reason: "This engine doesn't say its sizes.")) }
+    package func cancel(session: String, terminate: Bool) async throws { throw DatabaseError.failed("Sessions can't be cancelled here.") }
+    package func integrityCheck() async throws -> String? { nil }
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? { nil }
 }
 
 // MARK: Editing rows
 
 /// A table as a result names it: its schema when written, else nil — the
 /// driver resolves it as an unqualified name would be.
-struct TableName: Equatable, Hashable, Sendable {
-    var schema: String?
-    var name: String
+package struct TableName: Equatable, Hashable, Sendable {
+    package var schema: String?
+    package var name: String
 }
 
 /// How a table's rows are found again.
-struct TableKey: Equatable, Sendable {
-    enum Kind: Equatable, Sendable {
+package struct TableKey: Equatable, Sendable {
+    package enum Kind: Equatable, Sendable {
         case primary
         /// A unique key over columns that can't be NULL: its name.
         case unique(String)
@@ -281,23 +282,23 @@ struct TableKey: Equatable, Sendable {
     }
 
     /// The table, resolved: its schema as the database names it.
-    var table: TableName
-    var kind: Kind
-    var columns: [String]
+    package var table: TableName
+    package var kind: Kind
+    package var columns: [String]
     /// Columns a cell of the grid can't be written back into: generated ones,
     /// and those whose text isn't their value (a SQLite BLOB's "<n bytes>").
-    var readOnlyColumns: Set<String> = []
+    package var readOnlyColumns: Set<String> = []
     /// Columns a new row sets but an existing row's UPDATE can't change
     /// (ClickHouse's sorting and partition keys).
-    var fixedColumns: Set<String> = []
+    package var fixedColumns: Set<String> = []
     /// A word or two the edit bar shows beside the pencil when a kind's Save
     /// isn't the usual one ("mutations", "key not enforced", "by ROWID").
-    var label: String?
+    package var label: String?
     /// What the edit bar's help says of it beside the key.
-    var note: String?
+    package var note: String?
 
     /// What the status bar says the rows are found by.
-    var summary: String {
+    package var summary: String {
         let names = columns.joined(separator: ", ")
         switch kind {
         case .primary: return "primary key \(names)"
@@ -310,29 +311,29 @@ struct TableKey: Equatable, Sendable {
 
 /// One statement of a Save, and what it must do: an UPDATE or DELETE of
 /// exactly one row (its key), an INSERT of one.
-struct EditStatement: Equatable, Sendable {
-    var sql: String
+package struct EditStatement: Equatable, Sendable {
+    package var sql: String
     /// Rows it must change: 1, else the whole Save is rolled back.
-    var expectedRows = 1
+    package var expectedRows = 1
     /// A count of the rows the key finds — for MySQL, whose UPDATE counts
     /// only the rows it actually changed (0 when the value was the same).
-    var countSQL: String?
+    package var countSQL: String?
     /// What the Save's confirmation says of it beside the statement (a
     /// node's relationships deleted with it).
-    var note: String?
+    package var note: String?
     /// What ends it in a listing: `;`, or a blank line after a request
     /// whose body is JSON (Elasticsearch's).
-    var terminator = ";"
+    package var terminator = ";"
 
     /// Statements as the preview and the confirmation list them.
-    static func listing(_ statements: [EditStatement]) -> String {
+    package static func listing(_ statements: [EditStatement]) -> String {
         statements.map { $0.sql + $0.terminator }.joined(separator: "\n")
     }
 }
 
 /// A driver whose results can be edited: it finds a table's key, and
 /// applies a Save's statements together, in one transaction.
-protocol DatabaseTableEditing: DatabaseDriver {
+package protocol DatabaseTableEditing: DatabaseDriver {
     /// Whether a kind's rows are edited (Redshift's keys aren't enforced, so
     /// its rows aren't).
     static func editsRows(_ kind: DatabaseKind) -> Bool
@@ -357,54 +358,54 @@ protocol DatabaseTableEditing: DatabaseDriver {
 }
 
 extension DatabaseTableEditing {
-    static func editsRows(_ kind: DatabaseKind) -> Bool { true }
+    package static func editsRows(_ kind: DatabaseKind) -> Bool { true }
 
-    func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? { nil }
+    package func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? { nil }
 
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
+    package func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
         try EditStatements.make(edits, rows: rows, result: result, dialect: await editDialect())
     }
 
-    func editSaveNote() async -> String { "In one transaction: if any statement fails, none is kept." }
+    package func editSaveNote() async -> String { "In one transaction: if any statement fails, none is kept." }
 }
 
 // MARK: Users and roles
 
 /// A user or a role, as the engine's catalog says it — never its password
 /// or the password's hash.
-struct DatabaseUser: Equatable, Hashable, Sendable, Identifiable {
-    var name: String
+package struct DatabaseUser: Equatable, Hashable, Sendable, Identifiable {
+    package var name: String
     /// MySQL's and MariaDB's: the account's host (`%`, `localhost`).
-    var host: String?
-    var isRole = false
-    var canLogin = true
-    var superuser = false
+    package var host: String?
+    package var isRole = false
+    package var canLogin = true
+    package var superuser = false
     /// What else is true of it, in words: "creates databases", "locked"…
-    var attributes: [String] = []
-    var validUntil: String?
-    var connectionLimit: Int?
+    package var attributes: [String] = []
+    package var validUntil: String?
+    package var connectionLimit: Int?
     /// The roles it is a member of.
-    var memberOf: [String] = []
+    package var memberOf: [String] = []
 
-    var id: String { host.map { "\(name)@\($0)" } ?? name }
-    var display: String { host.map { "\(name)@\($0)" } ?? name }
+    package var id: String { host.map { "\(name)@\($0)" } ?? name }
+    package var display: String { host.map { "\(name)@\($0)" } ?? name }
 }
 
 /// What a user may do on one object.
-struct DatabaseGrant: Equatable, Hashable, Sendable, Identifiable {
+package struct DatabaseGrant: Equatable, Hashable, Sendable, Identifiable {
     /// server, database, schema, table, role, owner
-    var kind: String
+    package var kind: String
     /// The object as the engine names it: `shop`, `public.orders`, `*.*`.
-    var object: String
-    var privileges: [String]
-    var grantable = false
+    package var object: String
+    package var privileges: [String]
+    package var grantable = false
     /// What a REVOKE of it names, when the engine said it exactly.
-    var target: GrantTarget? = nil
-    var id: String { "\(kind) \(object)" }
+    package var target: GrantTarget? = nil
+    package var id: String { "\(kind) \(object)" }
 }
 
 /// A driver whose engine has users and roles to list and change.
-protocol DatabaseUserManagement: DatabaseDriver {
+package protocol DatabaseUserManagement: DatabaseDriver {
     static func managesUsers(_ kind: DatabaseKind) -> Bool
     func userDialect() async -> UserDialect
     /// Every user and role; unavailable where this user may not read them.
@@ -420,49 +421,49 @@ protocol DatabaseUserManagement: DatabaseDriver {
 }
 
 extension DatabaseUserManagement {
-    static func managesUsers(_ kind: DatabaseKind) -> Bool { true }
-    func userStatements() async -> any UserStatementMaking { SQLUserStatements(dialect: await userDialect()) }
+    package static func managesUsers(_ kind: DatabaseKind) -> Bool { true }
+    package func userStatements() async -> any UserStatementMaking { SQLUserStatements(dialect: await userDialect()) }
 }
 
 // MARK: Reading the engines' answers
 
 /// A row of a catalog query, read by column name — the engines' answers are
 /// text (`QueryResult`), whatever their types.
-struct ResultRow {
-    let columns: [String: Int]
-    let values: [String?]
+package struct ResultRow {
+    package let columns: [String: Int]
+    package let values: [String?]
 
-    init(_ values: [String?], columns: [String: Int]) {
+    package init(_ values: [String?], columns: [String: Int]) {
         self.values = values
         self.columns = columns
     }
 
-    static func rows(of result: QueryResult) -> [ResultRow] {
+    package static func rows(of result: QueryResult) -> [ResultRow] {
         var index: [String: Int] = [:]
         for (at, name) in result.columns.enumerated() where index[name.lowercased()] == nil { index[name.lowercased()] = at }
         return result.rows.map { ResultRow($0, columns: index) }
     }
 
-    subscript(_ name: String) -> String? {
+    package subscript(_ name: String) -> String? {
         guard let at = columns[name.lowercased()], values.indices.contains(at) else { return nil }
         return values[at]
     }
 
-    func int(_ name: String) -> Int? { self[name].flatMap { Int($0) ?? Double($0).map { Int($0) } } }
-    func int64(_ name: String) -> Int64? { self[name].flatMap { Int64($0) ?? Double($0).map { Int64($0) } } }
-    func double(_ name: String) -> Double? { self[name].flatMap(Double.init) }
+    package func int(_ name: String) -> Int? { self[name].flatMap { Int($0) ?? Double($0).map { Int($0) } } }
+    package func int64(_ name: String) -> Int64? { self[name].flatMap { Int64($0) ?? Double($0).map { Int64($0) } } }
+    package func double(_ name: String) -> Double? { self[name].flatMap(Double.init) }
     /// t/f, 1/0, YES/NO, true/false.
-    func bool(_ name: String) -> Bool { ["t", "1", "true", "yes", "y", "on"].contains(self[name]?.lowercased() ?? "") }
+    package func bool(_ name: String) -> Bool { ["t", "1", "true", "yes", "y", "on"].contains(self[name]?.lowercased() ?? "") }
 }
 
 /// Numbers as the pages and the agents say them.
-enum OpsText {
-    static func bytes(_ count: Int64) -> String {
+package enum OpsText {
+    package static func bytes(_ count: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: count, countStyle: .binary)
     }
 
     /// 0.004 → "4 ms", 75 → "1 min 15 s", 90061 → "1 d 1 h".
-    static func duration(_ seconds: Double) -> String {
+    package static func duration(_ seconds: Double) -> String {
         if seconds < 1 { return "\(Int((seconds * 1000).rounded())) ms" }
         if seconds < 60 { return String(format: "%.1f s", seconds) }
         let whole = Int(seconds)
@@ -473,7 +474,7 @@ enum OpsText {
 
     /// A statement on one line, cut, its password literals masked: what a
     /// row, the clipboard and an agent's table get.
-    static func statement(_ text: String?, limit: Int = 200) -> String {
+    package static func statement(_ text: String?, limit: Int = 200) -> String {
         guard let text else { return "" }
         let line = maskSecrets(text).split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: " ")
         return line.count > limit ? String(line.prefix(limit)) + "…" : line
@@ -483,7 +484,7 @@ enum OpsText {
     /// `IDENTIFIED BY '…'`, `IDENTIFIED WITH plugin AS '…'`, `USING '…'`,
     /// MariaDB's `PASSWORD('…')`: the literal is masked wherever a
     /// statement is shown or told to an agent.
-    static func maskSecrets(_ text: String) -> String {
+    package static func maskSecrets(_ text: String) -> String {
         text.replacingOccurrences(
             of: #"(?i)\b(PASSWORD|IDENTIFIED\s+BY|IDENTIFIED\s+WITH\s+\S+\s+(?:BY|AS)|USING)(\s*\(?\s*)(?:E|N)?'(?:[^'\\]|''|\\.)*'"#,
             with: "$1$2'••••'", options: .regularExpression
@@ -492,5 +493,5 @@ enum OpsText {
         .replacingOccurrences(of: #"(?i)\b(IDENTIFIED\s+BY\s+)(?:"[^"]*"|[^\s'";]+)"#, with: "$1\"••••\"", options: .regularExpression)
     }
 
-    static func percent(_ ratio: Double) -> String { String(format: "%.1f%%", ratio * 100) }
+    package static func percent(_ ratio: Double) -> String { String(format: "%.1f%%", ratio * 100) }
 }

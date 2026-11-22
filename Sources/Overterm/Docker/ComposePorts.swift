@@ -1,82 +1,82 @@
 import Foundation
 
 /// A host port by protocol: what one bind takes.
-struct ComposePortKey: Hashable, Sendable {
-    var port: Int
-    var proto: String
+package struct ComposePortKey: Hashable, Sendable {
+    package var port: Int
+    package var proto: String
 }
 
 /// A host port Up on Free Ports moved: what a service's file asks for
 /// (`from`), published on `to` instead.
-struct ComposePortMove: Codable, Hashable, Sendable {
-    var service: String
-    var target: Int
-    var proto: String
-    var from: Int
-    var to: Int
+package struct ComposePortMove: Codable, Hashable, Sendable {
+    package var service: String
+    package var target: Int
+    package var proto: String
+    package var from: Int
+    package var to: Int
 
     /// `web 8080 → 18080`, `/udp` when it isn't TCP.
-    var label: String { "\(service) \(from) → \(to)" + (proto == "tcp" ? "" : "/\(proto)") }
+    package var label: String { "\(service) \(from) → \(to)" + (proto == "tcp" ? "" : "/\(proto)") }
 }
 
 /// A checkout's stack on ports of its own, as Overterm keeps it
 /// (`ComposePortStore`): the name it runs as and what moved, written as an
 /// override file passed after the checkout's own.
-struct ComposePortOverride: Codable, Equatable, Sendable {
+package struct ComposePortOverride: Codable, Equatable, Sendable {
     /// Compose's project folder — its first file's, as a real path: the key.
-    var folder: String
+    package var folder: String
     /// The name it runs as.
-    var project: String
+    package var project: String
     /// The name its own files give it.
-    var fileName: String
+    package var fileName: String
     /// The checkout's compose files (real paths, in Compose's order).
-    var baseFiles: [String]
-    var moves: [ComposePortMove]
-    var made: Date
+    package var baseFiles: [String]
+    package var moves: [ComposePortMove]
+    package var made: Date
     /// What its base files and their folder's `.env` were when it was
     /// written, by size and date (`ComposePortStore.stamp`): when they
     /// differ, it is written again from them before a command reads it.
     /// Nil in one written before it was kept.
-    var stamp: [String: String]? = nil
+    package var stamp: [String: String]? = nil
 
     /// `web 8080 → 18080 · db 5432 → 15432`; with nothing moved, the name.
-    var summary: String {
+    package var summary: String {
         moves.isEmpty ? "its own name, “\(project)” (its files say “\(fileName)”)" : moves.map(\.label).joined(separator: " · ")
     }
 }
 
 /// A port a stack wants that something holds.
-struct ComposePortConflict: Equatable, Sendable {
-    var service: String
-    var port: Int
-    var proto: String
-    var holder: DockerPortConflict.Holder
+package struct ComposePortConflict: Equatable, Sendable {
+    package var service: String
+    package var port: Int
+    package var proto: String
+    package var holder: DockerPortConflict.Holder
 }
 
 /// What an Up of a checkout's stack would run into, and what Up on Free
 /// Ports would do about it: which ports go where, under which name. Pure.
-struct ComposePortPlan: Equatable, Sendable {
+package struct ComposePortPlan: Equatable, Sendable {
     /// The name the files give the project…
-    var fileName: String
+    package var fileName: String
     /// …and the one it would run as.
-    var name: String
+    package var name: String
     /// Another checkout's folder, when its stack has the files' name: an Up
     /// as written would take that stack's containers over.
-    var nameHolder: String?
-    var moves: [ComposePortMove]
+    package var nameHolder: String?
+    package var moves: [ComposePortMove]
     /// Taken ports of services this Up starts: what makes it ask.
-    var blocking: [ComposePortConflict]
+    package var blocking: [ComposePortConflict]
     /// Taken ports with no free one near: they stay as written.
-    var unmovable: [ComposePortConflict]
+    package var unmovable: [ComposePortConflict]
     /// The project's own volumes, new (empty) under another name.
-    var ownVolumes: [String]
+    package var ownVolumes: [String]
     /// Services with a `container_name`, which collides whatever the
     /// project is called.
-    var fixedNames: [String]
+    package var fixedNames: [String]
 
-    var needsAsking: Bool { !blocking.isEmpty || nameHolder != nil }
+    package var needsAsking: Bool { !blocking.isEmpty || nameHolder != nil }
     /// Whether an override would change anything.
-    var changes: Bool { !moves.isEmpty || name != fileName }
+    package var changes: Bool { !moves.isEmpty || name != fileName }
 
     /// Every host port of every service, in the services' order (by name)
     /// and each one's: a range and one Docker picks are left to Docker; a
@@ -88,7 +88,7 @@ struct ComposePortPlan: Equatable, Sendable {
     /// the first free candidate (`candidates`) that no other override has
     /// and the files don't want themselves. Only services that start (no
     /// profile, or an active one, `*` all) ask; every service's is moved.
-    static func make(
+    package static func make(
         config: ComposeConfig, active: Set<String>, taken: [ComposePortKey: DockerPortConflict.Holder], isFree: (Int, String) -> Bool,
         reserved: Set<Int>, keep: [ComposePortMove], name: String, nameHolder: String?
     ) -> ComposePortPlan {
@@ -159,14 +159,14 @@ struct ComposePortPlan: Equatable, Sendable {
     /// the files don't want its `to` themselves, the rest as the files
     /// say. A command that isn't an Up reads the override this way
     /// (`ComposePortStore.refresh`); only an Up moves ports.
-    static func refreshed(_ kept: ComposePortOverride, config: ComposeConfig) -> ComposePortPlan {
+    package static func refreshed(_ kept: ComposePortOverride, config: ComposeConfig) -> ComposePortPlan {
         make(config: config, active: [], taken: [:], isFree: { _, _ in true }, reserved: [], keep: kept.moves, name: kept.project, nameHolder: nil)
     }
 
     /// Where a taken port may go, in order: 10 000 up at a time while that
     /// stays below the ephemeral range (49152, the system's own), so 8080
     /// is 18080, then 28080 for a third worktree; then the next hundred.
-    static func candidates(for port: Int) -> [Int] {
+    package static func candidates(for port: Int) -> [Int] {
         var list: [Int] = []
         for step in 1...4 where port + step * 10_000 <= 49_151 { list.append(port + step * 10_000) }
         let top = min(port + 100, 65_535)
@@ -180,7 +180,7 @@ struct ComposePortPlan: Equatable, Sendable {
     /// folder). Then the worktree's folder's (`shop-wt-feat-x`), else
     /// `<name>-<folder>`, `-2`… while another folder has it. The holder is
     /// that other folder.
-    static func projectName(
+    package static func projectName(
         fileName: String, folder: String, running: String?, projects: [ComposeProject], reserved: [String: String]
     ) -> (name: String, holder: String?) {
         if let running { return (running, nil) }
@@ -203,7 +203,7 @@ struct ComposePortPlan: Equatable, Sendable {
     /// A project name as Compose makes one: lower-case letters, digits,
     /// `_` and `-`, anything else a `-`, no `-` twice, starting with a
     /// letter or a digit.
-    static func slug(_ text: String) -> String {
+    package static func slug(_ text: String) -> String {
         var result = ""
         for character in text.lowercased() {
             let plain = character.isASCII && (character.isLetter || character.isNumber || character == "_")
@@ -220,12 +220,12 @@ struct ComposePortPlan: Equatable, Sendable {
 
 /// Who holds the ports a stack wants: the other stacks' containers, then
 /// this Mac. Pure; the bind probe is given (`ListeningPorts.isBound`).
-enum ComposePortCensus {
+package enum ComposePortCensus {
     /// A port is the stack's own when its own containers publish it (Docker's
     /// process binds it for them); another's container publishing it is
     /// that one's; else what `isBound` meets is a process's, found later
     /// (`.unknown` here).
-    static func taken(
+    package static func taken(
         wanted: [ComposePortKey], containers: [ContainerSummary], own: (ContainerSummary) -> Bool, isBound: (Int, String) -> Bool
     ) -> [ComposePortKey: DockerPortConflict.Holder] {
         var taken: [ComposePortKey: DockerPortConflict.Holder] = [:]
@@ -242,7 +242,7 @@ enum ComposePortCensus {
 
     /// Whether a port can be given to the stack: no other container
     /// publishes it, and its own do or nothing else binds it.
-    static func isFree(
+    package static func isFree(
         _ port: Int, _ proto: String, containers: [ContainerSummary], own: (ContainerSummary) -> Bool, isBound: (Int, String) -> Bool
     ) -> Bool {
         let key = ComposePortKey(port: port, proto: proto)
@@ -258,14 +258,14 @@ enum ComposePortCensus {
 
 /// Each worktree's stack on its own ports: Compose's version, the profiles
 /// that start, the override file and the question. Pure.
-enum ComposePorts {
+package enum ComposePorts {
     /// `!override` came in Docker Compose 2.24.4: before it an override's
     /// `ports` could only add to the file's.
-    static let minimumVersion = [2, 24, 4]
+    package static let minimumVersion = [2, 24, 4]
 
     /// `5.6.0`, `v2.24.4`, `2.29.1-desktop.1` can; `2.24.3`, `1.29.2` and
     /// what isn't a version can't.
-    static func supportsOverride(version: String) -> Bool {
+    package static func supportsOverride(version: String) -> Bool {
         var text = version.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.hasPrefix("v") { text.removeFirst() }
         let leading = text.prefix { $0.isNumber || $0 == "." }
@@ -277,7 +277,7 @@ enum ComposePorts {
 
     /// The profiles that start: `.env`'s `COMPOSE_PROFILES` and the ones
     /// given.
-    static func activeProfiles(dotEnv: [String: String], extra: [String] = []) -> Set<String> {
+    package static func activeProfiles(dotEnv: [String: String], extra: [String] = []) -> Set<String> {
         let listed = (dotEnv["COMPOSE_PROFILES"] ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         return Set(listed + extra)
     }
@@ -286,7 +286,7 @@ enum ComposePorts {
     /// under `!override` — merged plainly, an override's ports are added to
     /// the file's and the taken port would stay. Strings JSON-quoted (YAML's
     /// double quotes), `$` doubled: Compose interpolates an override too.
-    static func overrideYAML(plan: ComposePortPlan, config: ComposeConfig, folder: String) -> String {
+    package static func overrideYAML(plan: ComposePortPlan, config: ComposeConfig, folder: String) -> String {
         func quoted(_ text: String) -> String {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.withoutEscapingSlashes]
@@ -322,7 +322,7 @@ enum ComposePorts {
     /// port taken since, moved (again), and one back on the file's port —
     /// its own taken, the file's free again. A port the files no longer
     /// ask for goes unsaid.
-    static func changes(from kept: [ComposePortMove], to now: [ComposePortMove], config: ComposeConfig) -> [String] {
+    package static func changes(from kept: [ComposePortMove], to now: [ComposePortMove], config: ComposeConfig) -> [String] {
         func same(_ a: ComposePortMove, _ b: ComposePortMove) -> Bool {
             a.service == b.service && a.target == b.target && a.proto == b.proto && a.from == b.from
         }
@@ -344,7 +344,7 @@ enum ComposePorts {
 
     /// What the sheet asks before an Up that would run into another
     /// checkout's stack: who holds what, and what Up on Free Ports does.
-    static func question(_ plan: ComposePortPlan) -> (title: String, detail: String) {
+    package static func question(_ plan: ComposePortPlan) -> (title: String, detail: String) {
         let title: String =
             switch (plan.blocking.count, plan.nameHolder) {
             case (0, _): "“\(plan.fileName)” is another checkout's stack"

@@ -1,20 +1,20 @@
 import Foundation
 
 /// A unified diff split into lines the panel can colour and number.
-struct DiffLine: Identifiable, Hashable {
-    enum Kind: Hashable { case meta, hunk, context, added, removed }
+package struct DiffLine: Identifiable, Hashable {
+    package enum Kind: Hashable { case meta, hunk, context, added, removed }
 
-    let id: Int
-    let kind: Kind
-    let text: String
-    let oldNumber: Int?
-    let newNumber: Int?
+    package let id: Int
+    package let kind: Kind
+    package let text: String
+    package let oldNumber: Int?
+    package let newNumber: Int?
 }
 
-enum UnifiedDiff {
+package enum UnifiedDiff {
     /// Classifies each line and numbers it from the hunk headers. Lines
     /// before the first hunk (diff --git, index, ---/+++) are meta.
-    static func parse(_ diff: String, limit: Int = 20_000) -> (lines: [DiffLine], truncated: Bool) {
+    package static func parse(_ diff: String, limit: Int = 20_000) -> (lines: [DiffLine], truncated: Bool) {
         var lines: [DiffLine] = []
         var oldLine = 0
         var newLine = 0
@@ -50,7 +50,7 @@ enum UnifiedDiff {
     }
 
     /// `@@ -12,7 +12,9 @@ func x()` → (12, 12).
-    static func hunkStarts(_ header: String) -> (Int, Int) {
+    package static func hunkStarts(_ header: String) -> (Int, Int) {
         func start(after marker: Character) -> Int {
             guard let range = header.firstIndex(of: marker) else { return 1 }
             let digits = header[header.index(after: range)...].prefix { $0.isNumber }

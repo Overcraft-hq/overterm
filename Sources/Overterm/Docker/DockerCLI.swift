@@ -5,9 +5,9 @@ import Foundation
 /// plugins' JSON. Found where the installers put it, since an app started
 /// from the Dock has none of them on its PATH; run on a GCD thread
 /// (`Git.run`), told to reach the engine Overterm does.
-struct DockerCLI: Sendable {
+package struct DockerCLI: Sendable {
     /// Folders the installers use, after the PATH Overterm was given.
-    static func folders(home: URL, path: String?) -> [String] {
+    package static func folders(home: URL, path: String?) -> [String] {
         let fromPath = (path ?? "").split(separator: ":").map(String.init)
         let known = [
             "/usr/local/bin", "/opt/homebrew/bin", home.appendingPathComponent(".docker/bin").path,
@@ -20,10 +20,10 @@ struct DockerCLI: Sendable {
 
     /// A scenario's own `docker` (a script answering as the CLI would),
     /// found before any other.
-    nonisolated(unsafe) static var override: URL?
+    package nonisolated(unsafe) static var override: URL?
 
     /// The first of `folders` holding an executable `tool`.
-    static func locate(
+    package static func locate(
         _ tool: String, home: URL = FileManager.default.homeDirectoryForCurrentUser,
         path: String? = ProcessInfo.processInfo.environment["PATH"], isExecutable: (String) -> Bool = FileManager.default.isExecutableFile
     ) -> URL? {
@@ -33,7 +33,7 @@ struct DockerCLI: Sendable {
 
     /// Where the CLI looks for its plugins (`docker-scout`, `docker-mcp`):
     /// `~/.docker/cli-plugins`, Docker Desktop's, the system's.
-    static func pluginFolders(home: URL, dockerConfig: URL = DockerEndpoint.home) -> [String] {
+    package static func pluginFolders(home: URL, dockerConfig: URL = DockerEndpoint.home) -> [String] {
         [
             dockerConfig.appendingPathComponent("cli-plugins").path, home.appendingPathComponent(".docker/cli-plugins").path,
             "/Applications/Docker.app/Contents/Resources/cli-plugins", "/usr/local/lib/docker/cli-plugins", "/opt/homebrew/lib/docker/cli-plugins",
@@ -42,23 +42,23 @@ struct DockerCLI: Sendable {
     }
 
     /// Whether `docker <name>` is a plugin that is there.
-    static func hasPlugin(
+    package static func hasPlugin(
         _ name: String, home: URL = FileManager.default.homeDirectoryForCurrentUser,
         isExecutable: (String) -> Bool = FileManager.default.isExecutableFile
     ) -> Bool {
         pluginFolders(home: home).contains { isExecutable(URL(fileURLWithPath: $0).appendingPathComponent("docker-" + name).path) }
     }
 
-    let executable: URL
-    let endpoint: DockerEndpoint?
+    package let executable: URL
+    package let endpoint: DockerEndpoint?
 
-    init(executable: URL, endpoint: DockerEndpoint?) {
+    package init(executable: URL, endpoint: DockerEndpoint?) {
         self.executable = executable
         self.endpoint = endpoint
     }
 
     /// `docker` (or another tool) where it is, or nil: not installed.
-    init?(_ tool: String = "docker", endpoint: DockerEndpoint?) {
+    package init?(_ tool: String = "docker", endpoint: DockerEndpoint?) {
         guard let executable = Self.locate(tool) else { return nil }
         self.init(executable: executable, endpoint: endpoint)
     }
@@ -69,7 +69,7 @@ struct DockerCLI: Sendable {
     /// `compose` reads the files there. `stderr`: what it says there, as
     /// it comes, while stdout is kept whole (Scout's progress, then its
     /// report).
-    func run(
+    package func run(
         _ arguments: [String], in folder: URL = FileManager.default.homeDirectoryForCurrentUser, success: Set<Int32> = [0],
         timeout: TimeInterval = 30, stderr: (@Sendable (Data) -> Void)? = nil
     ) async throws -> String {
@@ -78,7 +78,7 @@ struct DockerCLI: Sendable {
             in: folder, success: success, timeout: timeout, stderr: stderr)
     }
 
-    enum Output: Sendable { case stdout, stderr }
+    package enum Output: Sendable { case stdout, stderr }
 
     /// Runs it and hands over what it writes to `output` (BuildKit's
     /// progress is stderr) in whole lines as they come. No thread is
@@ -86,7 +86,7 @@ struct DockerCLI: Sendable {
     /// when it ended. Another exit than `success` throws GitError with its
     /// last four lines. Ending the loop, or cancelling its task, terminates
     /// the process.
-    func lines(_ arguments: [String], from output: Output = .stderr, success: Set<Int32> = [0]) -> AsyncThrowingStream<[String], Error> {
+    package func lines(_ arguments: [String], from output: Output = .stderr, success: Set<Int32> = [0]) -> AsyncThrowingStream<[String], Error> {
         Self.stream(
             tool: URL(fileURLWithPath: "/usr/bin/env"), arguments: Self.environment(for: endpoint, executable: executable) + [executable.path] + arguments,
             said: Array(arguments.suffix(6)), output: output, success: success)
@@ -205,7 +205,7 @@ struct DockerCLI: Sendable {
         }
     }
 
-    static func environment(for endpoint: DockerEndpoint?, executable: URL) -> [String] {
+    package static func environment(for endpoint: DockerEndpoint?, executable: URL) -> [String] {
         let folder = executable.deletingLastPathComponent().path
         let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
         let engine = (endpoint?.environment ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
@@ -215,7 +215,7 @@ struct DockerCLI: Sendable {
 
     /// A runtime's own word on whether it is up, or `.unknown` when its tool
     /// isn't there or says nothing readable.
-    static func status(of runtime: DockerRuntime, endpoint: DockerEndpoint?) async -> DockerRuntime.Status {
+    package static func status(of runtime: DockerRuntime, endpoint: DockerEndpoint?) async -> DockerRuntime.Status {
         guard let (tool, arguments) = runtime.statusCommand(context: endpoint?.context),
             let cli = DockerCLI(tool, endpoint: tool == "docker" ? endpoint : nil)
         else { return .unknown }

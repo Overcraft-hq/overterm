@@ -33,48 +33,48 @@ import Foundation
 /// whose flags refuse every write on a read-only context (remote and
 /// production by default); this model has no verb that writes.
 @MainActor
-final class KubernetesModel: ObservableObject {
-    static let shared = KubernetesModel()
+package final class KubernetesModel: ObservableObject {
+    package static let shared = KubernetesModel()
     /// The production contexts whose Secrets Show was confirmed for this
     /// session (in memory; asked again after a relaunch).
-    let secretConsent = KubeSecretConsent()
+    package let secretConsent = KubeSecretConsent()
     /// Cluster objects' YAML in the editor, one buffer each (2.8): in memory, never saved.
-    lazy var resourceBuffers = KubeResourceBuffers(model: self)
+    package lazy var resourceBuffers = KubeResourceBuffers(model: self)
     /// `kubectl auth can-i`'s answers, a minute each, for the verbs that
     /// start kubectl in a tab (a shell, attach, a log followed).
-    let access = KubeAccessChecks(run: { _, _, _ in .failed("Not asked.") })
+    package let access = KubeAccessChecks(run: { _, _, _ in .failed("Not asked.") })
     /// The shells and attaches on production confirmed this session (rule 5).
-    let shellConsent = KubeShellConsent()
+    package let shellConsent = KubeShellConsent()
     /// The access reviews behind the page's writes (SelfSubjectAccessReview
     /// through a writable context's socket), a minute each per context,
     /// namespace and verb.
-    let writeAccess = KubeAccessChecks(run: { _, _, _ in .failed("Not asked.") })
+    package let writeAccess = KubeAccessChecks(run: { _, _, _ in .failed("Not asked.") })
     /// Usage from metrics.k8s.io, polled only while a page shows it (stage 2d).
-    let metrics = KubeMetricsMonitor()
+    package let metrics = KubeMetricsMonitor()
     private var metricsChanges: AnyCancellable?
     /// Prometheus, where a context opts in, read only while a chart or
     /// the PVC column shows (stage 4).
-    let prometheus = KubePrometheusMonitor()
+    package let prometheus = KubePrometheusMonitor()
     private var prometheusChanges: AnyCancellable?
     /// The clusters' own API docs (`/openapi/v3`), read when a manifest's
     /// hover, completion or the explain view asks, kept in memory (3.15).
-    let apiDocs = KubeAPIDocs()
+    package let apiDocs = KubeAPIDocs()
 
     /// What the settings say, read once a page shows and on each change.
-    struct Configuration: Equatable, Sendable {
-        var enabled = true
-        var extraKubeconfigs: [String] = []
-        var contexts: [String: KubeContextSettings] = [:]
-        var pinned: [String] = []
-        var proxies = KubeProxies.Configuration()
+    package struct Configuration: Equatable, Sendable {
+        package var enabled = true
+        package var extraKubeconfigs: [String] = []
+        package var contexts: [String: KubeContextSettings] = [:]
+        package var pinned: [String] = []
+        package var proxies = KubeProxies.Configuration()
         /// The contexts where agents get write tools, while they are writable for agents (`KubeAgentWrites`).
-        var agentWrites: [String] = []
+        package var agentWrites: [String] = []
         /// What `E` runs, unless the context names its own.
-        var debugImage = KubeCommands.defaultDebugImage
+        package var debugImage = KubeCommands.defaultDebugImage
     }
 
     /// How the list stands.
-    enum ListState: Equatable {
+    package enum ListState: Equatable {
         /// Nobody looks, or there is no context.
         case idle
         /// Listing, the first time.
@@ -87,59 +87,59 @@ final class KubernetesModel: ObservableObject {
         case failed(String, KubeProxyProblem?)
     }
 
-    @Published private(set) var enabled = true
-    @Published private(set) var contexts = KubeContextList()
+    @Published package private(set) var enabled = true
+    @Published package private(set) var contexts = KubeContextList()
     /// Whether the kubeconfig has been read once: before, the page waits.
-    @Published private(set) var contextsRead = false
-    @Published private(set) var selectedName: String?
+    @Published package private(set) var contextsRead = false
+    @Published package private(set) var selectedName: String?
     /// The selected context's namespaces: one, several, or all of them.
-    @Published private(set) var scope: KubeScope = .all
+    @Published package private(set) var scope: KubeScope = .all
     /// The context's namespaces, for the picker: its `accessibleNamespaces`,
     /// else the server's list.
-    @Published private(set) var namespaces: [String] = []
+    @Published package private(set) var namespaces: [String] = []
     /// Why the namespaces couldn't be listed (RBAC often refuses it): one is typed.
-    @Published private(set) var namespacesRefused: String?
+    @Published package private(set) var namespacesRefused: String?
     /// Of several namespaces, those the list may not show (a 403 each),
     /// and why: the rest are listed.
-    @Published private(set) var unlisted: [String: String] = [:]
+    @Published package private(set) var unlisted: [String: String] = [:]
     /// Whether listing the kind across the cluster was refused on the
     /// selected context: every namespace ticked stays those namespaces
     /// then, not all of them (`KubePicker.listedAll`).
-    @Published private(set) var clusterListRefused = false
+    @Published package private(set) var clusterListRefused = false
     /// What the selected context serves, once read; nil before.
-    @Published private(set) var discovery: KubeDiscovery?
+    @Published package private(set) var discovery: KubeDiscovery?
     /// Discovery's kinds that can be listed and watched, by section.
-    @Published private(set) var catalog = KubeKindCatalog()
+    @Published package private(set) var catalog = KubeKindCatalog()
     /// Why discovery couldn't be read, when it couldn't.
-    @Published private(set) var discoveryProblem: String?
+    @Published package private(set) var discoveryProblem: String?
     /// The kind the list shows.
-    @Published private(set) var kind: KubeResourceKind = .pods
+    @Published package private(set) var kind: KubeResourceKind = .pods
     /// The kind's rows in the scope.
-    @Published private(set) var rows = KubeRows()
+    @Published package private(set) var rows = KubeRows()
     /// What the rows are asked for with: a page's `label:` and `field:`
     /// words, sent to the server (`KubeListSelectors`). Empty: every row in
     /// the scope. They are the page's that asked last (`selectorOwner`), and
     /// go when that page hides: a window's page, or the switcher, never gets
     /// a list narrowed by a filter that isn't on screen.
-    @Published private(set) var selectors = KubeListSelectors()
+    @Published package private(set) var selectors = KubeListSelectors()
     /// The page whose filter `selectors` are; nil when nobody's are.
-    private(set) var selectorOwner: ObjectIdentifier?
+    package private(set) var selectorOwner: ObjectIdentifier?
 
-    var labelSelector: String? { selectors.label }
-    var fieldSelector: String? { selectors.field }
+    package var labelSelector: String? { selectors.label }
+    package var fieldSelector: String? { selectors.field }
     /// Where each row's age is counted from.
-    @Published private(set) var anchors: [KubeRowID: KubeAge.Anchor] = [:]
-    @Published private(set) var listState: ListState = .idle
-    @Published private(set) var proxyStatus: KubeProxies.Status = .closed
+    @Published package private(set) var anchors: [KubeRowID: KubeAge.Anchor] = [:]
+    @Published package private(set) var listState: ListState = .idle
+    @Published package private(set) var proxyStatus: KubeProxies.Status = .closed
     /// The contexts whose workloads' rows have shown one of Argo CD's
     /// marks this run (`KubeRow.argoMarked`: the Overview's workloads, a
     /// Deployments, StatefulSets or DaemonSets list with metadata): their
     /// GitOps section has apps to read from marks even where Argo CD isn't
     /// served (gitops.md 14.2.1). In memory only; no request of its own.
-    @Published private(set) var marksSeen: Set<String> = []
+    @Published package private(set) var marksSeen: Set<String> = []
 
     /// A context's rows showed a mark.
-    func sawMarks(in context: String) {
+    package func sawMarks(in context: String) {
         if !marksSeen.contains(context) { marksSeen.insert(context) }
     }
 
@@ -150,7 +150,7 @@ final class KubernetesModel: ObservableObject {
     /// memory only; a window's section tells it.
     private var marksSaid: [String: (context: KubeContext, reason: KubeMarkedAppsMode.Reason, at: Date)] = [:]
 
-    func noteMarksMode(_ mode: KubeMarkedAppsMode, in context: String, now: Date = Date()) {
+    package func noteMarksMode(_ mode: KubeMarkedAppsMode, in context: String, now: Date = Date()) {
         guard case .only(let reason) = mode, let read = contexts.context(named: context) else {
             marksSaid[context] = nil
             return
@@ -164,7 +164,7 @@ final class KubernetesModel: ObservableObject {
     /// (`sameCluster`): a kubeconfig pointing the name elsewhere since is
     /// another cluster's answer to give, and "none here" said hours ago no
     /// answer now (14.3: "not in" only from a read that is).
-    func marksReason(of context: KubeContext, now: Date = Date()) -> KubeMarkedAppsMode.Reason? {
+    package func marksReason(of context: KubeContext, now: Date = Date()) -> KubeMarkedAppsMode.Reason? {
         guard let said = marksSaid[context.name], Self.sameCluster(said.context, context), now.timeIntervalSince(said.at) <= Self.markedAppsLife else { return nil }
         return said.reason
     }
@@ -175,39 +175,39 @@ final class KubernetesModel: ObservableObject {
     /// when they were read whole across the cluster —, and what
     /// `k8s_gitops` answers from with no request (14.2.6): the mode they
     /// were derived in, what the reads could say, the marks counted.
-    struct MarkedAppsKept: Sendable {
+    package struct MarkedAppsKept: Sendable {
         /// The context as read then: its answer only while the name reaches the same cluster (`sameCluster`).
-        var context: KubeContext
-        var apps: [KubeMarkedRanked]
-        var at: Date
-        var scope: KubeScope
+        package var context: KubeContext
+        package var apps: [KubeMarkedRanked]
+        package var at: Date
+        package var scope: KubeScope
         /// Every workload kind's rows read whole.
-        var whole: Bool
+        package var whole: Bool
         /// The section's mode then: which of `apps` are derived (all of
         /// them `.only`; beside Applications, those listed).
-        var mode: KubeMarkedAppsMode = .off
+        package var mode: KubeMarkedAppsMode = .off
         /// What the reads could say of what they read.
-        var reading = KubeMarkedReading()
+        package var reading = KubeMarkedReading()
         /// Copies, garbled marks, Helm's instance labels: counted.
-        var tally = KubeMarkedApps.Tally()
+        package var tally = KubeMarkedApps.Tally()
         /// Grouped by `app.kubernetes.io/instance` alone (D-5).
-        var probable = false
+        package var probable = false
     }
 
     /// Kept while the page that ranked them shows, five minutes at most; in memory only.
     private var markedKept: [String: [ObjectIdentifier: MarkedAppsKept]] = [:]
-    nonisolated static let markedAppsLife: TimeInterval = 300
+    package nonisolated static let markedAppsLife: TimeInterval = 300
 
     /// Every context's minute of the GETs its GitOps sections read Argo
     /// CD's marked objects by (gitops.md 14.4.1: 60 a minute, each place
     /// held until a minute after its answer): every window's section
     /// shares it, and it outlives a section's drop — the page hidden or
     /// closed, another context and back give no new 60. In memory only.
-    let markedMinutes = KubeMarkedLedger()
+    package let markedMinutes = KubeMarkedLedger()
 
     /// A section's apps, as it ranked them again — nil: forgotten (its
     /// page hidden, another context, a credential failure).
-    func keepMarkedApps(_ kept: MarkedAppsKept?, context: String, by owner: AnyObject) {
+    package func keepMarkedApps(_ kept: MarkedAppsKept?, context: String, by owner: AnyObject) {
         let id = ObjectIdentifier(owner)
         // What a page gone without a word left is past its life: dropped here.
         let now = Date()
@@ -224,7 +224,7 @@ final class KubernetesModel: ObservableObject {
     }
 
     /// Every context's apps a page kept: forgotten with it.
-    func forgetMarkedApps(by owner: AnyObject) {
+    package func forgetMarkedApps(by owner: AnyObject) {
         let id = ObjectIdentifier(owner)
         for name in Array(markedKept.keys) {
             markedKept[name]?[id] = nil
@@ -233,27 +233,27 @@ final class KubernetesModel: ObservableObject {
     }
 
     /// The freshest apps a section ranked of `context`, under five minutes old, of the same cluster.
-    func markedApps(of context: KubeContext, now: Date = Date()) -> MarkedAppsKept? {
+    package func markedApps(of context: KubeContext, now: Date = Date()) -> MarkedAppsKept? {
         (markedKept[context.name]?.values ?? [:].values)
             .filter { now.timeIntervalSince($0.at) <= Self.markedAppsLife && Self.sameCluster($0.context, context) }
             .max { $0.at < $1.at }
     }
 
-    @Published private(set) var version: KubeServerVersion?
+    @Published package private(set) var version: KubeServerVersion?
 
-    var selected: KubeContext? { selectedName.flatMap(contexts.context(named:)) }
-    var isShown: Bool { viewers > 0 }
+    package var selected: KubeContext? { selectedName.flatMap(contexts.context(named:)) }
+    package var isShown: Bool { viewers > 0 }
     /// Pages whose chart is expanded into their window's right slot, on
     /// screen while the page itself isn't (metrics.md 2.1, M9): usage and
     /// Prometheus go on being read for it — nothing else (no list, no
     /// discovery, no watch).
     private var chartHolders: Set<ObjectIdentifier> = []
     /// Usage and Prometheus are read: a page shows, or an expanded chart does.
-    var readsMetrics: Bool { isShown || !chartHolders.isEmpty }
+    package var readsMetrics: Bool { isShown || !chartHolders.isEmpty }
 
     /// `owner`'s expanded chart on screen, its page hidden: usage and
     /// Prometheus kept read for it; false, given back.
-    func holdCharts(_ held: Bool, for owner: AnyObject) {
+    package func holdCharts(_ held: Bool, for owner: AnyObject) {
         let id = ObjectIdentifier(owner)
         guard chartHolders.contains(id) != held else { return }
         if held { chartHolders.insert(id) } else { chartHolders.remove(id) }
@@ -261,43 +261,43 @@ final class KubernetesModel: ObservableObject {
     }
 
     /// The proxies the requests go through.
-    var proxies: KubeProxies
+    package var proxies: KubeProxies
     /// Instead of the context's proxy: a test's transport, the scenario's
     /// stand-in when no kubectl is installed.
-    var connectOverride: ((KubeContext) -> any KubeConnection)?
+    package var connectOverride: ((KubeContext) -> any KubeConnection)?
     /// Instead of the context's metrics proxy: likewise (a connection
     /// spoken to directly still reaches only the Service's query paths).
-    var prometheusOverride: ((KubeContext, KubePrometheusService) -> any KubePrometheusTransport)?
+    package var prometheusOverride: ((KubeContext, KubePrometheusService) -> any KubePrometheusTransport)?
     /// Instead of asking the proxies how the context stands.
-    var statusOverride: ((String) async -> KubeProxies.Status)?
+    package var statusOverride: ((String) async -> KubeProxies.Status)?
     /// Reads the kubeconfig files; blocking, run on a GCD thread.
-    var load: @Sendable (Configuration) -> KubeContextList = { configuration in
+    package var load: @Sendable (Configuration) -> KubeContextList = { configuration in
         KubeContextList.fromEnvironment(extra: configuration.extraKubeconfigs, settings: configuration.contexts)
     }
-    var readConfiguration: () -> Configuration = { Configuration(Settings.shared) }
+    package var readConfiguration: () -> Configuration = { Configuration(Settings.shared) }
     /// Whether it follows `Settings.shared`'s changes itself (a unit test's doesn't).
-    var watchesSettings = true
+    package var watchesSettings = true
     /// The proxies were told a list (`tellProxies`): a settings change is
     /// read again even with the page hidden.
     private var toldProxies = false
     /// Whether the context picked is remembered for the next launch.
-    var remembersSelection = !AppEnvironment.isUnitTest
+    package var remembersSelection = !AppEnvironment.isUnitTest
     /// Where the context picked and each context's namespaces are kept:
     /// the app's defaults (an isolated run's own suite); a test's own.
-    var defaults: UserDefaults = AppEnvironment.defaults
-    var flushInterval: Duration = .milliseconds(120)
-    var statusInterval: Duration = .seconds(1)
+    package var defaults: UserDefaults = AppEnvironment.defaults
+    package var flushInterval: Duration = .milliseconds(120)
+    package var statusInterval: Duration = .seconds(1)
     /// How long a context's discovery is kept, and how often it is read
     /// again while a page shows where CRDs can't be watched (decision 28).
-    var rediscoveryInterval: Duration = .seconds(300)
+    package var rediscoveryInterval: Duration = .seconds(300)
     /// A burst of CRD changes (one applied, its versions established) is
     /// one read of discovery, this long after the first.
-    var rediscoveryDelay: Duration = .milliseconds(300)
+    package var rediscoveryDelay: Duration = .milliseconds(300)
 
     private var viewers = 0
     /// True when a page starts to show it, false when the last one hides:
     /// what reads on its own (a forward's pod check) stops at once.
-    let visibility = PassthroughSubject<Bool, Never>()
+    package let visibility = PassthroughSubject<Bool, Never>()
     private var configuration = Configuration()
     /// Each context's namespaces, as last picked — kept for the next
     /// launch with the context picked (`scopesKey`, the app's defaults:
@@ -323,7 +323,7 @@ final class KubernetesModel: ObservableObject {
     private var versionRead: Task<KubeServerVersion?, Never>?
     /// Which contexts' servers take a streaming list — their version, a
     /// refusal — for every client the model makes.
-    let streamingLists = KubeStreamingLists()
+    package let streamingLists = KubeStreamingLists()
     private var settingsWatch: AnyCancellable?
     /// Each context's discovery, and when it was read.
     private var discoveries: [String: (discovery: KubeDiscovery, read: ContinuousClock.Instant)] = [:]
@@ -336,10 +336,10 @@ final class KubernetesModel: ObservableObject {
     /// The kind followed has been looked up again after a 404.
     private var lookedUpAfter404 = false
     /// How many times discovery has been read, for the tests.
-    private(set) var discoveryReads = 0
+    package private(set) var discoveryReads = 0
 
     private static let rememberedKey = "kubernetes.selectedContext"
-    static let scopesKey = "kubernetes.namespaces"
+    package static let scopesKey = "kubernetes.namespaces"
 
     /// The namespaces picked on each context, as kept: none is all of them.
     private var rememberedScopes: [String: KubeScope] {
@@ -352,7 +352,7 @@ final class KubernetesModel: ObservableObject {
         defaults.set(scopes.mapValues(\.persisted), forKey: Self.scopesKey)
     }
 
-    init(proxies: KubeProxies = .shared) {
+    package init(proxies: KubeProxies = .shared) {
         self.proxies = proxies
         // A sample read is the page's to draw: the list's cells read it.
         metricsChanges = metrics.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
@@ -377,15 +377,15 @@ final class KubernetesModel: ObservableObject {
 
     /// `kubernetes.pinnedContexts`, as the settings said them last:
     /// published, so an Overview showing reads the new list's cards.
-    @Published private(set) var pinnedContexts: [String] = []
+    @Published package private(set) var pinnedContexts: [String] = []
     /// The pinned contexts' cards: the app's, whichever windows show them.
-    let pinnedHealth = KubePinnedHealthSession()
+    package let pinnedHealth = KubePinnedHealthSession()
 
     /// What the proxies are started with: which kubectl, the extra kubeconfigs.
-    var proxyConfiguration: KubeProxies.Configuration { configuration.proxies }
+    package var proxyConfiguration: KubeProxies.Configuration { configuration.proxies }
 
     /// The image `E` runs on `context`: its own, else the setting's.
-    func debugImage(for context: KubeContext) -> String {
+    package func debugImage(for context: KubeContext) -> String {
         if let own = context.settings.debugImage { return own }
         let image = readConfiguration().debugImage
         return image.isEmpty ? KubeCommands.defaultDebugImage : image
@@ -393,7 +393,7 @@ final class KubernetesModel: ObservableObject {
 
     /// The image a node is debugged with: the context's `nodeShellImage`,
     /// else the debug container's (`debugImage(for:)`).
-    func nodeShellImage(for context: KubeContext) -> String {
+    package func nodeShellImage(for context: KubeContext) -> String {
         context.settings.nodeShellImage ?? debugImage(for: context)
     }
 
@@ -403,7 +403,7 @@ final class KubernetesModel: ObservableObject {
 
     /// A page shows it: the kubeconfig read, the context's pods followed,
     /// until the last `hide`.
-    func show() {
+    package func show() {
         viewers += 1
         guard viewers == 1 else { return }
         visibility.send(true)
@@ -413,7 +413,7 @@ final class KubernetesModel: ObservableObject {
         reloadContexts()
     }
 
-    func hide() {
+    package func hide() {
         viewers = max(0, viewers - 1)
         guard viewers == 0 else { return }
         // Whoever looks next asks with its own filter.
@@ -460,7 +460,7 @@ final class KubernetesModel: ObservableObject {
     /// A `kubernetes.*` setting changed: off, everything stops and every
     /// proxy closes; otherwise the kubeconfig is read again where what it
     /// depends on changed (its files, a context's class).
-    func settingsChanged() {
+    package func settingsChanged() {
         let old = configuration
         let new = readConfiguration()
         apply(new)
@@ -489,7 +489,7 @@ final class KubernetesModel: ObservableObject {
     // MARK: Contexts
 
     /// The kubeconfig read again, off the main thread.
-    func reloadContexts() {
+    package func reloadContexts() {
         guard enabled else { return }
         reading?.cancel()
         let configuration = self.configuration
@@ -563,24 +563,24 @@ final class KubernetesModel: ObservableObject {
     }
 
     /// Whether two readings of a context reach the same cluster as the same user. Pure.
-    nonisolated static func sameCluster(_ old: KubeContext, _ new: KubeContext) -> Bool {
+    package nonisolated static func sameCluster(_ old: KubeContext, _ new: KubeContext) -> Bool {
         old.server == new.server && old.cluster == new.cluster && old.user == new.user && old.auth == new.auth
     }
 
     /// The same cluster, and the same class: what can-i's answers hold for.
-    nonisolated static func sameAccess(_ old: KubeContext, _ new: KubeContext) -> Bool {
+    package nonisolated static func sameAccess(_ old: KubeContext, _ new: KubeContext) -> Bool {
         sameCluster(old, new) && old.contextClass == new.contextClass
     }
 
     /// What `name` is known to serve: the selected context's discovery, or
     /// what was read for another lately; nil when nothing was.
-    func knownDiscovery(of name: String) -> KubeDiscovery? {
+    package func knownDiscovery(of name: String) -> KubeDiscovery? {
         name == selectedName ? discovery : discoveries[name]?.discovery
     }
 
     /// Which context the page shows: the one it showed, else the one last
     /// picked, else the first pinned, else kubectl's current, else the first. Pure.
-    static func choose(in list: KubeContextList, kept: String?, remembered: String?, pinned: [String]) -> String? {
+    package static func choose(in list: KubeContextList, kept: String?, remembered: String?, pinned: [String]) -> String? {
         let names = Set(list.contexts.map(\.name))
         for candidate in [kept, remembered] + pinned.map(Optional.some) + [list.current] {
             if let candidate, names.contains(candidate) { return candidate }
@@ -595,7 +595,7 @@ final class KubernetesModel: ObservableObject {
     /// The page shows `name`: its namespace as last picked (else its own),
     /// the kind shown followed there — what it serves read, or taken from
     /// what was read for it lately.
-    func select(_ name: String) {
+    package func select(_ name: String) {
         guard let context = contexts.context(named: name) else { return }
         let changed = name != selectedName
         selectedName = name
@@ -621,12 +621,12 @@ final class KubernetesModel: ObservableObject {
 
     /// The namespace the page opens a context on: its setting's, else the
     /// context's own, else `default` — as kubectl has it.
-    static func defaultScope(_ context: KubeContext) -> KubeScope {
+    package static func defaultScope(_ context: KubeContext) -> KubeScope {
         .namespace(context.settings.defaultNamespace ?? context.namespace ?? "default")
     }
 
     /// The list shows `kind` (one of the catalog's), in the scope.
-    func setKind(_ kind: KubeResourceKind) {
+    package func setKind(_ kind: KubeResourceKind) {
         guard kind != self.kind else { return }
         self.kind = kind
         guard selectedName != nil else { return }
@@ -635,7 +635,7 @@ final class KubernetesModel: ObservableObject {
 
     /// The kind as a context's discovery has it — another version, maybe —
     /// or nil when it doesn't serve it, or not as a list kept live. Pure.
-    static func resolved(_ kind: KubeResourceKind, in discovery: KubeDiscovery) -> KubeResourceKind? {
+    package static func resolved(_ kind: KubeResourceKind, in discovery: KubeDiscovery) -> KubeResourceKind? {
         discovery.kinds.first { $0.fullName == kind.fullName && KubeKindCatalog.isOffered($0) }
     }
 
@@ -645,7 +645,7 @@ final class KubernetesModel: ObservableObject {
     /// `refusedAcross`: what to show instead should listing across the
     /// cluster be refused — the namespaces ticked that made All (none
     /// should be, as far as the picker knew).
-    func setScope(_ scope: KubeScope, refusedAcross fallback: KubeScope? = nil) {
+    package func setScope(_ scope: KubeScope, refusedAcross fallback: KubeScope? = nil) {
         guard let name = selectedName, scope != self.scope else { return }
         allFallback = scope == .all ? fallback : nil
         scopes[name] = scope
@@ -658,19 +658,19 @@ final class KubernetesModel: ObservableObject {
     /// selectors pick — or all of them, empty. The namespaces and the
     /// version stay as read. Two pages showing at once share one list: the
     /// one that asked last has it, and the other says so (`isSelector(of:)`).
-    func setSelectors(_ selectors: KubeListSelectors, for owner: AnyObject) {
+    package func setSelectors(_ selectors: KubeListSelectors, for owner: AnyObject) {
         selectorOwner = ObjectIdentifier(owner)
         changeSelectors(selectors)
     }
 
     /// Only a label selector (the switcher's tests, the `:` bar's words).
-    func setLabelSelector(_ selector: String?, for owner: AnyObject) {
+    package func setLabelSelector(_ selector: String?, for owner: AnyObject) {
         setSelectors(KubeListSelectors(label: selector), for: owner)
     }
 
     /// `owner`'s page hides: the list it narrowed is every row's again.
     /// Another page's selectors are left alone.
-    func releaseSelectors(for owner: AnyObject) {
+    package func releaseSelectors(for owner: AnyObject) {
         guard selectorOwner == ObjectIdentifier(owner) else { return }
         selectorOwner = nil
         changeSelectors(KubeListSelectors())
@@ -678,7 +678,7 @@ final class KubernetesModel: ObservableObject {
 
     /// Whether the list is asked for with `selectors` on `owner`'s behalf —
     /// or, for none, with none at all.
-    func isSelector(_ selectors: KubeListSelectors, of owner: AnyObject) -> Bool {
+    package func isSelector(_ selectors: KubeListSelectors, of owner: AnyObject) -> Bool {
         selectors == self.selectors && (selectors.isEmpty || selectorOwner == ObjectIdentifier(owner))
     }
 
@@ -692,14 +692,14 @@ final class KubernetesModel: ObservableObject {
     /// The sign-in command typed at a terminal (the context bar's Run on
     /// "Sign-in needed"): the proxy whose plugin waits for a browser closed,
     /// the context held until Try Again picks up the token kubelogin kept.
-    func signInAtTerminal() {
+    package func signInAtTerminal() {
         guard let name = selectedName else { return }
         let proxies = self.proxies
         Task { await proxies.signInAtTerminal(name) }
     }
 
     /// After a sign-in, or a failure put right: the context's requests may go again.
-    func retry() {
+    package func retry() {
         guard let name = selectedName else { return }
         let proxies = self.proxies
         Task { [weak self] in
@@ -741,7 +741,7 @@ final class KubernetesModel: ObservableObject {
     /// What a page's detail reads through: the context's proxy (the page's
     /// slot; a forward's reads `.background`), or a test's connection. Nil
     /// with Kubernetes off, or for a context the kubeconfig no longer has.
-    func client(for name: String, role: KubeProxies.Role = .page) -> KubeClient? {
+    package func client(for name: String, role: KubeProxies.Role = .page) -> KubeClient? {
         guard enabled, let context = contexts.context(named: name) else { return nil }
         return makeClient(context, role: role)
     }
@@ -752,7 +752,7 @@ final class KubernetesModel: ObservableObject {
     /// while one shows; else the files read again now (locally — no
     /// cluster is asked anything), the settings applied to the proxies
     /// first. Nil with Kubernetes off. Nothing the page shows changes.
-    func contextsForAgents() async -> KubeContextList? {
+    package func contextsForAgents() async -> KubeContextList? {
         if isShown, contextsRead { return enabled ? contexts : nil }
         let configuration = readConfiguration()
         apply(configuration)
@@ -771,7 +771,7 @@ final class KubernetesModel: ObservableObject {
     /// which falls back to kubectl's current context (production, often):
     /// with no selection a call names its context. A binding (the calling
     /// pane's checkout's, `KubeMCP.defaultContext`) comes before it.
-    func agentDefaultContext(in list: KubeContextList) -> String? {
+    package func agentDefaultContext(in list: KubeContextList) -> String? {
         guard let name = selectedName, list.context(named: name) != nil else { return nil }
         return name
     }
@@ -780,7 +780,7 @@ final class KubernetesModel: ObservableObject {
     /// page's discovery only while the page's reading of the name is the
     /// same cluster as the tool's (the kubeconfig may have changed while
     /// the page was hidden); nil otherwise.
-    func knownDiscovery(of context: KubeContext) -> KubeDiscovery? {
+    package func knownDiscovery(of context: KubeContext) -> KubeDiscovery? {
         guard let known = knownDiscovery(of: context.name), let read = contexts.context(named: context.name), Self.sameCluster(read, context) else {
             return nil
         }
@@ -789,20 +789,20 @@ final class KubernetesModel: ObservableObject {
 
     /// The namespace a tool works in unless told another: the page's, on
     /// its context; else the one last picked there, else the context's own.
-    func agentDefaultScope(for context: KubeContext) -> KubeScope {
+    package func agentDefaultScope(for context: KubeContext) -> KubeScope {
         context.name == selectedName ? scope : (scopes[context.name] ?? Self.defaultScope(context))
     }
 
     /// What a tool reads through: the context's proxy in a background slot
     /// — never the page's — or a test's connection. GETs only.
-    func agentClient(for context: KubeContext) -> KubeClient {
+    package func agentClient(for context: KubeContext) -> KubeClient {
         makeClient(context, role: .background)
     }
 
     /// What an agent's Prometheus query goes through (`k8s_top`'s shares):
     /// the context's metrics proxy in a background slot — never the
     /// page's — or a test's connection. The Service's query paths, GETs only.
-    func agentPrometheusTransport(for context: KubeContext, _ service: KubePrometheusService) -> (any KubePrometheusTransport)? {
+    package func agentPrometheusTransport(for context: KubeContext, _ service: KubePrometheusService) -> (any KubePrometheusTransport)? {
         guard enabled else { return nil }
         return prometheusOverride?(context, service) ?? KubePrometheusProxyConnection(proxies: proxies, context: context, service: service, role: .background)
     }
@@ -810,31 +810,31 @@ final class KubernetesModel: ObservableObject {
     /// What the attention watches read through: the context's proxy in a
     /// background slot, as a watch — it never opens a browser sign-in, and
     /// its proxy is given up for a request someone made (`KubeProxies.Role.watch`).
-    func watchClient(for context: KubeContext) -> KubeClient {
+    package func watchClient(for context: KubeContext) -> KubeClient {
         makeClient(context, role: .watch)
     }
 
     /// What the Overview's pinned cards read through: the context's proxy
     /// in a slot free as it stands — none is closed for it, no browser
     /// sign-in is opened (`KubeProxies.Role.spare`).
-    func spareClient(for context: KubeContext) -> KubeClient {
+    package func spareClient(for context: KubeContext) -> KubeClient {
         makeClient(context, role: .spare)
     }
 
     /// What the rail's panel reads through while it shows a bound
     /// checkout: the context's proxy in a background slot, as an agent's
     /// tools — never the page's slot — or a test's connection.
-    func panelClient(for context: KubeContext) -> KubeClient {
+    package func panelClient(for context: KubeContext) -> KubeClient {
         makeClient(context, role: .background)
     }
 
     /// The contexts where agents get write tools while Overterm may write
     /// there (`kubernetes.agentWrites`), as the settings say now; empty,
     /// the write tools aren't listed.
-    var agentWrites: [String] { readConfiguration().agentWrites }
+    package var agentWrites: [String] { readConfiguration().agentWrites }
 
     /// How the context's proxy stands, asked of the proxies (nothing started).
-    func agentProxyStatus(of name: String) async -> KubeProxies.Status {
+    package func agentProxyStatus(of name: String) async -> KubeProxies.Status {
         if let statusOverride { return await statusOverride(name) }
         return await proxies.status(of: name)
     }
@@ -914,7 +914,7 @@ final class KubernetesModel: ObservableObject {
 
     /// The namespaces of several the list can't show, said: `Can't list
     /// pods in locked: …` (the first's reason); nil when it shows them all.
-    var unlistedNote: String? {
+    package var unlistedNote: String? {
         guard !unlisted.isEmpty else { return nil }
         let names = unlisted.keys.sorted()
         let what = KubeKindCatalog.title(of: kind).lowercased()
@@ -924,7 +924,7 @@ final class KubernetesModel: ObservableObject {
 
     /// Whether `error` says `kind` may not be listed across the cluster:
     /// a 403 to the list of all namespaces, or several past the cap refused. Pure.
-    nonisolated static func refusedAcross(_ error: Error, kind: KubeResourceKind, scope: KubeScope) -> Bool {
+    package nonisolated static func refusedAcross(_ error: Error, kind: KubeResourceKind, scope: KubeScope) -> Bool {
         if error is KubeScopeRefused { return true }
         guard kind.namespaced, scope == .all, let api = error as? KubeAPIError else { return false }
         return api.isForbidden
@@ -1043,7 +1043,7 @@ final class KubernetesModel: ObservableObject {
     }
 
     /// The lists whose rows tell `marksSeen`.
-    nonisolated static let marksKinds: Set<String> = ["deployments.apps", "statefulsets.apps", "daemonsets.apps"]
+    package nonisolated static let marksKinds: Set<String> = ["deployments.apps", "statefulsets.apps", "daemonsets.apps"]
 
     // MARK: What the cluster serves
 
@@ -1156,7 +1156,7 @@ final class KubernetesModel: ObservableObject {
         }
     }
 
-    static let crdName = "customresourcedefinitions.apiextensions.k8s.io"
+    package static let crdName = "customresourcedefinitions.apiextensions.k8s.io"
 
     /// CRDs added, changed or removed: discovery read again, once a burst.
     private func crdsChanged(_ names: Set<String>) {
@@ -1166,7 +1166,7 @@ final class KubernetesModel: ObservableObject {
 
     /// Discovery read again for the context shown: at once, or after
     /// `rediscoveryDelay` (a burst of CRD changes is one read).
-    func rediscover(now: Bool = true) {
+    package func rediscover(now: Bool = true) {
         guard isShown, let context = selected else { return }
         if !now, rediscovering != nil { return }
         rediscovering?.cancel()
@@ -1198,7 +1198,7 @@ final class KubernetesModel: ObservableObject {
     /// Where usage is read: the context shown, its namespace, the list's
     /// label selector, and whether discovery says metrics-server is there
     /// (`metrics: none` skips it). Nobody looking, nowhere.
-    func updateMetrics() {
+    package func updateMetrics() {
         guard readsMetrics, enabled, let context = selected else {
             metrics.update(nil) { nil }
             prometheus.update(nil, client: { nil }, transport: { _ in nil }, close: { _ in })
@@ -1242,7 +1242,7 @@ final class KubernetesModel: ObservableObject {
     }
 
     /// What went wrong, in words.
-    nonisolated static func said(_ error: Error) -> String {
+    package nonisolated static func said(_ error: Error) -> String {
         switch error {
         case let problem as KubeProxyProblem: return problem.reason
         case let api as KubeAPIError where api.isForbidden: return "Not allowed: \(api.message)"
@@ -1254,7 +1254,7 @@ final class KubernetesModel: ObservableObject {
 
 extension KubernetesModel.Configuration {
     @MainActor
-    init(_ settings: Settings) {
+    package init(_ settings: Settings) {
         self.init(
             enabled: settings.kubernetesEnabled, extraKubeconfigs: settings.kubernetesKubeconfigs, contexts: settings.kubernetesContexts,
             pinned: settings.kubernetesPinnedContexts, proxies: settings.kubernetesProxyConfiguration, agentWrites: settings.kubernetesAgentWrites,

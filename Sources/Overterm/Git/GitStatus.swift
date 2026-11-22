@@ -1,34 +1,34 @@
 import Foundation
 
 /// One changed path in a worktree, from `git status --porcelain=v1 -z`.
-struct ChangedFile: Identifiable, Hashable {
-    enum Kind: Hashable {
+package struct ChangedFile: Identifiable, Hashable {
+    package enum Kind: Hashable {
         case modified, added, deleted, renamed, untracked, conflicted, typeChanged
     }
 
-    let path: String
+    package let path: String
     /// For renames and copies: where it came from.
-    let originalPath: String?
-    let kind: Kind
+    package let originalPath: String?
+    package let kind: Kind
     /// X of XY: the change is (at least partly) staged.
-    let isStaged: Bool
+    package let isStaged: Bool
     /// Y of XY: there are unstaged changes too (or it is untracked).
-    let hasUnstaged: Bool
-    var added: Int?
-    var removed: Int?
+    package let hasUnstaged: Bool
+    package var added: Int?
+    package var removed: Int?
 
-    var id: String { path }
+    package var id: String { path }
 
-    enum StageState { case none, partial, full }
+    package enum StageState { case none, partial, full }
 
     /// For the stage checkbox: nothing staged, some, or all of it.
-    var stageState: StageState {
+    package var stageState: StageState {
         guard isStaged else { return .none }
         return hasUnstaged ? .partial : .full
     }
 
     /// The single letter shown in the list.
-    var letter: String {
+    package var letter: String {
         switch kind {
         case .modified: "M"
         case .added: "A"
@@ -41,10 +41,10 @@ struct ChangedFile: Identifiable, Hashable {
     }
 }
 
-enum GitStatus {
+package enum GitStatus {
     /// Parses `git status --porcelain=v1 -z`: NUL-separated `XY path`
     /// records; a rename/copy record is followed by its original path.
-    static func parse(porcelainZ output: String) -> [ChangedFile] {
+    package static func parse(porcelainZ output: String) -> [ChangedFile] {
         var files: [ChangedFile] = []
         var fields = output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)[...]
         while let record = fields.popFirst() {
@@ -76,7 +76,7 @@ enum GitStatus {
     /// a status letter and a path; a rename or copy (`R100`, `C075`: the
     /// letter and a similarity) has two paths, the original first. Against a
     /// commit there is no index, so nothing is staged.
-    static func parse(nameStatusZ output: String) -> [ChangedFile] {
+    package static func parse(nameStatusZ output: String) -> [ChangedFile] {
         var files: [ChangedFile] = []
         var fields = output.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)[...]
         while let status = fields.popFirst() {
@@ -102,7 +102,7 @@ enum GitStatus {
     /// Parses `git diff --numstat -z HEAD` into path → (added, removed).
     /// Binary files report `-`, which becomes nil. A rename is
     /// `a\tb\t\0old\0new\0` — keyed by the new path.
-    static func parse(numstatZ output: String) -> [String: (added: Int?, removed: Int?)] {
+    package static func parse(numstatZ output: String) -> [String: (added: Int?, removed: Int?)] {
         var result: [String: (Int?, Int?)] = [:]
         var fields = output.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)[...]
         while let record = fields.popFirst() {

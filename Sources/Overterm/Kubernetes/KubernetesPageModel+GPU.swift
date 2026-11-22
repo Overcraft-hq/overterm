@@ -9,7 +9,7 @@ import Foundation
 extension KubernetesPageModel {
     /// The detail's GPUs; nil, none — built again only when the object or
     /// the node's pods' read changes.
-    func gpuAllocation(of session: KubeDetailSession) -> KubeGPUAllocation? {
+    package func gpuAllocation(of session: KubeDetailSession) -> KubeGPUAllocation? {
         let ref = session.ref
         guard let subject = ref.metricsSubject, let object = session.object else { return nil }
         let nodePods = subject == .node ? model.metrics.reading(.nodePods(ref.name))?.sample : nil
@@ -24,7 +24,7 @@ extension KubernetesPageModel {
     }
 
     /// A node's GPU holder clicked: its pod, through the history (`[` returns).
-    func openGPUHolder(_ pod: KubeRowID) {
+    package func openGPUHolder(_ pod: KubeRowID) {
         guard let context = detail?.ref.context ?? model.selectedName else { return }
         let kind = model.knownDiscovery(of: context)?.kind(apiVersion: "v1", kind: "Pod") ?? .pods
         open(KubeObjectRef(context: context, kind: kind, namespace: pod.namespace, name: pod.name), from: .link)

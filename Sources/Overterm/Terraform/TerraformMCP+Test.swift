@@ -14,9 +14,9 @@ import Foundation
 /// right slot as the person's does; its answer is the stream's masked
 /// decode, cut.
 extension TerraformMCP {
-    static let testNames = ["tf_test"]
+    package static let testNames = ["tf_test"]
 
-    static let testTool: [String: Any] = [
+    package static let testTool: [String: Any] = [
         "name": "tf_test",
         "description":
             "Runs terraform test in a root of your checkout and answers each run's status and each failure at its file and line. Test files whose every provider is mocked (mock_provider) run at once, without credentials; a test with a real provider creates real infrastructure, so the person is asked every time (never on production; on a remote root only where terraform.roots sets it writable).",
@@ -33,13 +33,13 @@ extension TerraformMCP {
     /// Starts a test in the window of the pane that asked
     /// (`TerminalWindowController.startTerraformTest`): asked there when a
     /// real provider would run. A failure with no message: declined.
-    static var startTest: ((TerraformRootCard, URL, String, String?) async -> Result<TerraformTestRun, TerraformReadFailure>)?
+    package static var startTest: ((TerraformRootCard, URL, String, String?) async -> Result<TerraformTestRun, TerraformReadFailure>)?
 
     /// How long a call waits for its run: beyond it, the run goes on and
     /// a later call reads it.
-    static var testWait: TimeInterval = 240
+    package static var testWait: TimeInterval = 240
 
-    static func test(_ arguments: [String: Any], in checkout: URL, pane: String) async throws -> String {
+    package static func test(_ arguments: [String: Any], in checkout: URL, pane: String) async throws -> String {
         let card = try await card(arguments, in: checkout, tool: "tf_test")
         let file = argument(arguments, "file")
         if let file, !TerraformCommands.isTestFile(file) {
@@ -70,7 +70,7 @@ extension TerraformMCP {
     }
 
     /// The run's answer once it ends, or its progress after `wait`.
-    static func answer(_ run: TerraformTestRun, waitingFor wait: TimeInterval) async -> String {
+    package static func answer(_ run: TerraformTestRun, waitingFor wait: TimeInterval) async -> String {
         let deadline = Date().addingTimeInterval(wait)
         while run.isGoing, Date() < deadline {
             try? await Task.sleep(nanoseconds: 200_000_000)

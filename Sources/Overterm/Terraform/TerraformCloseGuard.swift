@@ -9,45 +9,45 @@ import Foundation
 /// a pane, tabs, the window, quitting — whatever the close setting says.
 /// The decision is pure; `find` walks the panes' trees by pid (never
 /// `pkill -f`, never `lazy.compactMap(…).first`).
-enum TerraformCloseGuard {
-    enum Path: Sendable, Equatable {
+package enum TerraformCloseGuard {
+    package enum Path: Sendable, Equatable {
         case pane, tabs, window, quit
     }
 
     /// One terraform that closing would kill.
-    struct Running: Equatable, Sendable {
-        var pid: pid_t
+    package struct Running: Equatable, Sendable {
+        package var pid: pid_t
         /// Its process group: SIGINT goes to the group when terraform leads it.
-        var group: pid_t?
+        package var group: pid_t?
         /// `apply`, `state rm`…
-        var operation: String
-        var tool: String
+        package var operation: String
+        package var tool: String
         /// The root it works in, as the header says it: `envs/prod`.
-        var root: String
+        package var root: String
         /// Which pane: "this pane", or the tab's title.
-        var place: String
+        package var place: String
         /// The pane's process tag: its header says "shutting down" after Interrupt.
-        var tag: String? = nil
+        package var tag: String? = nil
         /// When it started, µs since 1970, and its executable, as `find`
         /// read them: who Interrupt may reach (`ProcessSignals`). Nil when
         /// unread — it had ended as `find` looked —, and then Interrupt
         /// reaches nobody: whatever holds the pid by the press isn't the
         /// terraform the close asked about.
-        var started: UInt64? = nil
-        var path: String? = nil
+        package var started: UInt64? = nil
+        package var path: String? = nil
     }
 
     /// What the close asks.
-    struct Question: Equatable, Sendable {
-        var title: String
-        var detail: String
-        static let buttons = ["Interrupt", "Close Anyway", "Cancel"]
+    package struct Question: Equatable, Sendable {
+        package var title: String
+        package var detail: String
+        package static let buttons = ["Interrupt", "Close Anyway", "Cancel"]
     }
 
     /// The operations whose death mid-way loses state (4.8): apply,
     /// destroy, import, any `state`, `force-unlock`, `workspace delete`;
     /// and `-auto-approve` or a state migration whatever the verb.
-    static func isGuarded(_ line: TerraformCommandLine) -> Bool {
+    package static func isGuarded(_ line: TerraformCommandLine) -> Bool {
         if line.autoApprove || line.migratesState { return true }
         guard let operation = line.operation else { return false }
         let first = operation.split(separator: " ").first.map(String.init) ?? operation
@@ -63,7 +63,7 @@ enum TerraformCloseGuard {
 
     /// What closing asks for `running` along `path`, or nil when nothing
     /// guarded runs.
-    static func question(_ running: [Running], path: Path) -> Question? {
+    package static func question(_ running: [Running], path: Path) -> Question? {
         guard let first = running.first else { return nil }
         let command = "\(first.tool) \(first.operation)"
         let place = first.place
@@ -86,7 +86,7 @@ enum TerraformCloseGuard {
     /// shell's job, as Ctrl-C would), else terraform alone — never the
     /// agent or shell whose group it shares. Negative for a group, as
     /// `kill` takes it.
-    static func interruptTarget(_ running: Running) -> pid_t {
+    package static func interruptTarget(_ running: Running) -> pid_t {
         if let group = running.group, group == running.pid { return -group }
         return running.pid
     }
@@ -94,7 +94,7 @@ enum TerraformCloseGuard {
     /// The terraform writes under each of `panes` (tag, its login pid,
     /// what to call it). Blocking, a process walk; read nothing but argv,
     /// folder and the environment's names (`TerraformProcesses`).
-    static func find(_ panes: [(login: pid_t, place: String, checkout: URL?, tag: String?)]) -> [Running] {
+    package static func find(_ panes: [(login: pid_t, place: String, checkout: URL?, tag: String?)]) -> [Running] {
         var found: [Running] = []
         for pane in panes {
             for process in TerraformProcesses.find(under: pane.login) where isGuarded(process.line) {
@@ -124,7 +124,7 @@ enum TerraformCloseGuard {
     /// isn't is refused and nothing is sent: the caller says so
     /// (`notInterrupted`). What each send did, in `running`'s order.
     @discardableResult
-    static func interrupt(_ running: [Running], signals: ProcessSignals = ProcessSignals()) -> [ActivitySignalAnswer] {
+    package static func interrupt(_ running: [Running], signals: ProcessSignals = ProcessSignals()) -> [ActivitySignalAnswer] {
         running.map { process in
             guard let target = target(process) else { return .ended(now: nil) }
             if interruptTarget(process) < 0 { return signals.sendToGroup(.int, leader: target) }
@@ -133,14 +133,14 @@ enum TerraformCloseGuard {
     }
 
     /// Who `running` is, as `find` read it; nil when it read no start.
-    static func target(_ running: Running) -> ActivitySignalTarget? {
+    package static func target(_ running: Running) -> ActivitySignalTarget? {
         guard let started = running.started else { return nil }
         return ActivitySignalTarget(ActivityProcessID(pid: running.pid, start: started), path: running.path)
     }
 
     /// Whether Interrupt reached it, or it had ended: either way the close
     /// may wait for it to be gone.
-    static func reached(_ answer: ActivitySignalAnswer) -> Bool {
+    package static func reached(_ answer: ActivitySignalAnswer) -> Bool {
         switch answer {
         case .sent, .ended: true
         case .refused, .failed, .ranAnotherProgram: false
@@ -151,7 +151,7 @@ enum TerraformCloseGuard {
     /// refused, failed, or their pid running another program now: nothing
     /// was sent to those, and the close isn't waiting on them. Nil when
     /// every one was reached.
-    static func notInterrupted(_ running: [Running], answers: [ActivitySignalAnswer]) -> Question? {
+    package static func notInterrupted(_ running: [Running], answers: [ActivitySignalAnswer]) -> Question? {
         let missed = zip(running, answers).filter { !reached($0.1) }
         guard let (first, answer) = missed.first else { return nil }
         let more = missed.count > 1 ? " and \(missed.count - 1) more" : ""
@@ -168,13 +168,13 @@ enum TerraformCloseGuard {
     }
 
     /// Whether any of them still runs.
-    static func anyAlive(_ running: [Running]) -> Bool {
+    package static func anyAlive(_ running: [Running]) -> Bool {
         running.contains { TerraformRunFolder.isAlive($0.pid) }
     }
 
     /// What the notice says once interrupted writes have stopped (4.8),
     /// and its buttons: Close Now finishes the close Interrupt held back.
-    static func stoppedNotice(_ running: [Running], path: Path) -> Question? {
+    package static func stoppedNotice(_ running: [Running], path: Path) -> Question? {
         guard let first = running.first else { return nil }
         let closing: String =
             switch path {
@@ -188,14 +188,14 @@ enum TerraformCloseGuard {
             detail: "Its state was saved as Terraform left it: resources it was changing may be tainted. \(closing).")
     }
 
-    static let stoppedButtons = ["Close Now", "Keep Open"]
+    package static let stoppedButtons = ["Close Now", "Keep Open"]
 
     /// What a pane's header says while an interrupted write shuts down.
-    static func shuttingDown(_ running: Running) -> String { "\(running.tool) \(running.operation) shutting down — interrupted" }
+    package static func shuttingDown(_ running: Running) -> String { "\(running.tool) \(running.operation) shutting down — interrupted" }
 
     /// What quitting asks while Overterm's own detached applies run (4.7):
     /// they go on — quitting never waits on a graceful stop.
-    static func quitQuestion(_ applies: [(name: String, since: Date)]) -> Question? {
+    package static func quitQuestion(_ applies: [(name: String, since: Date)]) -> Question? {
         guard let first = applies.first else { return nil }
         let more = applies.count > 1 ? " and \(applies.count - 1) more" : ""
         return Question(
@@ -208,7 +208,7 @@ enum TerraformCloseGuard {
     /// runs (4.7, 4.8): it is a write in the app's group, so quitting cuts
     /// it off, cleanup and all — what it created stays. Interrupt stops
     /// it gracefully (its cleanup runs) and keeps Overterm open.
-    static func testQuestion(_ tests: [(name: String, since: Date)]) -> Question? {
+    package static func testQuestion(_ tests: [(name: String, since: Date)]) -> Question? {
         guard let first = tests.first else { return nil }
         let more = tests.count > 1 ? " and \(tests.count - 1) more" : ""
         return Question(
@@ -218,5 +218,5 @@ enum TerraformCloseGuard {
         )
     }
 
-    static let testButtons = ["Interrupt", "Quit Anyway", "Cancel"]
+    package static let testButtons = ["Interrupt", "Quit Anyway", "Cancel"]
 }

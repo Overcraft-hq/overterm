@@ -12,8 +12,8 @@ import AppKit
 /// A point is a ratio of the screen (0…1, from the top left), which is
 /// what the builder wants when it is handed a unit size.
 @MainActor
-final class SimulatorInput {
-    enum Direction: Int32 {
+package final class SimulatorInput {
+    package enum Direction: Int32 {
         case down = 1, up = 2
     }
 
@@ -21,7 +21,7 @@ final class SimulatorInput {
     /// `ButtonEventSource` values — a vocabulary idb published and this
     /// checked against a booted device (home takes it back to the home
     /// screen, from any app and on a device whose body has no home button).
-    enum Button: Int32 {
+    package enum Button: Int32 {
         case home = 0x0
         case lock = 0x1
         case side = 0xbb8
@@ -54,7 +54,7 @@ final class SimulatorInput {
     private typealias ButtonBuilder = @convention(c) (Int32, Int32, Int32) -> UnsafeMutableRawPointer?
 
     /// Nil unless this Xcode has the class and both builders.
-    init?(device: NSObject) {
+    package init?(device: NSObject) {
         guard SimulatorHost.isBooted(device),
             let clientClass = NSClassFromString("SimulatorKit.SimDeviceLegacyHIDClient") as? NSObject.Type,
             let allocated = (clientClass as AnyObject).perform(Selector(("alloc")))?.takeUnretainedValue() as? NSObject,
@@ -73,20 +73,20 @@ final class SimulatorInput {
 
     /// Whether the device is still booted — asked at the start of a
     /// gesture, not on every point of it (each ask is a round trip).
-    var isUsable: Bool { SimulatorHost.isBooted(device) }
+    package var isUsable: Bool { SimulatorHost.isBooted(device) }
 
     /// A finger put down at `point` (a ratio of the screen).
-    func touchDown(at point: CGPoint) {
+    package func touchDown(at point: CGPoint) {
         guard isUsable else { return }
         touch(point, UInt(Direction.down.rawValue))
     }
     /// The finger moved, still down.
-    func touchMoved(to point: CGPoint) { touch(point, Self.dragged) }
+    package func touchMoved(to point: CGPoint) { touch(point, Self.dragged) }
     /// The finger lifted.
-    func touchUp(at point: CGPoint) { touch(point, UInt(Direction.up.rawValue)) }
+    package func touchUp(at point: CGPoint) { touch(point, UInt(Direction.up.rawValue)) }
 
     /// Down and up in one, for a tap nothing is dragging.
-    func tap(at point: CGPoint) {
+    package func tap(at point: CGPoint) {
         touchDown(at: point)
         // A tap with no time in it is dropped by some controls.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.touchUp(at: point) }
@@ -105,23 +105,23 @@ final class SimulatorInput {
     /// A key, by the virtual key code AppKit gives (`NSEvent.keyCode`) —
     /// the hardware-independent codes of `<HIToolbox/Events.h>`, which is
     /// what the builder takes.
-    func key(_ direction: Direction, code: UInt16) {
+    package func key(_ direction: Direction, code: UInt16) {
         guard direction == .up || isUsable, let message = keyboard(Int32(code), direction.rawValue) else { return }
         send(message)
     }
 
     // MARK: The device's own buttons
 
-    var hasButtons: Bool { hardwareButton != nil }
+    package var hasButtons: Bool { hardwareButton != nil }
 
     /// Pressed and let go — Home, the one the pane has a button for.
-    func press(_ button: Button) {
+    package func press(_ button: Button) {
         guard isUsable else { return }
         self.button(.down, button)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in self?.button(.up, button) }
     }
 
-    func button(_ direction: Direction, _ button: Button) {
+    package func button(_ direction: Direction, _ button: Button) {
         guard let hardwareButton, let message = hardwareButton(button.rawValue, direction.rawValue, Self.hardware) else { return }
         send(message)
     }

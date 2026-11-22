@@ -12,7 +12,7 @@ import Foundation
 /// against the context as it is then, the requests. Never forced: a 409
 /// is reported, and the user may force it from the editor.
 extension KubeMCP {
-    static func apply(_ call: Call, _ target: Target, kubernetes: KubernetesModel, pane: String? = nil) async throws -> String {
+    package static func apply(_ call: Call, _ target: Target, kubernetes: KubernetesModel, pane: String? = nil) async throws -> String {
         let context = target.context
         if let refused = KubeAgentWrites.refused(context, agentWrites: kubernetes.agentWrites) {
             throw BrowserMCP.ToolError(message: "k8s_apply isn't offered on \(context.name): \(refused) Tell the user what to change instead.")
@@ -127,7 +127,7 @@ extension KubeMCP {
     /// The first env entry anywhere in `value` whose name looks secret
     /// (`Secrets.isSecret`) and whose literal `value` is given and isn't the
     /// mask: its name. Pure.
-    static func secretLookingEnv(_ value: Any) -> String? {
+    package static func secretLookingEnv(_ value: Any) -> String? {
         switch value {
         case let map as [String: Any]:
             for (key, inner) in map.sorted(by: { $0.key < $1.key }) {

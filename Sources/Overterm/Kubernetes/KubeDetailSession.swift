@@ -8,8 +8,8 @@ import Foundation
 /// the Overview shows. Nothing is watched; navigating away drops the
 /// session and all it read.
 @MainActor
-final class KubeDetailSession: ObservableObject, Identifiable {
-    enum State: Equatable {
+package final class KubeDetailSession: ObservableObject, Identifiable {
+    package enum State: Equatable {
         case loading
         case loaded
         case failed(String)
@@ -20,58 +20,58 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     }
 
     /// What was asked for, and how it went.
-    enum Part<Value: Equatable>: Equatable {
+    package enum Part<Value: Equatable>: Equatable {
         case idle
         case loading
         case loaded(Value)
         case failed(String)
 
-        var value: Value? {
+        package var value: Value? {
             if case .loaded(let value) = self { return value }
             return nil
         }
     }
 
-    let ref: KubeObjectRef
-    nonisolated var id: String { ref.description }
-    @Published private(set) var state: State
-    @Published private(set) var object: KubeObject?
-    @Published private(set) var overview: KubeOverview?
+    package let ref: KubeObjectRef
+    package nonisolated var id: String { ref.description }
+    @Published package private(set) var state: State
+    @Published package private(set) var object: KubeObject?
+    @Published package private(set) var overview: KubeOverview?
     /// What the object says of itself to the health checks (3.9).
-    @Published private(set) var health: [KubeHealth.Finding] = []
+    @Published package private(set) var health: [KubeHealth.Finding] = []
     /// An Argo CD Application or ApplicationSet, a Flux Kustomization or
     /// HelmRelease: what its Overview's GitOps header says, read from the
     /// same answer through the summaries' allow-list (gitops.md 2.9).
-    @Published private(set) var gitOps: KubeGitOpsDetail?
+    @Published package private(set) var gitOps: KubeGitOpsDetail?
     /// The YAML shows `managedFields` and the last-applied annotation.
-    @Published var showsHidden = false {
+    @Published package var showsHidden = false {
         didSet { if showsHidden != oldValue { yaml = makeYAML() } }
     }
-    @Published private(set) var yaml = ""
-    @Published private(set) var events: Part<[KubeEvent]> = .idle
+    @Published package private(set) var yaml = ""
+    @Published package private(set) var events: Part<[KubeEvent]> = .idle
     /// The pods the object's selector picks, as rows of the pod list.
-    @Published private(set) var pods: Part<[KubeListRow]> = .idle
+    @Published package private(set) var pods: Part<[KubeListRow]> = .idle
     /// Its YAML in the editor (the YAML tab, `y`): the resource's one
     /// buffer, held while this detail shows it — made the first time the
     /// tab shows, fed from this detail's reads.
-    @Published private(set) var resource: KubeResourceBuffer?
+    @Published package private(set) var resource: KubeResourceBuffer?
     private weak var resources: KubeResourceBuffers?
 
     /// A Secret's Show, masked values and reveal; nil for any other kind.
-    let secret: KubeSecretSession?
+    package let secret: KubeSecretSession?
     /// A pod's Logs tab; nil for any other kind.
-    let logs: KubePodLogSession?
+    package let logs: KubePodLogSession?
     /// A workload's History tab (its change timeline); nil for any other kind.
-    let timeline: KubeTimelineSession?
+    package let timeline: KubeTimelineSession?
     /// The History tab showed before the object was read: read once it is.
     private var historyWanted = false
     /// The Overview's dependency tree (3.7); nil for a kind that has none.
-    let tree: KubeTreeSession?
+    package let tree: KubeTreeSession?
     /// The Overview showed before the object was read: its tree read once it is.
     private var treeWanted = false
     /// A workload's (a Job's, a Service's) Logs tab: the pods its selector
     /// picks, merged — made once the object is read and its selector known.
-    @Published private(set) var merged: KubeMergedLogSession?
+    @Published package private(set) var merged: KubeMergedLogSession?
     /// The Logs tab shows, from this far back: a merged log made later is
     /// shown at once.
     private var logsShown: KubeLogSince?
@@ -83,7 +83,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     /// is, by its uid.
     private var eventsWanted = false
 
-    init(ref: KubeObjectRef, client: KubeClient?, secret: KubeSecretSession? = nil, discovery: KubeDiscovery? = nil) {
+    package init(ref: KubeObjectRef, client: KubeClient?, secret: KubeSecretSession? = nil, discovery: KubeDiscovery? = nil) {
         self.ref = ref
         self.client = client
         state = ref.isSecret ? .withheld : .loading
@@ -124,7 +124,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     }
 
     /// The one GET, once.
-    func load() {
+    package func load() {
         guard state == .loading, !asked else { return }
         asked = true
         guard let client else { return state = .failed("Kubernetes is off, or the context is gone.") }
@@ -192,7 +192,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
 
     /// The Overview shows: its dependency tree read once, off the object —
     /// asked for once it is read.
-    func showTree(again: Bool = false) {
+    package func showTree(again: Bool = false) {
         guard let tree else { return }
         if let object {
             tree.load(object, again: again)
@@ -203,7 +203,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
 
     /// The History tab shows: the timeline read once, off the object —
     /// asked for once it is read.
-    func showHistory(again: Bool = false) {
+    package func showHistory(again: Bool = false) {
         guard let timeline else { return }
         if let object {
             timeline.load(object.json, again: again)
@@ -214,14 +214,14 @@ final class KubeDetailSession: ObservableObject, Identifiable {
 
     /// The Logs tab shows (the page on screen): its log read — a pod's, or
     /// the pods' it picks.
-    func showLogs(since: KubeLogSince) {
+    package func showLogs(since: KubeLogSince) {
         logsShown = since
         logs?.show(since: since)
         merged?.show(since: since)
     }
 
     /// The Logs tab is gone, or the page hidden: nothing read.
-    func hideLogs() {
+    package func hideLogs() {
         logsShown = nil
         logs?.hide()
         merged?.hide()
@@ -239,10 +239,10 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     }
 
     /// Whether the YAML's toggle would show anything.
-    var hasHidden: Bool { object.map { KubeObjectStrip.hasHidden($0.json) } ?? false }
+    package var hasHidden: Bool { object.map { KubeObjectStrip.hasHidden($0.json) } ?? false }
 
     /// The Events tab: its object's events, asked for once (`reload` again).
-    func loadEvents(again: Bool = false) {
+    package func loadEvents(again: Bool = false) {
         guard let client, again || events == .idle, events != .loading else { return }
         // Not read yet: asked once it is, so by its uid — never by its name
         // alone while the uid is on its way (a deleted namesake's events).
@@ -271,7 +271,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     }
 
     /// The pods the Overview's selector picks: one list, rows only.
-    func loadPods() {
+    package func loadPods() {
         guard let client, pods == .idle, let selection = overview?.pods else { return }
         pods = .loading
         tasks.append(
@@ -293,7 +293,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     /// The YAML tab shows: the resource's buffer, held — its text from
     /// what this detail read (a Secret's from Show's read, masked).
     @discardableResult
-    func openResource(in resources: KubeResourceBuffers) -> KubeResourceBuffer {
+    package func openResource(in resources: KubeResourceBuffers) -> KubeResourceBuffer {
         if let resource { return resource }
         let made = resources.hold(ref, by: self)
         self.resources = resources
@@ -304,11 +304,11 @@ final class KubeDetailSession: ObservableObject, Identifiable {
 
     /// Its YAML has edits not applied: leaving keeps them (the registry
     /// does), and the page says so.
-    var keepsEdits: Bool { resource?.isEdited == true }
+    package var keepsEdits: Bool { resource?.isEdited == true }
 
     /// Navigated away: whatever is still being read is dropped, and a
     /// Secret's values with it.
-    func cancel() {
+    package func cancel() {
         if let resource {
             resource.unwatch(by: self)
             resources?.release(resource, by: self)

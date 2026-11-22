@@ -5,7 +5,7 @@ import Foundation
 /// Signal): these nine, by name. Nothing else can be asked — no number,
 /// not 0, and no name or pattern of processes (`pkill`, `killall`): a
 /// send names one process, by identity.
-enum ActivitySignal: String, CaseIterable, Hashable, Sendable {
+package enum ActivitySignal: String, CaseIterable, Hashable, Sendable {
     case hup = "HUP"
     case int = "INT"
     case quit = "QUIT"
@@ -16,7 +16,7 @@ enum ActivitySignal: String, CaseIterable, Hashable, Sendable {
     case stop = "STOP"
     case cont = "CONT"
 
-    var number: Int32 {
+    package var number: Int32 {
         switch self {
         case .hup: SIGHUP
         case .int: SIGINT
@@ -31,23 +31,23 @@ enum ActivitySignal: String, CaseIterable, Hashable, Sendable {
     }
 
     /// The command it equals, as a sheet names it: `kill -TERM 4242`.
-    func command(for pid: pid_t) -> String { "kill -\(rawValue) \(pid)" }
+    package func command(for pid: pid_t) -> String { "kill -\(rawValue) \(pid)" }
 }
 
 /// A priority Activity sets (6.10, 3.9): Run in Background
 /// (`PRIO_DARWIN_BG`) and Run Normally (0), or a nice raised — upward
 /// only: lowering it, even back to where it was, needs an administrator.
-enum ActivityPriorityChange: Hashable, Sendable {
+package enum ActivityPriorityChange: Hashable, Sendable {
     case background
     case normal
     /// The nice it is given, 1…20.
     case nice(Int32)
 
     /// The highest nice: Lower Priority ▸ 20.
-    static let lowest: Int32 = 20
+    package static let lowest: Int32 = 20
 
     /// The command it equals, as a sheet names it: `renice 10 -p 4242`.
-    func command(for pid: pid_t) -> String {
+    package func command(for pid: pid_t) -> String {
         switch self {
         case .background: "taskpolicy -b -p \(pid)"
         case .normal: "taskpolicy -B -p \(pid)"
@@ -62,18 +62,18 @@ enum ActivityPriorityChange: Hashable, Sendable {
 /// the executable was deleted or replaced while it runs (an app's update,
 /// `brew upgrade`, a dev server rebuilt): the identity is then the pid and
 /// start alone, and the sheet says why.
-struct ActivitySignalTarget: Hashable, Sendable {
-    let identity: ActivityProcessID
-    let path: String?
+package struct ActivitySignalTarget: Hashable, Sendable {
+    package let identity: ActivityProcessID
+    package let path: String?
 
-    init(_ identity: ActivityProcessID, path: String?) {
+    package init(_ identity: ActivityProcessID, path: String?) {
         self.identity = identity
         self.path = path
     }
 }
 
 /// What a send did (6.10 steps 4–7): what the sheet says after the button.
-enum ActivitySignalAnswer: Hashable, Sendable {
+package enum ActivitySignalAnswer: Hashable, Sendable {
     /// Sent: by its audit token (`pinned`), or — no token to be had, a
     /// single Stop — by its pid, its start and path read once more just
     /// before ("can't be pinned to this process; checked once more").
@@ -96,7 +96,7 @@ enum ActivitySignalAnswer: Hashable, Sendable {
 
 /// Why `ProcessSignals` sent nothing, whatever the caller said (6.10 step 1,
 /// 9.6): each decided before any call that touches the process.
-enum ActivitySignalRefusal: Hashable, Sendable {
+package enum ActivitySignalRefusal: Hashable, Sendable {
     /// pid ≤ 1: launchd and the kernel. 0, -1 and a group's negative id —
     /// `kill(0)`, `kill(-1)`, `killpg` — can't be named here: a send names
     /// one process.
@@ -137,7 +137,7 @@ enum ActivitySignalRefusal: Hashable, Sendable {
     /// raised (3.9), so nothing is asked of the kernel.
     case niceDown
 
-    var reason: String {
+    package var reason: String {
         switch self {
         case .system: "launchd and the kernel are macOS's own: Overterm never signals them."
         case .overterm: "This is Overterm itself."
@@ -170,32 +170,32 @@ enum ActivitySignalRefusal: Hashable, Sendable {
 /// with this process as the app — so neither a gate nor an app handed to a
 /// `ProcessSignals`, nor a caller of the kernel's own, widens what the real
 /// kernel changes. A test's children are registered in `shared`.
-final class ActivitySignalGate: @unchecked Sendable {
-    static let shared = ActivitySignalGate(guards: AppEnvironment.guardsSignals)
+package final class ActivitySignalGate: @unchecked Sendable {
+    package static let shared = ActivitySignalGate(guards: AppEnvironment.guardsSignals)
 
-    let guards: Bool
+    package let guards: Bool
     private let lock = NSLock()
     private var registered: Set<ActivityProcessID> = []
 
-    init(guards: Bool) { self.guards = guards }
+    package init(guards: Bool) { self.guards = guards }
 
     /// Makes `identity` this run's own. False, and nothing kept, where the
     /// gate is off: there it would loosen nothing but the helper rule.
     @discardableResult
-    func register(_ identity: ActivityProcessID) -> Bool {
+    package func register(_ identity: ActivityProcessID) -> Bool {
         guard guards else { return false }
         lock.withLock { _ = registered.insert(identity) }
         return true
     }
 
-    func unregister(_ identity: ActivityProcessID) { lock.withLock { _ = registered.remove(identity) } }
+    package func unregister(_ identity: ActivityProcessID) { lock.withLock { _ = registered.remove(identity) } }
 
     /// Whether the run registered `identity`; never where the gate is off.
-    func isRegistered(_ identity: ActivityProcessID) -> Bool { guards && lock.withLock { registered.contains(identity) } }
+    package func isRegistered(_ identity: ActivityProcessID) -> Bool { guards && lock.withLock { registered.contains(identity) } }
 
     /// Whether `process` is the run's own: registered, or under one of
     /// `app`'s panes' `login`s.
-    func admits(_ process: ActivityProcess, kernel: any ActivityKernel, app: pid_t) -> Bool {
+    package func admits(_ process: ActivityProcess, kernel: any ActivityKernel, app: pid_t) -> Bool {
         isRegistered(process.identity) || ActivitySignalLineage.of(process, kernel: kernel, app: app) == .pane
     }
 
@@ -204,7 +204,7 @@ final class ActivitySignalGate: @unchecked Sendable {
     /// errno it answers instead, no call made: ESRCH when nothing holds
     /// `pid`, EPERM for what isn't the run's. `app`: this process —
     /// `LiveActivityKernel` names no other; a test's fake Mac its own.
-    func refusal(of pid: pid_t, kernel: any ActivityKernel, app: pid_t = getpid()) -> Int32? {
+    package func refusal(of pid: pid_t, kernel: any ActivityKernel, app: pid_t = getpid()) -> Int32? {
         guard guards else { return nil }
         guard let process = kernel.process(pid) else { return ESRCH }
         return admits(process, kernel: kernel, app: app) ? nil : EPERM
@@ -212,7 +212,7 @@ final class ActivitySignalGate: @unchecked Sendable {
 }
 
 /// Where a process sits, by start-checked parent links (6.5 rules 2–4).
-enum ActivitySignalLineage: Hashable, Sendable {
+package enum ActivitySignalLineage: Hashable, Sendable {
     /// Under a pane's `login`: a child of this process's running setuid, as
     /// the `/usr/bin/login` libghostty spawns for every surface does.
     case pane
@@ -224,13 +224,13 @@ enum ActivitySignalLineage: Hashable, Sendable {
 
     /// How far up a lineage is followed: process trees aren't this deep,
     /// and a table read mid-change shouldn't be trusted to end.
-    static let maximumDepth = 256
+    package static let maximumDepth = 256
 
     /// Where `process` sits relative to `app`: followed up its parents
     /// while each started no later than its child (a parent that started
     /// later took a dead parent's pid), to `app` — whose pid is no one
     /// else's while it runs — or no further.
-    static func of(_ process: ActivityProcess, kernel: any ActivityKernel, app: pid_t) -> ActivitySignalLineage {
+    package static func of(_ process: ActivityProcess, kernel: any ActivityKernel, app: pid_t) -> ActivitySignalLineage {
         var child = process
         for _ in 0..<maximumDepth {
             guard child.parentPID > 1, child.parentPID != child.pid, let parent = kernel.process(child.parentPID),
@@ -252,8 +252,8 @@ enum ActivitySignalLineage: Hashable, Sendable {
 /// reparented once kubectl exited, an apply found again after a relaunch,
 /// its launcher launchd's child. Each registry is read under its own lock,
 /// from any thread.
-enum ActivityHelperGroups {
-    static func now() -> Set<pid_t> {
+package enum ActivityHelperGroups {
+    package static func now() -> Set<pid_t> {
         Set(ManagedProcess.openGroups).union(KubeProcessRun.livePIDs).union(TerraformRun.live.all).union(TerraformApplyGroupRegistry.shared.all)
     }
 }
@@ -289,17 +289,17 @@ enum ActivityHelperGroups {
 /// The kernel is `ActivityKernel`: a test's fake records every call, so a
 /// refusal can say it made none. Its reads are the deliberate fresh ones
 /// at a button (7.1): a few sysctls and a Mach call, microseconds.
-struct ProcessSignals: Sendable {
-    let kernel: any ActivityKernel
-    let gate: ActivitySignalGate
+package struct ProcessSignals: Sendable {
+    package let kernel: any ActivityKernel
+    package let gate: ActivitySignalGate
     /// This process — Overterm, or a test process: never signalled; what
     /// descends from its children that aren't panes' `login`s is its helpers'.
-    let app: ActivityProcessID
+    package let app: ActivityProcessID
     /// The groups Overterm's helpers lead now (`ActivityHelperGroups.now`;
     /// a test's fake Mac its own), read at each send.
-    let helperGroups: @Sendable () -> Set<pid_t>
+    package let helperGroups: @Sendable () -> Set<pid_t>
 
-    init(
+    package init(
         kernel: any ActivityKernel = LiveActivityKernel(), gate: ActivitySignalGate = .shared, app: ActivityProcessID? = nil,
         helperGroups: @escaping @Sendable () -> Set<pid_t> = ActivityHelperGroups.now
     ) {
@@ -313,7 +313,7 @@ struct ProcessSignals: Sendable {
     /// process by itself — a single Stop or Interrupt may then fall back to
     /// its pid when no token can be had; a member of a tree, a group or a
     /// bulk never does.
-    func send(_ signal: ActivitySignal, to target: ActivitySignalTarget, alone: Bool) -> ActivitySignalAnswer {
+    package func send(_ signal: ActivitySignal, to target: ActivitySignalTarget, alone: Bool) -> ActivitySignalAnswer {
         let identity = target.identity
         if let refusal = Self.refusal(before: identity, app: app) { return .refused(refusal) }
         switch read(identity) {
@@ -357,7 +357,7 @@ struct ProcessSignals: Sendable {
     /// is asked once more after the call to say so. A nice is raised only
     /// (`.niceDown` otherwise, nothing asked of the kernel). Without a token
     /// nothing is set: only a single Stop or Interrupt goes by the pid.
-    func setPriority(_ change: ActivityPriorityChange, of target: ActivitySignalTarget) -> ActivitySignalAnswer {
+    package func setPriority(_ change: ActivityPriorityChange, of target: ActivitySignalTarget) -> ActivitySignalAnswer {
         let identity = target.identity
         if let refusal = Self.refusal(before: identity, app: app) { return .refused(refusal) }
         switch read(identity) {
@@ -401,7 +401,7 @@ struct ProcessSignals: Sendable {
     /// (Force Quit: SIGKILL) by its token instead — D-23's fallback. A
     /// stopped app asked to Quit is continued after, as a TERM is. No token: a Quit is a single Stop,
     /// which may go by its pid (`unpinned`); a Force Quit never does.
-    func quitApp(_ target: ActivitySignalTarget, force: Bool) -> ActivitySignalAnswer {
+    package func quitApp(_ target: ActivitySignalTarget, force: Bool) -> ActivitySignalAnswer {
         let identity = target.identity
         let signal: ActivitySignal = force ? .kill : .term
         if let refusal = Self.refusal(before: identity, app: app) { return .refused(refusal) }
@@ -461,7 +461,7 @@ struct ProcessSignals: Sendable {
 
     /// How many members a group's send lists: process groups aren't this
     /// big, and one that is is refused rather than half checked.
-    static let groupLimit = 256
+    package static let groupLimit = 256
 
     /// Sends `signal` to the process group `leader` leads (6.10 step 9):
     /// a shell's job, as ⌃C would reach it. Groups have no token form, so
@@ -480,7 +480,7 @@ struct ProcessSignals: Sendable {
     /// without it. `listed`: the members the sheet listed — a live member
     /// that isn't one of them joined since, and refuses the send
     /// (`.refused(.groupChanged)`): `killpg` reaches only who was asked about.
-    func sendToGroup(
+    package func sendToGroup(
         _ signal: ActivitySignal, leader target: ActivitySignalTarget, listed: Set<ActivityProcessID>? = nil, policy: Bool = false
     ) -> ActivitySignalAnswer {
         let identity = target.identity
@@ -530,7 +530,7 @@ struct ProcessSignals: Sendable {
     /// member's answer is its own: one that ended or exec'd since the sheet
     /// is said, the rest still sent. The caller leaves out what the policy
     /// keeps out of a bulk (`ActivitySignalCheck.bulkRefusal`).
-    func sendTree(_ signal: ActivitySignal, to members: [ActivitySignalTarget]) -> [(target: ActivitySignalTarget, answer: ActivitySignalAnswer)] {
+    package func sendTree(_ signal: ActivitySignal, to members: [ActivitySignalTarget]) -> [(target: ActivitySignalTarget, answer: ActivitySignalAnswer)] {
         let ordered = signal == .cont ? Array(members.reversed()) : members
         return ordered.map { ($0, send(signal, to: $0, alone: false)) }
     }
@@ -540,7 +540,7 @@ struct ProcessSignals: Sendable {
     /// —, an agent by its executable's, `p_comm`'s or argv[0]'s name, or a
     /// terraform, tofu or terragrunt whose argv is a write or can't be
     /// read — the sheet's own rule (`ActivityVerbSubject`'s target).
-    func holdsWhatNoGroupReaches(_ member: ActivityProcess) -> Bool {
+    package func holdsWhatNoGroupReaches(_ member: ActivityProcess) -> Bool {
         let file = kernel.path(of: member.pid).map { ($0 as NSString).lastPathComponent }
         let names = Set([file, member.shortName, ProcessArguments.executableName(of: member.pid, kernel: kernel)].compactMap { $0 })
         if names.contains(where: { Agent.of(processName: $0) != nil }) { return true }
@@ -560,7 +560,7 @@ struct ProcessSignals: Sendable {
     }
 
     /// The refusals made before anything is read (step 1).
-    static func refusal(before identity: ActivityProcessID, app: ActivityProcessID) -> ActivitySignalRefusal? {
+    package static func refusal(before identity: ActivityProcessID, app: ActivityProcessID) -> ActivitySignalRefusal? {
         if identity.pid <= 1 { return .system }
         if identity.pid == app.pid || identity.pid == getpid() { return .overterm }
         return nil
@@ -581,19 +581,19 @@ struct ProcessSignals: Sendable {
     }
 
     /// Where `process` sits relative to this process (`ActivitySignalLineage.of`).
-    func lineage(of process: ActivityProcess) -> ActivitySignalLineage {
+    package func lineage(of process: ActivityProcess) -> ActivitySignalLineage {
         ActivitySignalLineage.of(process, kernel: kernel, app: app.pid)
     }
 
     /// One of this process's children that is a pane's `login`: named so,
     /// and running setuid — Overterm itself starts nothing that does.
-    static func isPaneLogin(_ process: ActivityProcess, uid: uid_t) -> Bool {
+    package static func isPaneLogin(_ process: ActivityProcess, uid: uid_t) -> Bool {
         process.shortName == "login" && !process.isOwn(by: uid)
     }
 
     /// A stopped process sent TERM or INT can't act on it until continued
     /// (6.10 step 7); a traced one is left to its debugger.
-    static func continues(after signal: ActivitySignal, _ process: ActivityProcess) -> Bool {
+    package static func continues(after signal: ActivitySignal, _ process: ActivityProcess) -> Bool {
         (signal == .term || signal == .int) && process.isStopped && !process.flags.contains(.traced)
     }
 

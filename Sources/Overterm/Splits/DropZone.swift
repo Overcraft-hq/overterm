@@ -10,11 +10,11 @@ import CoreGraphics
 /// panes is a no-op unless *both* are already split, and when the one
 /// being dragged is a whole tab it would empty it. Pure, so the
 /// thresholds can be read rather than felt out.
-enum DropZone: String, CaseIterable, Equatable {
+package enum DropZone: String, CaseIterable, Equatable {
     case up, down, left, right, into
 
     /// What the overlay calls it.
-    var name: String {
+    package var name: String {
         switch self {
         case .up: "Split Up"
         case .down: "Split Down"
@@ -24,7 +24,7 @@ enum DropZone: String, CaseIterable, Equatable {
         }
     }
 
-    var direction: SplitTree<TerminalView>.Direction {
+    package var direction: SplitTree<TerminalView>.Direction {
         switch self {
         case .up: .up
         case .down: .down
@@ -36,11 +36,11 @@ enum DropZone: String, CaseIterable, Equatable {
 
     /// How much of each edge is a split target. A quarter: enough to hit
     /// without aiming, small enough that the middle is clearly the middle.
-    static let edge: CGFloat = 0.25
+    package static let edge: CGFloat = 0.25
 
     /// The zone a point falls in, in a pane's own coordinates (y down).
     /// Nil when the point is outside it.
-    static func at(_ point: CGPoint, in rect: CGRect) -> DropZone? {
+    package static func at(_ point: CGPoint, in rect: CGRect) -> DropZone? {
         guard rect.width > 0, rect.height > 0, rect.contains(point) else { return nil }
         let x = (point.x - rect.minX) / rect.width
         let y = (point.y - rect.minY) / rect.height
@@ -54,7 +54,7 @@ enum DropZone: String, CaseIterable, Equatable {
     }
 
     /// The part of the pane a zone covers, for drawing it.
-    func frame(in rect: CGRect) -> CGRect {
+    package func frame(in rect: CGRect) -> CGRect {
         let w = rect.width * Self.edge
         let h = rect.height * Self.edge
         switch self {

@@ -5,11 +5,11 @@ import AppKit
 /// over its own frame, in its superview; it never takes a click, a drag or
 /// the keyboard, and draws only within the pane.
 @MainActor
-final class DropHighlightView: NSView {
+package final class DropHighlightView: NSView {
     private let badge = NSView()
     private let label = NSTextField(labelWithString: "")
 
-    var text: String {
+    package var text: String {
         get { label.stringValue }
         set {
             label.stringValue = newValue
@@ -17,7 +17,7 @@ final class DropHighlightView: NSView {
         }
     }
 
-    init() {
+    package init() {
         super.init(frame: .zero)
         wantsLayer = true
         if #available(macOS 14, *) { clipsToBounds = true }
@@ -35,9 +35,9 @@ final class DropHighlightView: NSView {
         badge.addSubview(label)
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    package required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    override func layout() {
+    package override func layout() {
         super.layout()
         label.sizeToFit()
         let fitted = label.frame.size
@@ -47,7 +47,7 @@ final class DropHighlightView: NSView {
         label.frame = NSRect(x: 10, y: 4, width: max(width - 20, 0), height: fitted.height)
     }
 
-    override var acceptsFirstResponder: Bool { false }
+    package override var acceptsFirstResponder: Bool { false }
     /// Hit-testing picks a drag's destination: the pane below must get it.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    package override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

@@ -7,7 +7,7 @@ extension TerminalWindowController {
     /// The panel reads git only while it is the one on screen and the
     /// sidebar is open — both can change without the view hearing about it,
     /// so the window is what tells it.
-    func wireOvergit() {
+    package func wireOvergit() {
         sidebarPanel.$panel
             // @Published fires before the value lands.
             .sink { [weak self] panel in
@@ -24,13 +24,13 @@ extension TerminalWindowController {
         updateOvergitVisibility()
     }
 
-    func updateOvergitVisibility(panel: SidebarPanel? = nil) {
+    package func updateOvergitVisibility(panel: SidebarPanel? = nil) {
         let shown = sidebarItem?.isCollapsed == false
         overgit.visible = shown && (panel ?? sidebarPanel.panel) == .git
     }
 
     /// View ▸ Overgit (⌥⌘G): the sidebar, on the git panel.
-    @objc func showOvergit(_ sender: Any?) {
+    @objc package func showOvergit(_ sender: Any?) {
         if sidebarItem?.isCollapsed == true { toggleFileTree(nil) }
         sidebarPanel.panel = .git
         updateOvergitVisibility()
@@ -38,14 +38,14 @@ extension TerminalWindowController {
 
     /// The right pane, on the working tree's changes — the overview's
     /// `+x −y`.
-    @objc func showChanges(_ sender: Any?) {
+    @objc package func showChanges(_ sender: Any?) {
         rightPane.mode = .changes
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
     }
 
     /// Overgit ▸ Compare: what `head` has that `base` doesn't, in the
     /// right-hand pane. "HEAD" is the checkout's branch, by its name.
-    func showCompare(base: String, head: String) {
+    package func showCompare(base: String, head: String) {
         let name: (String) -> String = { [diff] ref in ref == "HEAD" ? diff.branch ?? "HEAD" : ref }
         compare.show(root: overgit.root ?? diff.root, base: name(base), head: name(head))
         rightPane.compareOpened = true
@@ -55,7 +55,7 @@ extension TerminalWindowController {
     }
 
     /// A file clicked in Overgit's Changes: its diff in the changes pane.
-    func showChangedFile(_ file: ChangedFile) {
+    package func showChangedFile(_ file: ChangedFile) {
         showChanges(nil)
         // A turn later: the pane lays its cards out as it opens.
         DispatchQueue.main.async { [weak self] in self?.diff.reveal(file.path) }
@@ -64,7 +64,7 @@ extension TerminalWindowController {
     /// A commit was picked in the panel: the right-hand pane shows it.
     /// That pane is the slot the browser shares, so the browser steps
     /// aside as it does for the changes pane.
-    func showCommit(_ commit: Commit) {
+    package func showCommit(_ commit: Commit) {
         overgit.selected = commit.sha
         commitDetail.show(root: overgit.root, sha: commit.sha)
         rightPane.mode = .commit
@@ -74,7 +74,7 @@ extension TerminalWindowController {
 
     /// Checks `branch` out in the checkout the panel is about. A remote
     /// branch is tracked, which is what clicking one means.
-    func checkOut(_ branch: BranchRef) {
+    package func checkOut(_ branch: BranchRef) {
         guard let root = diff.root else { return }
         Task { [weak self] in
             guard let self else { return }
@@ -90,12 +90,12 @@ extension TerminalWindowController {
         }
     }
 
-    func applyStash(_ stash: Stash) {
+    package func applyStash(_ stash: Stash) {
         run(["stash", "apply", stash.ref], failing: "Couldn’t apply \(stash.ref)")
     }
 
     /// Dropping one is not undoable, so it asks.
-    func dropStash(_ stash: Stash) {
+    package func dropStash(_ stash: Stash) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = "Drop \(stash.ref)?"
@@ -125,7 +125,7 @@ extension TerminalWindowController {
         }
     }
 
-    func alert(_ title: String, _ message: String) {
+    package func alert(_ title: String, _ message: String) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title

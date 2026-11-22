@@ -1,15 +1,15 @@
 import Foundation
 
 /// A colour, as a theme file writes it.
-struct ThemeColor: Equatable, Sendable {
-    let red: Double
-    let green: Double
-    let blue: Double
+package struct ThemeColor: Equatable, Sendable {
+    package let red: Double
+    package let green: Double
+    package let blue: Double
 
     /// `#rrggbb`, `#rgb`, a bare `rrggbb`, or `rgb:rr/gg/bb` — the forms the
     /// theme files use. Anything else (a colour name, a palette reference)
     /// is nil: the theme still loads, that one line is skipped.
-    init?(_ text: String) {
+    package init?(_ text: String) {
         var hex = text.trimmingCharacters(in: .whitespaces).lowercased()
         if hex.hasPrefix("rgb:") {
             let parts = hex.dropFirst(4).split(separator: "/")
@@ -24,7 +24,7 @@ struct ThemeColor: Equatable, Sendable {
         blue = Double(value & 0xFF) / 255
     }
 
-    init(red: Double, green: Double, blue: Double) {
+    package init(red: Double, green: Double, blue: Double) {
         self.red = red
         self.green = green
         self.blue = blue
@@ -33,7 +33,7 @@ struct ThemeColor: Equatable, Sendable {
     /// HSB brightness — the same measure `ChromeTheme` reads off the
     /// terminal background, so a theme the gallery calls dark is the one
     /// the chrome dresses as dark.
-    var brightness: Double { max(red, green, blue) }
+    package var brightness: Double { max(red, green, blue) }
 }
 
 /// One terminal colour theme: a Ghostty theme file, read.
@@ -42,30 +42,30 @@ struct ThemeColor: Equatable, Sendable {
 /// them — the gallery in Settings ▸ Themes draws a window in each theme's
 /// colours, which means reading the files ourselves. Pure, so the parser
 /// is tested without a terminal.
-struct TerminalTheme: Equatable, Sendable, Identifiable {
+package struct TerminalTheme: Equatable, Sendable, Identifiable {
     /// The file's name, which is what `theme =` takes.
-    let name: String
-    let background: ThemeColor
-    let foreground: ThemeColor
-    let cursor: ThemeColor?
-    let selection: ThemeColor?
+    package let name: String
+    package let background: ThemeColor
+    package let foreground: ThemeColor
+    package let cursor: ThemeColor?
+    package let selection: ThemeColor?
     /// The 16 ANSI colours, 0…15. Short only for a file that omits some.
-    let palette: [ThemeColor]
+    package let palette: [ThemeColor]
 
-    var id: String { name }
+    package var id: String { name }
 
     /// Whether the chrome around this theme would be dark (ChromeTheme's rule).
-    var isDark: Bool { background.brightness < 0.5 }
+    package var isDark: Bool { background.brightness < 0.5 }
 
     /// The ANSI colour, or the foreground when the file left it out.
-    func ansi(_ index: Int) -> ThemeColor {
+    package func ansi(_ index: Int) -> ThemeColor {
         index < palette.count ? palette[index] : foreground
     }
 
     /// A theme file: `key = value` lines, `palette = 0=#rrggbb` for the
     /// sixteen. Nil without a background and a foreground — there is
     /// nothing to draw a preview from.
-    static func parse(_ text: String, name: String) -> TerminalTheme? {
+    package static func parse(_ text: String, name: String) -> TerminalTheme? {
         var background: ThemeColor?
         var foreground: ThemeColor?
         var cursor: ThemeColor?

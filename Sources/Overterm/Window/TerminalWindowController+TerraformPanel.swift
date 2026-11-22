@@ -7,7 +7,7 @@ extension TerminalWindowController {
     /// The panel follows the selected tab's checkout and reads only while it
     /// is the panel on screen; the diff's watcher tells it what changed
     /// (no second watcher, CLAUDE.md), the diff's files what this branch touches.
-    func wireTerraformPanel() {
+    package func wireTerraformPanel() {
         diff.$root
             .combineLatest(store.$selectedID)
             .sink { [weak self] _, _ in DispatchQueue.main.async { self?.updateTerraformCheckout() } }
@@ -54,9 +54,9 @@ extension TerminalWindowController {
     }
 
     /// The selected tab's checkout, as the diff and the other panels have it.
-    var terraformCheckout: URL? { store.selected?.checkoutSource?.root }
+    package var terraformCheckout: URL? { store.selected?.checkoutSource?.root }
 
-    func updateTerraformCheckout() {
+    package func updateTerraformCheckout() {
         let folder = terraformCheckout
         if terraformPanel.checkout?.standardizedFileURL != folder?.standardizedFileURL {
             terraformPanel.setOtherWorktrees(TerraformWorktree.comparedWith(worktrees.worktrees, of: folder), read: false)
@@ -65,7 +65,7 @@ extension TerminalWindowController {
     }
 
     /// On screen: the sidebar open on the panel, Terraform on, the window visible.
-    func updateTerraformPanelVisibility(panel: SidebarPanel? = nil) {
+    package func updateTerraformPanelVisibility(panel: SidebarPanel? = nil) {
         let shown =
             sidebarItem?.isCollapsed == false && (panel ?? sidebarPanel.panel) == .terraform && Settings.shared.terraformEnabled
             && kubernetesPage.windowVisible && window != nil
@@ -73,7 +73,7 @@ extension TerminalWindowController {
     }
 
     /// ⌥⌘E: the sidebar, on the Terraform panel.
-    @objc func showTerraformPanel(_ sender: Any?) {
+    @objc package func showTerraformPanel(_ sender: Any?) {
         guard Settings.shared.terraformEnabled else { return openSettings(.terraform) }
         if sidebarItem?.isCollapsed == true { toggleFileTree(nil) }
         sidebarPanel.panel = .terraform
@@ -82,7 +82,7 @@ extension TerminalWindowController {
 
     /// ⌃⌘E: the palette on the roots — the selected checkout's, then the
     /// other checkouts' the rail has read.
-    @objc func showTerraformSwitcher(_ sender: Any?) {
+    @objc package func showTerraformSwitcher(_ sender: Any?) {
         guard Settings.shared.terraformEnabled else { return openSettings(.terraform) }
         // The roots are listed by the panel's read; asked for here when none was.
         if terraformPanel.roots.isEmpty, terraformPanel.checkout != nil { terraformPanel.readNow() }
@@ -90,11 +90,11 @@ extension TerminalWindowController {
     }
 
     /// Terminal in Terraform Root…: the switcher, its ⌥↩ the terminal.
-    @objc func openTerraformTerminalPicker(_ sender: Any?) {
+    @objc package func openTerraformTerminalPicker(_ sender: Any?) {
         showTerraformSwitcher(sender)
     }
 
-    func terraformPanelSettingsChanged() {
+    package func terraformPanelSettingsChanged() {
         if !Settings.shared.terraformEnabled, sidebarPanel.panel == .terraform { sidebarPanel.panel = .files }
         sidebarPanel.objectWillChange.send()
         updateTerraformPanelVisibility()
@@ -102,7 +102,7 @@ extension TerminalWindowController {
         terraformPanel.refresh()
     }
 
-    var terraformPanelActions: TerraformPanelActions {
+    package var terraformPanelActions: TerraformPanelActions {
         TerraformPanelActions(
             openTerminal: { [weak self] card in self?.openTerraformTerminal(card) },
             openFile: { [weak self] url in self?.openInEditor(url) },
@@ -123,7 +123,7 @@ extension TerminalWindowController {
     /// header saying the root; no `TF_WORKSPACE` — the root's own
     /// `.terraform/environment` selects, as for any terminal there.
     @discardableResult
-    func openTerraformTerminal(_ card: TerraformRootCard) -> Tab? {
+    package func openTerraformTerminal(_ card: TerraformRootCard) -> Tab? {
         guard let tab = newTab(in: card.folder, environment: [:], kubePin: nil) else { return nil }
         for pane in tab.terminals { pane.terraformRoot = card.name }
         tab.objectWillChange.send()
@@ -132,7 +132,7 @@ extension TerminalWindowController {
 
     /// The root's first configuration file in the editor, then validate
     /// (stage 1a's: credentials stripped, nothing written).
-    func validateTerraformRoot(_ card: TerraformRootCard) {
+    package func validateTerraformRoot(_ card: TerraformRootCard) {
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: card.folder.path)) ?? []).sorted()
         guard let name = names.first(where: { $0 == "main.tf" }) ?? names.first(where: { $0.hasSuffix(".tf") }) else { return }
         let file = card.folder.appendingPathComponent(name)
@@ -142,7 +142,7 @@ extension TerminalWindowController {
 
     /// The switcher's rows: each root with its workspace and class; ↩ shows
     /// it in the panel, ⌥↩ a terminal in it.
-    func terraformPaletteItems() -> [PaletteItem] {
+    package func terraformPaletteItems() -> [PaletteItem] {
         guard Settings.shared.terraformEnabled else { return [] }
         var items = [
             PaletteItem(

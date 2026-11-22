@@ -12,12 +12,12 @@ import Foundation
 /// override is written again from its files when they change, before
 /// whatever reads them next (`refresh`).
 @MainActor
-final class ComposePortStore: ObservableObject {
-    static let shared = ComposePortStore()
+package final class ComposePortStore: ObservableObject {
+    package static let shared = ComposePortStore()
 
     /// By Compose's project folder (a real path).
-    @Published private(set) var overrides: [String: ComposePortOverride] = [:]
-    let folder: URL
+    @Published package private(set) var overrides: [String: ComposePortOverride] = [:]
+    package let folder: URL
     /// The folder as given and as a real path: what a path of ours starts with.
     private var roots: [String] = []
     /// The overrides being written again from their files (`refresh`).
@@ -26,7 +26,7 @@ final class ComposePortStore: ObservableObject {
     /// Reads the index and nothing else: unit tests reach the real support
     /// folder through `shared`, so nothing is written until something is
     /// saved, forgotten or pruned.
-    init(folder: URL = AppEnvironment.supportDirectory.appendingPathComponent("Compose", isDirectory: true).appendingPathComponent("Ports", isDirectory: true)) {
+    package init(folder: URL = AppEnvironment.supportDirectory.appendingPathComponent("Compose", isDirectory: true).appendingPathComponent("Ports", isDirectory: true)) {
         self.folder = folder
         overrides = Self.read(folder.appendingPathComponent("index.json"))
         updateRoots()
@@ -56,26 +56,26 @@ final class ComposePortStore: ObservableObject {
 
     /// Its override file: named for the project and its folder, the same
     /// from one launch to the next (it is in the containers' labels).
-    func file(of override: ComposePortOverride) -> URL {
+    package func file(of override: ComposePortOverride) -> URL {
         let hash = SHA256.hash(data: Data(override.folder.utf8)).prefix(4).map { String(format: "%02x", $0) }.joined()
         let name = ComposePortPlan.slug(override.project)
         return folder.appendingPathComponent("\(name.isEmpty ? "project" : name)-\(hash).yaml")
     }
 
     /// Whether a compose file is one of these overrides.
-    func isOurs(_ path: String) -> Bool {
+    package func isOurs(_ path: String) -> Bool {
         roots.contains { path.hasPrefix($0) }
     }
 
     /// The one kept for a Compose project folder.
-    func override(in folder: String) -> ComposePortOverride? { overrides[folder] }
+    package func override(in folder: String) -> ComposePortOverride? { overrides[folder] }
 
     /// The one a project runs with: its folder's, under its name — or the
     /// one its containers were made with, by its file. A project before it
     /// runs is its checkout's, by the folder Compose makes the project of
     /// (`COMPOSE_FILE` in `.env` may name a file in a subfolder), as its
     /// Up and its plan's read find it.
-    func override(of project: ComposeProject) -> ComposePortOverride? {
+    package func override(of project: ComposeProject) -> ComposePortOverride? {
         if project.planned {
             guard !overrides.isEmpty, let checkout = project.workingDir,
                 let folder = ComposeProjects.projectFolder(in: URL(fileURLWithPath: checkout))
@@ -89,7 +89,7 @@ final class ComposePortStore: ObservableObject {
     }
 
     /// The projects' overrides, by project name.
-    func overrides(of projects: [ComposeProject]) -> [String: ComposePortOverride] {
+    package func overrides(of projects: [ComposeProject]) -> [String: ComposePortOverride] {
         var found: [String: ComposePortOverride] = [:]
         for project in projects {
             if let kept = override(of: project) { found[project.name] = kept }
@@ -99,12 +99,12 @@ final class ComposePortStore: ObservableObject {
 
     /// The ports the other checkouts' overrides give out: never given twice,
     /// running or not.
-    func reservedPorts(except folder: String) -> Set<Int> {
+    package func reservedPorts(except folder: String) -> Set<Int> {
         Set(overrides.values.filter { $0.folder != folder }.flatMap { $0.moves.map(\.to) })
     }
 
     /// The other checkouts' names, each with its folder.
-    func reservedNames(except folder: String) -> [String: String] {
+    package func reservedNames(except folder: String) -> [String: String] {
         var names: [String: String] = [:]
         for kept in overrides.values where kept.folder != folder { names[kept.project] = kept.folder }
         return names
@@ -114,7 +114,7 @@ final class ComposePortStore: ObservableObject {
 
     /// A project's compose files as Compose should be given them: its own
     /// (a forgotten override's left out), then the one kept, if any.
-    func files(for project: ComposeProject) -> [String] {
+    package func files(for project: ComposeProject) -> [String] {
         var files = project.configFiles.filter { !isOurs($0) }
         guard let kept = override(of: project) else { return files }
         if files.isEmpty { files = base(of: project, kept) }
@@ -125,7 +125,7 @@ final class ComposePortStore: ObservableObject {
     /// project before it runs is its checkout's files as Compose finds them
     /// now — a `compose.override.yaml` added since is one of them, as it is
     /// in the plan's read — else the ones it was made from.
-    func base(of project: ComposeProject, _ kept: ComposePortOverride) -> [String] {
+    package func base(of project: ComposeProject, _ kept: ComposePortOverride) -> [String] {
         guard project.planned, let checkout = project.workingDir else { return kept.baseFiles }
         let files = ComposeProjects.composeFiles(in: URL(fileURLWithPath: checkout))
         return files.isEmpty ? kept.baseFiles : files.map(ComposeProjects.composePath)
@@ -134,7 +134,7 @@ final class ComposePortStore: ObservableObject {
     /// A compose verb for a project, with the files it should read. One
     /// before it runs is its folder's files, no `-p` (`DockerCommands`) —
     /// unless its checkout has an override: its name then, and its files.
-    func command(
+    package func command(
         _ project: ComposeProject, _ verb: String, services: [String] = [], profiles: [String] = [], endpoint: DockerEndpoint?
     ) -> String {
         if project.planned, let kept = override(of: project) {
@@ -148,7 +148,7 @@ final class ComposePortStore: ObservableObject {
     /// Its base files and their folder's `.env` by size and date, a link
     /// by what it points at (what is edited): what the override was
     /// written from.
-    nonisolated static func stamp(of files: [String], folder: String) -> [String: String] {
+    package nonisolated static func stamp(of files: [String], folder: String) -> [String: String] {
         var stamp: [String: String] = [:]
         for path in files + [(folder as NSString).appendingPathComponent(".env")] {
             let target = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
@@ -166,20 +166,20 @@ final class ComposePortStore: ObservableObject {
     /// Whether the files changed since it was written: `base`, the files
     /// it is read with now (`base(of:_:)`), not the same list, or one of
     /// them edited.
-    func isStale(_ kept: ComposePortOverride, base: [String]? = nil) -> Bool {
+    package func isStale(_ kept: ComposePortOverride, base: [String]? = nil) -> Bool {
         let base = base ?? kept.baseFiles
         return base != kept.baseFiles || kept.stamp != Self.stamp(of: base, folder: kept.folder)
     }
 
     /// Whether a project's override must be written again before a command
     /// reads it (`refresh`).
-    func needsRefresh(_ project: ComposeProject) -> Bool {
+    package func needsRefresh(_ project: ComposeProject) -> Bool {
         guard let kept = override(of: project) else { return false }
         return isStale(kept, base: base(of: project, kept))
     }
 
     /// A project's override as its files are now (`refresh`).
-    func refresh(for project: ComposeProject, endpoint: DockerEndpoint?) async {
+    package func refresh(for project: ComposeProject, endpoint: DockerEndpoint?) async {
         if let kept = override(of: project) { await refresh(kept.folder, endpoint: endpoint, base: base(of: project, kept)) }
     }
 
@@ -193,7 +193,7 @@ final class ComposePortStore: ObservableObject {
     /// Nothing is looked at or moved: that is an Up's. Forgotten when
     /// nothing is left of it; left as it was when Compose can't read the
     /// files — the command says why. One read at a time a folder.
-    func refresh(_ folder: String, endpoint: DockerEndpoint?, base: [String]? = nil) async {
+    package func refresh(_ folder: String, endpoint: DockerEndpoint?, base: [String]? = nil) async {
         guard let kept = overrides[folder] else { return }
         let base = base ?? kept.baseFiles
         guard isStale(kept, base: base) else { return }
@@ -220,7 +220,7 @@ final class ComposePortStore: ObservableObject {
     /// of the checkout's files (none of ours), env files left out. Decoded
     /// and dropped: what an Up looks at, and what an override is written
     /// from.
-    static func readConfig(_ cli: DockerCLI, base: [String], folder: String) async -> ComposeConfig? {
+    package static func readConfig(_ cli: DockerCLI, base: [String], folder: String) async -> ComposeConfig? {
         let arguments = ["compose"] + base.flatMap { ["-f", $0] } + ["--profile", "*", "config", "--format", "json"]
         guard let json = try? await cli.composeConfig(arguments, in: URL(fileURLWithPath: folder), timeout: 15) else { return nil }
         return try? ComposeConfig.parse(json)
@@ -229,7 +229,7 @@ final class ComposePortStore: ObservableObject {
     // MARK: Changes
 
     /// The override file, then the index, each written whole.
-    func save(_ override: ComposePortOverride, yaml: String) throws {
+    package func save(_ override: ComposePortOverride, yaml: String) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         updateRoots()
         if let old = overrides[override.folder], file(of: old) != file(of: override) { try? FileManager.default.removeItem(at: file(of: old)) }
@@ -241,7 +241,7 @@ final class ComposePortStore: ObservableObject {
     }
 
     /// Back to the file's ports: the record and its file go.
-    func forget(_ folder: String) {
+    package func forget(_ folder: String) {
         guard let old = overrides[folder] else { return }
         var next = overrides
         next[folder] = nil
@@ -252,7 +252,7 @@ final class ComposePortStore: ObservableObject {
 
     /// The overrides of folders that are gone (a worktree removed). The
     /// app asks once a launch; reading never does.
-    func prune() {
+    package func prune() {
         let gone = overrides.keys.filter { !FileManager.default.fileExists(atPath: $0) }
         guard !gone.isEmpty else { return }
         var next = overrides

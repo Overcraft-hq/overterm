@@ -7,9 +7,9 @@ import Foundation
 /// Enterprise's). Everything over the driver's own HTTP API.
 /// docs/architecture.md, Database: Server page, Editing rows, Users and roles.
 extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserManagement {
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .slowQueries, .locks, .sizes] }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .slowQueries, .locks, .sizes] }
 
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
         [
             SessionStop(
                 terminate: true, menu: "Terminate Transaction…", title: "Terminate \(session.id)?",
@@ -23,20 +23,20 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
     // MARK: Reading
 
     /// A statement's rows as records by column name, either API's.
-    func records(_ statement: String, database: String) async throws -> [[String: Any]] {
+    package func records(_ statement: String, database: String) async throws -> [[String: Any]] {
         let data = try await post(statement, database: database, graph: false)
         if let error = try Neo4jParse.answer(data, limit: 0).errors.first { throw DatabaseError.failed(Neo4jParse.explain(error.code, error.message)) }
         return Neo4jOps.records(data)
     }
 
     /// The edition, `community` or `enterprise` (nil when unsaid).
-    func edition() async -> String? {
+    package func edition() async -> String? {
         let rows = try? await records("CALL dbms.components() YIELD name, versions, edition RETURN name, versions, edition", database: "system")
         return (rows?.first?["edition"] as? String)?.lowercased()
     }
 
     /// The statement the page lists transactions with: its own is told by it.
-    static let showTransactions = "SHOW TRANSACTIONS YIELD *"
+    package static let showTransactions = "SHOW TRANSACTIONS YIELD *"
 
     private func transactions() async throws -> Monitored<[Neo4jTransaction]> {
         do {
@@ -53,7 +53,7 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         }
     }
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         var facts: [ServerFact] = []
         var notes: [String] = []
         if let component = try? await records("CALL dbms.components() YIELD name, versions, edition RETURN name, versions, edition", database: "system").first {
@@ -90,7 +90,7 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         return Neo4jOps.storeSize(rows, database: database)
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         switch try await transactions() {
         case .value(let all): return .value(all.map(\.activity))
         case .unavailable(let gap): return .unavailable(gap)
@@ -99,7 +99,7 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
     /// Neo4j's record of finished statements is a file on the server: the
     /// ones running now, longest first.
-    func slowQueries() async throws -> Monitored<[SlowQuery]> {
+    package func slowQueries() async throws -> Monitored<[SlowQuery]> {
         switch try await transactions() {
         case .value(let all):
             return .value(
@@ -112,14 +112,14 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         }
     }
 
-    func locks() async throws -> Monitored<[LockWait]> {
+    package func locks() async throws -> Monitored<[LockWait]> {
         switch try await transactions() {
         case .value(let all): return .value(Neo4jOps.waits(all))
         case .unavailable(let gap): return .unavailable(gap)
         }
     }
 
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         var sizes = DatabaseSizes()
         let labels = try await records("CALL db.labels() YIELD label RETURN label ORDER BY label", database: database).compactMap { $0["label"] as? String }
         let types = try await records(
@@ -146,7 +146,7 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         return .value(sizes)
     }
 
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("TERMINATE TRANSACTION") }
         if case .value(let all) = try await transactions(), all.contains(where: { $0.id == session && $0.isOwn }) {
             throw DatabaseError.failed("That is this page's own transaction.")
@@ -159,11 +159,11 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
     // MARK: Editing nodes
 
-    func editDialect() async -> SQLDialect { .postgres }  // never read: its statements are Cypher, `editStatements`
+    package func editDialect() async -> SQLDialect { .postgres }  // never read: its statements are Cypher, `editStatements`
 
-    func key(of table: TableName) async throws -> TableKey? { nil }
+    package func key(of table: TableName) async throws -> TableKey? { nil }
 
-    func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
+    package func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
         let columns = result.columns
         guard let query = Neo4jEdits.nodeQuery(statement) else { return .failure(.said(Neo4jEdits.refusal)) }
         guard api == .transactional else { return .failure(.said("Nodes are edited over Neo4j's transactional HTTP API, which this server has off.")) }
@@ -195,7 +195,7 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         return types
     }
 
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
+    package func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
         let database = result.key.table.schema ?? self.database
         let types = try await propertyTypes(label: result.key.table.name, database: database)
         return try Neo4jEdits.statements(edits, rows: rows, result: result, types: types, use: database == self.database ? nil : database)
@@ -203,7 +203,7 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
     /// In one explicit transaction (`/tx`): every statement must count the
     /// one node it names, else it is rolled back; then committed.
-    func apply(_ statements: [EditStatement]) async throws {
+    package func apply(_ statements: [EditStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("saving the edits") }
         guard api == .transactional else { throw DatabaseError.failed("Nodes are edited over Neo4j's transactional HTTP API.") }
         guard !statements.isEmpty else { return }
@@ -259,11 +259,11 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
     // MARK: Users and roles
 
-    func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
+    package func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
 
-    func userStatements() async -> any UserStatementMaking { Neo4jUserStatements(enterprise: await edition() == "enterprise") }
+    package func userStatements() async -> any UserStatementMaking { Neo4jUserStatements(enterprise: await edition() == "enterprise") }
 
-    func users() async throws -> Monitored<[DatabaseUser]> {
+    package func users() async throws -> Monitored<[DatabaseUser]> {
         let users: [[String: Any]]
         do {
             users = try await records("SHOW USERS", database: "system")
@@ -279,7 +279,7 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         return .value(listed)
     }
 
-    func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
+    package func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
         guard await edition() == "enterprise" else {
             return .unavailable(MonitorGap(reason: "Neo4j Community has no roles or privileges: every user may do everything."))
         }
@@ -303,7 +303,7 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
     /// Each statement (one or several, split as the console splits them)
     /// on `system`, sent once, nothing kept.
-    func run(_ statements: [UserStatement]) async throws {
+    package func run(_ statements: [UserStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("changing users") }
         for statement in statements {
             let ns = statement.sql as NSString
@@ -319,25 +319,25 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 }
 
 /// A transaction as `SHOW TRANSACTIONS` lists it.
-struct Neo4jTransaction: Equatable {
-    var id: String
-    var database: String?
-    var user: String?
-    var client: String?
-    var query: String?
-    var status: String?
-    var seconds: Double?
-    var application: String?
-    var isOwn = false
+package struct Neo4jTransaction: Equatable {
+    package var id: String
+    package var database: String?
+    package var user: String?
+    package var client: String?
+    package var query: String?
+    package var status: String?
+    package var seconds: Double?
+    package var application: String?
+    package var isOwn = false
 
     /// `Blocked by: [neo4j-transaction-3, …]`'s ids.
-    var blockedBy: [String] {
+    package var blockedBy: [String] {
         guard let status, status.hasPrefix("Blocked by") else { return [] }
         guard let open = status.firstIndex(of: "["), let close = status.lastIndex(of: "]"), open < close else { return [] }
         return status[status.index(after: open)..<close].split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
 
-    var activity: DatabaseActivity {
+    package var activity: DatabaseActivity {
         let blockers = blockedBy
         return DatabaseActivity(
             id: id, user: user, database: database, client: client, application: application,
@@ -347,9 +347,9 @@ struct Neo4jTransaction: Equatable {
 }
 
 /// Neo4j's answers read. Pure.
-enum Neo4jOps {
+package enum Neo4jOps {
     /// Either API's rows as records by column name, raw values.
-    static func records(_ data: Data) -> [[String: Any]] {
+    package static func records(_ data: Data) -> [[String: Any]] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
         if let query = object["data"] as? [String: Any] {
             let fields = query["fields"] as? [String] ?? []
@@ -364,7 +364,7 @@ enum Neo4jOps {
 
     /// `SHOW TRANSACTIONS YIELD *`'s rows; the one that ran it (by this
     /// user, its own statement) is the page's own.
-    static func transactions(_ rows: [[String: Any]], user: String) -> [Neo4jTransaction] {
+    package static func transactions(_ rows: [[String: Any]], user: String) -> [Neo4jTransaction] {
         rows.compactMap { row in
             guard let id = row["transactionId"] as? String else { return nil }
             let query = row["currentQuery"] as? String
@@ -380,7 +380,7 @@ enum Neo4jOps {
     }
 
     /// A Duration as the HTTP API writes it: `PT1M3.5S`, `P1DT2H`; or seconds as a number.
-    static func duration(_ value: Any) -> Double? {
+    package static func duration(_ value: Any) -> Double? {
         if let number = value as? NSNumber { return number.doubleValue }
         guard let text = value as? String, text.hasPrefix("P") else { return nil }
         var total = 0.0
@@ -410,7 +410,7 @@ enum Neo4jOps {
     }
 
     /// Who waits on whom, from each transaction's `Blocked by:`.
-    static func waits(_ transactions: [Neo4jTransaction]) -> [LockWait] {
+    package static func waits(_ transactions: [Neo4jTransaction]) -> [LockWait] {
         let byID = Dictionary(transactions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return transactions.flatMap { waiting in
             waiting.blockedBy.map { blocking in
@@ -423,7 +423,7 @@ enum Neo4jOps {
     }
 
     /// JMX's "Store sizes" (4.x: TotalStoreSize) or the store's size metric (5.x).
-    static func storeSize(_ rows: [[String: Any]], database: String) -> Int64? {
+    package static func storeSize(_ rows: [[String: Any]], database: String) -> Int64? {
         for row in rows {
             let name = row["name"] as? String ?? ""
             guard let attributes = row["attributes"] as? [String: Any] else { continue }
@@ -441,7 +441,7 @@ enum Neo4jOps {
 
     /// `SHOW USERS`' row: Community's has `user` and
     /// `passwordChangeRequired`; Enterprise's `roles`, `suspended`, `home`.
-    static func user(_ row: [String: Any]) -> DatabaseUser? {
+    package static func user(_ row: [String: Any]) -> DatabaseUser? {
         guard let name = row["user"] as? String else { return nil }
         let roles = (row["roles"] as? [Any])?.compactMap { $0 as? String } ?? []
         var attributes: [String] = []
@@ -455,7 +455,7 @@ enum Neo4jOps {
 
     /// An explicit transaction's answer: the id in its `commit` URL, each
     /// statement's first value as a number, the first error.
-    static func transactionAnswer(_ data: Data) -> (id: String?, counts: [Int], error: String?) {
+    package static func transactionAnswer(_ data: Data) -> (id: String?, counts: [Int], error: String?) {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return (nil, [], nil) }
         var id: String?
         if let commit = object["commit"] as? String, let url = URL(string: commit) {
@@ -478,23 +478,23 @@ enum Neo4jOps {
 /// `elementId`; a cell written as the type the catalog has seen for its
 /// property, NULL as REMOVE; a node added with CREATE, deleted with DETACH
 /// DELETE (its relationships with it — said). Pure.
-enum Neo4jEdits {
-    static let refusal = "Nodes are edited in MATCH (n:Label) [WHERE …] RETURN n [ORDER BY …] [SKIP …] [LIMIT …] — one label, the node itself returned."
+package enum Neo4jEdits {
+    package static let refusal = "Nodes are edited in MATCH (n:Label) [WHERE …] RETURN n [ORDER BY …] [SKIP …] [LIMIT …] — one label, the node itself returned."
 
-    struct NodeQuery: Equatable {
-        var variable: String
-        var label: String
+    package struct NodeQuery: Equatable {
+        package var variable: String
+        package var label: String
         /// `:use db`'s.
-        var database: String?
+        package var database: String?
     }
 
     /// The key column's name in a flattened result.
-    static func keyColumn(_ variable: String) -> String { "elementId(\(variable))" }
+    package static func keyColumn(_ variable: String) -> String { "elementId(\(variable))" }
 
     /// Words that, after the pattern, make the rows something else.
     private static let otherClauses = #"\b(MATCH|OPTIONAL|WITH|UNWIND|CALL|UNION|RETURN|CREATE|MERGE|SET|DELETE|DETACH|REMOVE|FOREACH|LOAD|USE)\b"#
 
-    static func nodeQuery(_ statement: String) -> NodeQuery? {
+    package static func nodeQuery(_ statement: String) -> NodeQuery? {
         let use = CypherText.use(statement)
         let body = use?.rest ?? statement
         let upper = CypherText.stripped(body)
@@ -526,7 +526,7 @@ enum Neo4jEdits {
     /// A one-column answer whose every value is a node with an elementId,
     /// as rows: `elementId(n)`, then each property (sorted). Either API's
     /// answer; nil for anything else, so it is shown as it was.
-    static func flatten(_ data: Data, variable: String, limit: Int) -> QueryResult? {
+    package static func flatten(_ data: Data, variable: String, limit: Int) -> QueryResult? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         if let errors = object["errors"] as? [Any], !errors.isEmpty { return nil }
         var nodes: [(id: String, properties: [String: Any])] = []
@@ -567,7 +567,7 @@ enum Neo4jEdits {
         return result
     }
 
-    static func jsonType(_ value: Any) -> String {
+    package static func jsonType(_ value: Any) -> String {
         switch value {
         case is String: return "String"
         case let number as NSNumber:
@@ -581,7 +581,7 @@ enum Neo4jEdits {
 
     /// `nodeTypeProperties`' rows for a label: each property's types on the
     /// nodes that have it (whatever their other labels).
-    static func types(_ rows: [[String: Any]], label: String) -> [String: [String]] {
+    package static func types(_ rows: [[String: Any]], label: String) -> [String: [String]] {
         var types: [String: [String]] = [:]
         for row in rows {
             guard let labels = row["nodeLabels"] as? [String], labels.contains(label), let property = row["propertyName"] as? String else { continue }
@@ -595,7 +595,7 @@ enum Neo4jEdits {
     /// What a cell of the property is written as: one simple type —
     /// String, Long, Double, Boolean, or a list of one — else nil (a date,
     /// a point, several types: not edited, its text isn't its value).
-    static func writable(_ types: [String]?) -> String? {
+    package static func writable(_ types: [String]?) -> String? {
         guard let types, types.count == 1, let type = types.first else { return nil }
         let short = type.hasSuffix("Value") ? String(type.dropLast(5)) : type
         let simple = ["String", "Long", "Double", "Boolean", "StringArray", "LongArray", "DoubleArray", "BooleanArray", "Integer", "Float"]
@@ -603,15 +603,15 @@ enum Neo4jEdits {
     }
 
     /// A Cypher string literal: `'it\'s'`, backslashes doubled.
-    static func string(_ text: String) -> String {
+    package static func string(_ text: String) -> String {
         "'" + text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'") + "'"
     }
 
     /// A property name: bare when it can be, else in backticks.
-    static func property(_ name: String) -> String { CypherText.name(name) }
+    package static func property(_ name: String) -> String { CypherText.name(name) }
 
     /// A cell's text as a literal of its property's type.
-    static func literal(_ text: String, type: String, property name: String) throws -> String {
+    package static func literal(_ text: String, type: String, property name: String) throws -> String {
         func refuse(_ what: String) -> EditRefusal { .said("“\(text)” isn't \(what) — \(name) holds \(what)s.") }
         switch type {
         case "String": return string(text)
@@ -642,7 +642,7 @@ enum Neo4jEdits {
     }
 
     /// A Save's statements: deletes, updates, creates, each counting its node.
-    static func statements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult, types: [String: [String]], use: String?) throws
+    package static func statements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult, types: [String: [String]], use: String?) throws
         -> [EditStatement]
     {
         let prefix = use.map { ":use \($0)\n" } ?? ""
@@ -702,15 +702,15 @@ enum Neo4jEdits {
 /// the wire or in the query log), ALTER USER, DROP USER; Enterprise's
 /// roles — CREATE ROLE, GRANT ROLE, privileges granted to a role — and
 /// REVOKE of a privilege as the server words it. Pure.
-struct Neo4jUserStatements: UserStatementMaking {
-    var enterprise: Bool
+package struct Neo4jUserStatements: UserStatementMaking {
+    package var enterprise: Bool
 
-    static let databasePrivileges = [
+    package static let databasePrivileges = [
         "ACCESS", "START", "STOP", "INDEX MANAGEMENT", "CONSTRAINT MANAGEMENT", "NAME MANAGEMENT", "TRANSACTION MANAGEMENT", "ALL DATABASE PRIVILEGES",
     ]
-    static let graphPrivileges = ["TRAVERSE", "READ {*}", "MATCH {*}", "WRITE", "ALL GRAPH PRIVILEGES"]
+    package static let graphPrivileges = ["TRAVERSE", "READ {*}", "MATCH {*}", "WRITE", "ALL GRAPH PRIVILEGES"]
 
-    var form: UserForm {
+    package var form: UserForm {
         UserForm(
             login: enterprise, superuser: enterprise ? "Admin (the admin role)" : nil,
             passwordNote: "The password goes as its salted SHA-256 (SET ENCRYPTED PASSWORD), never in the clear, and is never kept here.",
@@ -725,7 +725,7 @@ struct Neo4jUserStatements: UserStatementMaking {
 
     /// Neo4j's stored form of a password (version 1): SHA-256 over the salt
     /// then the password, hashed again until 1024 times — `1,<hash>,<salt>`.
-    static func encrypted(_ password: String, salt: Data? = nil) -> String {
+    package static func encrypted(_ password: String, salt: Data? = nil) -> String {
         let salt = salt ?? Data((0..<32).map { _ in UInt8.random(in: 0...255) })
         var hash = Data(SHA256.hash(data: salt + Data(password.utf8)))
         for _ in 1..<1024 { hash = Data(SHA256.hash(data: hash)) }
@@ -735,7 +735,7 @@ struct Neo4jUserStatements: UserStatementMaking {
 
     private static let mask = "'••••••••'"
 
-    func create(_ user: NewUser) throws -> [UserStatement] {
+    package func create(_ user: NewUser) throws -> [UserStatement] {
         let name = CypherText.name(try checked(user.name))
         if enterprise, !user.login {
             return [UserStatement("CREATE ROLE \(name)")]
@@ -748,7 +748,7 @@ struct Neo4jUserStatements: UserStatementMaking {
         return statements
     }
 
-    func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
+    package func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
         let name = CypherText.name(try checked(user.name))
         guard !password.isEmpty else { throw Self.refusal("A password, please.") }
         let head = "ALTER USER \(name) SET ENCRYPTED PASSWORD "
@@ -756,7 +756,7 @@ struct Neo4jUserStatements: UserStatementMaking {
         return UserStatement(head + Neo4jEdits.string(Self.encrypted(password)) + tail, shown: head + Self.mask + tail)
     }
 
-    func offers(_ action: UserAction, on user: DatabaseUser) -> Bool {
+    package func offers(_ action: UserAction, on user: DatabaseUser) -> Bool {
         switch action {
         case .password: !user.isRole
         case .grant: enterprise && user.isRole
@@ -765,17 +765,17 @@ struct Neo4jUserStatements: UserStatementMaking {
         }
     }
 
-    func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
+    package func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
         .named(kind: kind.title == "Graph" ? "GRAPH" : "DATABASE", name: fields.first?.trimmingCharacters(in: .whitespaces) ?? "")
     }
 
-    func privileges(on target: GrantTarget) -> [String] {
+    package func privileges(on target: GrantTarget) -> [String] {
         if case .named("GRAPH", _) = target { return Self.graphPrivileges }
         return Self.databasePrivileges
     }
 
     /// One GRANT a privilege, on `*` or a named database or graph.
-    func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
+    package func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
         guard case .named(let kind, let rawName) = target else { throw Self.refusal("Neo4j grants on a database or a graph.") }
         guard !privileges.isEmpty else { throw Self.refusal("Pick a privilege.") }
         let allowed = self.privileges(on: target)
@@ -786,7 +786,7 @@ struct Neo4jUserStatements: UserStatementMaking {
         return UserStatement(privileges.map { "GRANT \($0) ON \(on) TO \(role)" }.joined(separator: ";\n"))
     }
 
-    func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
+    package func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
         guard let name = try? checked(user.name) else { return nil }
         if grant.kind == "role" {
             return UserStatement("REVOKE ROLE \(CypherText.name(grant.object)) FROM \(CypherText.name(name))")
@@ -798,15 +798,15 @@ struct Neo4jUserStatements: UserStatementMaking {
         return UserStatement("REVOKE " + command.dropLast(suffix.count) + " FROM " + CypherText.name(name))
     }
 
-    func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
+    package func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
         users.filter { $0.isRole && $0.name != "PUBLIC" && !user.memberOf.contains($0.name) }
     }
 
-    func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
+    package func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
         UserStatement("GRANT ROLE \(CypherText.name(try checked(role.name, "A role"))) TO \(CypherText.name(try checked(user.name)))")
     }
 
-    func drop(_ user: DatabaseUser) throws -> UserStatement {
+    package func drop(_ user: DatabaseUser) throws -> UserStatement {
         UserStatement("DROP \(user.isRole ? "ROLE" : "USER") \(CypherText.name(try checked(user.name)))")
     }
 }

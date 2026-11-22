@@ -1,23 +1,23 @@
 import Foundation
 
 /// What `b` rebuilds in one project; `services` empty: all of it.
-struct ComposeRebuild: Equatable {
-    var project: ComposeProject
-    var services: [String]
+package struct ComposeRebuild: Equatable {
+    package var project: ComposeProject
+    package var services: [String]
 }
 
 /// Up With Profiles…'s sheet: the profiles the files name, the ones ticked.
-struct ComposeProfileChoice: Equatable {
-    var project: ComposeProject
-    var profiles: [String]
-    var chosen: Set<String>
+package struct ComposeProfileChoice: Equatable {
+    package var project: ComposeProject
+    package var profiles: [String]
+    package var chosen: Set<String>
 
     /// The ones ticked, in the profiles' order.
-    var ticked: [String] { profiles.filter(chosen.contains) }
+    package var ticked: [String] { profiles.filter(chosen.contains) }
 
     /// `docker compose … --profile a --profile b up -d`, the project's files
     /// as the store says them (its override, if it has ports of its own).
-    @MainActor func command(_ ports: ComposePortStore, endpoint: DockerEndpoint?) -> String {
+    @MainActor package func command(_ ports: ComposePortStore, endpoint: DockerEndpoint?) -> String {
         ports.command(project, "up -d", profiles: ticked, endpoint: endpoint)
     }
 }
@@ -34,7 +34,7 @@ extension DockerPageModel {
     /// they changed since (or were never read), or a problem that wasn't
     /// theirs is due again (`retry`), a read starts — never an answer
     /// published at once: this is called from views' bodies.
-    func composeFacts(for project: ComposeProject) -> ComposeFacts? {
+    package func composeFacts(for project: ComposeProject) -> ComposeFacts? {
         guard let stamp = ComposeFacts.stamp(project) else { return nil }
         let known = composeFacts[project.name]
         let due = known?.stamp != stamp || known?.retry.map { $0 <= Date() } == true
@@ -47,7 +47,7 @@ extension DockerPageModel {
     /// files' is asked about again at once: this is a key or a menu item.
     /// Nil when Compose can't be asked about it here.
     @discardableResult
-    func loadComposeFacts(_ project: ComposeProject) async -> ComposeFacts? {
+    package func loadComposeFacts(_ project: ComposeProject) async -> ComposeFacts? {
         guard let stamp = ComposeFacts.stamp(project), Self.mayAskCompose else { return nil }
         // A read on its way for older files is awaited, then asked again.
         for _ in 0..<3 {
@@ -63,7 +63,7 @@ extension DockerPageModel {
     }
 
     /// An isolated run asks only a scenario's stub `docker`.
-    nonisolated static var mayAskCompose: Bool { !AppEnvironment.isIsolated || DockerCLI.override != nil }
+    package nonisolated static var mayAskCompose: Bool { !AppEnvironment.isIsolated || DockerCLI.override != nil }
 
     /// One read a project at a time; its answer kept with the stamp it was
     /// asked for, a failure too — so a file fixed is read again, and one
@@ -101,14 +101,14 @@ extension DockerPageModel {
     /// Whether a service of it has a `develop.watch`, as far as is known:
     /// a project before it runs from its plan, another from what its files
     /// said (asked when it isn't known). What offers Watch asks this.
-    func watches(_ project: ComposeProject) -> Bool {
+    package func watches(_ project: ComposeProject) -> Bool {
         project.planned ? project.services.contains { $0.spec?.watched == true } : composeFacts(for: project)?.watched.isEmpty == false
     }
 
     /// `docker compose watch` in a tab in the project's folder; nil when it
     /// went there, else why not. Compose watches only services with a
     /// `develop.watch`, and refuses a project with none: it is asked first.
-    func watch(_ project: ComposeProject) async -> String? {
+    package func watch(_ project: ComposeProject) async -> String? {
         let watched: [String]
         if project.planned {
             // Its plan is Compose's own reading of the files.
@@ -126,7 +126,7 @@ extension DockerPageModel {
     }
 
     /// Watch, saying why not on the page.
-    func startWatch(_ project: ComposeProject) {
+    package func startWatch(_ project: ComposeProject) {
         Task {
             if let why = await watch(project) { error = why }
         }
@@ -137,7 +137,7 @@ extension DockerPageModel {
     /// What `b` rebuilds: a project's row, all of it; a container, its
     /// service. One-offs are no service's, and a container in no project
     /// has none. In the projects' order, services sorted. Pure.
-    nonisolated static func rebuilds(of selection: Set<String>, in projects: [ComposeProject]) -> [ComposeRebuild] {
+    package nonisolated static func rebuilds(of selection: Set<String>, in projects: [ComposeProject]) -> [ComposeRebuild] {
         projects.compactMap { project in
             if selection.contains(projectTag(project.name)) { return ComposeRebuild(project: project, services: []) }
             let services = project.services.filter { service in
@@ -150,7 +150,7 @@ extension DockerPageModel {
     /// `up -d --build`, one tab a project (four at most, like the other
     /// keys that open tabs): its images built again, what changed made again.
     /// An Up: its ports are looked at first (`startUp`).
-    func rebuild(_ rebuilds: [ComposeRebuild]) {
+    package func rebuild(_ rebuilds: [ComposeRebuild]) {
         for rebuild in rebuilds.prefix(4) { startUp(.project(rebuild.project), options: "-d --build", services: rebuild.services) }
     }
 
@@ -158,12 +158,12 @@ extension DockerPageModel {
 
     /// A compose verb for one service, in a tab in the project's folder:
     /// `pull`, `run --rm`, `logs -f --tail 100`.
-    func composeService(_ verb: String, _ service: ComposeService, _ project: ComposeProject) {
+    package func composeService(_ verb: String, _ service: ComposeService, _ project: ComposeProject) {
         runCompose(project, verb, services: [service.name], in: composeFolder(project))
     }
 
     /// The project's Logs tab, narrowed to the service.
-    func showLogs(of service: ComposeService, in project: ComposeProject) {
+    package func showLogs(of service: ComposeService, in project: ComposeProject) {
         let tag = Self.projectTag(project.name)
         if selection != [tag] { selection = [tag] }
         showDetail = true
@@ -175,13 +175,13 @@ extension DockerPageModel {
 
     /// Up With Profiles…'s sheet, on the page — brought up first from the
     /// panel. Ticked as last time in this run.
-    func chooseProfiles(_ project: ComposeProject, _ profiles: [String]) {
+    package func chooseProfiles(_ project: ComposeProject, _ profiles: [String]) {
         if !visible { actions?.openPage() }
         profileChoice = ComposeProfileChoice(project: project, profiles: profiles, chosen: (lastProfiles[project.name] ?? []).intersection(profiles))
     }
 
     /// The sheet's Up: those profiles' services with the rest, in a tab.
-    func upWithProfiles() {
+    package func upWithProfiles() {
         guard let choice = profileChoice, !choice.chosen.isEmpty else { return }
         profileChoice = nil
         lastProfiles[choice.project.name] = choice.chosen

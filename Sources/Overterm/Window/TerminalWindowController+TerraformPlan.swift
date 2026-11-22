@@ -7,7 +7,7 @@ extension TerminalWindowController {
     /// The diff's added lines feed the cause chains; a root's file written
     /// after its plan marks the plan stale; agents' `tf_plan` reaches the
     /// window of their pane.
-    func wireTerraformPlan() {
+    package func wireTerraformPlan() {
         // @Published emits the new value before it lands: the emitted one is used.
         diff.$diffs
             .map { TerraformPlanPaneModel.addedLines($0) }
@@ -32,11 +32,11 @@ extension TerminalWindowController {
     /// The launch's sweep (4.7): what a crashed or quit Overterm left is
     /// removed, its applies still running followed again in the slot.
     /// `again`: a scenario's relaunch, the same path a second time.
-    func sweepTerraformRunsAtLaunch(again: Bool = false) {
+    package func sweepTerraformRunsAtLaunch(again: Bool = false) {
         TerraformRunFolder.sweepAtLaunch(again: again) { [weak self] found in self?.reattachTerraformApplies(found) }
     }
 
-    var terraformPlanActions: TerraformPlanActions {
+    package var terraformPlanActions: TerraformPlanActions {
         TerraformPlanActions(
             planAgain: { [weak self] run, lock in
                 guard let self else { return }
@@ -69,7 +69,7 @@ extension TerminalWindowController {
     }
 
     /// The run in the right slot, which takes it (`RightSlot`).
-    func showTerraformPlan(_ run: TerraformPlanRun) {
+    package func showTerraformPlan(_ run: TerraformPlanRun) {
         terraformPlanPane.show(run)
         if let apply = run.apply { terraformPlanPane.showApply(apply) }
         rightPane.terraformPlanOpened = true
@@ -83,7 +83,7 @@ extension TerminalWindowController {
     /// An apply in the right slot: its progress and Stop (4.7, 6.4) —
     /// from the slot's list of the applies going, the root's card, or a
     /// plan held back by one.
-    func showTerraformApply(_ apply: TerraformApplyRun) {
+    package func showTerraformApply(_ apply: TerraformApplyRun) {
         terraformPlanPane.showApply(apply)
         rightPane.terraformPlanOpened = true
         rightPane.mode = .terraformPlan
@@ -96,7 +96,7 @@ extension TerminalWindowController {
     /// A root's file written after its plan started — while it ran too,
     /// when the plan may have read the old file: the plan is stale (6.3),
     /// said once it lands.
-    func terraformFilesChanged(_ paths: [String]) {
+    package func terraformFilesChanged(_ paths: [String]) {
         for run in TerraformRunRegistry.shared.runs where run.kind == .plan && !run.configChanged && (run.isGoing || run.record != nil) {
             let started = run.started
             let folder = run.card.folder.standardizedFileURL.path
@@ -111,7 +111,7 @@ extension TerminalWindowController {
     }
 
     /// Whether a configuration or var file of `root` was written after `date`. Blocking (stats).
-    nonisolated static func terraformFilesWritten(in root: URL, since date: Date) -> Bool {
+    package nonisolated static func terraformFilesWritten(in root: URL, since date: Date) -> Bool {
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []).prefix(TerraformRootGuess.maxFilesPerFolder)
         return names.contains { name in
             guard name.hasSuffix(".tf") || name.hasSuffix(".tfvars") || name.hasSuffix(".tfvars.json") || name == ".terraform.lock.hcl" else { return false }
@@ -131,7 +131,7 @@ extension TerminalWindowController {
     /// say (production's first plan this session, a commit not theirs,
     /// risks new against the base branch), then in the slot.
     /// `review`: a review tab's plan of what it reviews (2f) — always asked.
-    func planTerraformRoot(
+    package func planTerraformRoot(
         _ card: TerraformRootCard, checkout: URL? = nil, lock: TerraformCommands.LockWait = .person, mode: TerraformPlanMode = .normal,
         review: TerraformReviewPlan? = nil
     ) {
@@ -147,7 +147,7 @@ extension TerminalWindowController {
     /// An agent's `tf_plan` (D-12): never production — the person plans
     /// and applies there; the first per
     /// root and session asked; `-lock-timeout=0s`; no var file, no flag.
-    func agentPlan(_ card: TerraformRootCard, checkout: URL) async -> Result<TerraformPlanRun, TerraformReadFailure> {
+    package func agentPlan(_ card: TerraformRootCard, checkout: URL) async -> Result<TerraformPlanRun, TerraformReadFailure> {
         if card.isProduction {
             return .failure(TerraformReadFailure(message: "\(card.name) is production: the person plans it, from Overterm's Terraform panel."))
         }
@@ -222,13 +222,13 @@ extension TerminalWindowController {
     }
 
     /// The most commits since the base whose authors are compared.
-    static let maxAuthoredCommits = 500
+    package static let maxAuthoredCommits = 500
 
     /// Whether the person wrote every commit since `base` (5.5: a branch
     /// of a teammate's commits with one of the person's on top isn't
     /// theirs) — HEAD's alone when there are none since it; nil when it
     /// can't be told, which the gate counts as not theirs.
-    static func authoredByPerson(_ checkout: URL, base: String) async -> Bool? {
+    package static func authoredByPerson(_ checkout: URL, base: String) async -> Bool? {
         let me = try? await Git.run(["config", "user.email"], in: checkout)
         var authors: [String] = []
         if base != "HEAD", let listed = try? await Git.run(["log", "--format=%ae", "-n", "\(maxAuthoredCommits)", "\(base)..HEAD"], in: checkout) {
@@ -240,7 +240,7 @@ extension TerminalWindowController {
         return TerraformPlanGate.authoredByPerson(authors: authors, me: me)
     }
 
-    func presentTerraformRefusal(_ why: String) {
+    package func presentTerraformRefusal(_ why: String) {
         guard let window, window.attachedSheet == nil else { return NSSound.beep() }
         let alert = NSAlert()
         alert.messageText = "Not run"
@@ -253,7 +253,7 @@ extension TerminalWindowController {
     /// Init, the person's click (4.13): the fetch list shown first; the
     /// plugin cache offered at the first Init where two worktrees of the
     /// repository have roots; `-lockfile=readonly`, always.
-    func initTerraformRoot(_ card: TerraformRootCard, checkout: URL? = nil) {
+    package func initTerraformRoot(_ card: TerraformRootCard, checkout: URL? = nil) {
         guard let checkout = checkout ?? terraformPanel.checkout else { return NSSound.beep() }
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -322,7 +322,7 @@ extension TerminalWindowController {
 
     /// The chip's menu (4.9): the backend's workspaces; Select writes the
     /// checkout's `.terraform/environment`.
-    func chooseTerraformWorkspace(_ card: TerraformRootCard, checkout: URL? = nil) {
+    package func chooseTerraformWorkspace(_ card: TerraformRootCard, checkout: URL? = nil) {
         guard let checkout = checkout ?? terraformPanel.checkout else { return }
         let settingPath = Settings.shared.terraformPath
         let hasVersionFile = card.facts.hasVersionFile
@@ -353,7 +353,7 @@ extension TerminalWindowController {
         }
     }
 
-    func selectTerraformWorkspace(_ name: String, card: TerraformRootCard) {
+    package func selectTerraformWorkspace(_ name: String, card: TerraformRootCard) {
         let settingPath = Settings.shared.terraformPath
         let hasVersionFile = card.facts.hasVersionFile
         let root = card.folder
@@ -366,7 +366,7 @@ extension TerminalWindowController {
 
     // MARK: Summary, Ask Why
 
-    func copyTerraformSummary(_ run: TerraformPlanRun) {
+    package func copyTerraformSummary(_ run: TerraformPlanRun) {
         guard let plan = run.plan else { return NSSound.beep() }
         let causes = terraformPlanPane.run === run ? terraformPlanPane.causeTexts() : [:]
         let text = TerraformPlanText.copySummary(plan, root: run.card.name, workspace: run.workspace, branch: run.branch, causes: causes)
@@ -375,14 +375,14 @@ extension TerminalWindowController {
     }
 
     /// The providers a root's lock file pins, said. Blocking.
-    nonisolated static func lockProviders(_ root: URL) -> [String] {
+    package nonisolated static func lockProviders(_ root: URL) -> [String] {
         let lock = (try? String(contentsOf: root.appendingPathComponent(".terraform.lock.hcl"), encoding: .utf8)) ?? ""
         return TerraformLockFile.versions(in: String(lock.prefix(1 << 20))).map { "\($0.address) \($0.version)" }
     }
 
     /// Ask Why on a failed apply (2.3, 6.4): the apply's diagnostics and
     /// log, not its plan's — a reattached apply's too, which has no plan.
-    func askWhy(apply: TerraformApplyRun) {
+    package func askWhy(apply: TerraformApplyRun) {
         let root = apply.rootFolder
         Task { @MainActor [weak self] in
             let providers = await TerraformPanelModel.blocking { Self.lockProviders(root) }
@@ -396,7 +396,7 @@ extension TerminalWindowController {
 
     /// Plan Again after an apply: its plan's root again — a reattached
     /// one's from the panel's cards, when the panel shows its checkout.
-    func planAgain(after apply: TerraformApplyRun) {
+    package func planAgain(after apply: TerraformApplyRun) {
         if let run = apply.planRun { return planTerraformRoot(run.card, checkout: run.checkout, mode: .normal) }
         let checkout = URL(fileURLWithPath: apply.marker.checkout).standardizedFileURL
         guard terraformPanel.checkout?.standardizedFileURL == checkout, let card = terraformPanel.roots.first(where: { $0.path == apply.marker.root }) else {
@@ -406,7 +406,7 @@ extension TerminalWindowController {
     }
 
     /// Ask Why on a failed plan or init, or a held lock (5.10).
-    func askWhy(run: TerraformPlanRun) {
+    package func askWhy(run: TerraformPlanRun) {
         let root = run.card.folder
         Task { @MainActor [weak self] in
             let providers = await TerraformPanelModel.blocking { Self.lockProviders(root) }
@@ -425,7 +425,7 @@ extension TerminalWindowController {
     // MARK: Menu and palette
 
     /// Plan Terraform Root: the panel's selected root, else its only one, else the switcher.
-    @objc func planSelectedTerraformRoot(_ sender: Any?) {
+    @objc package func planSelectedTerraformRoot(_ sender: Any?) {
         guard Settings.shared.terraformEnabled else { return openSettings(.terraform) }
         let roots = terraformPanel.roots
         if let card = roots.first(where: { $0.path == terraformPanel.selectedPath }) ?? (roots.count == 1 ? roots.first : nil) {
@@ -434,13 +434,13 @@ extension TerminalWindowController {
         showTerraformSwitcher(sender)
     }
 
-    @objc func copyTerraformPlanSummary(_ sender: Any?) {
+    @objc package func copyTerraformPlanSummary(_ sender: Any?) {
         guard let run = terraformPlanPane.run else { return NSSound.beep() }
         copyTerraformSummary(run)
     }
 
     /// The palette's Plan and Init rows, one per root (8).
-    func terraformPlanPaletteItems() -> [PaletteItem] {
+    package func terraformPlanPaletteItems() -> [PaletteItem] {
         guard Settings.shared.terraformEnabled else { return [] }
         var items: [PaletteItem] = []
         for card in terraformPanel.roots {
@@ -462,7 +462,7 @@ extension TerraformRunFolder {
     /// The sweep, once per app, off the main thread.
     /// Applies still running after another launch quit or crashed (4.7)
     /// are handed to `reattach`, on the main thread.
-    @MainActor static func sweepAtLaunch(again: Bool = false, reattach: @escaping @MainActor ([(folder: URL, marker: TerraformApplyMarker)]) -> Void) {
+    @MainActor package static func sweepAtLaunch(again: Bool = false, reattach: @escaping @MainActor ([(folder: URL, marker: TerraformApplyMarker)]) -> Void) {
         guard !swept || (again && AppEnvironment.guardsTerraform) else { return }
         swept = true
         Task { @MainActor in

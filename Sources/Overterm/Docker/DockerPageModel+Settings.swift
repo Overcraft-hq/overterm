@@ -9,7 +9,7 @@ extension DockerPageModel {
     /// Settings… (`,`): the sheet, once its inspect is read — and, for a
     /// running one, what it uses now, one sample. The sheet copies what it
     /// is given, so it opens after both.
-    func editSettings(_ container: ContainerSummary) {
+    package func editSettings(_ container: ContainerSummary) {
         guard let engine = docker.engine else { return }
         Task {
             do {
@@ -31,7 +31,7 @@ extension DockerPageModel {
     /// The sheet's Apply: what is wrong is said back to the sheet, which
     /// stays open; nil once it is done, the sheet closed and the change
     /// said on the page.
-    func applySettings(_ settings: DockerContainerSettings) async -> String? {
+    package func applySettings(_ settings: DockerContainerSettings) async -> String? {
         if let problem = settings.problem { return problem }
         guard let change = settings.update else {
             containerSettings = nil
@@ -55,7 +55,7 @@ extension DockerPageModel {
     /// Docker would refuse it or another container has it. A compose
     /// service's container is asked about first: Compose finds it by its
     /// labels, and gives the old name back when it makes it again.
-    func askRename(_ container: ContainerSummary, problem: String? = nil, typed: String? = nil) {
+    package func askRename(_ container: ContainerSummary, problem: String? = nil, typed: String? = nil) {
         let ask: () -> Void = { [weak self] in
             self?.actions?.askName("Rename “\(container.name)”", problem ?? "A new name: letters, digits, “_”, “.” and “-”.", typed ?? container.name) {
                 name in
@@ -74,7 +74,7 @@ extension DockerPageModel {
                 + "names it as before. For a name that lasts, set container_name in the compose file.", "Rename Anyway", ask)
     }
 
-    func rename(_ container: ContainerSummary, to name: String) {
+    package func rename(_ container: ContainerSummary, to name: String) {
         busy.insert(container.Id)
         Task {
             defer { self.busy.remove(container.Id) }
@@ -93,7 +93,7 @@ extension DockerPageModel {
     /// Save as Image…: its inspect read first, so the question says what
     /// is left out of the image and what can't be — then `repository:tag`
     /// asked for.
-    func askSaveAsImage(_ container: ContainerSummary) {
+    package func askSaveAsImage(_ container: ContainerSummary) {
         guard let engine = docker.engine else { return }
         Task {
             do {
@@ -108,7 +108,7 @@ extension DockerPageModel {
     }
 
     /// Asked again, with the reason, when the engine would refuse the name.
-    func askSaveAsImage(_ container: ContainerSummary, _ plan: DockerCommit.Plan, problem: String? = nil, typed: String? = nil) {
+    package func askSaveAsImage(_ container: ContainerSummary, _ plan: DockerCommit.Plan, problem: String? = nil, typed: String? = nil) {
         let explanation = DockerCommit.explanation(plan)
         actions?.askName(
             "Save “\(container.name)” as an Image", problem.map { $0 + "\n\n" + explanation } ?? explanation,
@@ -127,7 +127,7 @@ extension DockerPageModel {
     /// committed twice on the classic image store, which keeps the
     /// container's own config in the image too (`commitAnew`); the new
     /// image in Images after.
-    func saveAsImage(_ container: ContainerSummary, as reference: String, _ plan: DockerCommit.Plan) {
+    package func saveAsImage(_ container: ContainerSummary, as reference: String, _ plan: DockerCommit.Plan) {
         let (repository, tag) = DockerEngine.split(reference)
         transfer("Saving \(container.name) as \(repository):\(tag)") { [docker] in
             guard let engine = docker.engine else { throw DockerError.unreachable("Docker isn't running.") }

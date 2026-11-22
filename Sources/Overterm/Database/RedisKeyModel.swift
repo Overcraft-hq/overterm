@@ -3,31 +3,31 @@ import Foundation
 /// The right-hand pane's Redis page: a key (its value as its type has it,
 /// edited in place), a new key being made, or the server's page.
 @MainActor
-final class RedisSlotModel: ObservableObject {
-    enum Page: Equatable { case none, key, newKey, server }
+package final class RedisSlotModel: ObservableObject {
+    package enum Page: Equatable { case none, key, newKey, server }
 
-    @Published var page = Page.none
-    let key = RedisKeyModel()
-    let server = RedisServerModel()
+    @Published package var page = Page.none
+    package let key = RedisKeyModel()
+    package let server = RedisServerModel()
 
     /// Read only while the pane shows it.
-    var visible = false {
+    package var visible = false {
         didSet {
             key.visible = visible && page == .key
             server.visible = visible && page == .server
         }
     }
 
-    @Published private(set) var newKeyDB = 0
-    private(set) var newKeySession: DatabaseSession?
+    @Published package private(set) var newKeyDB = 0
+    package private(set) var newKeySession: DatabaseSession?
 
-    func newKey(in session: DatabaseSession, db: Int) {
+    package func newKey(in session: DatabaseSession, db: Int) {
         newKeySession = session
         newKeyDB = db
         show(.newKey)
     }
 
-    func show(_ page: Page) {
+    package func show(_ page: Page) {
         self.page = page
         key.visible = visible && page == .key
         server.visible = visible && page == .server
@@ -36,8 +36,8 @@ final class RedisSlotModel: ObservableObject {
 
 /// One key, read as its type asks, a page at a time.
 @MainActor
-final class RedisKeyModel: ObservableObject {
-    enum Phase: Equatable {
+package final class RedisKeyModel: ObservableObject {
+    package enum Phase: Equatable {
         case idle, loading, loaded
         case failed(String)
     }
@@ -45,47 +45,47 @@ final class RedisKeyModel: ObservableObject {
     /// One row of a collection: a hash's field and value, a list's index
     /// and value, a set's member, a sorted set's member and score, a
     /// stream's id and fields.
-    struct Row: Equatable, Identifiable {
-        var id: String
-        var cells: [String]
+    package struct Row: Equatable, Identifiable {
+        package var id: String
+        package var cells: [String]
     }
 
-    @Published private(set) var phase = Phase.idle
-    private(set) var session: DatabaseSession?
-    @Published private(set) var db = 0
-    @Published private(set) var name = ""
-    @Published private(set) var type = ""
+    @Published package private(set) var phase = Phase.idle
+    package private(set) var session: DatabaseSession?
+    @Published package private(set) var db = 0
+    @Published package private(set) var name = ""
+    @Published package private(set) var type = ""
     /// Seconds; -1 no expiry.
-    @Published private(set) var ttl = -1
-    @Published private(set) var memory: Int?
-    @Published private(set) var encoding: String?
-    @Published private(set) var length: Int?
+    @Published package private(set) var ttl = -1
+    @Published package private(set) var memory: Int?
+    @Published package private(set) var encoding: String?
+    @Published package private(set) var length: Int?
     /// A string's or a JSON document's text.
-    @Published var text = ""
-    @Published private(set) var savedText = ""
-    @Published private(set) var rows: [Row] = []
+    @Published package var text = ""
+    @Published package private(set) var savedText = ""
+    @Published package private(set) var rows: [Row] = []
     /// A sorted set's, a set's or a hash's MATCH; the stream's and the
     /// list's are positions.
-    @Published var filter = ""
-    @Published private(set) var hasMore = false
-    @Published private(set) var groups: [[String: String]] = []
+    @Published package var filter = ""
+    @Published package private(set) var hasMore = false
+    @Published package private(set) var groups: [[String: String]] = []
     /// What the last edit said, when it failed.
-    @Published var error: String?
+    @Published package var error: String?
     private var cursor = "0"
     private var ticket = 0
 
-    static let page = 200
+    package static let page = 200
     /// A string longer than this is shown cut, and not edited here.
-    static let textLimit = 512 * 1024
+    package static let textLimit = 512 * 1024
 
-    var visible = false {
+    package var visible = false {
         didSet { if visible, !oldValue, phase == .loading { Task { await load() } } }
     }
 
-    var readOnly: Bool { session?.connection.readOnly ?? true }
-    var driver: RedisDriver? { session?.redis }
+    package var readOnly: Bool { session?.connection.readOnly ?? true }
+    package var driver: RedisDriver? { session?.redis }
 
-    var columns: [String] {
+    package var columns: [String] {
         switch type {
         case "hash": ["Field", "Value"]
         case "list": ["Index", "Element"]
@@ -96,10 +96,10 @@ final class RedisKeyModel: ObservableObject {
         }
     }
 
-    var isText: Bool { type == "string" || type == "ReJSON-RL" }
-    var textTooLong: Bool { (length ?? 0) > Self.textLimit }
+    package var isText: Bool { type == "string" || type == "ReJSON-RL" }
+    package var textTooLong: Bool { (length ?? 0) > Self.textLimit }
 
-    func show(_ name: String, db: Int, session: DatabaseSession) {
+    package func show(_ name: String, db: Int, session: DatabaseSession) {
         self.session = session
         self.db = db
         self.name = name
@@ -118,14 +118,14 @@ final class RedisKeyModel: ObservableObject {
         if visible { Task { await load() } }
     }
 
-    func reload() {
+    package func reload() {
         guard let session else { return }
         let filter = filter
         show(name, db: db, session: session)
         self.filter = filter
     }
 
-    func load() async {
+    package func load() async {
         guard let driver else { return }
         // A newer read wins: two at once appended each page twice.
         ticket += 1
@@ -158,7 +158,7 @@ final class RedisKeyModel: ObservableObject {
         }
     }
 
-    static func lengthCommand(_ type: String, _ key: String) -> [String]? {
+    package static func lengthCommand(_ type: String, _ key: String) -> [String]? {
         switch type {
         case "string": ["STRLEN", key]
         case "hash": ["HLEN", key]
@@ -171,7 +171,7 @@ final class RedisKeyModel: ObservableObject {
     }
 
     /// A reply's `field value field value…` as a dictionary.
-    static func fields(_ value: RedisValue) -> [String: String] {
+    package static func fields(_ value: RedisValue) -> [String: String] {
         guard case .array(let items?) = value else { return [:] }
         var out: [String: String] = [:]
         for index in stride(from: 0, to: items.count - 1, by: 2) {
@@ -180,7 +180,7 @@ final class RedisKeyModel: ObservableObject {
         return out
     }
 
-    func more() async {
+    package func more() async {
         guard hasMore else { return }
         do {
             try await page(ticket)
@@ -190,7 +190,7 @@ final class RedisKeyModel: ObservableObject {
     }
 
     /// The filter changed: from the start.
-    func applyFilter() async {
+    package func applyFilter() async {
         cursor = "0"
         rows = []
         do {
@@ -280,7 +280,7 @@ final class RedisKeyModel: ObservableObject {
     }
 
     /// JSON laid out, if it is JSON; else as it came.
-    static func pretty(_ text: String) -> String {
+    package static func pretty(_ text: String) -> String {
         guard let data = text.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
             let out = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .fragmentsAllowed, .withoutEscapingSlashes])
         else { return text }
@@ -308,7 +308,7 @@ final class RedisKeyModel: ObservableObject {
         }
     }
 
-    func saveText() async {
+    package func saveText() async {
         let command =
             type == "ReJSON-RL"
             ? ["JSON.SET", name, "$", text]
@@ -326,7 +326,7 @@ final class RedisKeyModel: ObservableObject {
 
     /// A row's value changed: a hash field's value, a list element, a
     /// member's score — or, for a set, the member itself.
-    func update(_ row: Row, to value: String) async {
+    package func update(_ row: Row, to value: String) async {
         let commands: [[String]]
         switch type {
         case "hash": commands = [["HSET", name, row.cells[0], value]]
@@ -353,7 +353,7 @@ final class RedisKeyModel: ObservableObject {
     /// A new field, element, member or entry. `values` as the type takes
     /// them: field+value, element (+ "head"), member, member+score, or a
     /// stream's field=value pairs.
-    func add(_ values: [String], atHead: Bool = false) async {
+    package func add(_ values: [String], atHead: Bool = false) async {
         let command: [String]
         switch type {
         case "hash": command = ["HSET", name] + values
@@ -372,7 +372,7 @@ final class RedisKeyModel: ObservableObject {
         reload()
     }
 
-    func remove(_ row: Row) async {
+    package func remove(_ row: Row) async {
         let commands: [[String]]
         switch type {
         case "hash": commands = [["HDEL", name, row.cells[0]]]
@@ -395,13 +395,13 @@ final class RedisKeyModel: ObservableObject {
     }
 
     /// -1: no expiry.
-    func setTTL(_ seconds: Int) async {
+    package func setTTL(_ seconds: Int) async {
         guard await run([seconds < 0 ? ["PERSIST", name] : ["EXPIRE", name, String(seconds)]]) else { return }
         ttl = seconds < 0 ? -1 : seconds
     }
 
     /// RENAMENX: never over a key that is there.
-    func rename(to newName: String) async -> Bool {
+    package func rename(to newName: String) async -> Bool {
         guard let driver, !readOnly, !newName.isEmpty, newName != name else { return false }
         do {
             let reply = try await driver.command(["RENAMENX", name, newName], db: db)
@@ -423,13 +423,13 @@ final class RedisKeyModel: ObservableObject {
         }
     }
 
-    func delete() async -> Bool {
+    package func delete() async -> Bool {
         await run([["UNLINK", name]])
     }
 
     /// A new key: refused when one of that name is there. `values` as `add`
     /// takes them; a string's or a JSON's whole text first.
-    static func create(
+    package static func create(
         _ name: String, type: String, values: [String], ttl: Int?, db: Int, driver: RedisDriver
     ) async throws {
         guard !name.isEmpty else { throw DatabaseError.failed("A key needs a name.") }
@@ -461,8 +461,8 @@ final class RedisKeyModel: ObservableObject {
 /// The server's page: what INFO says (read again every few seconds while
 /// it shows), the slow log, the clients, Pub/Sub and the Profiler.
 @MainActor
-final class RedisServerModel: ObservableObject {
-    enum Tab: String, CaseIterable {
+package final class RedisServerModel: ObservableObject {
+    package enum Tab: String, CaseIterable {
         case overview = "Overview"
         case slowlog = "Slow Log"
         case clients = "Clients"
@@ -470,47 +470,47 @@ final class RedisServerModel: ObservableObject {
         case profiler = "Profiler"
     }
 
-    struct Message: Identifiable, Equatable {
-        let id = UUID()
-        var date: Date
-        var channel: String
-        var text: String
+    package struct Message: Identifiable, Equatable {
+        package let id = UUID()
+        package var date: Date
+        package var channel: String
+        package var text: String
     }
 
-    @Published var tab = Tab.overview
-    private(set) var session: DatabaseSession?
-    @Published private(set) var info = RedisInfo()
-    @Published private(set) var slowlog: [RedisSlowEntry] = []
-    @Published private(set) var clients: [[String: String]] = []
-    @Published private(set) var error: String?
-    @Published private(set) var updated: Date?
+    @Published package var tab = Tab.overview
+    package private(set) var session: DatabaseSession?
+    @Published package private(set) var info = RedisInfo()
+    @Published package private(set) var slowlog: [RedisSlowEntry] = []
+    @Published package private(set) var clients: [[String: String]] = []
+    @Published package private(set) var error: String?
+    @Published package private(set) var updated: Date?
     /// CONFIG's slowlog-log-slower-than, µs — nil where CONFIG is refused (managed servers).
-    @Published private(set) var slowerThan: Int?
+    @Published package private(set) var slowerThan: Int?
     private var refresher: Task<Void, Never>?
 
     // Pub/Sub
-    @Published var channels = "*"
-    @Published private(set) var subscribed: String?
-    @Published private(set) var messages: [Message] = []
+    @Published package var channels = "*"
+    @Published package private(set) var subscribed: String?
+    @Published package private(set) var messages: [Message] = []
     private var subscriber: RedisDriver?
     // Profiler
-    @Published private(set) var monitoring = false
-    @Published private(set) var commands: [Message] = []
+    @Published package private(set) var monitoring = false
+    @Published package private(set) var commands: [Message] = []
     private var monitor: RedisDriver?
 
     /// Messages and commands kept at most: the oldest go.
-    static let keep = 2000
+    package static let keep = 2000
 
-    var visible = false {
+    package var visible = false {
         didSet {
             guard visible != oldValue else { return }
             if visible { startRefreshing() } else { refresher?.cancel() }
         }
     }
 
-    var name: String { session?.connection.name ?? "" }
+    package var name: String { session?.connection.name ?? "" }
 
-    func show(_ session: DatabaseSession) {
+    package func show(_ session: DatabaseSession) {
         if self.session?.id != session.id {
             stopListening()
             info = RedisInfo()
@@ -533,7 +533,7 @@ final class RedisServerModel: ObservableObject {
         }
     }
 
-    func refresh() async {
+    package func refresh() async {
         guard let driver = session?.redis else {
             if let session { await session.open() }
             if session?.redis == nil {
@@ -562,13 +562,13 @@ final class RedisServerModel: ObservableObject {
         }
     }
 
-    func resetSlowlog() async {
+    package func resetSlowlog() async {
         guard let driver = session?.redis, session?.connection.readOnly == false else { return }
         _ = try? await driver.command(["SLOWLOG", "RESET"])
         await refresh()
     }
 
-    func kill(client id: String) async {
+    package func kill(client id: String) async {
         guard let driver = session?.redis, session?.connection.readOnly == false else { return }
         if case .error(let message) = (try? await driver.command(["CLIENT", "KILL", "ID", id])) ?? .simple("") { error = message }
         await refresh()
@@ -578,7 +578,7 @@ final class RedisServerModel: ObservableObject {
 
     /// Subscribes to channels — patterns, space-separated — on a connection
     /// of its own, the messages listed as they come.
-    func subscribe() async {
+    package func subscribe() async {
         guard let driver = session?.redis else { return }
         stopSubscriber()
         let patterns = channels.split(separator: " ").map(String.init).filter { !$0.isEmpty }
@@ -599,7 +599,7 @@ final class RedisServerModel: ObservableObject {
     }
 
     /// A pushed `pmessage pattern channel text` (or `message channel text`).
-    nonisolated static func pubsubMessage(_ value: RedisValue) -> Message? {
+    package nonisolated static func pubsubMessage(_ value: RedisValue) -> Message? {
         guard case .array(let parts?) = value, let kind = parts.first?.text else { return nil }
         if kind == "pmessage", parts.count == 4 { return Message(date: Date(), channel: parts[2].text ?? "", text: parts[3].text ?? "") }
         if kind == "message", parts.count == 3 { return Message(date: Date(), channel: parts[1].text ?? "", text: parts[2].text ?? "") }
@@ -611,13 +611,13 @@ final class RedisServerModel: ObservableObject {
         if messages.count > Self.keep { messages.removeLast(messages.count - Self.keep) }
     }
 
-    func stopSubscriber() {
+    package func stopSubscriber() {
         if let subscriber { Task { await subscriber.close() } }
         subscriber = nil
         subscribed = nil
     }
 
-    func publish(_ channel: String, _ message: String) async -> Int? {
+    package func publish(_ channel: String, _ message: String) async -> Int? {
         guard let driver = session?.redis, !channel.isEmpty else { return nil }
         do {
             let reply = try await driver.command(["PUBLISH", channel, message])
@@ -632,14 +632,14 @@ final class RedisServerModel: ObservableObject {
         return nil
     }
 
-    func clearMessages() { messages = [] }
+    package func clearMessages() { messages = [] }
 
     // MARK: Profiler
 
     /// MONITOR on a connection of its own: every command the server runs,
     /// as it runs it. It costs the server — so it stops when asked, when the
     /// page goes, and after `keep` commands.
-    func startMonitor() async {
+    package func startMonitor() async {
         guard let driver = session?.redis else { return }
         stopMonitor()
         let listener = await driver.listener()
@@ -666,15 +666,15 @@ final class RedisServerModel: ObservableObject {
         if commands.count >= Self.keep { stopMonitor() }
     }
 
-    func stopMonitor() {
+    package func stopMonitor() {
         if let monitor { Task { await monitor.close() } }
         monitor = nil
         monitoring = false
     }
 
-    func clearCommands() { commands = [] }
+    package func clearCommands() { commands = [] }
 
-    func stopListening() {
+    package func stopListening() {
         stopSubscriber()
         stopMonitor()
     }

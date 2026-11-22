@@ -11,32 +11,32 @@ import NIOSSL
 /// prefix, and the answer the same back with `grpc-status` in the trailers
 /// (or in the headers alone, "trailers-only", for a call refused at once).
 /// TLS by ALPN h2, or h2c to a local server.
-final class GRPCConnection: @unchecked Sendable {
-    struct Failure: LocalizedError, Equatable {
-        let message: String
-        var errorDescription: String? { message }
+package final class GRPCConnection: @unchecked Sendable {
+    package struct Failure: LocalizedError, Equatable {
+        package let message: String
+        package var errorDescription: String? { message }
     }
 
     /// What came back from a call.
-    struct Reply: Sendable, Equatable {
-        var headers: [(name: String, value: String)] = []
-        var messages: [Data] = []
-        var status = 2
-        var statusMessage = ""
-        var trailers: [(name: String, value: String)] = []
+    package struct Reply: Sendable, Equatable {
+        package var headers: [(name: String, value: String)] = []
+        package var messages: [Data] = []
+        package var status = 2
+        package var statusMessage = ""
+        package var trailers: [(name: String, value: String)] = []
 
-        static func == (a: Reply, b: Reply) -> Bool {
+        package static func == (a: Reply, b: Reply) -> Bool {
             a.messages == b.messages && a.status == b.status && a.statusMessage == b.statusMessage && a.headers.map(\.value) == b.headers.map(\.value)
                 && a.trailers.map(\.value) == b.trailers.map(\.value)
         }
 
-        var statusName: String { GRPCConnection.statusName(status) }
+        package var statusName: String { GRPCConnection.statusName(status) }
     }
 
     private let channel: Channel
     private let multiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<Void>
-    let authority: String
-    let scheme: String
+    package let authority: String
+    package let scheme: String
 
     private init(channel: Channel, multiplexer: NIOHTTP2Handler.AsyncStreamMultiplexer<Void>, authority: String, scheme: String) {
         self.channel = channel
@@ -47,7 +47,7 @@ final class GRPCConnection: @unchecked Sendable {
 
     /// `grpc://host:port` is h2c, `grpcs://` TLS; with neither, TLS unless
     /// the host is this Mac — as Bruno reads an address.
-    static func endpoint(_ address: String) -> (host: String, port: Int, tls: Bool, prefix: String)? {
+    package static func endpoint(_ address: String) -> (host: String, port: Int, tls: Bool, prefix: String)? {
         var text = address.trimmingCharacters(in: .whitespaces)
         var tls: Bool?
         for (scheme, secure) in [("grpcs://", true), ("https://", true), ("grpc://", false), ("http://", false)] where text.lowercased().hasPrefix(scheme) {
@@ -66,7 +66,7 @@ final class GRPCConnection: @unchecked Sendable {
         return (host, components.port ?? (secure ? 443 : 80), secure, prefix)
     }
 
-    static func connect(host: String, port: Int, tls: Bool, verify: Bool = true, serverName: String? = nil) async throws -> GRPCConnection {
+    package static func connect(host: String, port: Int, tls: Bool, verify: Bool = true, serverName: String? = nil) async throws -> GRPCConnection {
         let sslContext: NIOSSLContext?
         if tls {
             var configuration = TLSConfiguration.makeClientConfiguration()
@@ -100,14 +100,14 @@ final class GRPCConnection: @unchecked Sendable {
         return GRPCConnection(channel: channel, multiplexer: multiplexer, authority: port == (tls ? 443 : 80) ? host : "\(host):\(port)", scheme: tls ? "https" : "http")
     }
 
-    func close() {
+    package func close() {
         channel.close(promise: nil)
     }
 
     /// One call: the messages sent (then the stream half-closed), every
     /// message that came back and the status. `onMessage` hears each as it
     /// arrives — a server stream's, shown as they come.
-    func call(
+    package func call(
         _ path: String, metadata: [(String, String)] = [], messages: [Data], timeout: TimeInterval = 30,
         onMessage: (@Sendable (Data) -> Void)? = nil
     ) async throws -> Reply {
@@ -196,7 +196,7 @@ final class GRPCConnection: @unchecked Sendable {
     }
 
     /// gRPC's status codes, as the spec names them.
-    static func statusName(_ code: Int) -> String {
+    package static func statusName(_ code: Int) -> String {
         let names = [
             "OK", "CANCELLED", "UNKNOWN", "INVALID_ARGUMENT", "DEADLINE_EXCEEDED", "NOT_FOUND", "ALREADY_EXISTS", "PERMISSION_DENIED",
             "RESOURCE_EXHAUSTED", "FAILED_PRECONDITION", "ABORTED", "OUT_OF_RANGE", "UNIMPLEMENTED", "INTERNAL", "UNAVAILABLE", "DATA_LOSS",
@@ -211,25 +211,25 @@ final class GRPCConnection: @unchecked Sendable {
 /// A server's own description of itself: gRPC server reflection, v1 then
 /// v1alpha — its services, then the files that declare them and what they
 /// import.
-enum GRPCReflection {
-    static let paths = ["/grpc.reflection.v1.ServerReflection/ServerReflectionInfo", "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo"]
+package enum GRPCReflection {
+    package static let paths = ["/grpc.reflection.v1.ServerReflection/ServerReflectionInfo", "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo"]
 
     /// A ServerReflectionRequest: `list_services` (7), `file_containing_symbol`
     /// (4) or `file_by_filename` (3).
-    static func request(field: Int, _ text: String) -> Data {
+    package static func request(field: Int, _ text: String) -> Data {
         var writer = Protobuf.Writer()
         writer.field(field, string: text)
         return writer.data
     }
 
-    struct Response {
-        var services: [String] = []
-        var files: [Data] = []
-        var error: String?
+    package struct Response {
+        package var services: [String] = []
+        package var files: [Data] = []
+        package var error: String?
     }
 
     /// A ServerReflectionResponse: its service names, its files' bytes, its error.
-    static func response(_ data: Data) throws -> Response {
+    package static func response(_ data: Data) throws -> Response {
         var reader = Protobuf.Reader(data)
         var out = Response()
         while let (number, wire) = try reader.tag() {
@@ -265,7 +265,7 @@ enum GRPCReflection {
     }
 
     /// Everything the server describes, read into a registry.
-    static func registry(_ connection: GRPCConnection, metadata: [(String, String)], prefix: String = "") async throws -> Protobuf.Registry {
+    package static func registry(_ connection: GRPCConnection, metadata: [(String, String)], prefix: String = "") async throws -> Protobuf.Registry {
         var lastError = "The server has no reflection."
         for path in paths {
             let listed = try await connection.call(prefix + path, metadata: metadata, messages: [request(field: 7, "")], timeout: 15)
@@ -312,15 +312,15 @@ enum GRPCReflection {
 
 /// `.proto` files compiled by the `protoc` on this Mac into the descriptors
 /// a call needs — as Bruno reads its collection's proto files.
-enum GRPCProtoc {
+package enum GRPCProtoc {
     /// On the user's PATH — or, where their shell isn't asked (a test, a
     /// scenario), the one this process has, then Homebrew's places.
-    static func locate() -> URL? {
+    package static func locate() -> URL? {
         if let found = ShellEnvironment.executable("protoc", in: ShellEnvironment.environment()) { return found }
         return ["/opt/homebrew/bin/protoc", "/usr/local/bin/protoc"].first(where: FileManager.default.isExecutableFile).map(URL.init(fileURLWithPath:))
     }
 
-    static func registry(files: [URL], importPaths: [URL]) throws -> Protobuf.Registry {
+    package static func registry(files: [URL], importPaths: [URL]) throws -> Protobuf.Registry {
         guard let protoc = locate() else {
             throw GRPCConnection.Failure(message: "protoc isn't installed — `brew install protobuf` — or use a server with reflection.")
         }

@@ -15,34 +15,34 @@ import Foundation
 /// that answers: nothing in Overterm ever types a reply to a
 /// `TerraformPrompt` (`TerminalWindowController.answer` refuses one).
 /// Read off the screen's last lines; never run. Pure.
-struct TerraformPrompt: Equatable, Sendable {
-    enum Shape: Equatable, Sendable {
+package struct TerraformPrompt: Equatable, Sendable {
+    package enum Shape: Equatable, Sendable {
         /// An agent asks to run `command` (one line, as its prompt shows it).
         case agent(command: String)
         /// Terraform itself asks `question` (its own words), in `workspace` when it says one.
         case terraform(question: String, workspace: String?)
     }
 
-    var shape: Shape
+    package var shape: Shape
     /// The write it asks for, as `TerraformCommandLine` reads it; for
     /// Terraform's own prompt, what its words say (`apply`, `destroy`).
-    var line: TerraformCommandLine
+    package var line: TerraformCommandLine
 
-    var command: String? { if case .agent(let command) = shape { command } else { nil } }
-    var isAgents: Bool { command != nil }
-    var operation: String { line.tool + (line.operation.map { " " + $0 } ?? "") + (line.autoApprove && line.operation != nil ? " -auto-approve" : "") }
+    package var command: String? { if case .agent(let command) = shape { command } else { nil } }
+    package var isAgents: Bool { command != nil }
+    package var operation: String { line.tool + (line.operation.map { " " + $0 } ?? "") + (line.autoApprove && line.operation != nil ? " -auto-approve" : "") }
 
     /// How many of the screen's last lines are read: a prompt is the newest thing there.
-    static let window = 40
+    package static let window = 40
 
     /// The questions an agent's permission prompt asks, in their words.
-    static let agentQuestions = [
+    package static let agentQuestions = [
         "Do you want to proceed?", "Would you like to run the following command?", "Allow command?", "Do you want to allow", "Run this command?",
         "Approve this command?",
     ]
 
     /// Terraform's (and OpenTofu's) own confirmations, and what each asks to do.
-    static let terraformQuestions: [(prefix: String, operation: String)] = [
+    package static let terraformQuestions: [(prefix: String, operation: String)] = [
         ("Do you want to perform these actions", "apply"),
         ("Do you really want to destroy all resources", "destroy"),
         ("Do you really want to force-unlock?", "force-unlock"),
@@ -52,7 +52,7 @@ struct TerraformPrompt: Equatable, Sendable {
     ]
 
     /// The prompt at the end of `screen`, if it asks for a Terraform write.
-    static func parse(_ screen: String) -> TerraformPrompt? {
+    package static func parse(_ screen: String) -> TerraformPrompt? {
         let all = screen.components(separatedBy: "\n").map(clean)
         var lines = Array(all.suffix(window))
         while let last = lines.last, last.isEmpty { lines.removeLast() }
@@ -62,12 +62,12 @@ struct TerraformPrompt: Equatable, Sendable {
     }
 
     /// Terraform waits at its `Enter a value:` — a variable's value, perhaps a secret (5.6 rule 6).
-    static func asksForValue(_ screen: String) -> Bool {
+    package static func asksForValue(_ screen: String) -> Bool {
         screen.components(separatedBy: "\n").map(clean).last(where: { !$0.isEmpty })?.hasPrefix("Enter a value:") == true
     }
 
     /// Box borders and the agents' markers off a line, its spaces trimmed.
-    static func clean(_ line: String) -> String {
+    package static func clean(_ line: String) -> String {
         var text = line.replacingOccurrences(of: "\u{00a0}", with: " ")
         let borders = CharacterSet(charactersIn: "│┃║╭╮╰╯─━═┌┐└┘|")
         text = text.trimmingCharacters(in: borders.union(.whitespaces))
@@ -114,7 +114,7 @@ struct TerraformPrompt: Equatable, Sendable {
     }
 
     /// The candidate command blocks of a prompt, each its run of lines.
-    static func commandBlocks(_ lines: [String], question: Int, firstChoice: Int) -> [[String]] {
+    package static func commandBlocks(_ lines: [String], question: Int, firstChoice: Int) -> [[String]] {
         var blocks: [[String]] = []
         // Codex: between the question and the choices, from its `$ ` line.
         for run in runs(Array(lines[(question + 1)..<firstChoice])) {
@@ -156,7 +156,7 @@ struct TerraformPrompt: Equatable, Sendable {
     /// description under it, when the command already parses, is not.
     /// A trailing `\` is a continuation; a word cut by the wrap is tried
     /// joined without a space too.
-    static func writeCommand(inBlock block: [String]) -> (String, TerraformCommandLine)? {
+    package static func writeCommand(inBlock block: [String]) -> (String, TerraformCommandLine)? {
         var words = block.map { line -> String in
             var text = line
             if text.hasPrefix("$ ") { text.removeFirst(2) }
@@ -177,7 +177,7 @@ struct TerraformPrompt: Equatable, Sendable {
     }
 
     /// The words Terraform, OpenTofu and Terragrunt take as a command.
-    static let subcommands: Set<String> = [
+    package static let subcommands: Set<String> = [
         "apply", "destroy", "import", "taint", "untaint", "force-unlock", "state", "workspace", "refresh", "test", "init", "plan", "show", "output",
         "validate", "fmt", "console", "providers", "get", "graph", "login", "logout", "metadata", "modules", "version", "query", "run", "run-all",
         "run --all", "apply-all", "destroy-all", "stack",
@@ -191,7 +191,7 @@ struct TerraformPrompt: Equatable, Sendable {
     }
 
     /// `❯ 1. Yes`, `› 1. Yes, proceed (y)`, `2. No…`.
-    static func isChoice(_ line: String) -> Bool {
+    package static func isChoice(_ line: String) -> Bool {
         var text = Substring(line)
         while let first = text.first, "❯›>*".contains(first) || first == " " { text = text.dropFirst() }
         guard let dot = text.firstIndex(where: { $0 == "." || $0 == ")" }), text[..<dot].allSatisfy(\.isNumber), !text[..<dot].isEmpty else { return false }
@@ -199,14 +199,14 @@ struct TerraformPrompt: Equatable, Sendable {
     }
 
     /// The first terraform-family command of `text` that writes (3.3's list).
-    static func writeCommand(in text: String) -> TerraformCommandLine? {
+    package static func writeCommand(in text: String) -> TerraformCommandLine? {
         TerraformCommandLine.all(in: text).first(where: \.isWrite)
     }
 
     /// The command as the Inbox and the header may show it (5.6): every
     /// `-var` value masked, whatever its name, then `Secrets`' flags and
     /// assignments (`TF_VAR_admin_password=…`, `--token …`) and text rules.
-    static func masked(_ command: String) -> String {
+    package static func masked(_ command: String) -> String {
         let string = command as NSString
         guard let pattern = try? NSRegularExpression(pattern: #"\S+"#) else { return TerraformValidation.scrub(command) }
         let matches = pattern.matches(in: command, range: NSRange(location: 0, length: string.length))
@@ -238,7 +238,7 @@ struct TerraformPrompt: Equatable, Sendable {
     }
 
     /// The `"…"` after `marker` in `line`.
-    static func quoted(after marker: String, in line: String) -> String? {
+    package static func quoted(after marker: String, in line: String) -> String? {
         guard let range = line.range(of: marker) else { return nil }
         let rest = line[range.upperBound...]
         guard let open = rest.firstIndex(where: { $0 == "\"" || $0 == "“" }) else { return nil }
@@ -251,7 +251,7 @@ struct TerraformPrompt: Equatable, Sendable {
     /// The folder an agent's command runs terraform in: `base` (where the
     /// agent works), then a `cd` before it on the line, then `-chdir`. Nil
     /// for an absolute or `~` path it can't settle. Pure.
-    static func folder(of command: String, line: TerraformCommandLine, base: URL) -> URL {
+    package static func folder(of command: String, line: TerraformCommandLine, base: URL) -> URL {
         var folder = base
         for part in ShellCommandLine.commands(in: command) {
             if part.tool == "cd", let target = part.arguments.first, !target.hasPrefix("~"), !target.hasPrefix("-") {
@@ -269,15 +269,15 @@ struct TerraformPrompt: Equatable, Sendable {
 /// A pane's Terraform ask (3.3): the prompt, and the root, workspace and
 /// class it would touch, as the pane header says them — what its tab's
 /// mark and the Inbox's card say.
-struct TerraformAsk: Equatable, Sendable {
-    var prompt: TerraformPrompt
+package struct TerraformAsk: Equatable, Sendable {
+    package var prompt: TerraformPrompt
     /// The root it runs in, its class; nil when the command's folder holds no configuration.
-    var warning: TerraformPaneWarning?
+    package var warning: TerraformPaneWarning?
 
-    var isProduction: Bool { warning?.isProduction == true }
+    package var isProduction: Bool { warning?.isProduction == true }
 
     /// "asks to run terraform apply in envs/prod · workspace prod · PRODUCTION".
-    var summary: String {
+    package var summary: String {
         let verb = prompt.isAgents ? "asks to run" : "terraform asks to"
         var text = prompt.isAgents ? "\(verb) \(prompt.operation)" : "\(verb) \(prompt.line.operation ?? "write")"
         if let warning {
@@ -290,7 +290,7 @@ struct TerraformAsk: Equatable, Sendable {
     }
 
     /// The lines the Inbox's card shows: the command, the root's backend.
-    var preview: [String] {
+    package var preview: [String] {
         var lines: [String] = []
         switch prompt.shape {
         case .agent(let command): lines.append("$ " + command)
@@ -305,7 +305,7 @@ struct TerraformAsk: Equatable, Sendable {
 extension TerraformCommandLine {
     /// What prints a value Terraform marks sensitive, or an output's, in
     /// clear (5.6 rule 6): a pane that ran one keeps no scrollback.
-    var printsSecrets: Bool {
+    package var printsSecrets: Bool {
         guard let operation else { return false }
         return ["output", "show", "console", "state show", "state pull", "run output", "run show"].contains(operation)
             || operation.hasPrefix("run --all output") || operation.hasPrefix("run --all show")

@@ -1,18 +1,18 @@
 import Foundation
 
 /// A ref riding a commit: what `%D` decorates it with.
-struct CommitRef: Identifiable, Equatable {
-    enum Kind: String {
+package struct CommitRef: Identifiable, Equatable {
+    package enum Kind: String {
         case head, branch, remote, tag
     }
 
-    let kind: Kind
+    package let kind: Kind
     /// The short name: `main`, `origin/main`, `v1.2.0`.
-    let name: String
+    package let name: String
     /// Whether HEAD points here — the row people are standing on.
-    let isHead: Bool
+    package let isHead: Bool
 
-    var id: String { "\(kind.rawValue):\(name)" }
+    package var id: String { "\(kind.rawValue):\(name)" }
 }
 
 /// One commit of a repository's history, as Overgit lists it.
@@ -21,28 +21,28 @@ struct CommitRef: Identifiable, Equatable {
 /// by the merge base and carries the file lists that "why this file
 /// changed" needs. This one goes back as far as it is asked to, and carries
 /// what a graph needs — the parents — and what a row shows.
-struct Commit: Identifiable, Equatable {
-    let sha: String
-    let shortSHA: String
+package struct Commit: Identifiable, Equatable {
+    package let sha: String
+    package let shortSHA: String
     /// Oldest-named first, as git prints them: a merge has two or more.
-    let parents: [String]
-    let author: String
-    let authorEmail: String
-    let date: Date
+    package let parents: [String]
+    package let author: String
+    package let authorEmail: String
+    package let date: Date
     /// git's own relative date ("2 hours ago") — the phrasing people
     /// already read on the command line, and free to ask for.
-    let relative: String
-    let subject: String
+    package let relative: String
+    package let subject: String
     /// The message after the subject; empty when there is none.
-    let body: String
-    let refs: [CommitRef]
+    package let body: String
+    package let refs: [CommitRef]
 
-    var id: String { sha }
-    var isMerge: Bool { parents.count > 1 }
+    package var id: String { sha }
+    package var isMerge: Bool { parents.count > 1 }
 }
 
 /// A repository's commits, from `git log`.
-enum CommitLog {
+package enum CommitLog {
     /// The fields, NUL-separated as git's own `-z` output is: a message can
     /// hold newlines and tabs, never a NUL. Each commit is led by an empty
     /// field, so a body's newlines can't be mistaken for a record boundary.
@@ -54,7 +54,7 @@ enum CommitLog {
     /// `--decorate=full` is not decoration for its own sake: short names
     /// can't be told apart (`feature/x` is a local branch, `origin/x` is
     /// not), and the full refname says which is which without guessing.
-    static func arguments(limit: Int, allRefs: Bool = false) -> [String] {
+    package static func arguments(limit: Int, allRefs: Bool = false) -> [String] {
         var arguments = [
             "log", "-z", "--no-show-signature", "--date-order", "--decorate=full",
             "--max-count=\(max(1, limit))", format,
@@ -65,7 +65,7 @@ enum CommitLog {
 
     /// Parses what `arguments` prints: per commit an empty field, then the
     /// ten fields of the format, in order.
-    static func parse(_ output: String) -> [Commit] {
+    package static func parse(_ output: String) -> [Commit] {
         let fields = output.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)
         var commits: [Commit] = []
         var i = 0
@@ -93,7 +93,7 @@ enum CommitLog {
 
     /// Parses `%D` under `--decorate=full`:
     /// `HEAD -> refs/heads/main, refs/remotes/origin/main, tag: refs/tags/v1`.
-    static func refs(_ decoration: String) -> [CommitRef] {
+    package static func refs(_ decoration: String) -> [CommitRef] {
         decoration.split(separator: ",").compactMap { item in
             var name = item.trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return nil }

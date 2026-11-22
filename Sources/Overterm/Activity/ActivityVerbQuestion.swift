@@ -8,18 +8,18 @@ import Foundation
 /// its listeners, the children a Stop leaves running, the supervisor that
 /// may start it again, a tree's or a group's members and what a bulk
 /// leaves out, and the command it equals. Pure.
-enum ActivityVerbQuestion {
+package enum ActivityVerbQuestion {
     /// A bulk past this many asks for the count to be typed (D-12).
-    static let typedCountAbove = 50
+    package static let typedCountAbove = 50
     /// Past this many targets, the critical style (D-12).
-    static let criticalAbove = 10
+    package static let criticalAbove = 10
     /// What a SIGUSR1 or SIGUSR2 opens in these (6.10's Send a Signal).
-    static let debuggerRuntimes: Set<String> = ["node", "bun", "deno"]
+    package static let debuggerRuntimes: Set<String> = ["node", "bun", "deno"]
 
     /// What the sheet says for `verb`, done as `action`, to `subject`.
     /// `scope`: "Tab “web” · feature-x · Claude". `pane`: for the close
     /// route, the tab's title and whether it is split.
-    static func question(
+    package static func question(
         _ verb: ActivityVerb, _ rule: ActivityRule, subject: ActivityVerbSubject, scope: String?, pane: (title: String, isSplit: Bool)? = nil,
         timeZone: TimeZone = .current
     ) -> ActivityPortFree.Question? {
@@ -132,7 +132,7 @@ enum ActivityVerbQuestion {
     }
 
     /// Whether a bulk of `count` asks for its count to be typed.
-    static func typesCount(_ count: Int) -> Bool { count > typedCountAbove }
+    package static func typesCount(_ count: Int) -> Bool { count > typedCountAbove }
 
     /// A single signal's title and button.
     private static func words(_ verb: ActivityVerb, _ signal: ActivitySignal, subject: ActivityVerbSubject, quoted: String) -> (String, String) {
@@ -191,7 +191,7 @@ enum ActivityVerbQuestion {
     /// Suspend's sheet, asked for an app, a helper inside one, a helm or
     /// pulumi write, Send a Signal ▸ STOP, and whenever more than one
     /// process is stopped: each listed, what is left out with why.
-    static func suspend(_ subject: ActivityVerbSubject, members: [ActivitySignalTarget], scope: String?, timeZone: TimeZone = .current)
+    package static func suspend(_ subject: ActivityVerbSubject, members: [ActivitySignalTarget], scope: String?, timeZone: TimeZone = .current)
         -> ActivityPortFree.Question
     {
         let pid = subject.signal.identity.pid
@@ -229,7 +229,7 @@ enum ActivityVerbQuestion {
     /// Send a Signal ▸ STOP to a pane's job or agent: Suspend's own route —
     /// the pane suspended with it, its shell first —, asked as every Send a
     /// Signal is. `tab`: the tab's title.
-    static func suspendPane(_ subject: ActivityVerbSubject, tab: String, scope: String?, timeZone: TimeZone = .current) -> ActivityPortFree.Question {
+    package static func suspendPane(_ subject: ActivityVerbSubject, tab: String, scope: String?, timeZone: TimeZone = .current) -> ActivityPortFree.Question {
         let pid = subject.signal.identity.pid
         let quoted = "“\(DockerMCP.displayed(subject.name))” (pid \(pid))"
         var lines = [
@@ -245,7 +245,7 @@ enum ActivityVerbQuestion {
     /// Resume's sheet — and Resume All's —, asked for an app and whenever
     /// more than one process is continued: `members` parents first, with
     /// the names they were stopped as.
-    static func resume(title: String, members: [(target: ActivitySignalTarget, name: String)], scope: String?) -> ActivityPortFree.Question {
+    package static func resume(title: String, members: [(target: ActivitySignalTarget, name: String)], scope: String?) -> ActivityPortFree.Question {
         var lines = ["SIGCONT by each one's own audit token, children first, only while it is still the process Activity stopped:"]
         lines += members.map { "  pid \($0.target.identity.pid) \(DockerMCP.displayed($0.name))" }
         lines.append("The command it equals: kill -CONT \(members.reversed().map { "\($0.target.identity.pid)" }.joined(separator: " "))")
@@ -255,7 +255,7 @@ enum ActivityVerbQuestion {
 
     /// Lower Priority's sheet: asked every time, since it can't be undone
     /// without an administrator.
-    static func lower(_ subject: ActivityVerbSubject, to nice: Int32, scope: String?, timeZone: TimeZone = .current) -> ActivityPortFree.Question {
+    package static func lower(_ subject: ActivityVerbSubject, to nice: Int32, scope: String?, timeZone: TimeZone = .current) -> ActivityPortFree.Question {
         let pid = subject.signal.identity.pid
         var lines = [
             "Its nice goes from \(subject.nice) to \(nice): it gets the CPU after what runs at a lower nice.",
@@ -270,7 +270,7 @@ enum ActivityVerbQuestion {
     }
 
     /// "Stop it first?" (D-11): `K` with no Stop before it.
-    static func stopFirst(_ subject: ActivityVerbSubject) -> (title: String, detail: String) {
+    package static func stopFirst(_ subject: ActivityVerbSubject) -> (title: String, detail: String) {
         (
             "SIGKILL skips its cleanup: pid files, children. Stop it first?",
             "“\(DockerMCP.displayed(subject.name))” (pid \(subject.signal.identity.pid)) is sent SIGTERM by Stop and can clean up; Force Quit ends it at once — "

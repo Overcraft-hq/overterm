@@ -9,10 +9,10 @@ import AppKit
 /// it with the context's `metrics: none`. A pod's detail says its
 /// containers' usage against their requests and limits.
 extension KubernetesPageModel {
-    static let cpuColumn = "metrics.cpu"
-    static let memoryColumn = "metrics.memory"
+    package static let cpuColumn = "metrics.cpu"
+    package static let memoryColumn = "metrics.memory"
 
-    static func measure(of column: String) -> KubeUsageCell.Measure? {
+    package static func measure(of column: String) -> KubeUsageCell.Measure? {
         switch column {
         case cpuColumn: .cpu
         case memoryColumn: .memory
@@ -20,7 +20,7 @@ extension KubernetesPageModel {
         }
     }
 
-    static func metricsColumns(_ want: KubeMetricsWant) -> [ResourceColumn] {
+    package static func metricsColumns(_ want: KubeMetricsWant) -> [ResourceColumn] {
         let of =
             want == .nodes
             ? " — with its share of the node's allocatable, as kubectl top nodes says it, and the last 15 min of that share as a strip of 15 s cells (taller and warmer as it nears allocatable; blank where nothing was sampled)"
@@ -43,11 +43,11 @@ extension KubernetesPageModel {
     }
 
     /// A usage cell's text font: 12 pt monospaced, as the list draws it.
-    static let usageFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    package static let usageFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
     /// The width a usage cell's content takes: its text, and for a node
     /// its heat strip and the 6 pt between them (`KubernetesPageView.cell`).
-    static func usageContentWidth(_ text: String, strip: Bool) -> CGFloat {
+    package static func usageContentWidth(_ text: String, strip: Bool) -> CGFloat {
         let drawn = (text as NSString).size(withAttributes: [.font: usageFont]).width.rounded(.up)
         return drawn + (strip ? KubeHeatStripView.width + 6 : 0)
     }
@@ -55,7 +55,7 @@ extension KubernetesPageModel {
     /// A usage column's least width: its longest likely value ("12000m",
     /// "65536Mi"; a node's with its share, "12000m (100%)", and its strip)
     /// and the cell's 6 pt either side.
-    static func usageMinWidth(_ measure: KubeUsageCell.Measure, node: Bool = false) -> CGFloat {
+    package static func usageMinWidth(_ measure: KubeUsageCell.Measure, node: Bool = false) -> CGFloat {
         let value = measure == .cpu ? "12000m" : "65536Mi"
         // At least what a pod's took before it was measured (64, 72 pt).
         return max(usageContentWidth(node ? value + " (100%)" : value, strip: node) + 12, measure == .cpu ? 64 : 72)
@@ -63,9 +63,9 @@ extension KubernetesPageModel {
 
     /// The Pods list's shares of request and limit (metrics.md 2.1, M5b):
     /// part of the wide view.
-    var showsShareColumns: Bool { wide && metricsWant == .pods }
+    package var showsShareColumns: Bool { wide && metricsWant == .pods }
 
-    static var shareColumns: [ResourceColumn] {
+    package static var shareColumns: [ResourceColumn] {
         // 56 pt: the header's "%MEM/R" whole, not "%ME…".
         KubePodShares.Column.allCases.map { ResourceColumn(id: $0.rawValue, title: $0.title, width: 70, minWidth: 56, help: $0.help) }
     }
@@ -73,7 +73,7 @@ extension KubernetesPageModel {
     /// A pod's share cell: without Prometheus a dash and its sentence (no
     /// pod object read for it, decision 10); else the usage's own dash
     /// while there is no number, else kube-state-metrics' answer.
-    func share(_ column: KubePodShares.Column, of row: KubeListRow, now: Date = Date()) -> KubeUsageCell {
+    package func share(_ column: KubePodShares.Column, of row: KubeListRow, now: Date = Date()) -> KubeUsageCell {
         guard metricsWant == .pods else { return .dash(KubeMetricsAvailability.off.reason ?? "") }
         guard prometheusOn else { return .dash(KubeChartEmpty.sharesNeedPrometheus.sentence) }
         let used = usage(column.measure, of: row, now: now)
@@ -83,7 +83,7 @@ extension KubernetesPageModel {
 
     /// The usage the list shows: its pods', its nodes' — nil for another
     /// kind, or with the context's `metrics: none`.
-    var metricsWant: KubeMetricsWant? {
+    package var metricsWant: KubeMetricsWant? {
         guard model.selected?.settings.metrics != KubeMetricsSource.none else { return nil }
         switch model.kind.fullName {
         case KubeResourceKind.pods.fullName: return .pods
@@ -94,7 +94,7 @@ extension KubernetesPageModel {
 
     /// What the page shows now that needs usage: the list's, the Overview's
     /// (the nodes') — only while the page is on screen.
-    var metricsOnScreen: KubeMetricsWant? {
+    package var metricsOnScreen: KubeMetricsWant? {
         guard visible, windowVisible else { return nil }
         if section == .overview { return model.selected?.settings.metrics == KubeMetricsSource.none ? nil : .nodes }
         return section.listsKinds ? metricsWant : nil
@@ -107,7 +107,7 @@ extension KubernetesPageModel {
     /// Its Metrics tab, a workload's, an HPA's, a node's or a namespace's:
     /// what that tab charts (`objectMetricsDetails`).
     /// Not while every chart of the tab is Prometheus' (1h on), nor while Live is paused.
-    var metricsDetailsOnScreen: [KubeMetricsDetail] {
+    package var metricsDetailsOnScreen: [KubeMetricsDetail] {
         guard chartsShown, section.listsKinds, model.selected?.settings.metrics != KubeMetricsSource.none, let detail else { return [] }
         let sampled = detailTab == .metrics && !metricsLivePaused && metricsSource(of: detail.ref).map { $0 != .prometheus } ?? true
         if detail.ref.isPod, let namespace = detail.ref.namespace {
@@ -123,7 +123,7 @@ extension KubernetesPageModel {
     }
 
     /// The monitor told what this page shows.
-    func updateMetricsWanted() {
+    package func updateMetricsWanted() {
         // An expanded chart on screen, the page hidden: its tab's usage and Prometheus still read (M9).
         model.holdCharts(holdsChartsForExpansion, for: self)
         model.metrics.want(metricsOnScreen, for: self)
@@ -135,7 +135,7 @@ extension KubernetesPageModel {
     }
 
     /// A row's usage cell.
-    func usage(_ measure: KubeUsageCell.Measure, of row: KubeListRow, now: Date = Date()) -> KubeUsageCell {
+    package func usage(_ measure: KubeUsageCell.Measure, of row: KubeListRow, now: Date = Date()) -> KubeUsageCell {
         guard let want = metricsWant else { return .dash(KubeMetricsAvailability.off.reason ?? "") }
         return model.metrics.cell(measure, row: row.row.id, want: want, now: now)
     }
@@ -144,7 +144,7 @@ extension KubernetesPageModel {
     /// minutes as the ring holds them, against the allocatable the nodes'
     /// read gave — only beside a number, where the cell shows one: a dash
     /// has no strip. Nothing is read for it.
-    func heatStrip(_ measure: KubeUsageCell.Measure, of row: KubeListRow, now: Date = Date()) -> KubeHeatStrip? {
+    package func heatStrip(_ measure: KubeUsageCell.Measure, of row: KubeListRow, now: Date = Date()) -> KubeHeatStrip? {
         guard metricsWant == .nodes, row.row.id.namespace == nil, usage(measure, of: row, now: now).sort != nil,
             let allocatable = model.metrics.reading(.nodes)?.sample?.allocatable[row.row.id.name]
         else { return nil }
@@ -153,12 +153,12 @@ extension KubernetesPageModel {
     }
 
     /// A strip's identifier: `kubernetes.heat.<node>.cpu`.
-    static func heatStripIdentifier(_ node: String, _ measure: KubeUsageCell.Measure) -> String {
+    package static func heatStripIdentifier(_ node: String, _ measure: KubeUsageCell.Measure) -> String {
         "kubernetes.heat.\(node).\(measure == .cpu ? "cpu" : "memory")"
     }
 
     /// What the header says of the usage: why there's none, how old it is.
-    var metricsNote: String? {
+    package var metricsNote: String? {
         guard let want = metricsWant, showsSection else { return volumeNote }
         // Both said where both have something to say: neither hides the other.
         let notes = [model.metrics.note(want), sharesNote].compactMap { $0 }
@@ -168,7 +168,7 @@ extension KubernetesPageModel {
     /// Why none of the shares can be shown, said once in the header: the
     /// sentence each dash says too. Without metrics-server's usage there
     /// is nothing to share: the usage's own note says why.
-    var sharesNote: String? {
+    package var sharesNote: String? {
         guard showsShareColumns, model.metrics.availability == .served || !prometheusOn else { return nil }
         guard prometheusOn else { return KubeChartEmpty.sharesNeedPrometheus.sentence }
         if case .unavailable(let why) = model.prometheus.state { return why }
@@ -176,14 +176,14 @@ extension KubernetesPageModel {
     }
 
     /// Whether the header's note is a refusal: Try Again beside it.
-    var metricsNoteIsRefusal: Bool {
+    package var metricsNoteIsRefusal: Bool {
         guard let want = metricsWant, showsSection else { return false }
         return model.metrics.isRefused(want)
     }
 
     /// A pod's current sample: its own read (the detail's), else the
     /// list's — nil when neither is current.
-    func podSample(of ref: KubeObjectRef, now: Date = Date()) -> KubePodMetrics? {
+    package func podSample(of ref: KubeObjectRef, now: Date = Date()) -> KubePodMetrics? {
         guard ref.isPod, let namespace = ref.namespace, model.metrics.availability == .served else { return nil }
         let id = KubeRowID(namespace: namespace, name: ref.name)
         let readings = [model.metrics.reading(.pod(namespace: namespace, name: ref.name)), model.metrics.reading(.pods)]
@@ -196,13 +196,13 @@ extension KubernetesPageModel {
 
     /// A pod's containers' usage against their requests and limits: the
     /// detail's object and the pod's sample. Nil without either.
-    func containerUsage(of ref: KubeObjectRef, object: [String: Any]?) -> [KubeContainerUsage.Line]? {
+    package func containerUsage(of ref: KubeObjectRef, object: [String: Any]?) -> [KubeContainerUsage.Line]? {
         guard let object, let pod = podSample(of: ref) else { return nil }
         return KubeContainerUsage.lines(object, pod)
     }
 
     /// Why a pod's own usage read has nothing: its refusal, its failure.
-    func podUsageProblem(of ref: KubeObjectRef) -> String? {
+    package func podUsageProblem(of ref: KubeObjectRef) -> String? {
         guard ref.isPod, let namespace = ref.namespace, podSample(of: ref) == nil,
             let reading = model.metrics.reading(.pod(namespace: namespace, name: ref.name))
         else { return nil }
@@ -210,7 +210,7 @@ extension KubernetesPageModel {
     }
 
     /// Whether a pod's own usage read was refused: Try Again beside it.
-    func podUsageRefused(of ref: KubeObjectRef) -> Bool {
+    package func podUsageRefused(of ref: KubeObjectRef) -> Bool {
         guard ref.isPod, let namespace = ref.namespace, podSample(of: ref) == nil else { return false }
         return model.metrics.reading(.pod(namespace: namespace, name: ref.name))?.refused != nil
     }
@@ -218,7 +218,7 @@ extension KubernetesPageModel {
     /// A pod's samples taken while shown — its detail's, kept an hour, else
     /// the list's (its sparkline): only while its usage is current, as the
     /// numbers are.
-    func usageHistory(of ref: KubeObjectRef) -> [KubeUsagePoint] {
+    package func usageHistory(of ref: KubeObjectRef) -> [KubeUsagePoint] {
         guard podSample(of: ref) != nil else { return [] }
         return model.metrics.ring.points(.pod(namespace: ref.namespace ?? "", name: ref.name))
     }
@@ -227,10 +227,10 @@ extension KubernetesPageModel {
 /// The Overview section (`1`): read while it shows on a page on screen,
 /// in the context and namespace shown (`KubeClusterOverviewSession`).
 extension KubernetesPageModel {
-    var overviewShows: Bool { section == .overview && visible && windowVisible }
+    package var overviewShows: Bool { section == .overview && visible && windowVisible }
 
     /// Shown: followed there; hidden, nothing is.
-    func updateOverviewReading() {
+    package func updateOverviewReading() {
         guard overviewShows, model.enabled, let context = model.selectedName else {
             clusterOverview.hide()
             health.hide()
@@ -246,7 +246,7 @@ extension KubernetesPageModel {
 
     /// An object the Overview names (a failing pod, a workload, a node):
     /// its kind's list, and its detail.
-    func openFromOverview(kind fullName: String, _ id: KubeRowID, from section: KubeSection = .overview) {
+    package func openFromOverview(kind fullName: String, _ id: KubeRowID, from section: KubeSection = .overview) {
         guard let context = model.selectedName else { return }
         detailOpenedFrom = section
         let kind = model.catalog.kind(fullName: fullName) ?? (fullName == KubeResourceKind.pods.fullName ? .pods : nil)
@@ -259,14 +259,14 @@ extension KubernetesPageModel {
     /// A key while the Overview shows: the page's own (sections, `n`, `c`,
     /// `:`, `0`, `?`, `/`); the list's verbs would act on a kind not on
     /// screen, so they are refused. Nil: the page's to decide.
-    func overviewPress(_ characters: String) -> Bool? {
+    package func overviewPress(_ characters: String) -> Bool? {
         guard !cheatSheet, case .key(let key) = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return nil }
         return [.command, .namespace, .context, .allNamespaces].contains(key) ? nil : false
     }
 
     /// The cluster's CPU and memory used against what its nodes can give,
     /// from the nodes' sample: nil until it is read (or without metrics-server).
-    var clusterUsage: (used: KubeUsage, allocatable: KubeUsage?)? {
+    package var clusterUsage: (used: KubeUsage, allocatable: KubeUsage?)? {
         guard model.metrics.availability == .served, let reading = model.metrics.reading(.nodes), let sample = reading.sample,
             Date().timeIntervalSince(sample.read) <= model.metrics.staleAfter, !sample.nodes.isEmpty
         else { return nil }
@@ -275,7 +275,7 @@ extension KubernetesPageModel {
 
     /// The cluster's samples taken while the Overview showed: only while
     /// its usage is current.
-    var clusterHistory: [KubeUsagePoint] {
+    package var clusterHistory: [KubeUsagePoint] {
         guard clusterUsage != nil else { return [] }
         return model.metrics.ring.points(.cluster)
     }

@@ -10,20 +10,20 @@ import AppKit
 /// opens what it shut, and only that.
 extension TerminalWindowController {
     /// What presenting shut, to open again on the way out.
-    struct Presentation {
-        var sidebar = false
-        var editor = false
-        var changes = false
-        var browser = false
-        var inbox = false
+    package struct Presentation {
+        package var sidebar = false
+        package var editor = false
+        package var changes = false
+        package var browser = false
+        package var inbox = false
     }
 
     /// Points added to every terminal's font while presenting.
-    static let fontStep = 6
+    package static let fontStep = 6
 
-    var isPresenting: Bool { presentation != nil }
+    package var isPresenting: Bool { presentation != nil }
 
-    @objc func togglePresentation(_ sender: Any?) {
+    @objc package func togglePresentation(_ sender: Any?) {
         if presentation == nil { startPresenting() } else { stopPresenting() }
     }
 

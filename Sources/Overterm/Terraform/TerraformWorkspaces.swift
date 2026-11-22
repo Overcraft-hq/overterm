@@ -6,15 +6,15 @@ import Foundation
 /// refuses an unknown name and never creates one (no `-or-create`). Select
 /// writes the checkout's `.terraform/environment`, which every terminal in
 /// that root then follows: the menu says so.
-enum TerraformWorkspaces {
-    enum Answer: Sendable, Equatable {
+package enum TerraformWorkspaces {
+    package enum Answer: Sendable, Equatable {
         case names([String])
         case failed(String)
     }
 
     /// A local backend's: `default` and `terraform.tfstate.d`'s folders;
     /// any other's: `workspace list`. Blocking: a GCD thread's.
-    static func list(root: URL, checkout: URL, settingPath: String, hasVersionFile: Bool) -> Answer {
+    package static func list(root: URL, checkout: URL, settingPath: String, hasVersionFile: Bool) -> Answer {
         let facts = TerraformRootFacts.read(root: root, checkout: checkout)
         if facts.backend.type == "local" { return .names((["default"] + facts.localWorkspaces).reduce(into: []) { if !$0.contains($1) { $0.append($1) } }) }
         guard let binary = TerraformCLI.binary(forRoot: root, settingPath: settingPath, hasVersionFile: hasVersionFile) else {
@@ -30,7 +30,7 @@ enum TerraformWorkspaces {
     }
 
     /// `workspace select <name>`: nil when done, else why not. Blocking.
-    static func select(_ name: String, root: URL, settingPath: String, hasVersionFile: Bool) -> String? {
+    package static func select(_ name: String, root: URL, settingPath: String, hasVersionFile: Bool) -> String? {
         guard let arguments = TerraformCommands.workspaceSelect(name) else { return "“\(name)” isn't a workspace's name." }
         guard let binary = TerraformCLI.binary(forRoot: root, settingPath: settingPath, hasVersionFile: hasVersionFile) else { return "No terraform found." }
         guard let base = try? AppEnvironment.terraformBaseEnvironment(), let scratch = try? TerraformGuards.prepareScratch(at: AppEnvironment.terraformScratchDirectory)
@@ -47,7 +47,7 @@ extension TerraformRunRisks {
     /// The base branch's side of a root (5.4, 5.5): its `.tf` files and
     /// lock file at `base` (the diff's merge base, else `HEAD`), read with
     /// `git show`, bounded. Nil when the root isn't there.
-    static func readBase(checkout: URL, rootPath: String, base: String) async -> Base? {
+    package static func readBase(checkout: URL, rootPath: String, base: String) async -> Base? {
         let prefix = rootPath.isEmpty ? "" : rootPath + "/"
         guard let listed = try? await Git.run(["ls-tree", "-z", "--name-only", base, "--", prefix.isEmpty ? "." : prefix], in: checkout) else { return nil }
         let names = listed.split(separator: "\0").map(String.init).filter { ($0 as NSString).deletingLastPathComponent == rootPath }

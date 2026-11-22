@@ -4,12 +4,12 @@ import Foundation
 /// JSONCompact (its columns, their types, the rows). The server stops at the
 /// row limit itself (`max_result_rows`, `result_overflow_mode=break`), and
 /// a read-only connection is ClickHouse's own `readonly=1`.
-actor ClickHouseDriver: DatabaseDriver {
-    let config: DatabaseConnection
+package actor ClickHouseDriver: DatabaseDriver {
+    package let config: DatabaseConnection
     private let password: String?
     private let session: URLSession
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
         let configuration = URLSessionConfiguration.ephemeral
@@ -18,7 +18,7 @@ actor ClickHouseDriver: DatabaseDriver {
     }
 
     /// `http://host:8123/` — https unless SSL is off.
-    func url(database: String?, limit: Int?, settings: [String: String] = [:]) -> URL? {
+    package func url(database: String?, limit: Int?, settings: [String: String] = [:]) -> URL? {
         var components = URLComponents()
         components.scheme = config.sslMode == .disable ? "http" : "https"
         components.host = config.host
@@ -36,18 +36,18 @@ actor ClickHouseDriver: DatabaseDriver {
         return components.url
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         _ = try await execute("SELECT 1", limit: 1)
     }
 
-    func close() async { session.invalidateAndCancel() }
+    package func close() async { session.invalidateAndCancel() }
 
-    func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ sql: String, limit: Int) async throws -> QueryResult {
         try await send(sql, limit: limit)
     }
 
     /// A statement POSTed, with settings of its own (a Save's `mutations_sync`).
-    func send(_ sql: String, limit: Int, settings: [String: String] = [:]) async throws -> QueryResult {
+    package func send(_ sql: String, limit: Int, settings: [String: String] = [:]) async throws -> QueryResult {
         guard let url = url(database: config.database, limit: SQLText.onlyReads(sql) ? limit : nil, settings: settings) else {
             throw DatabaseError.failed("The host isn't a valid address.")
         }
@@ -74,7 +74,7 @@ actor ClickHouseDriver: DatabaseDriver {
 
     /// JSONCompact: `{"meta": [{"name", "type"}], "data": [[…]], "rows": n}`;
     /// an empty body for a statement that returns nothing.
-    static func parse(_ data: Data, limit: Int) throws -> QueryResult {
+    package static func parse(_ data: Data, limit: Int) throws -> QueryResult {
         var result = QueryResult()
         guard !data.isEmpty, let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             result.message = "Done"
@@ -93,7 +93,7 @@ actor ClickHouseDriver: DatabaseDriver {
     }
 
     /// A JSON value as the grid shows it.
-    static func text(_ value: Any) -> String? {
+    package static func text(_ value: Any) -> String? {
         switch value {
         case is NSNull: return nil
         case let string as String: return string
@@ -105,14 +105,14 @@ actor ClickHouseDriver: DatabaseDriver {
     }
 
     /// `Code: 60. DB::Exception: Table shop.x does not exist. (UNKNOWN_TABLE) (version …)` → the sentence.
-    static func message(_ text: String) -> String {
+    package static func message(_ text: String) -> String {
         guard let range = text.range(of: "DB::Exception: ") else { return text.isEmpty ? "ClickHouse refused it." : text }
         var message = String(text[range.upperBound...])
         if let version = message.range(of: " (version") { message = String(message[..<version.lowerBound]) }
         return message
     }
 
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         let names = try await execute(
             "SELECT name FROM system.databases WHERE name NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') ORDER BY name",
             limit: 10_000
@@ -120,13 +120,13 @@ actor ClickHouseDriver: DatabaseDriver {
         return names.sorted { ($0 == config.database ? 0 : 1, $0) < ($1 == config.database ? 0 : 1, $1) }
     }
 
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         try await execute(
             "SELECT name, engine FROM system.tables WHERE database = \(DatabaseDrivers.literal(schema)) ORDER BY name", limit: 100_000
         ).rows.map { CatalogTable(schema: schema, name: $0[0] ?? "", isView: ($0[1] ?? "").hasSuffix("View")) }
     }
 
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         try await execute(
             "SELECT table, name, type FROM system.columns WHERE database = \(DatabaseDrivers.literal(schema)) ORDER BY table, position",
             limit: 1_000_000
@@ -139,17 +139,17 @@ actor ClickHouseDriver: DatabaseDriver {
 /// SSL's modes over HTTPS: prefer and require take any certificate, as
 /// libpq's do; verify-full leaves it to the system.
 /// TLS as a connection asks: checked against its name, or not at all.
-final class ClickHouseTrust: NSObject, URLSessionDelegate, Sendable {
-    let verify: Bool
+package final class ClickHouseTrust: NSObject, URLSessionDelegate, Sendable {
+    package let verify: Bool
     /// Through a tunnel: the name the certificate is checked against.
-    let serverName: String?
+    package let serverName: String?
 
-    init(config: DatabaseConnection) {
+    package init(config: DatabaseConnection) {
         verify = config.sslMode == .verifyFull
         serverName = config.serverName
     }
 
-    func urlSession(
+    package func urlSession(
         _ session: URLSession, didReceive challenge: URLAuthenticationChallenge
     ) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,

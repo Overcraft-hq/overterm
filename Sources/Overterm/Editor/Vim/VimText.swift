@@ -5,21 +5,21 @@ import Foundation
 /// copied window, not an Objective-C call each. Positions are UTF-16 offsets;
 /// stepping goes by composed character, so an emoji or `İ` + a combining mark
 /// is never split.
-final class VimText {
-    let string: NSString
-    let length: Int
+package final class VimText {
+    package let string: NSString
+    package let length: Int
     private var window = [unichar](repeating: 0, count: 4096)
     private var base = 0
     private var filled = 0
 
-    static let newline: unichar = 10
+    package static let newline: unichar = 10
 
-    init(_ string: NSString) {
+    package init(_ string: NSString) {
         self.string = string
         self.length = string.length
     }
 
-    subscript(i: Int) -> unichar {
+    package subscript(i: Int) -> unichar {
         if i < base || i >= base + filled { fill(around: i) }
         return window[i - base]
     }
@@ -32,38 +32,38 @@ final class VimText {
         window.withUnsafeMutableBufferPointer { string.getCharacters($0.baseAddress!, range: range) }
     }
 
-    func substring(_ range: NSRange) -> String { string.substring(with: range) }
+    package func substring(_ range: NSRange) -> String { string.substring(with: range) }
 
-    func substring(_ from: Int, _ to: Int) -> String { string.substring(with: NSRange(location: from, length: to - from)) }
+    package func substring(_ from: Int, _ to: Int) -> String { string.substring(with: NSRange(location: from, length: to - from)) }
 
     // MARK: Characters
 
     /// The end of the composed character at `i`.
-    func next(_ i: Int) -> Int {
+    package func next(_ i: Int) -> Int {
         if i >= length { return length }
         if self[i] < 0x300, i + 1 >= length || self[i + 1] < 0x300 { return i + 1 }
         return NSMaxRange(string.rangeOfComposedCharacterSequence(at: i))
     }
 
     /// The start of the composed character before `i`.
-    func prev(_ i: Int) -> Int {
+    package func prev(_ i: Int) -> Int {
         if i <= 0 { return 0 }
         if self[i - 1] < 0x300 { return i - 1 }
         return string.rangeOfComposedCharacterSequence(at: i - 1).location
     }
 
     /// `p` moved back to the start of the composed character it is inside.
-    func composedStart(_ p: Int) -> Int {
+    package func composedStart(_ p: Int) -> Int {
         if p >= length || p <= 0 { return max(0, min(p, length)) }
         if self[p] < 0x300 && !UTF16.isTrailSurrogate(self[p]) { return p }
         return string.rangeOfComposedCharacterSequence(at: p).location
     }
 
-    func character(at i: Int) -> String { i < length ? substring(i, next(i)) : "" }
+    package func character(at i: Int) -> String { i < length ? substring(i, next(i)) : "" }
 
-    func isNewline(_ i: Int) -> Bool { i < length && self[i] == VimText.newline }
+    package func isNewline(_ i: Int) -> Bool { i < length && self[i] == VimText.newline }
 
-    func isBlank(_ i: Int) -> Bool {
+    package func isBlank(_ i: Int) -> Bool {
         guard i < length else { return false }
         let u = self[i]
         return u == 32 || u == 9
@@ -71,7 +71,7 @@ final class VimText {
 
     /// Vim's character classes: 0 blank (and newline), 1 punctuation, 2 word,
     /// 3 emoji/symbols. `big` (W B E) folds everything but blanks into one.
-    func charClass(_ i: Int, big: Bool) -> Int {
+    package func charClass(_ i: Int, big: Bool) -> Int {
         guard i < length else { return 0 }
         let u = self[i]
         if u == 10 || u == 32 || u == 9 || u == 13 { return 0 }
@@ -99,34 +99,34 @@ final class VimText {
 
     // MARK: Lines
 
-    func lineStart(_ p: Int) -> Int {
+    package func lineStart(_ p: Int) -> Int {
         var i = min(max(p, 0), length)
         while i > 0 && self[i - 1] != VimText.newline { i -= 1 }
         return i
     }
 
     /// The offset of the line's newline, or the end of the text.
-    func lineEnd(_ p: Int) -> Int {
+    package func lineEnd(_ p: Int) -> Int {
         var i = max(p, 0)
         while i < length && self[i] != VimText.newline { i += 1 }
         return i
     }
 
-    func firstNonBlank(_ p: Int) -> Int {
+    package func firstNonBlank(_ p: Int) -> Int {
         var i = lineStart(p)
         while isBlank(i) { i += 1 }
         return i
     }
 
-    func lineIsEmpty(_ p: Int) -> Bool { lineStart(p) == lineEnd(p) }
+    package func lineIsEmpty(_ p: Int) -> Bool { lineStart(p) == lineEnd(p) }
 
-    func lineIsBlank(_ p: Int) -> Bool {
+    package func lineIsBlank(_ p: Int) -> Bool {
         var i = lineStart(p)
         while isBlank(i) { i += 1 }
         return i >= length || self[i] == VimText.newline
     }
 
-    func indentation(_ p: Int) -> String {
+    package func indentation(_ p: Int) -> String {
         let ls = lineStart(p)
         var i = ls
         while isBlank(i) { i += 1 }
@@ -134,7 +134,7 @@ final class VimText {
     }
 
     /// The start of the line `count` lines below (fewer at the end).
-    func lineDown(_ p: Int, _ count: Int) -> (start: Int, moved: Int) {
+    package func lineDown(_ p: Int, _ count: Int) -> (start: Int, moved: Int) {
         var ls = lineStart(p)
         var moved = 0
         while moved < count {
@@ -146,7 +146,7 @@ final class VimText {
         return (ls, moved)
     }
 
-    func lineUp(_ p: Int, _ count: Int) -> (start: Int, moved: Int) {
+    package func lineUp(_ p: Int, _ count: Int) -> (start: Int, moved: Int) {
         var ls = lineStart(p)
         var moved = 0
         while moved < count && ls > 0 {
@@ -157,7 +157,7 @@ final class VimText {
     }
 
     /// The start of 1-based line `n`, or of the last line.
-    func lineStart(number n: Int) -> Int {
+    package func lineStart(number n: Int) -> Int {
         var ls = 0
         var line = 1
         while line < n {
@@ -171,7 +171,7 @@ final class VimText {
 
     /// Normal mode's cursor: on a character, never on a line's newline unless
     /// the line is empty.
-    func clampNormal(_ p: Int) -> Int {
+    package func clampNormal(_ p: Int) -> Int {
         guard length > 0 else { return 0 }
         let p = min(max(p, 0), length)
         let ls = lineStart(p)
@@ -182,13 +182,13 @@ final class VimText {
     }
 
     /// Visual mode may also sit on a newline (`v$`, an empty line).
-    func clampVisual(_ p: Int) -> Int {
+    package func clampVisual(_ p: Int) -> Int {
         guard length > 0 else { return 0 }
         return composedStart(min(max(p, 0), length - 1))
     }
 
     /// Composed characters from the line's start.
-    func column(_ p: Int) -> Int {
+    package func column(_ p: Int) -> Int {
         var i = lineStart(p)
         var c = 0
         while i < p {
@@ -199,7 +199,7 @@ final class VimText {
     }
 
     /// The position `column` characters into the line at `ls`, or its end.
-    func position(column: Int, lineStart ls: Int) -> Int {
+    package func position(column: Int, lineStart ls: Int) -> Int {
         let le = lineEnd(ls)
         var i = ls
         var c = 0
@@ -212,7 +212,7 @@ final class VimText {
 
     // MARK: Words
 
-    func wordForward(_ p: Int, big: Bool) -> Int {
+    package func wordForward(_ p: Int, big: Bool) -> Int {
         var i = p
         let c = charClass(i, big: big)
         if c != 0 {
@@ -229,7 +229,7 @@ final class VimText {
         return i
     }
 
-    func wordEnd(_ p: Int, big: Bool) -> Int {
+    package func wordEnd(_ p: Int, big: Bool) -> Int {
         var i = next(p)
         while i < length && charClass(i, big: big) == 0 { i += 1 }
         guard i < length else { return prev(length) }
@@ -241,7 +241,7 @@ final class VimText {
         }
     }
 
-    func wordBack(_ p: Int, big: Bool) -> Int {
+    package func wordBack(_ p: Int, big: Bool) -> Int {
         guard p > 0 else { return 0 }
         var i = prev(p)
         while i > 0 && charClass(i, big: big) == 0 {
@@ -258,7 +258,7 @@ final class VimText {
         return i
     }
 
-    func wordEndBack(_ p: Int, big: Bool) -> Int {
+    package func wordEndBack(_ p: Int, big: Bool) -> Int {
         var i = p
         let c = charClass(i, big: big)
         if c != 0 {
@@ -274,12 +274,12 @@ final class VimText {
 
     // MARK: Pairs
 
-    static let pairs: [unichar: (open: unichar, close: unichar)] = [
+    package static let pairs: [unichar: (open: unichar, close: unichar)] = [
         40: (40, 41), 41: (40, 41), 91: (91, 93), 93: (91, 93), 123: (123, 125), 125: (123, 125), 60: (60, 62), 62: (60, 62),
     ]
 
     /// The bracket matching the one at `p`.
-    func match(_ p: Int) -> Int? {
+    package func match(_ p: Int) -> Int? {
         guard p < length, let pair = VimText.pairs[self[p]] else { return nil }
         if self[p] == pair.open {
             return matchForward(from: p + 1, pair.open, pair.close)
@@ -287,7 +287,7 @@ final class VimText {
         return unmatchedOpen(before: p, pair.open, pair.close)
     }
 
-    func matchForward(from p: Int, _ open: unichar, _ close: unichar) -> Int? {
+    package func matchForward(from p: Int, _ open: unichar, _ close: unichar) -> Int? {
         var depth = 0
         var i = p
         while i < length {
@@ -303,7 +303,7 @@ final class VimText {
         return nil
     }
 
-    func unmatchedOpen(before p: Int, _ open: unichar, _ close: unichar) -> Int? {
+    package func unmatchedOpen(before p: Int, _ open: unichar, _ close: unichar) -> Int? {
         var depth = 0
         var i = p - 1
         while i >= 0 {

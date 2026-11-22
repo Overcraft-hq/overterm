@@ -6,8 +6,8 @@ import Foundation
 /// replicas against those wanted — and, for a Deployment, its Progressing
 /// condition: `ProgressDeadlineExceeded` is a rollout that is stuck. A
 /// paused Deployment says so rather than "waiting". Pure.
-struct KubeRollout: Equatable, Sendable {
-    enum State: Equatable, Sendable {
+package struct KubeRollout: Equatable, Sendable {
+    package enum State: Equatable, Sendable {
         /// kubectl's "successfully rolled out".
         case complete
         /// Still going: kubectl's "Waiting for…".
@@ -22,14 +22,14 @@ struct KubeRollout: Equatable, Sendable {
         case notTracked
     }
 
-    var state: State
+    package var state: State
     /// kubectl's words, without its trailing "...".
-    var message: String
+    package var message: String
 
-    var isProblem: Bool { state == .stuck }
+    package var isProblem: Bool { state == .stuck }
 
     /// The rollout of a Deployment, StatefulSet or DaemonSet; nil for any other kind.
-    static func of(_ object: [String: Any]) -> KubeRollout? {
+    package static func of(_ object: [String: Any]) -> KubeRollout? {
         let name = (object["metadata"] as? [String: Any])?["name"] as? String ?? ""
         switch object["kind"] as? String {
         case "Deployment": return deployment(object, name: name)
@@ -39,7 +39,7 @@ struct KubeRollout: Equatable, Sendable {
         }
     }
 
-    static func int(_ value: Any?) -> Int? {
+    package static func int(_ value: Any?) -> Int? {
         switch value {
         case let number as NSNumber: number.intValue
         case let text as String: Int(text)
@@ -52,7 +52,7 @@ struct KubeRollout: Equatable, Sendable {
         return (int(metadata["generation"]) ?? 0, object["spec"] as? [String: Any] ?? [:], object["status"] as? [String: Any] ?? [:])
     }
 
-    static func deployment(_ object: [String: Any], name: String) -> KubeRollout {
+    package static func deployment(_ object: [String: Any], name: String) -> KubeRollout {
         let (generation, spec, status) = parts(object)
         let observed = int(status["observedGeneration"]) ?? 0
         guard generation <= observed else { return KubeRollout(state: .waitingForSpec, message: "Waiting for deployment spec update to be observed") }
@@ -81,7 +81,7 @@ struct KubeRollout: Equatable, Sendable {
         return KubeRollout(state: .complete, message: "deployment \"\(name)\" successfully rolled out")
     }
 
-    static func statefulSet(_ object: [String: Any], name: String) -> KubeRollout {
+    package static func statefulSet(_ object: [String: Any], name: String) -> KubeRollout {
         let (generation, spec, status) = parts(object)
         let strategy = spec["updateStrategy"] as? [String: Any] ?? [:]
         guard (strategy["type"] as? String ?? "RollingUpdate") == "RollingUpdate" else {
@@ -112,7 +112,7 @@ struct KubeRollout: Equatable, Sendable {
         return KubeRollout(state: .complete, message: "statefulset rolling update complete \(current) pods at revision \(currentRevision)")
     }
 
-    static func daemonSet(_ object: [String: Any], name: String) -> KubeRollout {
+    package static func daemonSet(_ object: [String: Any], name: String) -> KubeRollout {
         let (generation, spec, status) = parts(object)
         guard ((spec["updateStrategy"] as? [String: Any])?["type"] as? String ?? "RollingUpdate") == "RollingUpdate" else {
             return KubeRollout(state: .notTracked, message: "rollout status is only available for the RollingUpdate strategy")

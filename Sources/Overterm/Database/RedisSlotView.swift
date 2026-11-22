@@ -2,20 +2,20 @@ import AppKit
 import SwiftUI
 
 /// What the Redis page asks the window to do.
-struct RedisSlotActions {
+package struct RedisSlotActions {
     /// Asks (title, detail, button) before something that can't be undone.
-    var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void
-    var openKey: (DatabaseSession, Int, String) -> Void
-    var close: () -> Void
+    package var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void
+    package var openKey: (DatabaseSession, Int, String) -> Void
+    package var close: () -> Void
 }
 
 /// The right-hand pane's Redis page.
-struct RedisSlotView: View {
-    @ObservedObject var model: RedisSlotModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: RedisSlotActions
+package struct RedisSlotView: View {
+    @ObservedObject package var model: RedisSlotModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: RedisSlotActions
 
-    var body: some View {
+    package var body: some View {
         Group {
             switch model.page {
             case .key: RedisKeyView(model: model.key, theme: theme, actions: actions)
@@ -35,10 +35,10 @@ struct RedisSlotView: View {
 
 /// The pieces every Redis page is made of.
 @MainActor
-struct RedisChrome {
-    let theme: ChromeTheme
+package struct RedisChrome {
+    package let theme: ChromeTheme
 
-    func header<Leading: View>(_ title: String, close: @escaping () -> Void, @ViewBuilder leading: () -> Leading) -> some View {
+    package func header<Leading: View>(_ title: String, close: @escaping () -> Void, @ViewBuilder leading: () -> Leading) -> some View {
         HStack(spacing: 8) {
             leading()
             Text(verbatim: title).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text)
@@ -51,7 +51,7 @@ struct RedisChrome {
         .frame(height: ChromeMetrics.row(34))
     }
 
-    func iconButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
+    package func iconButton(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: ChromeMetrics.text(12))).frame(width: 26, height: 22)
                 .background(RoundedRectangle(cornerRadius: 5).fill(theme.selected.opacity(0.6)))
@@ -62,7 +62,7 @@ struct RedisChrome {
         .help(help)
     }
 
-    func field(_ label: String, _ text: Binding<String>, mono: Bool = true) -> some View {
+    package func field(_ label: String, _ text: Binding<String>, mono: Bool = true) -> some View {
         TextField(label, text: text)
             .textFieldStyle(.plain)
             .font(.system(size: ChromeMetrics.text(12), design: mono ? .monospaced : .default))
@@ -71,7 +71,7 @@ struct RedisChrome {
             .background(RoundedRectangle(cornerRadius: 5).fill(theme.rowHover.opacity(0.8)))
     }
 
-    func editor(_ text: Binding<String>, minHeight: CGFloat = 80) -> some View {
+    package func editor(_ text: Binding<String>, minHeight: CGFloat = 80) -> some View {
         TextEditor(text: text)
             .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
             .scrollContentBackground(.hidden)
@@ -80,7 +80,7 @@ struct RedisChrome {
             .background(RoundedRectangle(cornerRadius: 5).fill(theme.rowHover.opacity(0.8)))
     }
 
-    func error(_ text: String?) -> some View {
+    package func error(_ text: String?) -> some View {
         Group {
             if let text {
                 Text(verbatim: text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(DiffColors.removed)
@@ -89,7 +89,7 @@ struct RedisChrome {
         }
     }
 
-    func note(_ text: String) -> some View {
+    package func note(_ text: String) -> some View {
         VStack {
             Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText).multilineTextAlignment(.center)
                 .textSelection(.enabled)
@@ -99,7 +99,7 @@ struct RedisChrome {
         .padding(16)
     }
 
-    func copy(_ text: String) {
+    package func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
@@ -107,10 +107,10 @@ struct RedisChrome {
 
 // MARK: A key
 
-struct RedisKeyView: View {
-    @ObservedObject var model: RedisKeyModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: RedisSlotActions
+package struct RedisKeyView: View {
+    @ObservedObject package var model: RedisKeyModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: RedisSlotActions
     @State private var renaming: String?
     @State private var ttlText = ""
     @State private var editingTTL = false
@@ -122,7 +122,7 @@ struct RedisKeyView: View {
 
     private var chrome: RedisChrome { RedisChrome(theme: theme) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             chrome.header(model.name, close: actions.close) {
                 if !model.type.isEmpty { RedisTypeBadge(type: model.type) }
@@ -537,10 +537,10 @@ struct RedisKeyView: View {
 
 // MARK: A new key
 
-struct RedisNewKeyView: View {
-    @ObservedObject var model: RedisSlotModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: RedisSlotActions
+package struct RedisNewKeyView: View {
+    @ObservedObject package var model: RedisSlotModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: RedisSlotActions
     @State private var name = ""
     @State private var type = "string"
     @State private var ttl = ""
@@ -551,7 +551,7 @@ struct RedisNewKeyView: View {
 
     private var chrome: RedisChrome { RedisChrome(theme: theme) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             chrome.header("New Key in db\(model.newKeyDB)", close: actions.close) {
                 Image(systemName: "plus.square").foregroundStyle(theme.dimText)
@@ -656,17 +656,17 @@ struct RedisNewKeyView: View {
 
 // MARK: The server
 
-struct RedisServerView: View {
-    @ObservedObject var model: RedisServerModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: RedisSlotActions
+package struct RedisServerView: View {
+    @ObservedObject package var model: RedisServerModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: RedisSlotActions
     @State private var channel = ""
     @State private var message = ""
     @State private var published: String?
 
     private var chrome: RedisChrome { RedisChrome(theme: theme) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             chrome.header(model.name, close: actions.close) {
                 Image(systemName: "server.rack").foregroundStyle(theme.dimText)

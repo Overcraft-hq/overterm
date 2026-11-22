@@ -3,14 +3,14 @@ import SwiftUI
 
 /// The API panel's MCP servers: the checkout's and the agents' as they
 /// configure them, and the ones added here — a click inspects one.
-struct MCPServersSection: View {
-    @ObservedObject var inspector: MCPInspector
-    @ObservedObject var theme: ChromeTheme
-    let open: (MCPServerConfig) -> Void
+package struct MCPServersSection: View {
+    @ObservedObject package var inspector: MCPInspector
+    @ObservedObject package var theme: ChromeTheme
+    package let open: (MCPServerConfig) -> Void
     @State private var collapsed = false
     @State private var adding = false
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Rectangle().fill(theme.border).frame(height: 1)
             HStack(spacing: 6) {
@@ -96,7 +96,7 @@ struct MCPServersSection: View {
         .accessibilityIdentifier("mcpServer-\(server.name)")
     }
 
-    static func color(_ state: MCPInspector.State, theme: ChromeTheme) -> Color {
+    package static func color(_ state: MCPInspector.State, theme: ChromeTheme) -> Color {
         switch state {
         case .idle: theme.border
         case .connecting: theme.orangeText
@@ -108,10 +108,10 @@ struct MCPServersSection: View {
 
 /// Add an MCP server: a command run on this Mac, or a URL — its env's or
 /// headers' values going to the keychain.
-struct MCPAddServerSheet: View {
-    @ObservedObject var theme: ChromeTheme
-    let add: (MCPServerConfig) throws -> Void
-    let cancel: () -> Void
+package struct MCPAddServerSheet: View {
+    @ObservedObject package var theme: ChromeTheme
+    package let add: (MCPServerConfig) throws -> Void
+    package let cancel: () -> Void
     @State private var name = ""
     @State private var kind = "stdio"
     @State private var command = ""
@@ -119,7 +119,7 @@ struct MCPAddServerSheet: View {
     @State private var pairs = ""
     @State private var problem: String?
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Add MCP Server").font(.system(size: ChromeMetrics.text(15), weight: .semibold))
             Form {
@@ -182,12 +182,12 @@ struct MCPAddServerSheet: View {
 /// One MCP server, inspected in the right-hand pane: what it says it is,
 /// its tools (called with JSON arguments), resources (read), prompts (got)
 /// and every message both ways.
-struct MCPPageView: View {
-    @ObservedObject var inspector: MCPInspector
-    @ObservedObject var theme: ChromeTheme
-    let close: () -> Void
+package struct MCPPageView: View {
+    @ObservedObject package var inspector: MCPInspector
+    @ObservedObject package var theme: ChromeTheme
+    package let close: () -> Void
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let server = inspector.selected {
                 header(server)
@@ -480,14 +480,14 @@ struct MCPPageView: View {
 }
 
 /// A result's `content`, as the inspector shows it.
-enum MCPContent {
-    enum Part: Equatable {
+package enum MCPContent {
+    package enum Part: Equatable {
         case text(String)
         case image(Data)
         case json(JSONValue)
     }
 
-    static func parts(_ result: JSONValue) -> [Part] {
+    package static func parts(_ result: JSONValue) -> [Part] {
         var out: [Part] = []
         // A tool's content, a resource's contents, a prompt's messages.
         let items = result["content"].array ?? result["contents"].array ?? []

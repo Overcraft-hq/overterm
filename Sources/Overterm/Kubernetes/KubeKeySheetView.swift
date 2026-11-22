@@ -4,14 +4,14 @@ import SwiftUI
 /// (`KubeKeySheet`), the window's commands with the keys they are bound to
 /// now. Esc, `?` or a click outside closes it; `:` and `/` close it and go
 /// on to the command bar and the filter (`KubernetesPageModel.press`).
-struct KubeKeySheetView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
-    @ObservedObject var keybindings = Keybindings.shared
+package struct KubeKeySheetView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
+    @ObservedObject package var keybindings = Keybindings.shared
 
-    static let identifier = "kubernetes.keys"
+    package static let identifier = "kubernetes.keys"
 
-    var body: some View {
+    package var body: some View {
         let groups = KubeKeySheet.groups { keybindings.key(for: $0)?.display }
         ZStack {
             Color.black.opacity(0.001).onTapGesture { page.cheatSheet = false }

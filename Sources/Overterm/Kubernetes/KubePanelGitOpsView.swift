@@ -13,11 +13,11 @@ import SwiftUI
 /// matched only by name or image apart, muted, as "probably" — the bound
 /// namespace's, those elsewhere counted —; nothing matched said by what
 /// was compared.
-struct KubePanelGitOpsView: View {
-    @ObservedObject var gitOps: KubePanelGitOps
-    @ObservedObject var theme: ChromeTheme
+package struct KubePanelGitOpsView: View {
+    @ObservedObject package var gitOps: KubePanelGitOps
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if gitOps.shows {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {

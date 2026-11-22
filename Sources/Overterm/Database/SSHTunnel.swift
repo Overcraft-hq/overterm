@@ -12,13 +12,13 @@ import Foundation
 /// set for that one process; nothing secret is written to disk. Without
 /// one, ssh may not ask at all (BatchMode): a prompt nobody can answer
 /// would hang the connection.
-final class SSHTunnel: @unchecked Sendable {
-    let localPort: UInt16
+package final class SSHTunnel: @unchecked Sendable {
+    package let localPort: UInt16
     /// The connection's name: what Activity's Listening calls its port.
-    let name: String
+    package let name: String
     /// The connection's id: what Activity's Disconnect closes — names
     /// aren't unique, and a rename leaves an open tunnel's as it was.
-    let connection: UUID
+    package let connection: UUID
     private let process: Process
 
     private init(process: Process, localPort: UInt16, name: String, connection: UUID) {
@@ -31,7 +31,7 @@ final class SSHTunnel: @unchecked Sendable {
     /// The tunnels open now — ssh's pid, its local port, the connection's
     /// name and id: their ports' owner on Activity's Listening (docs/design/
     /// activity/analysis.md, 6.8 rule 4).
-    static func listed() -> [(pid: pid_t, port: UInt16, name: String, connection: UUID)] {
+    package static func listed() -> [(pid: pid_t, port: UInt16, name: String, connection: UUID)] {
         lock.withLock { Array(open.values) }.compactMap { tunnel in
             tunnel.process.isRunning ? (tunnel.process.processIdentifier, tunnel.localPort, tunnel.name, tunnel.connection) : nil
         }
@@ -42,23 +42,23 @@ final class SSHTunnel: @unchecked Sendable {
     nonisolated(unsafe) private static var open: [ObjectIdentifier: SSHTunnel] = [:]
     private static let lock = NSLock()
 
-    static func closeAll() {
+    package static func closeAll() {
         let tunnels = lock.withLock { Array(open.values) }
         tunnels.forEach { $0.close() }
     }
 
-    func close() {
+    package func close() {
         _ = Self.lock.withLock { Self.open.removeValue(forKey: ObjectIdentifier(self)) }
         if process.isRunning { process.terminate() }
     }
 
     /// Tests keep their hosts out of the user's ~/.ssh/known_hosts.
-    nonisolated(unsafe) static var knownHostsFile: String?
+    package nonisolated(unsafe) static var knownHostsFile: String?
     /// Tests keep their hosts and keys out of ~/.ssh: `-F`, `-i`, before
     /// the destination (`FakeSSHHost.options`).
-    nonisolated(unsafe) static var testOptions: [String] = []
+    package nonisolated(unsafe) static var testOptions: [String] = []
     /// The ssh it runs: a test's stand-in, to see what it was started with.
-    nonisolated(unsafe) static var executable = URL(fileURLWithPath: "/usr/bin/ssh")
+    package nonisolated(unsafe) static var executable = URL(fileURLWithPath: "/usr/bin/ssh")
 
     /// The ControlPath its ssh is given: `<user temp>/ot-run-<pid>-<start36>/db-<id>`,
     /// a path nothing creates. With `ControlMaster=no`, ssh only tries it as
@@ -76,7 +76,7 @@ final class SSHTunnel: @unchecked Sendable {
     /// this user's that no one else can write (`isPrivateFolder`) — else
     /// `none`, as where it wouldn't fit a unix socket's 104 bytes (ssh
     /// refuses a longer one) or holds a character ssh expands.
-    static func controlPath(
+    package static func controlPath(
         for connection: UUID, run: ActivityProcessID = OvertermRun.current.identity, folder: URL? = userTemporaryDirectory
     ) -> String {
         guard let folder, isPrivateFolder(folder.path) else { return "none" }
@@ -89,7 +89,7 @@ final class SSHTunnel: @unchecked Sendable {
     /// This user's temporary folder as the system keeps it
     /// (`_CS_DARWIN_USER_TEMP_DIR`, under /var/folders, 0700): what
     /// `$TMPDIR` normally says, whatever the app inherited instead.
-    static let userTemporaryDirectory: URL? = {
+    package static let userTemporaryDirectory: URL? = {
         let length = confstr(_CS_DARWIN_USER_TEMP_DIR, nil, 0)
         guard length > 1 else { return nil }
         var buffer = [CChar](repeating: 0, count: length)
@@ -100,14 +100,14 @@ final class SSHTunnel: @unchecked Sendable {
     /// Whether `path` is a directory — itself, not a link — owned by this
     /// user and writable by no one else: where no other user can put a
     /// socket (a sticky /tmp is refused too).
-    static func isPrivateFolder(_ path: String) -> Bool {
+    package static func isPrivateFolder(_ path: String) -> Bool {
         var info = stat()
         guard lstat(path, &info) == 0 else { return false }
         return info.st_mode & S_IFMT == S_IFDIR && info.st_uid == getuid() && info.st_mode & (S_IWGRP | S_IWOTH) == 0
     }
 
     /// The arguments for a tunnel to `connection` from `localPort` — pure.
-    static func arguments(_ connection: DatabaseConnection, localPort: UInt16, batch: Bool) -> [String] {
+    package static func arguments(_ connection: DatabaseConnection, localPort: UInt16, batch: Bool) -> [String] {
         let target = connection.host.contains(":") ? "[\(connection.host)]" : connection.host
         var arguments = [
             "-N", "-T",
@@ -136,13 +136,13 @@ final class SSHTunnel: @unchecked Sendable {
     /// What its ssh is given before a secret: the app's environment, marked
     /// as this run's (D-15) — unseen while it runs, `/usr/bin/ssh` being a
     /// platform binary: its `ControlPath` says the run (`controlPath`).
-    static func environment(_ inherited: [String: String]) -> [String: String] {
+    package static func environment(_ inherited: [String: String]) -> [String: String] {
         OvertermRun.current.marking(inherited, helper: .databaseTunnel)
     }
 
     /// Opens it, and returns once the local end takes connections — or
     /// throws what ssh said.
-    static func open(_ connection: DatabaseConnection, secret: String?) async throws -> SSHTunnel {
+    package static func open(_ connection: DatabaseConnection, secret: String?) async throws -> SSHTunnel {
         let port = try freePort()
         let process = Process()
         process.executableURL = executable
@@ -243,7 +243,7 @@ final class SSHTunnel: @unchecked Sendable {
 extension DatabaseDrivers {
     /// A driver for `connection`, through its SSH tunnel when it has one —
     /// the driver aimed at the tunnel's local end, TLS at the real name.
-    static func open(
+    package static func open(
         _ connection: DatabaseConnection, password: String?, serviceAccount: String?, sshSecret: String?
     ) async throws -> (driver: any DatabaseDriver, tunnel: SSHTunnel?) {
         guard connection.usesTunnel else {

@@ -6,31 +6,31 @@ import SwiftUI
 /// `DockerPageModel.verbs(for:)`) drawn twice: as the buttons on its
 /// detail and as its right-click menu — so nothing is only in the menu,
 /// and the two never disagree. Shared by the pages that list resources.
-struct ResourceVerb: Identifiable {
-    enum Place { case button, more, remove }
+package struct ResourceVerb: Identifiable {
+    package enum Place { case button, more, remove }
 
     /// As the menu says it: `Browse in a Tab`.
-    var title: String
+    package var title: String
     /// As its button says it, when shorter: `Browse`.
-    var label: String?
-    var symbol: String
-    var place: Place = .more
+    package var label: String?
+    package var symbol: String
+    package var place: Place = .more
     /// The list's key for it, said in its help.
-    var key: String?
+    package var key: String?
     /// Why it can't be done now; nil when it can.
-    var unavailable: String?
+    package var unavailable: String?
     /// Verbs of another group are set apart in a menu.
-    var group = 0
+    package var group = 0
     /// A submenu instead (Docker Scout's, the containers to connect).
-    var children: [ResourceVerb] = []
+    package var children: [ResourceVerb] = []
     /// What a detail's box says of it, the box whose button it is: an
     /// emulated container's why and what this does (`DockerEmulationNote`).
-    var note: String?
-    var perform: @MainActor () -> Void = {}
+    package var note: String?
+    package var perform: @MainActor () -> Void = {}
 
-    var id: String { title }
+    package var id: String { title }
 
-    var help: String {
+    package var help: String {
         [title + (key.map { " (\($0))" } ?? ""), unavailable].compactMap { $0 }.joined(separator: " — ")
     }
 }
@@ -41,17 +41,17 @@ struct ResourceVerb: Identifiable {
 /// buttons give up their words first, one at a time down to the first
 /// two: a database's fifth button, its client, doesn't cost Shell its
 /// word. Narrower still (the right-hand pane), all icons.
-struct ResourceActionBar: View {
-    let verbs: [ResourceVerb]
-    @ObservedObject var theme: ChromeTheme
+package struct ResourceActionBar: View {
+    package let verbs: [ResourceVerb]
+    @ObservedObject package var theme: ChromeTheme
     /// How many buttons say their words, always: a row's own small bar (a
     /// project's service) is icons, whatever fits.
-    var words: Int? = nil
+    package var words: Int? = nil
 
     /// What the accessibility tree calls the bar; its ⋯ is `<this>.more`.
-    var identifier = "docker.actions"
+    package var identifier = "docker.actions"
 
-    var body: some View {
+    package var body: some View {
         Group {
             if let words {
                 row(words: words)
@@ -139,10 +139,10 @@ struct ResourceActionBar: View {
 
 /// The same verbs as a right-click menu: the buttons' first, then More's,
 /// then removal.
-struct ResourceVerbMenu: View {
-    let verbs: [ResourceVerb]
+package struct ResourceVerbMenu: View {
+    package let verbs: [ResourceVerb]
 
-    var body: some View {
+    package var body: some View {
         ResourceVerbItems(verbs: verbs.filter { $0.place == .button })
         let more = verbs.filter { $0.place == .more }
         if !more.isEmpty {
@@ -158,10 +158,10 @@ struct ResourceVerbMenu: View {
 }
 
 /// Verbs as menu items, a divider where the group changes.
-struct ResourceVerbItems: View {
-    let verbs: [ResourceVerb]
+package struct ResourceVerbItems: View {
+    package let verbs: [ResourceVerb]
 
-    var body: some View {
+    package var body: some View {
         ForEach(Array(verbs.enumerated()), id: \.element.id) { index, verb in
             if index > 0, verb.group != verbs[index - 1].group { Divider() }
             if verb.children.isEmpty {
@@ -176,10 +176,10 @@ struct ResourceVerbItems: View {
 /// A verb as an AppKit menu item (a table's right-click menu): its title,
 /// disabled when it can't be done now, the reason as its tooltip.
 @MainActor
-final class ResourceVerbMenuItem: NSMenuItem {
+package final class ResourceVerbMenuItem: NSMenuItem {
     private let verb: ResourceVerb
 
-    init(_ verb: ResourceVerb) {
+    package init(_ verb: ResourceVerb) {
         self.verb = verb
         super.init(title: verb.title, action: verb.children.isEmpty ? #selector(runVerb) : nil, keyEquivalent: "")
         target = self
@@ -188,14 +188,14 @@ final class ResourceVerbMenuItem: NSMenuItem {
     }
 
     @available(*, unavailable)
-    required init(coder: NSCoder) { fatalError() }
+    package required init(coder: NSCoder) { fatalError() }
 
     @objc private func runVerb() { verb.perform() }
 
     /// Verbs as their SwiftUI menu has them (`ResourceVerbMenu`): the
     /// buttons', the rest's, then removal, apart; a divider where the
     /// group changes; a verb with children a submenu.
-    static func items(_ verbs: [ResourceVerb]) -> [NSMenuItem] {
+    package static func items(_ verbs: [ResourceVerb]) -> [NSMenuItem] {
         var items: [NSMenuItem] = []
         for place in [ResourceVerb.Place.button, .more, .remove] {
             let these = verbs.filter { $0.place == place }
@@ -227,43 +227,43 @@ final class ResourceVerbMenuItem: NSMenuItem {
 /// view under it, and a verb's guard may ask kubectl or a server). Only a
 /// right-click (or a control-click) lands on it: every other press, the
 /// pointer's hover and tooltips go through to the view under it.
-struct ResourceVerbMenuArea: NSViewRepresentable {
-    let verbs: @MainActor () -> [ResourceVerb]
+package struct ResourceVerbMenuArea: NSViewRepresentable {
+    package let verbs: @MainActor () -> [ResourceVerb]
 
-    func makeNSView(context: Context) -> ResourceVerbMenuView { ResourceVerbMenuView(verbs: verbs) }
+    package func makeNSView(context: Context) -> ResourceVerbMenuView { ResourceVerbMenuView(verbs: verbs) }
 
-    func updateNSView(_ view: ResourceVerbMenuView, context: Context) { view.verbs = verbs }
+    package func updateNSView(_ view: ResourceVerbMenuView, context: Context) { view.verbs = verbs }
 }
 
 @MainActor
-final class ResourceVerbMenuView: NSView {
-    var verbs: @MainActor () -> [ResourceVerb]
+package final class ResourceVerbMenuView: NSView {
+    package var verbs: @MainActor () -> [ResourceVerb]
 
-    init(verbs: @escaping @MainActor () -> [ResourceVerb]) {
+    package init(verbs: @escaping @MainActor () -> [ResourceVerb]) {
         self.verbs = verbs
         super.init(frame: .zero)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    package required init?(coder: NSCoder) { fatalError() }
 
     /// Whether `type` (with `flags`) opens a context menu.
-    nonisolated static func opensMenu(_ type: NSEvent.EventType, _ flags: NSEvent.ModifierFlags) -> Bool {
+    package nonisolated static func opensMenu(_ type: NSEvent.EventType, _ flags: NSEvent.ModifierFlags) -> Bool {
         type == .rightMouseDown || (type == .leftMouseDown && flags.contains(.control))
     }
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
+    package override func hitTest(_ point: NSPoint) -> NSView? {
         guard let event = NSApp.currentEvent, Self.opensMenu(event.type, event.modifierFlags) else { return nil }
         return super.hitTest(point)
     }
 
-    override func mouseDown(with event: NSEvent) {
+    package override func mouseDown(with event: NSEvent) {
         guard Self.opensMenu(event.type, event.modifierFlags), let menu = menu(for: event) else { return super.mouseDown(with: event) }
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
     /// The verbs as they stand now, asked for here and nowhere else.
-    override func menu(for event: NSEvent) -> NSMenu? {
+    package override func menu(for event: NSEvent) -> NSMenu? {
         let items = ResourceVerbMenuItem.items(verbs())
         guard !items.isEmpty else { return nil }
         let menu = NSMenu()

@@ -2,22 +2,22 @@ import AppKit
 import SwiftUI
 
 /// What the review page asks the window to do.
-struct ReviewActions {
+package struct ReviewActions {
     /// The file as it is in the checkout, in the editor.
-    var openFile: (ReviewModel, ChangedFile) -> Void = { _, _ in }
-    var openOnGitHub: (URL) -> Void = { _ in }
-    var terraform = TerraformReviewActions()
+    package var openFile: (ReviewModel, ChangedFile) -> Void = { _, _ in }
+    package var openOnGitHub: (URL) -> Void = { _ in }
+    package var terraform = TerraformReviewActions()
 }
 
 /// A review's page — a tab of its own, the whole window under the strip:
 /// the files on the left, the one picked on the right, side by side or as
 /// one column. Keys: j/k file, n/p change, v viewed (`ReviewHostingView`).
-struct ReviewPageView: View {
-    @ObservedObject var store: TabStore
-    @ObservedObject var theme: ChromeTheme
-    let actions: ReviewActions
+package struct ReviewPageView: View {
+    @ObservedObject package var store: TabStore
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: ReviewActions
 
-    var body: some View {
+    package var body: some View {
         if let review = store.reviews.first(where: { $0.id == store.reviewShowing }) {
             ReviewView(model: review, theme: theme, actions: actions).id(review.id)
         } else {
@@ -26,12 +26,12 @@ struct ReviewPageView: View {
     }
 }
 
-struct ReviewView: View {
-    @ObservedObject var model: ReviewModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: ReviewActions
+package struct ReviewView: View {
+    @ObservedObject package var model: ReviewModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: ReviewActions
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             ReviewHeader(model: model, theme: theme, actions: actions)
             Rectangle().fill(theme.border).frame(height: 1)
@@ -312,14 +312,14 @@ private struct ReviewDiffView: View {
 /// The colours a diff row is drawn in, read once from the chrome — rows
 /// hold these, not the theme: a row observing the theme was one more
 /// thing to check on every row for every step of a scroll.
-struct ReviewRowColors: Equatable {
-    var text: Color
-    var dim: Color
-    var border: Color
-    var empty: Color
-    var hunk: Color
+package struct ReviewRowColors: Equatable {
+    package var text: Color
+    package var dim: Color
+    package var border: Color
+    package var empty: Color
+    package var hunk: Color
 
-    @MainActor init(_ theme: ChromeTheme) {
+    @MainActor package init(_ theme: ChromeTheme) {
         text = theme.text
         dim = theme.dimText
         border = theme.border
@@ -391,15 +391,15 @@ private struct SplitRowView: View, Equatable {
 }
 
 /// The review page's host: the page's keys, when nothing in it took them.
-final class ReviewHostingView: NSHostingView<ReviewPageView> {
-    var review: () -> ReviewModel? = { nil }
+package final class ReviewHostingView: NSHostingView<ReviewPageView> {
+    package var review: () -> ReviewModel? = { nil }
 
-    override var acceptsFirstResponder: Bool { true }
+    package override var acceptsFirstResponder: Bool { true }
     /// A press in a window not in front acts at once — the divider between
     /// the sides drags on the first one, as the terminal's dividers do.
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    package override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    override func keyDown(with event: NSEvent) {
+    package override func keyDown(with event: NSEvent) {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option])
         guard modifiers.isEmpty, let review = review(), let key = event.charactersIgnoringModifiers?.lowercased() else {
             return super.keyDown(with: event)

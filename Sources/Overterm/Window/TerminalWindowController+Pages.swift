@@ -6,7 +6,7 @@ import Combine
 extension TerminalWindowController {
     /// A page wired from its declaration: told when it shows and hides —
     /// the emitted value, since `showingOverlay` isn't set yet.
-    func declarePage(_ page: WorkspacePage) {
+    package func declarePage(_ page: WorkspacePage) {
         pages.declare(page)
         guard let changed = page.visibilityChanged else { return }
         let overlay = page.overlay
@@ -19,7 +19,7 @@ extension TerminalWindowController {
 
     /// Settings's tab: its view is made with the window; its ✕ drops the
     /// draft being edited.
-    func settingsWorkspacePage() -> WorkspacePage {
+    package func settingsWorkspacePage() -> WorkspacePage {
         var page = WorkspacePage(.settings)
         page.closed = { [weak self] in self?.settingsPage.draft = nil }
         return page
@@ -27,7 +27,7 @@ extension TerminalWindowController {
 
     /// A page from the menu: shown, its list given the keyboard — or, while
     /// it shows, back to the terminal.
-    func togglePage(_ overlay: WorkspaceOverlay) {
+    package func togglePage(_ overlay: WorkspaceOverlay) {
         if store.showingOverlay == overlay {
             hideOverlay()
         } else {
@@ -39,7 +39,7 @@ extension TerminalWindowController {
     /// The keyboard to a showing page's list — AppKit's way, since SwiftUI's
     /// focus wouldn't take it back from a filter field. The table exists
     /// only once SwiftUI has laid the list out: tried again shortly.
-    func focusPageList(_ overlay: WorkspaceOverlay, attempts: Int = 10) {
+    package func focusPageList(_ overlay: WorkspaceOverlay, attempts: Int = 10) {
         guard store.showingOverlay == overlay, pages[overlay]?.hasList == true, pages.view(overlay) != nil else { return }
         if let table = pages.list(overlay) {
             window?.makeFirstResponder(table)
@@ -52,7 +52,7 @@ extension TerminalWindowController {
     /// the one `focusPageList` gives the keyboard, not a text field's editor
     /// — is the first responder. A table in a detail (a build's steps) is
     /// not the list: there ⌫ would remove the selected build.
-    func pageListHasKeyboard(_ overlay: WorkspaceOverlay, _ event: NSEvent? = nil) -> Bool {
+    package func pageListHasKeyboard(_ overlay: WorkspaceOverlay, _ event: NSEvent? = nil) -> Bool {
         guard store.showingOverlay == overlay, event?.window ?? window === window, let page = pages.view(overlay),
             let table = window?.firstResponder as? NSTableView
         else { return false }
@@ -61,7 +61,7 @@ extension TerminalWindowController {
 
     /// Letters act on a page's list while its table has the keyboard; in a
     /// filter field they are text. SwiftUI's own key handling is macOS 14.
-    func installPageKeys() {
+    package func installPageKeys() {
         pageKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             self?.noteKubernetesWindowInput(event)
             guard let self, self.handlePageKey(event) else { return event }
@@ -71,7 +71,7 @@ extension TerminalWindowController {
 
     /// A key down: the showing page's when its list has the keyboard and the
     /// key means something there, with no ⌘, ⌃ or ⌥ — those are menus'.
-    func handlePageKey(_ event: NSEvent) -> Bool {
+    package func handlePageKey(_ event: NSEvent) -> Bool {
         if handlePageCommandKey(event) { return true }
         if let overlay = store.showingOverlay, let press = pages[overlay]?.optionPress,
             event.modifierFlags.intersection([.command, .control, .option, .shift]) == .option, pageListHasKeyboard(overlay, event),
@@ -87,7 +87,7 @@ extension TerminalWindowController {
 
     /// ⌘ and a key while a page shows (its `commandPress`), unless a text
     /// field is being typed in: there ⌘[ is the field's.
-    func handlePageCommandKey(_ event: NSEvent) -> Bool {
+    package func handlePageCommandKey(_ event: NSEvent) -> Bool {
         guard let overlay = store.showingOverlay, let press = pages[overlay]?.commandPress, event.window ?? window === window,
             event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command, let characters = event.charactersIgnoringModifiers
         else { return false }
@@ -96,7 +96,7 @@ extension TerminalWindowController {
     }
 
     /// A switcher: the palette on one group, or closed when it already is.
-    func togglePalette(scope: PaletteItem.Group) {
+    package func togglePalette(scope: PaletteItem.Group) {
         if paletteView?.isHidden == false, palette.scope == scope { return hidePalette() }
         if paletteView?.isHidden != false { showPalette(nil) }
         palette.scope = scope

@@ -13,37 +13,37 @@ import Foundation
 /// auth is its kind; an `exec` plugin's arguments are kept to be shown
 /// (an `aws sso login --profile` to offer), never to be logged
 /// (`KubeExec.description` names the command alone).
-struct Kubeconfig: Equatable, Sendable {
-    struct Cluster: Equatable, Sendable {
-        let name: String
+package struct Kubeconfig: Equatable, Sendable {
+    package struct Cluster: Equatable, Sendable {
+        package let name: String
         /// `server`, as written: `https://…`, `http://127.0.0.1:…`.
-        let server: String?
-        let file: URL?
+        package let server: String?
+        package let file: URL?
     }
 
-    struct User: Equatable, Sendable {
-        let name: String
-        let auth: KubeAuth
-        let file: URL?
+    package struct User: Equatable, Sendable {
+        package let name: String
+        package let auth: KubeAuth
+        package let file: URL?
     }
 
-    struct Context: Equatable, Sendable {
-        let name: String
-        let cluster: String
-        let user: String
+    package struct Context: Equatable, Sendable {
+        package let name: String
+        package let cluster: String
+        package let user: String
         /// The context's own namespace; nil when it names none ("default").
-        let namespace: String?
-        let file: URL?
+        package let namespace: String?
+        package let file: URL?
     }
 
-    var clusters: [Cluster] = []
-    var users: [User] = []
-    var contexts: [Context] = []
-    var currentContext: String?
+    package var clusters: [Cluster] = []
+    package var users: [User] = []
+    package var contexts: [Context] = []
+    package var currentContext: String?
 
     /// The file's text read; nil when it isn't YAML (or JSON) holding a
     /// mapping. Sections it lacks are empty, as kubectl reads them.
-    static func parse(_ text: String, file: URL? = nil) -> Kubeconfig? {
+    package static func parse(_ text: String, file: URL? = nil) -> Kubeconfig? {
         guard let root = YAMLReader.parse(redacted(text)) as? [String: Any] else {
             // An empty file is an empty kubeconfig, as kubectl has it.
             return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Kubeconfig() : nil
@@ -74,7 +74,7 @@ struct Kubeconfig: Equatable, Sendable {
     /// kubectl's merge of the KUBECONFIG list: a context, cluster or user
     /// the first file to name it wins — later files never change it — and
     /// the current context is the first file's that sets one.
-    static func merged(_ files: [Kubeconfig]) -> Kubeconfig {
+    package static func merged(_ files: [Kubeconfig]) -> Kubeconfig {
         var out = Kubeconfig()
         var clusters = Set<String>()
         var users = Set<String>()
@@ -90,7 +90,7 @@ struct Kubeconfig: Equatable, Sendable {
 
     /// The keys whose values sign a user in. Blanked before parsing, so no
     /// credential is ever in a value Overterm holds.
-    static let credentialKeys = [
+    package static let credentialKeys = [
         "client-key-data", "token", "password", "id-token", "refresh-token", "access-token", "client-secret",
     ]
 
@@ -98,7 +98,7 @@ struct Kubeconfig: Equatable, Sendable {
     /// `""` — the key is kept, so the kind of auth still reads. A block
     /// scalar (`token: |`) is left for the parser, which drops it with the
     /// rest of what isn't read.
-    static func redacted(_ text: String) -> String {
+    package static func redacted(_ text: String) -> String {
         let keys = credentialKeys.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|")
         // key: value — the key on its own, or after a sequence's "- "; a
         // quoted key too. Not a block scalar's header (| or >).
@@ -110,7 +110,7 @@ struct Kubeconfig: Equatable, Sendable {
 }
 
 /// How a kubeconfig user signs in — the kind, never the secret.
-enum KubeAuth: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+package enum KubeAuth: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     /// A credential plugin: `aws eks get-token`, `kubectl oidc-login`.
     case exec(KubeExec)
     /// A legacy auth provider (`oidc`; gcp and azure left kubectl in 1.26).
@@ -124,7 +124,7 @@ enum KubeAuth: Equatable, Sendable, CustomStringConvertible, CustomDebugStringCo
     /// Nothing the file says: an anonymous user, or one kubectl can't sign in.
     case none
 
-    init(user: [String: Any]) {
+    package init(user: [String: Any]) {
         if let exec = user["exec"] as? [String: Any], let command = exec["command"] as? String, !command.isEmpty {
             self = .exec(KubeExec(exec: exec, command: command))
         } else if let provider = user["auth-provider"] as? [String: Any] {
@@ -143,7 +143,7 @@ enum KubeAuth: Equatable, Sendable, CustomStringConvertible, CustomDebugStringCo
     }
 
     /// For the context card: "exec: aws", "client certificate".
-    var description: String {
+    package var description: String {
         switch self {
         case .exec(let exec): exec.description
         case .authProvider(let name): name.isEmpty ? "auth provider" : "auth provider: \(name)"
@@ -154,28 +154,28 @@ enum KubeAuth: Equatable, Sendable, CustomStringConvertible, CustomDebugStringCo
         }
     }
 
-    var debugDescription: String { description }
+    package var debugDescription: String { description }
 }
 
 /// A user's credential plugin, as the kubeconfig names it.
-struct KubeExec: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+package struct KubeExec: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     /// As written: `aws`, `/opt/homebrew/bin/aws`, `kubectl`.
-    let command: String
+    package let command: String
     /// Shown where the user asks to see them, never logged: an argument
     /// can name an account, a role, a profile.
-    let arguments: [String]
+    package let arguments: [String]
     /// The names of the variables the plugin is given; their values are not
     /// kept (an `AWS_SECRET_ACCESS_KEY` could be one).
-    let environmentNames: [String]
+    package let environmentNames: [String]
     /// `client.authentication.k8s.io/v1beta1`, `…/v1`.
-    let apiVersion: String?
+    package let apiVersion: String?
     /// `Never`, `IfAvailable` or `Always`; nil when the file says none.
     /// `Always` needs a terminal, which a proxy started by Overterm lacks.
-    let interactiveMode: String?
+    package let interactiveMode: String?
     /// What the plugin says to do when it isn't installed.
-    let installHint: String?
+    package let installHint: String?
 
-    init(
+    package init(
         command: String, arguments: [String] = [], environmentNames: [String] = [], apiVersion: String? = nil,
         interactiveMode: String? = nil, installHint: String? = nil
     ) {
@@ -198,7 +198,7 @@ struct KubeExec: Equatable, Sendable, CustomStringConvertible, CustomDebugString
     /// The plugin's own name: `aws`, `kubectl oidc-login`, `gke-gcloud-auth-plugin`
     /// — kubectl's first word when kubectl is the command (it is a
     /// subcommand, not an argument of the user's).
-    var name: String {
+    package var name: String {
         let tool = (command as NSString).lastPathComponent
         if tool == "kubectl", let first = arguments.first, !first.hasPrefix("-") { return "kubectl \(first)" }
         return tool
@@ -206,8 +206,8 @@ struct KubeExec: Equatable, Sendable, CustomStringConvertible, CustomDebugString
 
     /// kubelogin, which opens a browser and listens on 127.0.0.1:8000: its
     /// proxies start one at a time.
-    var isOIDCLogin: Bool { name == "kubectl oidc-login" || name == "kubectl-oidc_login" }
+    package var isOIDCLogin: Bool { name == "kubectl oidc-login" || name == "kubectl-oidc_login" }
 
-    var description: String { "exec: \(name)" }
-    var debugDescription: String { description }
+    package var description: String { "exec: \(name)" }
+    package var debugDescription: String { description }
 }

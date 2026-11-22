@@ -3,14 +3,14 @@ import Foundation
 
 /// What Scout has said on stderr so far — its last 32 KB, for its progress
 /// and, when it fails, its last words. Fed on FileHandle's queue.
-final class DockerScoutOutput: @unchecked Sendable {
+package final class DockerScoutOutput: @unchecked Sendable {
     private let lock = NSLock()
     private var buffer = Data()
     private var said: String?
     private static let kept = 32 << 10
 
     /// Scout's latest line, when it changed.
-    func append(_ chunk: Data) -> String? {
+    package func append(_ chunk: Data) -> String? {
         lock.withLock {
             buffer.append(chunk)
             if buffer.count > Self.kept { buffer = Data(buffer.suffix(Self.kept)) }
@@ -21,7 +21,7 @@ final class DockerScoutOutput: @unchecked Sendable {
         }
     }
 
-    var text: String { lock.withLock { String(decoding: buffer, as: UTF8.self) } }
+    package var text: String { lock.withLock { String(decoding: buffer, as: UTF8.self) } }
 }
 
 extension DockerScout {
@@ -29,7 +29,7 @@ extension DockerScout {
     /// `cli`, its progress handed over line by line, the report read off
     /// the main actor. Nil when it was cancelled. Every closure is made
     /// here, outside any actor: stderr is read on FileHandle's queue.
-    nonisolated static func run(
+    package nonisolated static func run(
         _ cli: DockerCLI, image: String, platform: String?, timeout: TimeInterval, progress: @escaping @Sendable (String) -> Void
     ) async -> Result<DockerScoutReport, DockerScoutFailure>? {
         let said = DockerScoutOutput()
@@ -66,33 +66,33 @@ extension DockerScout {
 /// image (another ID) starts unscanned. A scan goes on while the page
 /// hides, as a pull does; Cancel stops it, and quitting stops them all.
 @MainActor
-final class DockerScoutScans: ObservableObject {
-    static let shared = DockerScoutScans()
+package final class DockerScoutScans: ObservableObject {
+    package static let shared = DockerScoutScans()
 
-    struct Scan: Equatable {
-        var imageID: String
+    package struct Scan: Equatable {
+        package var imageID: String
         /// The name it was scanned by.
-        var image: String
-        var state: State
+        package var image: String
+        package var state: State
     }
 
-    enum State: Equatable {
+    package enum State: Equatable {
         case scanning(since: Date, progress: String?)
         case done(DockerScoutReport, at: Date)
         case failed(DockerScoutFailure, at: Date)
 
-        var report: DockerScoutReport? {
+        package var report: DockerScoutReport? {
             if case .done(let report, _) = self { return report }
             return nil
         }
 
-        var isScanning: Bool {
+        package var isScanning: Bool {
             if case .scanning = self { return true }
             return false
         }
 
         /// When it started, or ended.
-        var at: Date {
+        package var at: Date {
             switch self {
             case .scanning(let since, _): since
             case .done(_, let at), .failed(_, let at): at
@@ -100,22 +100,22 @@ final class DockerScoutScans: ObservableObject {
         }
     }
 
-    @Published private(set) var scans: [String: Scan] = [:]
+    @Published package private(set) var scans: [String: Scan] = [:]
     /// A test's shorter one.
-    var timeout = DockerScout.timeout
+    package var timeout = DockerScout.timeout
     /// The `docker` to run, nil when none may be: an isolated run's and a
     /// test's only a stub (`DockerScout.mayRunReal`).
-    var locate: (DockerEndpoint?) -> DockerCLI? = { DockerScout.mayRunReal ? DockerCLI(endpoint: $0) : nil }
+    package var locate: (DockerEndpoint?) -> DockerCLI? = { DockerScout.mayRunReal ? DockerCLI(endpoint: $0) : nil }
     private var tasks: [String: Task<Void, Never>] = [:]
 
-    func scan(for imageID: String) -> Scan? { scans[imageID] }
+    package func scan(for imageID: String) -> Scan? { scans[imageID] }
 
     /// The scan of what an agent names: the image a tag means now (any of
     /// its tags), an image's ID (short, with or without `sha256:`), or —
     /// when no image holds the name any more — the latest scan by it. A
     /// tag that moved (a rebuild, a pull) means the new image, scanned or
     /// not: the old one's report is not its.
-    func scan(matching wanted: String, images: [ImageSummary]) -> Scan? {
+    package func scan(matching wanted: String, images: [ImageSummary]) -> Scan? {
         let wanted = wanted.trimmingCharacters(in: .whitespaces)
         guard !wanted.isEmpty else { return nil }
         // A name without a tag is `:latest`, as Docker reads it (a
@@ -134,7 +134,7 @@ final class DockerScoutScans: ObservableObject {
 
     /// Scans it by `name`, unless it is being scanned. `platform`: the
     /// image's, when known; else its inspect is asked.
-    func scan(imageID: String, name: String, endpoint: DockerEndpoint?, engine: DockerEngine?, platform: DockerPlatform? = nil) {
+    package func scan(imageID: String, name: String, endpoint: DockerEndpoint?, engine: DockerEngine?, platform: DockerPlatform? = nil) {
         guard scans[imageID]?.state.isScanning != true else { return }
         guard let cli = locate(endpoint) else {
             scans[imageID] = Scan(imageID: imageID, image: name, state: .failed(DockerScout.mayRunReal ? .noDocker : .isolated, at: Date()))
@@ -153,23 +153,23 @@ final class DockerScoutScans: ObservableObject {
     }
 
     /// Stops it — Git.run's cancellation terminates Scout — and forgets it.
-    func cancel(_ imageID: String) {
+    package func cancel(_ imageID: String) {
         tasks.removeValue(forKey: imageID)?.cancel()
         scans.removeValue(forKey: imageID)
     }
 
     /// At quit: no Scout outlives the app.
-    func cancelAll() {
+    package func cancelAll() {
         for task in tasks.values { task.cancel() }
         tasks = [:]
         scans = scans.filter { !$0.value.state.isScanning }
     }
 
     /// Its result gone (a test's).
-    func forget(_ imageID: String) { cancel(imageID) }
+    package func forget(_ imageID: String) { cancel(imageID) }
 
     /// The scan's end: nil (cancelled) forgets it. Internal for tests.
-    func finish(_ imageID: String, image: String, _ outcome: Result<DockerScoutReport, DockerScoutFailure>?) {
+    package func finish(_ imageID: String, image: String, _ outcome: Result<DockerScoutReport, DockerScoutFailure>?) {
         tasks.removeValue(forKey: imageID)
         guard let outcome else {
             scans.removeValue(forKey: imageID)
@@ -182,7 +182,7 @@ final class DockerScoutScans: ObservableObject {
     }
 
     /// Scout's latest line, while it scans.
-    func update(_ imageID: String, progress: String) {
+    package func update(_ imageID: String, progress: String) {
         guard var scan = scans[imageID], case .scanning(let since, let said) = scan.state, said != progress else { return }
         scan.state = .scanning(since: since, progress: progress)
         scans[imageID] = scan

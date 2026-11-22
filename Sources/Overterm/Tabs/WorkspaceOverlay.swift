@@ -4,10 +4,10 @@ import Foundation
 /// tab, and sits in the strip after the terminal tabs while open
 /// (`TabStore.openOverlays`). Not a `Tab`: no terminal, no group, no ⌘1–9.
 /// The window wires each from its declaration (`WorkspacePage`).
-enum WorkspaceOverlay: String, Equatable, CaseIterable {
+package enum WorkspaceOverlay: String, Equatable, CaseIterable {
     case settings, docker, kubernetes, activity
 
-    var title: String {
+    package var title: String {
         switch self {
         case .settings: "Settings"
         case .docker: "Docker"
@@ -17,7 +17,7 @@ enum WorkspaceOverlay: String, Equatable, CaseIterable {
     }
 
     /// The SF Symbol in front of its name in the strip.
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .settings: "gearshape"
         case .docker: "shippingbox"

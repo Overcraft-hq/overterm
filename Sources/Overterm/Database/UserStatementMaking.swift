@@ -6,7 +6,7 @@ import Foundation
 /// InfluxQL, RabbitMQ's management API, Redis's ACL — makes its own. Every
 /// statement is `UserStatement`: `sql` what is sent (a statement, or a
 /// request the driver reads back), `shown` with any password masked. Pure.
-protocol UserStatementMaking: Sendable {
+package protocol UserStatementMaking: Sendable {
     /// What the sheets show and offer.
     var form: UserForm { get }
     func create(_ user: NewUser) throws -> [UserStatement]
@@ -26,17 +26,17 @@ protocol UserStatementMaking: Sendable {
     func drop(_ user: DatabaseUser) throws -> UserStatement
 }
 
-enum UserAction: Sendable { case password, grant, grantRole, drop }
+package enum UserAction: Sendable { case password, grant, grantRole, drop }
 
 /// A Grant sheet's kind of target, and the fields it is named by.
-struct GrantKind: Hashable, Sendable {
-    var title: String
-    var fields: [GrantField] = []
+package struct GrantKind: Hashable, Sendable {
+    package var title: String
+    package var fields: [GrantField] = []
 }
 
-struct GrantField: Hashable, Sendable {
+package struct GrantField: Hashable, Sendable {
     /// What the field is filled with when the sheet opens.
-    enum Fill: Hashable, Sendable {
+    package enum Fill: Hashable, Sendable {
         case empty
         /// The connection's database (vhost).
         case database
@@ -45,45 +45,45 @@ struct GrantField: Hashable, Sendable {
         case text(String)
     }
 
-    var title: String
-    var fill = Fill.empty
+    package var title: String
+    package var fill = Fill.empty
 }
 
 /// What the Users page's sheets show for a kind.
-struct UserForm: Equatable, Sendable {
+package struct UserForm: Equatable, Sendable {
     /// What names an account besides its name (`NewUser.host`), as the
     /// Create sheet asks for it — MySQL's host, MongoDB's database it signs
     /// in to; nil: nothing.
-    var account: String?
+    package var account: String?
     /// What that field holds when the sheet opens; nil: `NewUser`'s own.
-    var accountFill: String?
+    package var accountFill: String?
     /// PostgreSQL's "Logs in" (a group role doesn't).
-    var login = false
+    package var login = false
     /// The superuser toggle's words, nil: none.
-    var superuser: String? = "Superuser"
-    var createDatabases = false
-    var createRoles = false
-    var validUntil = false
+    package var superuser: String? = "Superuser"
+    package var createDatabases = false
+    package var createRoles = false
+    package var validUntil = false
     /// Under the password fields: where it goes, and that it isn't kept.
-    var passwordNote = "The password is sent once, over this connection, and never kept here."
-    var grantKinds: [GrantKind] = []
-    var grantOption = false
+    package var passwordNote = "The password is sent once, over this connection, and never kept here."
+    package var grantKinds: [GrantKind] = []
+    package var grantOption = false
     /// Under a user's grants.
-    var grantsNote: String?
+    package var grantsNote: String?
     /// When a user has none listed.
-    var noGrants = "None of its own."
+    package var noGrants = "None of its own."
     /// What a user is called in the sheets' titles.
-    var noun = "User"
+    package var noun = "User"
     /// A SQL engine's statements, made by a maker of its own (Oracle's,
     /// ClickHouse's): listed with `;` as `SQLUserStatements`' are.
-    var sql = false
+    package var sql = false
 }
 
 /// The SQL engines' user statements — `UserStatements` in their dialect.
-struct SQLUserStatements: UserStatementMaking {
-    let dialect: UserDialect
+package struct SQLUserStatements: UserStatementMaking {
+    package let dialect: UserDialect
 
-    var form: UserForm {
+    package var form: UserForm {
         let mysql = dialect.isMySQL
         let kinds: [GrantKind] =
             mysql
@@ -109,17 +109,17 @@ struct SQLUserStatements: UserStatementMaking {
             noGrants: "None of its own — it may still have what PUBLIC is granted, or its roles'.")
     }
 
-    func create(_ user: NewUser) throws -> [UserStatement] { try UserStatements.create(user, dialect: dialect) }
+    package func create(_ user: NewUser) throws -> [UserStatement] { try UserStatements.create(user, dialect: dialect) }
 
-    func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
+    package func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
         try UserStatements.password(of: user, to: password, dialect: dialect)
     }
 
-    func offers(_ action: UserAction, on user: DatabaseUser) -> Bool {
+    package func offers(_ action: UserAction, on user: DatabaseUser) -> Bool {
         action != .password || !user.isRole || !dialect.isMySQL
     }
 
-    func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
+    package func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
         func field(_ at: Int) -> String { fields.indices.contains(at) ? fields[at] : "" }
         switch kind.title {
         case "Server": return .server
@@ -130,13 +130,13 @@ struct SQLUserStatements: UserStatementMaking {
         }
     }
 
-    func privileges(on target: GrantTarget) -> [String] { UserStatements.privileges(on: target, dialect: dialect) }
+    package func privileges(on target: GrantTarget) -> [String] { UserStatements.privileges(on: target, dialect: dialect) }
 
-    func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
+    package func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
         try UserStatements.grant(privileges, on: target, to: user, dialect: dialect, grantOption: grantOption)
     }
 
-    func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
+    package func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
         if grant.kind == "role" {
             let parts = grant.object.split(separator: "@", maxSplits: 1).map(String.init)
             let role = DatabaseUser(name: parts.first ?? grant.object, host: dialect == .mysql && parts.count > 1 ? parts[1] : nil, isRole: true)
@@ -150,25 +150,25 @@ struct SQLUserStatements: UserStatementMaking {
     }
 
     /// Roles first; PostgreSQL grants any role, MySQL 8 any account.
-    func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
+    package func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] {
         let others = users.filter { $0.id != user.id && !user.memberOf.contains($0.display) }
         let roles = others.filter(\.isRole)
         return dialect == .mariadb || dialect == .redshift ? roles : roles + others.filter { !$0.isRole }
     }
 
-    func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
+    package func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement {
         try UserStatements.grantRole(role, to: user, dialect: dialect)
     }
 
-    func drop(_ user: DatabaseUser) throws -> UserStatement { try UserStatements.drop(user, dialect: dialect) }
+    package func drop(_ user: DatabaseUser) throws -> UserStatement { try UserStatements.drop(user, dialect: dialect) }
 }
 
 extension UserStatementMaking {
     /// A refusal in the sheets' words.
-    static func refusal(_ message: String) -> UserStatements.Refusal { UserStatements.Refusal(message: message) }
+    package static func refusal(_ message: String) -> UserStatements.Refusal { UserStatements.Refusal(message: message) }
 
     /// A name, checked as `UserStatements` checks its own.
-    func checked(_ name: String, _ what: String = "A name") throws -> String {
+    package func checked(_ name: String, _ what: String = "A name") throws -> String {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { throw UserStatements.Refusal(message: "\(what), please.") }
         guard !name.contains("\0") else { throw UserStatements.Refusal(message: "\(what) can't hold a NUL character.") }
         return name
@@ -179,13 +179,13 @@ extension UserStatementMaking {
 /// InfluxDB 2's — as the preview shows it and the driver reads it back:
 /// `METHOD /api/path {json}`; `NEW` before it, only where nothing is there
 /// yet (a new user never replaces one). Pure.
-struct UserRequest: Equatable {
-    var onlyNew = false
-    var method: String
-    var path: String
-    var body: String?
+package struct UserRequest: Equatable {
+    package var onlyNew = false
+    package var method: String
+    package var path: String
+    package var body: String?
 
-    init?(_ text: String) {
+    package init?(_ text: String) {
         var rest = Substring(text)
         if rest.hasPrefix("NEW ") {
             onlyNew = true
@@ -199,7 +199,7 @@ struct UserRequest: Equatable {
     }
 
     /// A JSON body, keys sorted.
-    static func json(_ object: [String: String]) -> String {
+    package static func json(_ object: [String: String]) -> String {
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
         return String(decoding: data, as: UTF8.self)
     }

@@ -5,18 +5,18 @@ import SwiftUI
 /// namespace, a checkout's file picks a context —, Diff with Cluster,
 /// Apply… (greyed with why where it can't be done), after a conflict
 /// Force… or Replace…, and how the last step stands.
-struct KubeManifestBar: View {
-    @ObservedObject var session: KubeManifestSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeManifestBar: View {
+    @ObservedObject package var session: KubeManifestSession
+    @ObservedObject package var theme: ChromeTheme
     /// The detail's YAML tab: the same buffer in the window's editor (`y`).
-    var openInEditor: (() -> Void)? = nil
+    package var openInEditor: (() -> Void)? = nil
 
-    static let height: CGFloat = 56
-    static let statusHeight: CGFloat = 74
-    static let bannerHeight: CGFloat = 30
+    package static let height: CGFloat = 56
+    package static let statusHeight: CGFloat = 74
+    package static let bannerHeight: CGFloat = 30
 
     /// How tall it is under the editor's text: a status line, a banner.
-    static func height(status: Bool, banner: Bool) -> CGFloat {
+    package static func height(status: Bool, banner: Bool) -> CGFloat {
         (status ? statusHeight : height) + (banner ? bannerHeight : 0)
     }
 
@@ -28,7 +28,7 @@ struct KubeManifestBar: View {
 
     private var context: KubeContext? { session.contexts.first { $0.name == session.contextName } }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let resource = session.resource { KubeResourceBanner(resource: resource, theme: theme) }
             HStack(spacing: 6) {
@@ -128,11 +128,11 @@ struct KubeManifestBar: View {
 /// A cluster object's YAML whose object changed on the cluster while it
 /// had edits: said, with Reload (the cluster's, the edits dropped) and
 /// Diff against it — never written over the edits.
-struct KubeResourceBanner: View {
-    @ObservedObject var resource: KubeResourceBuffer
-    @ObservedObject var theme: ChromeTheme
+package struct KubeResourceBanner: View {
+    @ObservedObject package var resource: KubeResourceBuffer
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if let change = resource.clusterChange {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(Self.warning)
@@ -157,9 +157,9 @@ struct KubeResourceBanner: View {
         }
     }
 
-    static let warning = Color(red: 0.93, green: 0.6, blue: 0.2)
+    package static let warning = Color(red: 0.93, green: 0.6, blue: 0.2)
 
-    static func said(_ change: KubeResourceBuffer.ClusterChange, _ resource: KubeResourceBuffer) -> String {
+    package static func said(_ change: KubeResourceBuffer.ClusterChange, _ resource: KubeResourceBuffer) -> String {
         switch change {
         case .changed: "\(resource.spoken) changed on the cluster — your edits are kept"
         case .deleted: "\(resource.spoken) was deleted on the cluster — Apply would make it again"
@@ -168,10 +168,10 @@ struct KubeResourceBanner: View {
 }
 
 /// Revert, while a cluster object's YAML has edits: the cluster's text back.
-struct KubeResourceRevert: View {
-    @ObservedObject var resource: KubeResourceBuffer
+package struct KubeResourceRevert: View {
+    @ObservedObject package var resource: KubeResourceBuffer
 
-    var body: some View {
+    package var body: some View {
         if resource.isEdited {
             Button("Revert") { resource.revert() }
                 .help("Drop your edits: the YAML as \(resource.ref.context) has it")
@@ -183,32 +183,32 @@ struct KubeResourceRevert: View {
 
 /// The right-hand pane's diff with the cluster: the session shown last.
 @MainActor
-final class KubeManifestPane: ObservableObject {
-    enum Shown: Equatable {
+package final class KubeManifestPane: ObservableObject {
+    package enum Shown: Equatable {
         /// `chart`: a Metrics tab's chart, expanded (metrics.md 2.1, M9).
         case manifest, helm, change, explain, chart
     }
 
-    @Published var session: KubeManifestSession?
+    @Published package var session: KubeManifestSession?
     /// `kubectl explain` from the cluster's docs (3.15).
-    @Published var explain: KubeExplainSession?
+    @Published package var explain: KubeExplainSession?
     /// A bound release's diff against the checkout's chart (stage 3a).
-    @Published var helm: KubeHelmUpgradeSession?
+    @Published package var helm: KubeHelmUpgradeSession?
     /// A change of a workload's timeline (stage 3b), and its parts' diffs, parsed.
-    @Published private(set) var change: KubeChangeDiff?
+    @Published package private(set) var change: KubeChangeDiff?
     /// A Metrics tab's chart, expanded here: the last one.
-    @Published private(set) var chart: KubeExpandedChart?
-    private(set) var changeFiles: [String: DiffModel.FileDiff] = [:]
+    @Published package private(set) var chart: KubeExpandedChart?
+    package private(set) var changeFiles: [String: DiffModel.FileDiff] = [:]
     /// Which shows: the one asked for last.
-    @Published var shown: Shown = .manifest
+    @Published package var shown: Shown = .manifest
 
-    var showsHelm: Bool {
+    package var showsHelm: Bool {
         get { shown == .helm }
         set { shown = newValue ? .helm : .manifest }
     }
 
     /// A timeline's change, shown.
-    func show(_ change: KubeChangeDiff) {
+    package func show(_ change: KubeChangeDiff) {
         changeFiles = Dictionary(
             change.diff.items.filter { !$0.diff.isEmpty }.map { ($0.id, DiffModel.FileDiff(parsing: $0.diff, path: $0.file)) }, uniquingKeysWith: { a, _ in a })
         self.change = change
@@ -216,30 +216,30 @@ final class KubeManifestPane: ObservableObject {
     }
 
     /// A Metrics tab's chart, alone at the pane's height.
-    func show(_ chart: KubeExpandedChart) {
+    package func show(_ chart: KubeExpandedChart) {
         self.chart = chart
         shown = .chart
     }
 
     /// The window closes: its expanded chart is let go.
-    func dropChart() {
+    package func dropChart() {
         chart = nil
         if shown == .chart { shown = .manifest }
     }
 }
 
-struct KubeManifestDiffView: View {
-    @ObservedObject var pane: KubeManifestPane
+package struct KubeManifestDiffView: View {
+    @ObservedObject package var pane: KubeManifestPane
     /// The window's page: an expanded chart is its Metrics tab's.
-    let page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
-    let onClose: () -> Void
+    package let page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
+    package let onClose: () -> Void
     /// The manifest's file, back in the editor.
-    let onOpen: (URL) -> Void
+    package let onOpen: (URL) -> Void
     /// An expanded chart's "Show in Kubernetes".
-    var onShowPage: (KubeExpandedChart) -> Void = { _ in }
+    package var onShowPage: (KubeExpandedChart) -> Void = { _ in }
 
-    var body: some View {
+    package var body: some View {
         if pane.shown == .chart, let chart = pane.chart {
             KubeExpandedChartView(
                 expanded: chart, page: page, metrics: page.model.metrics, prometheus: page.model.prometheus, theme: theme, onClose: onClose,
@@ -264,17 +264,17 @@ struct KubeManifestDiffView: View {
 /// One session's diff: how it was made (server-side, or client-side and
 /// why), who else owns what it changes, the last apply's conflict, and
 /// each object's diff, masked.
-struct KubeManifestDiffContent: View {
-    @ObservedObject var session: KubeManifestSession
-    @ObservedObject var theme: ChromeTheme
-    let onClose: () -> Void
-    let onOpen: (URL) -> Void
+package struct KubeManifestDiffContent: View {
+    @ObservedObject package var session: KubeManifestSession
+    @ObservedObject package var theme: ChromeTheme
+    package let onClose: () -> Void
+    package let onOpen: (URL) -> Void
     @State private var folded: Set<String> = []
 
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
     private static let warning = Color(red: 0.93, green: 0.6, blue: 0.2)
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.3)

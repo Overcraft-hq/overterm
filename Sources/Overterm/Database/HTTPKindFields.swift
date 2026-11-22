@@ -6,13 +6,13 @@ import SwiftUI
 /// RabbitMQ's `amqp(s)://…/vhost` as its management API's.
 /// A password in it is handed back — the form keeps it, then the keychain.
 /// Pure.
-enum KindAddress {
-    struct Filled: Equatable {
-        var connection: DatabaseConnection
-        var password: String?
+package enum KindAddress {
+    package struct Filled: Equatable {
+        package var connection: DatabaseConnection
+        package var password: String?
     }
 
-    static func fill(_ connection: DatabaseConnection, from text: String) -> Filled? {
+    package static func fill(_ connection: DatabaseConnection, from text: String) -> Filled? {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let components = URLComponents(string: text.contains("://") ? text : "http://" + text),
             let host = components.host, !host.isEmpty
@@ -81,14 +81,14 @@ enum KindAddress {
 }
 
 /// DynamoDB's, InfluxDB's and Neo4j's fields in the connection form.
-struct HTTPKindFields: View {
-    @Binding var connection: DatabaseConnection
-    @Binding var password: String
-    let hasSavedPassword: Bool
+package struct HTTPKindFields: View {
+    @Binding package var connection: DatabaseConnection
+    @Binding package var password: String
+    package let hasSavedPassword: Bool
     /// Something changed: the last test says nothing any more.
-    let changed: () -> Void
+    package let changed: () -> Void
 
-    var body: some View {
+    package var body: some View {
         TextField("URL", text: Binding(get: { "" }, set: { paste($0) }), prompt: Text(verbatim: prompt))
         switch connection.kind {
         case .dynamodb: dynamoFields

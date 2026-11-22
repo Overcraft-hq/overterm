@@ -21,9 +21,9 @@ import Foundation
 /// Times are the kernel's clock, so a test moves them. A read is by pid: a
 /// pid reused between the ask and the read gives a stranger's folder to an
 /// identity that has ended, which the next tick's table drops.
-final class ProcessFolders: @unchecked Sendable {
+package final class ProcessFolders: @unchecked Sendable {
     /// What is known of one process's folder.
-    enum Folder: Hashable, Sendable {
+    package enum Folder: Hashable, Sendable {
         case path(String)
         /// None to read, or refused.
         case unknown
@@ -32,15 +32,15 @@ final class ProcessFolders: @unchecked Sendable {
     }
 
     /// One process's folder, asked for.
-    struct Request: Hashable, Sendable {
-        let identity: ActivityProcessID
+    package struct Request: Hashable, Sendable {
+        package let identity: ActivityProcessID
         /// Read again at every ask (an agent's), not kept `freshFor`.
-        var everyTick = false
+        package var everyTick = false
     }
 
-    static let deadline: UInt64 = 200_000_000
-    static let skipFor: UInt64 = 60_000_000_000
-    static let freshFor: UInt64 = 10_000_000_000
+    package static let deadline: UInt64 = 200_000_000
+    package static let skipFor: UInt64 = 60_000_000_000
+    package static let freshFor: UInt64 = 10_000_000_000
 
     private let kernel: any ActivityKernel
     private let queue = DispatchQueue(label: "Overterm.activity.folders", qos: .userInitiated)
@@ -56,14 +56,14 @@ final class ProcessFolders: @unchecked Sendable {
     private var draining = false
     private var skipped: [ActivityProcessID: UInt64] = [:]
 
-    init(kernel: any ActivityKernel) {
+    package init(kernel: any ActivityKernel) {
         self.kernel = kernel
     }
 
     /// What is known of each requested folder now; those not fresh are
     /// asked for, at most `limit` of them, in the order requested — the
     /// rest when they are requested again. Never waits.
-    func folders(_ requests: [Request], now: UInt64, limit: Int = .max) -> [ActivityProcessID: Folder] {
+    package func folders(_ requests: [Request], now: UInt64, limit: Int = .max) -> [ActivityProcessID: Folder] {
         lock.withLock {
             var asked = 0
             var hangs = false
@@ -104,7 +104,7 @@ final class ProcessFolders: @unchecked Sendable {
     }
 
     /// Forget what is no longer in the process table.
-    func prune(keeping live: Set<ActivityProcessID>) {
+    package func prune(keeping live: Set<ActivityProcessID>) {
         lock.withLock {
             known = known.filter { live.contains($0.key) }
             skipped = skipped.filter { live.contains($0.key) }
@@ -120,7 +120,7 @@ final class ProcessFolders: @unchecked Sendable {
     /// `deadline` at most: one that doesn't come by then is nil, its
     /// process marked as not answering by the next ask, as a tick's would
     /// be. Never from this queue.
-    func folder(waitingFor identity: ActivityProcessID, now: UInt64) -> Folder? {
+    package func folder(waitingFor identity: ActivityProcessID, now: UInt64) -> Folder? {
         dispatchPrecondition(condition: .notOnQueue(queue))
         if let known = folders([Request(identity: identity)], now: now)[identity] { return known }
         let until = Date().addingTimeInterval(Double(Self.deadline) / 1e9)
@@ -140,7 +140,7 @@ final class ProcessFolders: @unchecked Sendable {
     /// `deadline` at most: nil when none came by then, or none could be
     /// asked — nothing is queued behind a read that hangs. One skipped as
     /// not answering is that at once. Never from this queue.
-    func folder(readSince since: UInt64, of identity: ActivityProcessID) -> Folder? {
+    package func folder(readSince since: UInt64, of identity: ActivityProcessID) -> Folder? {
         dispatchPrecondition(condition: .notOnQueue(queue))
         // One begun since and answered is the answer: no read more.
         if let entry = lock.withLock({ known[identity] }), entry.began >= since { return entry.folder }
@@ -161,7 +161,7 @@ final class ProcessFolders: @unchecked Sendable {
     }
 
     /// Whether a read is going or waiting: the tests wait for it.
-    var isBusy: Bool { lock.withLock { draining } }
+    package var isBusy: Bool { lock.withLock { draining } }
 
     /// The reads, one at a time, until none waits.
     private func drain() {

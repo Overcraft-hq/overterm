@@ -15,7 +15,7 @@ import Foundation
 // it), every literal escaped, every regex value escaped first. Pure.
 
 /// Whose charts a tab's queries are.
-enum KubeTabSubject: Hashable, Sendable {
+package enum KubeTabSubject: Hashable, Sendable {
     /// A pod: whether one of its containers has a CPU limit (throttling is
     /// asked only then), and whether it uses the node's network.
     case pod(namespace: String, name: String, cpuLimited: Bool, hostNetwork: Bool)
@@ -31,7 +31,7 @@ enum KubeTabSubject: Hashable, Sendable {
     /// The object it is, whatever its facts say: a request for the same
     /// object and span takes the last one's answers over while it is read
     /// (an HPA found, a limit added, a chart scrolled to).
-    var object: String {
+    package var object: String {
         switch self {
         case .pod(let namespace, let name, _, _): "pod/\(namespace)/\(name)"
         case .workload(let namespace, let kind, let name, _): "\(kind)/\(namespace)/\(name)"
@@ -43,7 +43,7 @@ enum KubeTabSubject: Hashable, Sendable {
 }
 
 /// A family of a tab's charts: what one or two queries answer.
-enum KubeTabFamily: String, Hashable, Sendable, CaseIterable {
+package enum KubeTabFamily: String, Hashable, Sendable, CaseIterable {
     case cpu, memory, throttling, network, restarts, oom, replicas, hpa, hpaMetrics, nodePods, conditions, topCPU, topMemory
     /// C1's peak band (24h and longer) and C2's RSS: a pod's, Prometheus' forms only.
     case cpuPeak, rss
@@ -63,32 +63,32 @@ enum KubeTabFamily: String, Hashable, Sendable, CaseIterable {
     case saved
 
     /// The families with no sampled form: read from Prometheus in Live too.
-    static let prometheusOnly: Set<KubeTabFamily> = [.throttling, .network, .restarts, .oom, .fs, .disks, .nodeNetwork, .gpu, .saved]
+    package static let prometheusOnly: Set<KubeTabFamily> = [.throttling, .network, .restarts, .oom, .fs, .disks, .nodeNetwork, .gpu, .saved]
 }
 
 /// What a tab wants of Prometheus: whose, over which range or window, which families.
-struct KubeTabRequest: Hashable, Sendable {
-    enum Span: Hashable, Sendable {
+package struct KubeTabRequest: Hashable, Sendable {
+    package enum Span: Hashable, Sendable {
         /// A range ending now, refreshed.
         case range(KubeMetricsRange)
         /// A window: a zoom, Custom, a marker's ± 30 minutes — never refreshed.
         case window(KubeChartWindow)
     }
 
-    var subject: KubeTabSubject
-    var span: Span
-    var families: Set<KubeTabFamily>
+    package var subject: KubeTabSubject
+    package var span: Span
+    package var families: Set<KubeTabFamily>
     /// The context's saved queries a workload's tab asks (`.saved`): its
     /// first `KubeSavedQueries.atMost`, as settings.json says them now — an
     /// edit there is another request.
-    var saved: [KubeSavedChart] = []
+    package var saved: [KubeSavedChart] = []
 
     /// Another request's answers stand for this one's until it is read:
     /// the same object over the same span, only its facts or families changed.
-    func carries(from other: KubeTabRequest) -> Bool { other != self && other.subject.object == subject.object && other.span == span }
+    package func carries(from other: KubeTabRequest) -> Bool { other != self && other.subject.object == subject.object && other.span == span }
 
     /// Its span as Prometheus is asked it, the scrape the profile read.
-    func resolve(scrape: TimeInterval, now: Date) -> KubePromSpan {
+    package func resolve(scrape: TimeInterval, now: Date) -> KubePromSpan {
         switch span {
         case .range(let range): KubeMetricsSpan.of(range, scrape: scrape, now: now)
         case .window(let window): KubeMetricsSpan.of(window, scrape: scrape)
@@ -96,7 +96,7 @@ struct KubeTabRequest: Hashable, Sendable {
     }
 
     /// What the cache keys its answers' range by.
-    var cacheRange: String {
+    package var cacheRange: String {
         switch span {
         case .range(let range): range.rawValue
         case .window(let window): "\(Int(window.start.timeIntervalSince1970))-\(Int(window.end.timeIntervalSince1970))"
@@ -106,23 +106,23 @@ struct KubeTabRequest: Hashable, Sendable {
 
 /// One query of a tab: its id (what the builder reads its answer by),
 /// its family, instant or over the span.
-struct KubeTabQuery: Hashable, Sendable {
-    var id: String
-    var family: KubeTabFamily
-    var promql: String
-    var instant = false
+package struct KubeTabQuery: Hashable, Sendable {
+    package var id: String
+    package var family: KubeTabFamily
+    package var promql: String
+    package var instant = false
     /// An instant query's time: the span's end (a window's, not now).
-    var at: Date?
+    package var at: Date?
 }
 
 /// How a workload's pods — a namespace's pods' workloads — are told
 /// (metrics.md 4.5, in tier order): the mixin's workload rule,
 /// kube-state-metrics' owners (a Deployment's through its ReplicaSets), or
 /// the pods' names.
-enum KubeTabSelection: String, Equatable, Sendable {
+package enum KubeTabSelection: String, Equatable, Sendable {
     case rule, owner, name
 
-    var title: String {
+    package var title: String {
         switch self {
         case .rule: "by owner (recording rules)"
         case .owner: "by owner"
@@ -136,76 +136,76 @@ enum KubeTabSelection: String, Equatable, Sendable {
 /// step), the range queries then asked for those names alone. Kept with
 /// what it ranked; ranked again on another span, another tier or
 /// selection, and every 10 refreshes.
-struct KubeTabRanking: Equatable, Sendable {
+package struct KubeTabRanking: Equatable, Sendable {
     /// What it ranked: the object, the span, the selection and the tier.
-    var key: String
+    package var key: String
     /// Each measure's (`cpu`, `memory`) names, largest first: a workload's
     /// pods, a namespace's workloads as `Kind/name`.
-    var names: [String: [String]] = [:]
+    package var names: [String: [String]] = [:]
     /// How many readings have used it since it was ranked.
-    var refreshes = 0
+    package var refreshes = 0
     /// What it says of itself ("ranked by the last 24h").
-    var notes: [String] = []
+    package var notes: [String] = []
     /// The measures it settled: ranked, or not to be (too costly) — one
     /// that failed is in neither, and asked again next time.
-    var covered: Set<String> = []
+    package var covered: Set<String> = []
 
-    static let kept = 10
+    package static let kept = 10
 
-    var isStale: Bool { refreshes >= Self.kept }
+    package var isStale: Bool { refreshes >= Self.kept }
 }
 
 /// The instant queries a ranking asks: ids `cpu` and `memory`.
-struct KubeTabRankPlan: Equatable, Sendable {
-    var key: String
-    var queries: [KubeTabQuery]
-    var notes: [String] = []
+package struct KubeTabRankPlan: Equatable, Sendable {
+    package var key: String
+    package var queries: [KubeTabQuery]
+    package var notes: [String] = []
     /// A raw workload's pods to count first (`KubeTabCount`): the queries
     /// then are what an allowed count would ask.
-    var count: KubeTabQuery?
+    package var count: KubeTabQuery?
     /// The measures not ranked, on purpose: too costly.
-    var skipped: Set<String> = []
+    package var skipped: Set<String> = []
 }
 
 /// A raw workload's cAdvisor CPU series and its pods, counted before it is
 /// ranked (`count by (pod)`): the CPU ranking's samples estimate, the memory
 /// ranking's subquery gate. Nil fields: the count failed.
-struct KubeTabCount: Equatable, Sendable {
-    var series: Int?
-    var pods: Int?
+package struct KubeTabCount: Equatable, Sendable {
+    package var series: Int?
+    package var pods: Int?
 
-    static let failed = KubeTabCount()
+    package static let failed = KubeTabCount()
 
     /// The count's answer: a series a pod, its value that pod's series.
-    static func of(_ answer: [KubeSeries]) -> KubeTabCount {
+    package static func of(_ answer: [KubeSeries]) -> KubeTabCount {
         let values = answer.compactMap { $0.points.last?.value }.filter(\.isFinite)
         return KubeTabCount(series: Int(values.reduce(0, +).rounded()), pods: answer.count)
     }
 }
 
 /// A tab's queries for a span, and what isn't asked and why.
-struct KubeTabPlan: Equatable, Sendable {
-    var queries: [KubeTabQuery] = []
+package struct KubeTabPlan: Equatable, Sendable {
+    package var queries: [KubeTabQuery] = []
     /// A family not asked: why (its sentence).
-    var refused: [KubeTabFamily: String] = [:]
+    package var refused: [KubeTabFamily: String] = [:]
     /// The form the usage lines are read in.
-    var tier: KubePromTier = .raw
+    package var tier: KubePromTier = .raw
     /// How a workload's (a namespace's) pods were told; nil, not asked.
-    var selection: KubeTabSelection?
+    package var selection: KubeTabSelection?
     /// The profile's footnotes (kube-state-metrics old or missing…).
-    var notes: [String] = []
+    package var notes: [String] = []
     /// A saved query not sent, by its id (`KubeSavedQueries.id`): why.
-    var savedRefused: [String: String] = [:]
+    package var savedRefused: [String: String] = [:]
 }
 
-enum KubeTabQueries {
+package enum KubeTabQueries {
     /// The safe alphabet of a generated name's suffix (Kubernetes').
-    static let alphabet = "[bcdfghjklmnpqrstvwxz2456789]"
+    package static let alphabet = "[bcdfghjklmnpqrstvwxz2456789]"
 
     /// A workload's pods by name (§4.5's third tier, "pods matched by name"):
     /// a Deployment's `<name>-<hash>-<5>`, a StatefulSet's `<name>-<n>`, a
     /// DaemonSet's, a ReplicaSet's or a Job's `<name>-<5>`. Escaped as a regex.
-    static func podPattern(kind: String, name: String) -> String {
+    package static func podPattern(kind: String, name: String) -> String {
         let base = KubePromQL.regexLiteral(name)
         switch kind {
         case "Deployment": return "\(base)-\(alphabet){1,10}-\(alphabet){5}"
@@ -215,12 +215,12 @@ enum KubeTabQueries {
     }
 
     /// `pod=~"…"`, its value a PromQL string.
-    static func podMatcher(kind: String, name: String) -> String {
+    package static func podMatcher(kind: String, name: String) -> String {
         "pod=~\"" + KubePromQL.literal(podPattern(kind: kind, name: name)) + "\""
     }
 
     /// The longest prefix of a generated name Kubernetes keeps (63 less its 5 random).
-    static let generatedPrefix = 58
+    package static let generatedPrefix = 58
 
     /// `pod=~"<name>-.+"`: a cheap prefilter beside an owner join, so a raw
     /// read covers the workload's pods' series, not the whole namespace's.
@@ -228,20 +228,20 @@ enum KubeTabQueries {
     /// Deployment's through its ReplicaSet's — cut where Kubernetes cuts a
     /// generated name. A neighbour that extends the name (db, db-extra)
     /// passes it; the join leaves it out.
-    static func podPrefixMatcher(name: String) -> String {
+    package static func podPrefixMatcher(name: String) -> String {
         let prefix = String((name + "-").prefix(generatedPrefix))
         return "pod=~\"" + KubePromQL.literal(KubePromQL.regexLiteral(prefix) + ".+") + "\""
     }
 
     /// A workload's raw scope: its namespace and its pods' names — the
     /// pattern where names are the selection, else the prefix before the join.
-    static func workloadScope(namespace: String, kind: String, name: String, selection: KubeTabSelection) -> String {
+    package static func workloadScope(namespace: String, kind: String, name: String, selection: KubeTabSelection) -> String {
         joined([KubePromQL.matchers([("namespace", namespace)]), selection == .name ? podMatcher(kind: kind, name: name) : podPrefixMatcher(name: name)])
     }
 
     /// Why raw cAdvisor across `namespace` isn't read over `span`: too many
     /// series (`KubeQueryCost`), or a count that failed this time; nil, read.
-    static func namespaceRawRefusal(_ namespace: String, span: TimeInterval, profile: KubePromProfile) -> String? {
+    package static func namespaceRawRefusal(_ namespace: String, span: TimeInterval, profile: KubePromProfile) -> String? {
         if profile.uncounted.contains(namespace) {
             return "\(namespace)'s container series couldn't be counted, so its raw usage isn't read: counted again at the next refresh."
         }
@@ -250,25 +250,25 @@ enum KubeTabQueries {
 
     /// One arm of a union, tagged `overterm_s` (a label of Overterm's: `__`
     /// names are Prometheus' own, and front ends may drop them).
-    static func tagged(_ query: String, _ tag: String) -> String {
+    package static func tagged(_ query: String, _ tag: String) -> String {
         "label_replace(\(query),\"overterm_s\",\"\(tag)\",\"\",\"\")"
     }
 
-    static func union(_ arms: [(String, String)]) -> String { arms.map { tagged($0.0, $0.1) }.joined(separator: " or ") }
+    package static func union(_ arms: [(String, String)]) -> String { arms.map { tagged($0.0, $0.1) }.joined(separator: " or ") }
 
     /// A `,`-joined list of matchers, empty parts left out.
-    static func joined(_ parts: [String]) -> String { parts.filter { !$0.isEmpty }.joined(separator: ",") }
+    package static func joined(_ parts: [String]) -> String { parts.filter { !$0.isEmpty }.joined(separator: ",") }
 
     /// The usage lines' tier: a pod's, a workload's raw cAdvisor over an
     /// hour or less (one object's series are cheap, and a 5-minute rule
     /// would smooth a spike away); the mixin's rules past it, where they are.
-    static func tier(_ span: KubePromSpan, profile: KubePromProfile) -> KubePromTier {
+    package static func tier(_ span: KubePromSpan, profile: KubePromProfile) -> KubePromTier {
         span.end.timeIntervalSince(span.start) > 3600 && profile.hasContainerRules ? .rules : .raw
     }
 
     /// A tab's queries over `span`; a workload's and a namespace's top N
     /// for the names `ranking` holds (none yet: totals only).
-    static func plan(_ request: KubeTabRequest, span: KubePromSpan, profile: KubePromProfile, ranking: KubeTabRanking? = nil) -> KubeTabPlan {
+    package static func plan(_ request: KubeTabRequest, span: KubePromSpan, profile: KubePromProfile, ranking: KubeTabRanking? = nil) -> KubeTabPlan {
         var plan = KubeTabPlan()
         let window = KubePromQL.duration(KubeRateWindow.of(step: span.step, scrape: profile.scrapeInterval))
         let step = KubePromQL.duration(span.step)
@@ -567,7 +567,7 @@ enum KubeTabQueries {
 
     /// DCGM exporter's labels, where the GPUs can be asked of it: nil, not
     /// (said, unless nothing is known yet — then nothing is asked).
-    static func gpuLabels(_ profile: KubePromProfile, needsPods: Bool, refuse: (KubeTabFamily, String) -> Void) -> KubePromProfile.DCGM? {
+    package static func gpuLabels(_ profile: KubePromProfile, needsPods: Bool, refuse: (KubeTabFamily, String) -> Void) -> KubePromProfile.DCGM? {
         guard profile.known else { return nil }
         guard profile.hasDCGM else {
             refuse(.gpu, KubeChartEmpty.noDCGM.sentence)
@@ -588,20 +588,20 @@ enum KubeTabQueries {
     /// profile says otherwise; none where they name no node (a node's
     /// usage, its top pods, refused). The charts ask this too, so that
     /// whether a group exists never hangs on what was read.
-    static func nodeLabel(_ profile: KubePromProfile) -> KubePromProfile.NodeLabel? { profile.known ? profile.nodeLabel : .node }
+    package static func nodeLabel(_ profile: KubePromProfile) -> KubePromProfile.NodeLabel? { profile.known ? profile.nodeLabel : .node }
 
     // MARK: Whose pods
 
     /// How a workload's pods are told: the mixin's rule (a Deployment's, a
     /// StatefulSet's, a DaemonSet's), else kube-state-metrics' owners, else names.
-    static func workloadSelection(kind: String, profile: KubePromProfile) -> KubeTabSelection {
+    package static func workloadSelection(kind: String, profile: KubePromProfile) -> KubeTabSelection {
         if ["Deployment", "StatefulSet", "DaemonSet"].contains(kind), profile.has(KubePromProfile.workloadRule) { return .rule }
         if !profile.ksmMissing, profile.mayHave("kube_pod_owner"), kind != "Deployment" || profile.mayHave("kube_replicaset_owner") { return .owner }
         return .name
     }
 
     /// How a namespace's pods' workloads are told: the rule, the owners; nil, not at all.
-    static func namespaceSelection(_ profile: KubePromProfile) -> KubeTabSelection? {
+    package static func namespaceSelection(_ profile: KubePromProfile) -> KubeTabSelection? {
         if profile.has(KubePromProfile.workloadRule) { return .rule }
         if !profile.ksmMissing, profile.mayHave("kube_pod_owner"), profile.mayHave("kube_replicaset_owner") { return .owner }
         return nil
@@ -610,7 +610,7 @@ enum KubeTabQueries {
     /// A workload's pods, 1 each by `(namespace, pod)` — a Deployment's
     /// raw join keeps each pod's `replicaset` (W3); nil by name (the
     /// selector's regex is the selection).
-    static func ownerOf(kind: String, namespace: String, name: String, selection: KubeTabSelection, profile: KubePromProfile) -> String? {
+    package static func ownerOf(kind: String, namespace: String, name: String, selection: KubeTabSelection, profile: KubePromProfile) -> String? {
         let ksm = profile.ksmMatcher
         switch selection {
         case .name:
@@ -633,7 +633,7 @@ enum KubeTabQueries {
     /// (`names`: only those workloads, `Kind/name`) — the rule's, or
     /// kube-state-metrics' owners: a ReplicaSet's pods its Deployment's, a
     /// StatefulSet's, a DaemonSet's, a Job's their own. A pod of nothing is in "other".
-    static func ownersIn(namespace: String, selection: KubeTabSelection, names: [String]? = nil, profile: KubePromProfile) -> String {
+    package static func ownersIn(namespace: String, selection: KubeTabSelection, names: [String]? = nil, profile: KubePromProfile) -> String {
         let ksm = profile.ksmMatcher
         let inNamespace = KubePromQL.matchers([("namespace", namespace)])
         let picked = names.map { list -> String in
@@ -657,20 +657,20 @@ enum KubeTabQueries {
     }
 
     /// `workload_type` as a Kind: the rule writes it lower case.
-    static func kindTitle(_ type: String) -> String {
+    package static func kindTitle(_ type: String) -> String {
         let kinds = ["deployment": "Deployment", "statefulset": "StatefulSet", "daemonset": "DaemonSet", "replicaset": "ReplicaSet", "job": "Job", "cronjob": "CronJob"]
         return kinds[type.lowercased()] ?? type
     }
 
     /// `pod=~"a|b"`: these pods exactly, each escaped as a regex, then as a string.
-    static func podsMatcher(_ names: [String]) -> String {
+    package static func podsMatcher(_ names: [String]) -> String {
         "pod=~\"" + KubePromQL.literal(names.map(KubePromQL.regexLiteral).joined(separator: "|")) + "\""
     }
 
     /// The containers' CPU and memory under `scope`, one series a container
     /// (by namespace, pod, container): the mixin's rules, or raw cAdvisor —
     /// a counter's rates summed, a gauge's highest.
-    static func containerUsage(
+    package static func containerUsage(
         _ scope: String, tier: KubePromTier, window: String, gauge: (String) -> String, profile: KubePromProfile
     ) -> (cpu: String, memory: String) {
         if tier == .rules, let rule = profile.containerCPURule {
@@ -690,7 +690,7 @@ enum KubeTabQueries {
     // MARK: The top N
 
     /// A workload's top five pods, a namespace's top eight workloads.
-    static func top(_ subject: KubeTabSubject) -> Int {
+    package static func top(_ subject: KubeTabSubject) -> Int {
         if case .namespace = subject { return 8 }
         return 5
     }
@@ -705,7 +705,7 @@ enum KubeTabQueries {
     /// (`KubeQueryCost.subquery`). A raw workload's pods are counted first
     /// (`counted` nil: not yet — the plan's `count`, its queries as an
     /// allowed count would ask). Nil: the subject ranks nothing (or its usage isn't asked).
-    static func ranking(_ request: KubeTabRequest, span: KubePromSpan, profile: KubePromProfile, counted: KubeTabCount? = nil) -> KubeTabRankPlan? {
+    package static func ranking(_ request: KubeTabRequest, span: KubePromSpan, profile: KubePromProfile, counted: KubeTabCount? = nil) -> KubeTabRankPlan? {
         let length = span.end.timeIntervalSince(span.start)
         let step = KubePromQL.duration(span.step)
         let namespace: String
@@ -789,7 +789,7 @@ enum KubeTabQueries {
 
     /// A ranking query's answer: its names, largest first — a pod, or a
     /// namespace's workload as `Kind/name`.
-    static func rankNames(_ series: [KubeSeries], subject: KubeTabSubject) -> [String] {
+    package static func rankNames(_ series: [KubeSeries], subject: KubeTabSubject) -> [String] {
         let named = series.compactMap { one -> (String, Double)? in
             guard let value = one.points.last?.value, value.isFinite else { return nil }
             switch subject {
@@ -808,7 +808,7 @@ enum KubeTabQueries {
     /// A namespace's cAdvisor CPU series counted (metrics.md 4.4), where a
     /// namespace's tab needs it and the profile hasn't it: raw across the
     /// namespace only below 2,000 of them. Nil: nothing to count.
-    static func namespaceCount(_ request: KubeTabRequest, profile: KubePromProfile) -> (namespace: String, promql: String)? {
+    package static func namespaceCount(_ request: KubeTabRequest, profile: KubePromProfile) -> (namespace: String, promql: String)? {
         guard case .namespace(let namespace) = request.subject, profile.known, !profile.hasContainerRules, profile.namespaceSeries[namespace] == nil,
             request.families.contains(.cpu) || request.families.contains(.memory)
         else { return nil }
@@ -817,7 +817,7 @@ enum KubeTabQueries {
 
     /// A workload's replicas from kube-state-metrics, its kind's own names,
     /// each `max`ed (two replicas of it scrape the same).
-    static func replicas(kind: String, namespace: String, name: String, ksm: String) -> String? {
+    package static func replicas(kind: String, namespace: String, name: String, ksm: String) -> String? {
         func of(_ metric: String, _ label: String) -> String {
             "max(\(metric){\(joined([ksm, KubePromQL.matchers([("namespace", namespace), (label, name)])]))})"
         }
@@ -848,7 +848,7 @@ enum KubeTabQueries {
 
     /// An HPA's replicas and its metrics against their targets — the 1.x
     /// names (`kube_hpa_*`, label `hpa`) where kube-state-metrics is older.
-    static func hpaQueries(
+    package static func hpaQueries(
         namespace: String, name: String, profile: KubePromProfile, add: (String, KubeTabFamily, String, Bool) -> Void, refuse: (KubeTabFamily, String) -> Void
     ) {
         let old = profile.ksmMajor == 1
@@ -877,7 +877,7 @@ enum KubeTabQueries {
 extension KubePromQL {
     /// What identifies a GPU on DCGM exporter's series: its index, and a MIG
     /// instance's profile and id; its model, for its name.
-    static let gpuIdentity = "gpu,GPU_I_PROFILE,GPU_I_ID,modelName"
+    package static let gpuIdentity = "gpu,GPU_I_PROFILE,GPU_I_ID,modelName"
 
     /// G1–G3 under `scope`, one union tagged `overterm_s`, each a series a
     /// GPU (and `by`: its container, its pod) taken once (`max by`: two
@@ -887,7 +887,7 @@ extension KubePromQL {
     /// its total (used + free at one sample) in bytes (DCGM says MiB),
     /// power and temperature where reported. A gauge keeps its peaks past
     /// 5-minute steps, as the others do; the total doesn't.
-    static func gpus(_ scope: String, by: String, profile: KubePromProfile, gauge: (String) -> String) -> String {
+    package static func gpus(_ scope: String, by: String, profile: KubePromProfile, gauge: (String) -> String) -> String {
         let grouping = "\(gpuIdentity),\(by)"
         func of(_ metric: String, peaks: Bool = true) -> String {
             "max by (\(grouping))(\(peaks ? gauge("\(metric){\(scope)}") : "\(metric){\(scope)}"))"
@@ -909,22 +909,22 @@ extension KubePromQL {
     /// node-exporter's series mapped to `node`: its instance, by
     /// `node_uname_info`'s nodename (on EKS the node's hostname, which is
     /// its name) — one `node_uname_info` an instance, two jobs scraping it or not.
-    static func onNode(_ node: String) -> String {
+    package static func onNode(_ node: String) -> String {
         "on(instance) group_left(nodename) max by (instance,nodename)(node_uname_info{\(matchers([("nodename", node)]))})"
     }
 
-    static let nodeFilesystemMetric = "node_filesystem_avail_bytes"
-    static let nodeNetworkMetric = "node_network_receive_bytes_total"
+    package static let nodeFilesystemMetric = "node_filesystem_avail_bytes"
+    package static let nodeNetworkMetric = "node_network_receive_bytes_total"
     /// K6's mounts: the root and Bottlerocket's `/local`, never tmpfs, overlay or squashfs.
-    static let nodeFilesystems = #"fstype!~"tmpfs|overlay|squashfs",mountpoint=~"/|/local""#
+    package static let nodeFilesystems = #"fstype!~"tmpfs|overlay|squashfs",mountpoint=~"/|/local""#
     /// K7's interfaces: the node's own, never loopback, a pod's veth or
     /// VPC CNI's eni, Calico's, Docker's or a CNI bridge.
-    static let nodeDevices = #"device!~"lo|veth.*|eni.*|cali.*|docker.*|cni.*""#
+    package static let nodeDevices = #"device!~"lo|veth.*|eni.*|cali.*|docker.*|cni.*""#
 
     /// K6: each mount's used bytes (size less available) and its size, one
     /// union tagged `overterm_s` — every series taken once an instance and
     /// mount first, so two jobs scraping one node-exporter don't double it.
-    static func nodeDisks(_ node: String) -> String {
+    package static func nodeDisks(_ node: String) -> String {
         func fs(_ metric: String) -> String { "max by (instance,mountpoint)(\(metric){\(nodeFilesystems)})" }
         return KubeTabQueries.union([
             ("max by (mountpoint)((\(fs("node_filesystem_size_bytes")) - \(fs(nodeFilesystemMetric))) * \(onNode(node)))", "used"),
@@ -934,7 +934,7 @@ extension KubePromQL {
 
     /// K7: the node's received and sent bytes a second over its own
     /// interfaces, each device's rate once an instance.
-    static func nodeNetwork(_ node: String, window: String) -> String {
+    package static func nodeNetwork(_ node: String, window: String) -> String {
         func rate(_ metric: String) -> String {
             "sum(max by (instance,device)(rate(\(metric){\(nodeDevices)}[\(window)])) * \(onNode(node)))"
         }
@@ -947,14 +947,14 @@ extension KubePromQL {
     /// the node's hostname, which is its name) — both sides taken once an
     /// instance (metrics.md 1.1), two jobs scraping it or not: summed by
     /// job, a node scraped twice read twice its memory.
-    static func nodeTotalMemory(_ node: String) -> String {
+    package static func nodeTotalMemory(_ node: String) -> String {
         "sum(max by (instance)(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) * \(onNode(node)))"
     }
 
     /// What a namespace's active pods request (N3's chip): the mixin's
     /// active-pod rule where it is, else kube-state-metrics' requests of
     /// the Pending and Running pods — its 1.x names on 1.x.
-    static func requests(_ resource: String, namespace: String, profile: KubePromProfile) -> String {
+    package static func requests(_ resource: String, namespace: String, profile: KubePromProfile) -> String {
         let inNamespace = matchers([("namespace", namespace)])
         if profile.hasActiveRules {
             return "sum(max by (namespace,pod,container,node)(cluster:namespace:pod_\(resource == "cpu" ? "cpu" : "memory"):active:kube_pod_container_resource_requests{\(inNamespace)}))"
@@ -970,7 +970,7 @@ extension KubePromQL {
 
     /// What a node's active pods request, CPU and memory — kube-state-metrics
     /// 2.x labels each request with its pod's node; nil without it.
-    static func requestsOnNode(_ node: String, profile: KubePromProfile) -> (cpu: String, memory: String)? {
+    package static func requestsOnNode(_ node: String, profile: KubePromProfile) -> (cpu: String, memory: String)? {
         guard !profile.ksmMissing else { return nil }
         let pinned = KubeTabQueries.joined([profile.ksmMatcher, matchers([("node", node)])])
         func of(_ resource: String) -> String {
@@ -987,7 +987,7 @@ extension KubePromQL {
 extension KubePromProfile {
     /// cAdvisor's path and job pins alone, without the container filters —
     /// a pod's network belongs to its sandbox, labelled `container=""`.
-    var cadvisorPins: String {
+    package var cadvisorPins: String {
         var matchers: [String] = []
         if let cadvisorPath { matchers.append("metrics_path=\"\(KubePromQL.literal(cadvisorPath))\"") }
         if cadvisorJobPinned, let cadvisorJob { matchers.append("job=\"\(KubePromQL.literal(cadvisorJob))\"") }

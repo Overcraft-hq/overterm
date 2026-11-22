@@ -21,7 +21,7 @@ import SwiftUI
 /// the identity each process was listed with, so a Resume hours later
 /// continues only what is still that process — never a pid someone else
 /// holds now, perhaps a job they stopped with ⌃Z elsewhere.
-enum TabSuspension {
+package enum TabSuspension {
     /// What a press stops in one pane, read at the press, as the scan this
     /// lookup replaced read it (7.8): a lookup in the app's census that
     /// always ticks. The window's readers' lookups answer from a snapshot up
@@ -29,7 +29,7 @@ enum TabSuspension {
     /// started since — the command just typed, an agent's new shell, a
     /// server's new worker — while its shell sat stopped under the cover.
     /// Blocking: off the main thread.
-    static func targets(login: pid_t?, tag: String, checkouts: [String], census: ActivitySampler = .app) -> [ActivitySignalTarget] {
+    package static func targets(login: pid_t?, tag: String, checkouts: [String], census: ActivitySampler = .app) -> [ActivitySignalTarget] {
         guard let (slice, snapshot) = ProcessInspector(census: census, freshness: 0).slice(root: login, tag: tag) else { return [] }
         let terminal = census.appContext.panes.first { $0.tag == tag }?.terminal
         return targets(of: slice, in: snapshot, terminal: terminal, checkouts: checkouts)
@@ -37,7 +37,7 @@ enum TabSuspension {
 
     /// The pane's set itself, read now as `targets` reads it: what it
     /// leaves out and why (`ActivityPaneSet.leftOut`). Blocking.
-    static func paneSet(login: pid_t?, tag: String, checkouts: [String], census: ActivitySampler = .app) -> ActivityPaneSet? {
+    package static func paneSet(login: pid_t?, tag: String, checkouts: [String], census: ActivitySampler = .app) -> ActivityPaneSet? {
         guard let (slice, snapshot) = ProcessInspector(census: census, freshness: 0).slice(root: login, tag: tag) else { return nil }
         let terminal = census.appContext.panes.first { $0.tag == tag }?.terminal
         return ActivityPaneSet(slice, in: snapshot, terminal: terminal, checkouts: checkouts)
@@ -46,7 +46,7 @@ enum TabSuspension {
     /// Of `slice`'s set (`ActivityPaneSet`), what runs as the user alone
     /// and hasn't ended, parents first — the order to stop in — each with
     /// the executable the census read. Pure.
-    static func targets(of slice: ActivityPaneSlice, in snapshot: ActivitySnapshot, terminal: dev_t? = nil, checkouts: [String] = [])
+    package static func targets(of slice: ActivityPaneSlice, in snapshot: ActivitySnapshot, terminal: dev_t? = nil, checkouts: [String] = [])
         -> [ActivitySignalTarget]
     {
         let set = ActivityPaneSet(slice, in: snapshot, terminal: terminal, checkouts: checkouts)
@@ -54,7 +54,7 @@ enum TabSuspension {
     }
 
     /// Stops `targets` in order; the ones that stopped.
-    static func stop(_ targets: [ActivitySignalTarget], signals: ProcessSignals = ProcessSignals()) -> [ActivitySignalTarget] {
+    package static func stop(_ targets: [ActivitySignalTarget], signals: ProcessSignals = ProcessSignals()) -> [ActivitySignalTarget] {
         targets.filter { target in
             if case .sent = signals.send(.stop, to: target, alone: false) { return true }
             return false
@@ -63,21 +63,21 @@ enum TabSuspension {
 
     /// Continues what `stop` stopped, children first: each only while it
     /// is still the process it stopped.
-    static func resume(_ targets: [ActivitySignalTarget], signals: ProcessSignals = ProcessSignals()) {
+    package static func resume(_ targets: [ActivitySignalTarget], signals: ProcessSignals = ProcessSignals()) {
         for target in targets.reversed() { _ = signals.send(.cont, to: target, alone: false) }
     }
 }
 
 extension Tab {
     /// Any of its panes suspended — a pane moved out takes its state along.
-    var isSuspended: Bool { terminals.contains { $0.isSuspended } }
+    package var isSuspended: Bool { terminals.contains { $0.isSuspended } }
 }
 
 extension TerminalView {
-    var isSuspended: Bool { suspended != nil }
+    package var isSuspended: Bool { suspended != nil }
 
     /// Stops `targets` (this pane's set, parents first) and covers the pane.
-    func suspend(_ targets: [ActivitySignalTarget]) {
+    package func suspend(_ targets: [ActivitySignalTarget]) {
         guard !isSuspended, surface != nil else { return }
         suspended = TabSuspension.stop(targets)
         let cover = SuspendedCover(frame: bounds)
@@ -85,7 +85,7 @@ extension TerminalView {
         addSubview(cover)
     }
 
-    func resume() {
+    package func resume() {
         guard let targets = suspended else { return }
         suspended = nil
         TabSuspension.resume(targets)
@@ -95,8 +95,8 @@ extension TerminalView {
 
 /// Over a suspended pane: what it is, and the way back. Clicks stop here —
 /// the terminal under it isn't listening.
-final class SuspendedCover: NSView {
-    override init(frame: NSRect) {
+package final class SuspendedCover: NSView {
+    package override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.backgroundColor = GhosttyRuntime.shared.backgroundColor.withAlphaComponent(0.78).cgColor
@@ -118,13 +118,13 @@ final class SuspendedCover: NSView {
         NSLayoutConstraint.activate([stack.centerXAnchor.constraint(equalTo: centerXAnchor), stack.centerYAnchor.constraint(equalTo: centerYAnchor)])
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override func mouseDown(with event: NSEvent) {}
-    override func rightMouseDown(with event: NSEvent) {}
-    override func scrollWheel(with event: NSEvent) {}
+    package override func mouseDown(with event: NSEvent) {}
+    package override func rightMouseDown(with event: NSEvent) {}
+    package override func scrollWheel(with event: NSEvent) {}
 }
 
 extension TerminalWindowController {
@@ -133,7 +133,7 @@ extension TerminalWindowController {
     /// from a list of the app's children read off the main thread
     /// (`pairWaiting`); the lookup runs off it too; a Resume in between
     /// wins.
-    func suspendTab(_ tab: Tab) {
+    package func suspendTab(_ tab: Tab) {
         suspendPanes(tab.terminals, of: tab)
     }
 
@@ -141,7 +141,7 @@ extension TerminalWindowController {
     /// it takes the terminal back (Activity's Suspend of a pane's job,
     /// docs/design/activity/analysis.md, 6.10). Resume Tab, or the cover's
     /// Resume, continues them.
-    func suspendPanes(_ chosen: [TerminalView], of tab: Tab) {
+    package func suspendPanes(_ chosen: [TerminalView], of tab: Tab) {
         let panes = chosen.filter { !$0.isSuspended }
         guard !panes.isEmpty else { return }
         // A `.app` inside one of these stays the pane's: a dev build.
@@ -160,7 +160,7 @@ extension TerminalWindowController {
         }
     }
 
-    func resumeTab(_ tab: Tab) {
+    package func resumeTab(_ tab: Tab) {
         tab.objectWillChange.send()
         store.objectWillChange.send()
         tab.terminals.forEach { $0.resume() }
@@ -168,7 +168,7 @@ extension TerminalWindowController {
     }
 
     /// The cover's Resume: the tab of the pane it covers.
-    @objc func resumeTabOfPane(_ sender: NSView) {
+    @objc package func resumeTabOfPane(_ sender: NSView) {
         var view: NSView? = sender
         while let current = view, !(current is TerminalView) { view = current.superview }
         guard let tab = tab(containing: view as? TerminalView) else { return }
@@ -179,17 +179,17 @@ extension TerminalWindowController {
 /// "2 suspended" in the strip, beside "need you": a stopped tab is easy to
 /// forget, and one scrolled out of the strip or in a collapsed island
 /// says nothing at all. The list behind it resumes one, or all.
-struct SuspendedChip: View {
-    @ObservedObject var store: TabStore
-    @ObservedObject var theme: ChromeTheme
-    let select: (Tab) -> Void
-    let resume: (Tab) -> Void
-    let resumeAll: () -> Void
+package struct SuspendedChip: View {
+    @ObservedObject package var store: TabStore
+    @ObservedObject package var theme: ChromeTheme
+    package let select: (Tab) -> Void
+    package let resume: (Tab) -> Void
+    package let resumeAll: () -> Void
     @State private var showing = false
 
     private var suspended: [Tab] { store.tabs.filter(\.isSuspended) }
 
-    var body: some View {
+    package var body: some View {
         let tabs = suspended
         if !tabs.isEmpty {
             Button {

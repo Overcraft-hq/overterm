@@ -19,12 +19,12 @@ import Foundation
 /// and dropped once the confirmation is made. A read that fails gives the
 /// worst case, never no sentence. An object a parent manages says it will
 /// be recreated. Pure.
-struct KubeGitOpsDelete: Equatable, Sendable {
-    enum Tool: Equatable, Sendable {
+package struct KubeGitOpsDelete: Equatable, Sendable {
+    package enum Tool: Equatable, Sendable {
         case application, applicationSet, kustomization, helmRelease
 
         /// Its API group.
-        var group: String {
+        package var group: String {
             switch self {
             case .application, .applicationSet: "argoproj.io"
             case .kustomization: "kustomize.toolkit.fluxcd.io"
@@ -33,7 +33,7 @@ struct KubeGitOpsDelete: Equatable, Sendable {
         }
 
         /// `Application`, as its CRD names it.
-        var kind: String {
+        package var kind: String {
             switch self {
             case .application: "Application"
             case .applicationSet: "ApplicationSet"
@@ -43,31 +43,31 @@ struct KubeGitOpsDelete: Equatable, Sendable {
         }
     }
 
-    var tool: Tool
+    package var tool: Tool
     /// Why it couldn't be read; nil when it was. Unread, the worst is said.
-    var unread: String?
+    package var unread: String?
     /// Argo CD's resources finalizer, as the object carries it.
-    var finalizer: String?
-    var prune = false
+    package var finalizer: String?
+    package var prune = false
     /// A Kustomization's `spec.deletionPolicy`: MirrorPrune (the default), Delete, WaitForTermination, Orphan.
-    var deletionPolicy: String?
+    package var deletionPolicy: String?
     /// A Flux object's `spec.suspend`: its controller then leaves what it applied or installed.
-    var suspended = false
+    package var suspended = false
     /// An ApplicationSet's `spec.syncPolicy.preserveResourcesOnDeletion`.
-    var preservesResources = false
+    package var preservesResources = false
     /// How many objects it manages: an Application's `status.resources`, a Kustomization's inventory.
-    var managed = 0
+    package var managed = 0
     /// The namespaces those live in (a cluster-scoped one in none).
-    var namespaces: Set<String> = []
+    package var namespaces: Set<String> = []
     /// It deploys to another cluster: an Application's destination, a Flux object's `spec.kubeConfig`.
-    var remote = false
+    package var remote = false
     /// What manages it, said: `Kustomization flux-system/flux-system`.
-    var parents: [String] = []
+    package var parents: [String] = []
 
-    static let argoFinalizer = "resources-finalizer.argocd.argoproj.io"
+    package static let argoFinalizer = "resources-finalizer.argocd.argoproj.io"
 
     /// The GitOps kind `kind` is, if it is one whose delete takes something with it.
-    static func tool(_ kind: KubeResourceKind) -> Tool? {
+    package static func tool(_ kind: KubeResourceKind) -> Tool? {
         switch kind.fullName {
         case "applications.argoproj.io": .application
         case "applicationsets.argoproj.io": .applicationSet
@@ -79,22 +79,22 @@ struct KubeGitOpsDelete: Equatable, Sendable {
 
     /// The three kinds whose delete has their controller delete what they
     /// manage: the name typed on every class (decision 13).
-    static func cascades(_ kind: KubeResourceKind) -> Bool {
+    package static func cascades(_ kind: KubeResourceKind) -> Bool {
         guard let tool = tool(kind) else { return false }
         return tool != .applicationSet
     }
 
     /// Unread: the worst case.
-    static func unread(_ tool: Tool, _ why: String) -> KubeGitOpsDelete { KubeGitOpsDelete(tool: tool, unread: why) }
+    package static func unread(_ tool: Tool, _ why: String) -> KubeGitOpsDelete { KubeGitOpsDelete(tool: tool, unread: why) }
 
     /// The object as the API gave it, `ref` naming it (a parent naming
     /// itself is no parent).
-    static func read(_ data: Data, tool: Tool, ref: KubeObjectRef) throws -> KubeGitOpsDelete {
+    package static func read(_ data: Data, tool: Tool, ref: KubeObjectRef) throws -> KubeGitOpsDelete {
         let wire = try JSONDecoder().decode(Wire.self, from: data)
         return facts(wire, tool: tool, namespace: ref.namespace, name: ref.name)
     }
 
-    static func facts(_ wire: Wire, tool: Tool, namespace: String?, name: String) -> KubeGitOpsDelete {
+    package static func facts(_ wire: Wire, tool: Tool, namespace: String?, name: String) -> KubeGitOpsDelete {
         var facts = KubeGitOpsDelete(tool: tool)
         let metadata = wire.metadata
         facts.finalizer = (metadata?.finalizers ?? []).first { $0 == argoFinalizer || $0.hasPrefix(argoFinalizer + "/") }
@@ -137,7 +137,7 @@ struct KubeGitOpsDelete: Equatable, Sendable {
     }
 
     /// Whether its controller deletes what it manages with it (as far as was read).
-    var deletesManaged: Bool {
+    package var deletesManaged: Bool {
         switch tool {
         case .application: unread != nil || finalizer != nil
         case .kustomization: unread != nil || (!suspended && Self.kustomizationDeletes(prune: prune, policy: deletionPolicy))
@@ -148,7 +148,7 @@ struct KubeGitOpsDelete: Equatable, Sendable {
 
     /// Flux's rule: Delete and WaitForTermination always (the latter waits
     /// for it to go), Orphan never, MirrorPrune (the default) as prune says.
-    static func kustomizationDeletes(prune: Bool, policy: String?) -> Bool {
+    package static func kustomizationDeletes(prune: Bool, policy: String?) -> Bool {
         switch policy {
         case "Delete", "WaitForTermination": true
         case "Orphan": false
@@ -157,7 +157,7 @@ struct KubeGitOpsDelete: Equatable, Sendable {
     }
 
     /// The confirmation's warning: what goes with it, and who makes it again.
-    var said: String {
+    package var said: String {
         var text: String
         let elsewhere = remote ? " — in the other cluster it deploys to" : ""
         switch tool {
@@ -212,14 +212,14 @@ struct KubeGitOpsDelete: Equatable, Sendable {
         return text
     }
 
-    static func unreadSaid(_ why: String) -> String { why.isEmpty ? "It wasn't read" : "Couldn't read it (\(why))" }
+    package static func unreadSaid(_ why: String) -> String { why.isEmpty ? "It wasn't read" : "Couldn't read it (\(why))" }
 
     /// `42 resources`, `1 resource`, `1,204 objects` — grouped the same in every locale.
-    static func count(_ number: Int, _ noun: String) -> String {
+    package static func count(_ number: Int, _ noun: String) -> String {
         "\(grouped(number)) \(noun)\(number == 1 ? "" : "s")"
     }
 
-    static func grouped(_ number: Int) -> String {
+    package static func grouped(_ number: Int) -> String {
         let digits = Array(String(abs(number)))
         var out = ""
         for (index, digit) in digits.enumerated() {
@@ -230,7 +230,7 @@ struct KubeGitOpsDelete: Equatable, Sendable {
     }
 
     /// `, across 3 namespaces`, `, in namespace shop`, or nothing.
-    static func across(_ namespaces: Set<String>) -> String {
+    package static func across(_ namespaces: Set<String>) -> String {
         switch namespaces.count {
         case 0: ""
         case 1: ", in namespace \(namespaces.first!)"
@@ -243,28 +243,28 @@ struct KubeGitOpsDelete: Equatable, Sendable {
     /// The fields read, and nothing else: unknown keys are skipped by the
     /// decoder, never built — a Helm value, a parameter, a manifest or a
     /// `last-applied-configuration` never reaches memory as a value.
-    struct Wire: Decodable, Sendable {
-        var metadata: Metadata?
-        var spec: Spec?
-        var status: Status?
+    package struct Wire: Decodable, Sendable {
+        package var metadata: Metadata?
+        package var spec: Spec?
+        package var status: Status?
 
-        struct Metadata: Decodable, Sendable {
-            var finalizers: [String]?
-            var labels: Labels?
-            var annotations: Annotations?
-            var ownerReferences: [Owner]?
+        package struct Metadata: Decodable, Sendable {
+            package var finalizers: [String]?
+            package var labels: Labels?
+            package var annotations: Annotations?
+            package var ownerReferences: [Owner]?
         }
 
         /// The owner marks only (`KubeGitOpsOwner`).
-        struct Labels: Decodable, Sendable {
-            var argoInstance: String?
-            var appInstance: String?
-            var kustomizeName: String?
-            var kustomizeNamespace: String?
-            var helmName: String?
-            var helmNamespace: String?
+        package struct Labels: Decodable, Sendable {
+            package var argoInstance: String?
+            package var appInstance: String?
+            package var kustomizeName: String?
+            package var kustomizeNamespace: String?
+            package var helmName: String?
+            package var helmNamespace: String?
 
-            enum CodingKeys: String, CodingKey {
+            package enum CodingKeys: String, CodingKey {
                 case argoInstance = "argocd.argoproj.io/instance"
                 case appInstance = "app.kubernetes.io/instance"
                 case kustomizeName = "kustomize.toolkit.fluxcd.io/name"
@@ -273,7 +273,7 @@ struct KubeGitOpsDelete: Equatable, Sendable {
                 case helmNamespace = "helm.toolkit.fluxcd.io/namespace"
             }
 
-            var marks: [String: String] {
+            package var marks: [String: String] {
                 var marks: [String: String] = [:]
                 marks[KubeGitOpsOwner.argoInstanceLabel] = argoInstance
                 marks[KubeGitOpsOwner.appInstanceLabel] = appInstance
@@ -285,16 +285,16 @@ struct KubeGitOpsDelete: Equatable, Sendable {
             }
         }
 
-        struct Annotations: Decodable, Sendable {
-            var trackingID: String?
-            var helmRelease: String?
+        package struct Annotations: Decodable, Sendable {
+            package var trackingID: String?
+            package var helmRelease: String?
 
-            enum CodingKeys: String, CodingKey {
+            package enum CodingKeys: String, CodingKey {
                 case trackingID = "argocd.argoproj.io/tracking-id"
                 case helmRelease = "meta.helm.sh/release-name"
             }
 
-            var marks: [String: String] {
+            package var marks: [String: String] {
                 var marks: [String: String] = [:]
                 marks[KubeGitOpsOwner.trackingAnnotation] = trackingID
                 marks[KubeGitOpsOwner.helmReleaseAnnotation] = helmRelease
@@ -302,60 +302,60 @@ struct KubeGitOpsDelete: Equatable, Sendable {
             }
         }
 
-        struct Owner: Decodable, Sendable {
-            var kind: String?
-            var name: String?
+        package struct Owner: Decodable, Sendable {
+            package var kind: String?
+            package var name: String?
         }
 
-        struct Spec: Decodable, Sendable {
-            var prune: Bool?
-            var deletionPolicy: String?
-            var suspend: Bool?
-            var destination: Destination?
-            var kubeConfig: Present?
-            var syncPolicy: SyncPolicy?
+        package struct Spec: Decodable, Sendable {
+            package var prune: Bool?
+            package var deletionPolicy: String?
+            package var suspend: Bool?
+            package var destination: Destination?
+            package var kubeConfig: Present?
+            package var syncPolicy: SyncPolicy?
         }
 
-        struct Destination: Decodable, Sendable {
-            var server: String?
-            var name: String?
+        package struct Destination: Decodable, Sendable {
+            package var server: String?
+            package var name: String?
         }
 
         /// That the key is there; nothing of it read (a Secret's name at most).
-        struct Present: Decodable, Sendable {
-            init(from decoder: Decoder) throws {}
+        package struct Present: Decodable, Sendable {
+            package init(from decoder: Decoder) throws {}
         }
 
-        struct SyncPolicy: Decodable, Sendable {
-            var preserveResourcesOnDeletion: Bool?
+        package struct SyncPolicy: Decodable, Sendable {
+            package var preserveResourcesOnDeletion: Bool?
         }
 
-        struct Status: Decodable, Sendable {
-            var resources: [Resource]?
-            var inventory: Inventory?
+        package struct Status: Decodable, Sendable {
+            package var resources: [Resource]?
+            package var inventory: Inventory?
         }
 
-        struct Resource: Decodable, Sendable {
-            var namespace: String?
+        package struct Resource: Decodable, Sendable {
+            package var namespace: String?
         }
 
-        struct Inventory: Decodable, Sendable {
-            var entries: [Entry]?
+        package struct Inventory: Decodable, Sendable {
+            package var entries: [Entry]?
         }
 
-        struct Entry: Decodable, Sendable {
-            var id: String?
+        package struct Entry: Decodable, Sendable {
+            package var id: String?
         }
     }
 
     /// A list's page of them.
-    struct WireList: Decodable, Sendable {
-        var items: [Wire]?
-        var metadata: ListMetadata?
+    package struct WireList: Decodable, Sendable {
+        package var items: [Wire]?
+        package var metadata: ListMetadata?
 
-        struct ListMetadata: Decodable, Sendable {
-            var `continue`: String?
-            var remainingItemCount: Int?
+        package struct ListMetadata: Decodable, Sendable {
+            package var `continue`: String?
+            package var remainingItemCount: Int?
         }
     }
 }
@@ -365,45 +365,45 @@ struct KubeGitOpsDelete: Equatable, Sendable {
 /// pruning Kustomizations, its HelmReleases — and what they manage,
 /// wherever it lives. Each kind read in pages of whole objects decoded
 /// into `KubeGitOpsDelete.Wire`, bounded. Pure.
-struct KubeNamespaceGitOps: Equatable, Sendable {
-    struct Part: Equatable, Sendable {
-        var tool: KubeGitOpsDelete.Tool
+package struct KubeNamespaceGitOps: Equatable, Sendable {
+    package struct Part: Equatable, Sendable {
+        package var tool: KubeGitOpsDelete.Tool
         /// How many of the kind it holds.
-        var count = 0
+        package var count = 0
         /// …of which delete what they manage.
-        var cascading = 0
+        package var cascading = 0
         /// What those manage.
-        var managed = 0
+        package var managed = 0
         /// More than were read: said as "at least".
-        var atLeast = false
+        package var atLeast = false
     }
 
-    var parts: [Part] = []
+    package var parts: [Part] = []
     /// What the cascading ones manage lives in these.
-    var namespaces: Set<String> = []
+    package var namespaces: Set<String> = []
     /// Kinds whose objects couldn't be read: the worst is said of them.
-    var unread: [KubeGitOpsDelete.Tool] = []
+    package var unread: [KubeGitOpsDelete.Tool] = []
     /// The context's discovery wasn't known: which GitOps kinds it serves
     /// couldn't be said, so none were counted — the worst is said.
-    var uncounted = false
+    package var uncounted = false
 
     /// Discovery unknown: the worst case, never no sentence.
-    static let notCounted = KubeNamespaceGitOps(uncounted: true)
+    package static let notCounted = KubeNamespaceGitOps(uncounted: true)
 
     /// The kinds read, as the server serves them, in this order.
-    static let wanted: [(String, KubeGitOpsDelete.Tool)] = [
+    package static let wanted: [(String, KubeGitOpsDelete.Tool)] = [
         ("applications.argoproj.io", .application), ("kustomizations.kustomize.toolkit.fluxcd.io", .kustomization),
         ("helmreleases.helm.toolkit.fluxcd.io", .helmRelease),
     ]
     /// At most this many objects of a kind are read; the rest counted by the server's remainingItemCount.
-    static let readLimit = 500
-    static let pageLimit = 100
+    package static let readLimit = 500
+    package static let pageLimit = 100
     /// Applications carry their resources, history, operation and source
     /// (Helm values too): 100 of them can pass `pageBytes`.
-    static let applicationPageLimit = 20
-    static let pageBytes = 16 << 20
+    package static let applicationPageLimit = 20
+    package static let pageBytes = 16 << 20
 
-    static func kinds(in discovery: KubeDiscovery?) -> [(KubeResourceKind, KubeGitOpsDelete.Tool)] {
+    package static func kinds(in discovery: KubeDiscovery?) -> [(KubeResourceKind, KubeGitOpsDelete.Tool)] {
         guard let discovery else { return [] }
         return wanted.compactMap { name, tool in
             discovery.kinds.first { $0.fullName == name && $0.namespaced && $0.canList }.map { ($0, tool) }
@@ -411,7 +411,7 @@ struct KubeNamespaceGitOps: Equatable, Sendable {
     }
 
     /// One page of a kind's objects added.
-    mutating func add(_ objects: [KubeGitOpsDelete], tool: KubeGitOpsDelete.Tool) {
+    package mutating func add(_ objects: [KubeGitOpsDelete], tool: KubeGitOpsDelete.Tool) {
         var part = parts.first { $0.tool == tool } ?? Part(tool: tool)
         for object in objects {
             part.count += 1
@@ -425,7 +425,7 @@ struct KubeNamespaceGitOps: Equatable, Sendable {
 
     /// A kind read in full added; a kind whose read failed part way is
     /// never merged — it is unread, said once as the worst case.
-    mutating func merge(_ other: KubeNamespaceGitOps) {
+    package mutating func merge(_ other: KubeNamespaceGitOps) {
         for part in other.parts {
             if let index = parts.firstIndex(where: { $0.tool == part.tool }) {
                 parts[index].count += part.count
@@ -441,14 +441,14 @@ struct KubeNamespaceGitOps: Equatable, Sendable {
         uncounted = uncounted || other.uncounted
     }
 
-    mutating func more(_ tool: KubeGitOpsDelete.Tool, count: Int?) {
+    package mutating func more(_ tool: KubeGitOpsDelete.Tool, count: Int?) {
         guard let index = parts.firstIndex(where: { $0.tool == tool }) else { return }
         parts[index].atLeast = true
         if let count { parts[index].count += count }
     }
 
     /// Said after what the namespace holds; nil when it holds no GitOps object and all were read.
-    var said: String? {
+    package var said: String? {
         var sentences: [String] = []
         let apps = parts.first { $0.tool == .application && $0.cascading > 0 }
         let kustomizations = parts.first { $0.tool == .kustomization && $0.cascading > 0 }
@@ -502,7 +502,7 @@ extension KubeClient {
     /// What deleting a GitOps object takes with it: the object read once,
     /// bounded, into the allow-listed fields; nil for any other kind. A
     /// failed or refused read is the worst case.
-    func gitOpsDelete(_ ref: KubeObjectRef) async -> KubeGitOpsDelete? {
+    package func gitOpsDelete(_ ref: KubeObjectRef) async -> KubeGitOpsDelete? {
         guard let tool = KubeGitOpsDelete.tool(ref.kind) else { return nil }
         do {
             let data = try await get(KubeWrites.path(ref), maxBytes: KubeNamespaceGitOps.pageBytes)
@@ -515,7 +515,7 @@ extension KubeClient {
     /// What the GitOps objects a namespace holds take with it: the worst
     /// case while the context's discovery isn't known, nil when it is and
     /// serves none of their kinds.
-    func gitOpsHeld(in namespace: String, discovery: KubeDiscovery?) async -> KubeNamespaceGitOps? {
+    package func gitOpsHeld(in namespace: String, discovery: KubeDiscovery?) async -> KubeNamespaceGitOps? {
         guard discovery != nil else { return .notCounted }
         let kinds = KubeNamespaceGitOps.kinds(in: discovery)
         guard !kinds.isEmpty else { return nil }

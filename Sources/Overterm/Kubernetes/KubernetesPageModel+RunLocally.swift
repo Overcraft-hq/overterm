@@ -11,12 +11,12 @@ import Foundation
 /// user presses Run in a Tab, or Scan (an image the engine hasn't is
 /// asked before it is pulled).
 extension KubernetesPageModel {
-    static let runLocallyTitle = "Run Locally on Docker…"
-    static let scanImageTitle = "Scan Image on Docker"
+    package static let runLocallyTitle = "Run Locally on Docker…"
+    package static let scanImageTitle = "Scan Image on Docker"
 
     /// Run Locally and Scan on a pod or a workload: greyed with why while
     /// Docker is off.
-    func dockerVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
+    package func dockerVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         guard ref.namespace != nil, KubeRunLocally.offers(ref.kind) else { return [] }
         let off = dockerEnabled() ? nil : "Docker is off — Settings ▸ Docker"
         return [
@@ -30,16 +30,16 @@ extension KubernetesPageModel {
     }
 
     /// The one row picked: its Docker verbs.
-    func dockerVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+    package func dockerVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
         guard picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
         return dockerVerbs(for: ref)
     }
 
-    enum DockerHandoff { case run, scan }
+    package enum DockerHandoff { case run, scan }
 
     /// The object read once, its container picked (the default first, as a
     /// shell's), then the Docker page.
-    func toDocker(_ handoff: DockerHandoff, _ ref: KubeObjectRef) {
+    package func toDocker(_ handoff: DockerHandoff, _ ref: KubeObjectRef) {
         guard writeChecking == nil else {
             writeStatus = .failed("Another check is running: try again once it is done.")
             return

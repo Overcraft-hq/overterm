@@ -4,22 +4,22 @@ import SwiftUI
 /// sections and the engine down the left, the list in the middle, the
 /// selected container at the right. Single letters act while the list has
 /// the keyboard (DockerKey; `?` lists them).
-struct DockerPageView: View {
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var docker: DockerModel
+package struct DockerPageView: View {
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var docker: DockerModel
     /// The window's checkout's compose project before it runs (the page's
     /// `planned`), observed so the list follows it.
-    @ObservedObject var checkoutCompose: ComposeFileModel
+    @ObservedObject package var checkoutCompose: ComposeFileModel
     /// What the registries said: the Images header's count, the projects'
     /// marks.
-    @ObservedObject var updates: DockerImageUpdates
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+    @ObservedObject package var updates: DockerImageUpdates
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
 
-    enum Focus: Hashable { case list, filter }
+    package enum Focus: Hashable { case list, filter }
     @FocusState private var focus: Focus?
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 0) {
             sidebar.frame(width: 210).background(theme.panelGround)
             Rectangle().fill(theme.border).frame(width: 1)

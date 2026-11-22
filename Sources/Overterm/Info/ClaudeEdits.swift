@@ -2,9 +2,9 @@ import Foundation
 
 /// A file edit Claude Code made, read from a session transcript, and why it
 /// made it (see `ClaudeEdits.Parser`).
-struct ClaudeEdit: Equatable, Sendable {
-    struct Reason: Equatable, Hashable, Sendable {
-        enum Source: Equatable, Hashable, Sendable {
+package struct ClaudeEdit: Equatable, Sendable {
+    package struct Reason: Equatable, Hashable, Sendable {
+        package enum Source: Equatable, Hashable, Sendable {
             /// What Claude said last before the edit, in the same turn.
             case said
             /// It said nothing: the prompt that started the turn.
@@ -13,32 +13,32 @@ struct ClaudeEdit: Equatable, Sendable {
             case title
         }
 
-        let text: String
-        let source: Source
+        package let text: String
+        package let source: Source
     }
 
     /// One hunk of the edit's patch.
-    struct Hunk: Equatable, Sendable {
-        let oldStart: Int
-        let oldLines: Int
-        let newStart: Int
-        let newLines: Int
+    package struct Hunk: Equatable, Sendable {
+        package let oldStart: Int
+        package let oldLines: Int
+        package let newStart: Int
+        package let newLines: Int
     }
 
     /// Absolute, as the tool was given it.
-    let path: String
+    package let path: String
     /// Edit, Write, MultiEdit or NotebookEdit.
-    let tool: String
+    package let tool: String
     /// When its result came back: the file changed then.
-    let time: Date?
+    package let time: Date?
     /// The session it was made in; a subagent's edits belong to its session.
-    let session: String
+    package let session: String
     /// The patch, when the transcript keeps it: a session's does, a
     /// subagent's doesn't.
-    let hunks: [Hunk]
+    package let hunks: [Hunk]
     /// A Write that created the file.
-    let created: Bool
-    var reason: Reason?
+    package let created: Bool
+    package var reason: Reason?
 }
 
 /// Claude Code's edits and their reasons, from its session transcripts
@@ -52,18 +52,18 @@ struct ClaudeEdit: Equatable, Sendable {
 /// last prompt typed — Claude writes a message's parts on lines of their
 /// own, and one text often covers several edits — else that prompt, else
 /// the session's title. Thinking is never a reason.
-enum ClaudeEdits {
+package enum ClaudeEdits {
     /// The tools that change a file, and the input naming it.
-    static let tools = ["Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"]
+    package static let tools = ["Edit": "file_path", "Write": "file_path", "MultiEdit": "file_path", "NotebookEdit": "notebook_path"]
 
     /// A reason is kept up to this many characters: a pasted prompt can run
     /// to pages.
-    static let maxReason = 2_000
+    package static let maxReason = 2_000
 
     /// Reads a transcript a line at a time, oldest first, as Claude Code
     /// appends them — so a reader can feed it just what was appended since.
-    struct Parser: Sendable {
-        let session: String
+    package struct Parser: Sendable {
+        package let session: String
         /// Edits whose result came back without an error, in order.
         private var edits: [ClaudeEdit] = []
         /// Edits waiting for their result, by tool_use id.
@@ -80,21 +80,21 @@ enum ClaudeEdits {
             var asked: String?
         }
 
-        init(session: String) {
+        package init(session: String) {
             self.session = session
         }
 
         /// The session's title: the one you gave it, else Claude's, else an
         /// old-style summary.
-        var title: String? { customTitle ?? aiTitle ?? summary }
+        package var title: String? { customTitle ?? aiTitle ?? summary }
 
-        mutating func consume(_ line: Data) {
+        package mutating func consume(_ line: Data) {
             line.withUnsafeBytes { consume($0) }
         }
 
         /// Most lines — tool output, attachments, thinking — are skipped by a
         /// byte search, without parsing any JSON.
-        mutating func consume(_ line: UnsafeRawBufferPointer) {
+        package mutating func consume(_ line: UnsafeRawBufferPointer) {
             guard wanted(line), let base = line.baseAddress else { return }
             let data = Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: base), count: line.count, deallocator: .none)
             guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let type = object["type"] as? String
@@ -114,7 +114,7 @@ enum ClaudeEdits {
         /// The edits so far, each with its reason — the title (or `fallback`,
         /// a subagent's session's) where it said and was asked nothing.
         /// Those with no reason at all are left out: nothing to show.
-        func result(title fallback: String? = nil) -> [ClaudeEdit] {
+        package func result(title fallback: String? = nil) -> [ClaudeEdit] {
             let title = (self.title ?? fallback).map { ClaudeEdit.Reason(text: $0, source: .title) }
             return edits.compactMap { edit in
                 var edit = edit
@@ -205,7 +205,7 @@ enum ClaudeEdits {
     }
 
     /// Edits from `lines` of one transcript, oldest first.
-    static func parse(lines: [Data], session: String = "") -> [ClaudeEdit] {
+    package static func parse(lines: [Data], session: String = "") -> [ClaudeEdit] {
         var parser = Parser(session: session)
         for line in lines { parser.consume(line) }
         return parser.result()
@@ -213,7 +213,7 @@ enum ClaudeEdits {
 
     // MARK: Prompts
 
-    enum Prompt: Equatable {
+    package enum Prompt: Equatable {
         /// Typed: a new turn, with what was asked.
         case typed(String)
         /// A new turn nobody typed: a slash command, a background task's notice.
@@ -231,7 +231,7 @@ enum ClaudeEdits {
     ]
 
     /// What a user line (not a tool result) is.
-    static func prompt(_ object: [String: Any]) -> Prompt {
+    package static func prompt(_ object: [String: Any]) -> Prompt {
         if object["isCompactSummary"] as? Bool == true || object["isVisibleInTranscriptOnly"] as? Bool == true { return .none }
         guard let message = object["message"] as? [String: Any] else { return .none }
         let text: String
@@ -265,7 +265,7 @@ enum ClaudeEdits {
     /// from before `since` are about older work; those with no reason have
     /// nothing to show. Symlinks are resolved on both sides: /var is
     /// /private/var, whichever spelling the checkout and the transcript use.
-    static func byFile(_ edits: [ClaudeEdit], root: URL, since: Date? = nil, limit: Int = 3) -> [String: [ClaudeEdit]] {
+    package static func byFile(_ edits: [ClaudeEdit], root: URL, since: Date? = nil, limit: Int = 3) -> [String: [ClaudeEdit]] {
         let base = canonical(root.path)
         let prefix = base == "/" ? "/" : base + "/"
         var directories: [String: String] = [:]
@@ -294,7 +294,7 @@ enum ClaudeEdits {
     /// `path` with its symlinks resolved (/var/… → /private/var/…), also
     /// when it no longer exists: its deepest existing folder is resolved and
     /// the rest kept as it is.
-    static func canonical(_ path: String) -> String {
+    package static func canonical(_ path: String) -> String {
         var existing = (path as NSString).standardizingPath
         var rest: [String] = []
         while existing.count > 1 {
@@ -311,7 +311,7 @@ enum ClaudeEdits {
     /// Both spellings of a directory when a symlink leads to it (/var and
     /// /private/var): Claude Code names its folder after the resolved one,
     /// a shell may report the other.
-    static func spellings(_ directory: String) -> [String] {
+    package static func spellings(_ directory: String) -> [String] {
         let resolved = canonical(directory)
         var all = [directory, resolved]
         if resolved.hasPrefix("/private/") {
@@ -325,7 +325,7 @@ enum ClaudeEdits {
     // MARK: Showing
 
     /// "5 min ago": compact, and the same in every locale — the pane is in English.
-    static func ago(_ date: Date, now: Date = Date()) -> String {
+    package static func ago(_ date: Date, now: Date = Date()) -> String {
         let seconds = now.timeIntervalSince(date)
         switch seconds {
         case ..<60: return "just now"
@@ -338,7 +338,7 @@ enum ClaudeEdits {
     // MARK: Pieces
 
     /// Trimmed and capped; nil when empty.
-    static func clean(_ text: String?) -> String? {
+    package static func clean(_ text: String?) -> String? {
         guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
         return trimmed.count > maxReason ? String(trimmed.prefix(maxReason)) + "…" : trimmed
     }
@@ -390,7 +390,7 @@ enum ClaudeEdits {
 /// Reads Claude Code's transcripts for edits, incrementally: a transcript
 /// only grows, so after the first read only what was appended is parsed.
 /// Blocking — call it off the main thread.
-final class ClaudeEditsReader: @unchecked Sendable {
+package final class ClaudeEditsReader: @unchecked Sendable {
     private struct Progress {
         var offset: UInt64 = 0
         var parser: ClaudeEdits.Parser
@@ -400,22 +400,22 @@ final class ClaudeEditsReader: @unchecked Sendable {
     /// The transcripts read lately: a week of sessions would otherwise all
     /// stay here, each with everything parsed from it.
     private var progress = RecentlyUsed<URL, Progress>(capacity: 120)
-    var trackedTranscripts: Int { lock.withLock { progress.count } }
+    package var trackedTranscripts: Int { lock.withLock { progress.count } }
     /// Where the transcripts are; asked at every read (a scenario points it
     /// at scratch after launch).
     private let projects: @Sendable () -> URL
 
-    init(projects: @escaping @Sendable () -> URL = { ClaudeUsageReader.projectsDirectory }) {
+    package init(projects: @escaping @Sendable () -> URL = { ClaudeUsageReader.projectsDirectory }) {
         self.projects = projects
     }
 
     /// Bytes read per step: memory stays flat however big the transcript.
-    static let chunkSize = 8 << 20
+    package static let chunkSize = 8 << 20
 
     /// Edits in the transcripts of sessions started in `directories` or
     /// below them — `exactly`: in those alone — and their subagents',
     /// written since `since`; the newest `limit` sessions.
-    func edits(in directories: [String], exactly: [String] = [], since: Date, limit: Int = 60) -> [ClaudeEdit] {
+    package func edits(in directories: [String], exactly: [String] = [], since: Date, limit: Int = 60) -> [ClaudeEdit] {
         lock.lock()
         defer { lock.unlock() }
         let projects = projects()

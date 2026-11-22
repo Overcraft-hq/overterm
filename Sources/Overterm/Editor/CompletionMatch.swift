@@ -6,36 +6,36 @@ import Foundation
 /// camelCase hump, in runs — less what lies between. The best alignment, not
 /// the first: "gtl" takes goToLine's g-T-L, not the g-t of "got". (The
 /// palette's `FuzzyMatch` is the greedy one, kept for its ranking.)
-enum CompletionMatch {
-    static let scoreMatch = 16
-    static let gapStart = -3
-    static let gapExtension = -1
+package enum CompletionMatch {
+    package static let scoreMatch = 16
+    package static let gapStart = -3
+    package static let gapExtension = -1
     /// At the start, or after whitespace.
-    static let bonusBoundaryWhite = 10
+    package static let bonusBoundaryWhite = 10
     /// After a path separator.
-    static let bonusBoundaryDelimiter = 9
+    package static let bonusBoundaryDelimiter = 9
     /// After other punctuation (`_ - . :`), or on punctuation itself.
-    static let bonusBoundary = 8
+    package static let bonusBoundary = 8
     /// A camelCase hump, or a digit after a letter.
-    static let bonusCamel = 7
+    package static let bonusCamel = 7
     /// Each character of a run gets at least this.
-    static let bonusConsecutive = 4
+    package static let bonusConsecutive = 4
     /// The query's first character counts its bonus twice: where a match
     /// starts says most about it.
-    static let firstCharMultiplier = 2
+    package static let firstCharMultiplier = 2
     /// Typed in the candidate's case.
-    static let bonusCase = 1
+    package static let bonusCase = 1
     /// Longer candidates rank lower, a point a character, by up to this much.
-    static let maxLengthPenalty = 10
+    package static let maxLengthPenalty = 10
 
     /// Past these (characters), the alignment's cost isn't worth it: nil.
-    static let maxCandidateLength = 1024
-    static let maxQueryLength = 128
+    package static let maxCandidateLength = 1024
+    package static let maxQueryLength = 128
 
     /// The score (higher is better) and the UTF-16 offsets in `candidate` of
     /// the characters matched; nil: not a match. An empty query matches
     /// everything at 0.
-    static func score(candidate: String, query: String) -> (score: Int, matched: [Int])? {
+    package static func score(candidate: String, query: String) -> (score: Int, matched: [Int])? {
         let q = Array(query.unicodeScalars)
         guard !q.isEmpty else { return (0, []) }
         let c = Array(candidate.unicodeScalars)
@@ -185,16 +185,16 @@ enum CompletionMatch {
     // MARK: Buffer words
 
     /// At most this many words come back.
-    static let maxWords = 5000
+    package static let maxWords = 5000
     /// How much text around the cursor is read for them (UTF-16).
-    static let maxScanned = 1 << 20
+    package static let maxScanned = 1 << 20
 
     /// Words for completion from the buffer itself: distinct identifiers —
     /// letters (any script), digits, `_`, `$`; at least 3 characters, not
     /// starting with a digit — nearest the cursor first, the one being typed
     /// at the cursor left out. Reads at most `maxScanned` around the cursor;
     /// a word cut by that window's edge is left out too.
-    static func bufferWords(in text: NSString, near cursor: Int) -> [String] {
+    package static func bufferWords(in text: NSString, near cursor: Int) -> [String] {
         let length = text.length
         let cursor = max(0, min(cursor, length))
         var low = max(0, cursor - maxScanned / 2)

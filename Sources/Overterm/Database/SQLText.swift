@@ -2,13 +2,13 @@ import Foundation
 
 /// SQL as text: where its statements are, what a statement does, and what
 /// the caret is in the middle of writing. Pure — no database is asked.
-enum SQLText {
+package enum SQLText {
     // MARK: Statements
 
     /// The statements of `text`, each one's range without its `;` and the
     /// space around it. A `;` inside a string, a quoted name, a comment or a
     /// PostgreSQL `$tag$…$tag$` body doesn't end one.
-    static func statements(in text: String) -> [NSRange] {
+    package static func statements(in text: String) -> [NSRange] {
         let ns = text as NSString
         let length = ns.length
         var ranges: [NSRange] = []
@@ -52,7 +52,7 @@ enum SQLText {
     }
 
     /// The statement the caret is in — or, between two, the one it just left.
-    static func statement(at caret: Int, in text: String) -> NSRange? {
+    package static func statement(at caret: Int, in text: String) -> NSRange? {
         let all = statements(in: text)
         if let inside = all.first(where: { caret >= $0.location && caret <= NSMaxRange($0) }) { return inside }
         return all.last { NSMaxRange($0) <= caret } ?? all.first
@@ -111,7 +111,7 @@ enum SQLText {
     // MARK: What a statement does
 
     /// Its first word, upper-cased, comments skipped: SELECT, INSERT, WITH…
-    static func verb(of statement: String) -> String {
+    package static func verb(of statement: String) -> String {
         var text = Substring(statement)
         while true {
             text = text.drop { $0.isWhitespace }
@@ -129,12 +129,12 @@ enum SQLText {
     /// Statements that only read. Everything else is refused on a read-only
     /// connection. WITH counts as a read: a CTE that writes is rare, and the
     /// database's own read-only mode (set where it has one) catches it.
-    static func onlyReads(_ statement: String) -> Bool {
+    package static func onlyReads(_ statement: String) -> Bool {
         ["SELECT", "WITH", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "VALUES", "TABLE", "PRAGMA"].contains(verb(of: statement))
     }
 
     /// Why a statement should be asked about first; nil when it needn't be.
-    static func danger(of statement: String) -> String? {
+    package static func danger(of statement: String) -> String? {
         let verb = verb(of: statement)
         let upper = stripped(statement).uppercased()
         switch verb {
@@ -150,7 +150,7 @@ enum SQLText {
 
     /// The statement with its strings and comments blanked — so a WHERE in a
     /// string isn't taken for one.
-    static func stripped(_ statement: String) -> String {
+    package static func stripped(_ statement: String) -> String {
         let ns = statement as NSString
         var out = ""
         var i = 0
@@ -179,7 +179,7 @@ enum SQLText {
     // MARK: Completion
 
     /// What the caret is in the middle of writing.
-    enum CompletionContext: Equatable {
+    package enum CompletionContext: Equatable {
         /// A table (or view) — after FROM, JOIN, INTO, UPDATE, TABLE.
         case table(schema: String?, prefix: String)
         /// A column of `table` — after `alias.` or `table.`.
@@ -189,7 +189,7 @@ enum SQLText {
     }
 
     /// From the statement's text up to the caret.
-    static func completionContext(before text: String) -> CompletionContext {
+    package static func completionContext(before text: String) -> CompletionContext {
         let ns = text as NSString
         var start = ns.length
         func isWord(_ c: unichar) -> Bool {
@@ -215,7 +215,7 @@ enum SQLText {
         return .any(prefix: prefix)
     }
 
-    static let tableKeywords: Set<String> = ["FROM", "JOIN", "INTO", "UPDATE", "TABLE", "DESCRIBE", "DESC"]
+    package static let tableKeywords: Set<String> = ["FROM", "JOIN", "INTO", "UPDATE", "TABLE", "DESCRIBE", "DESC"]
 
     /// The word before the caret's word, upper-cased; nil when what is
     /// before it isn't a word (a comma, a parenthesis).
@@ -227,7 +227,7 @@ enum SQLText {
 
     /// The tables a statement names, with what they are called in it:
     /// `FROM orders o JOIN public.users AS u` → o: orders, u: public.users.
-    static func tables(in statement: String) -> [(name: String, schema: String?, alias: String?)] {
+    package static func tables(in statement: String) -> [(name: String, schema: String?, alias: String?)] {
         let text = stripped(statement)
         let pattern =
             #"(?i)\b(?:FROM|JOIN|UPDATE|INTO)\s+((?:[`"]?[\w$]+[`"]?\.)?[`"]?[\w$]+[`"]?)(?:\s+(?:AS\s+)?([A-Za-z_][\w$]*))?"#
@@ -248,12 +248,12 @@ enum SQLText {
         return found
     }
 
-    static func unquote(_ name: String) -> String {
+    package static func unquote(_ name: String) -> String {
         name.trimmingCharacters(in: CharacterSet(charactersIn: "\"`[]"))
     }
 
     /// The keywords completion offers, the common ones.
-    static let keywords = [
+    package static let keywords = [
         "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "IS", "NULL", "LIKE", "ILIKE", "BETWEEN", "EXISTS", "JOIN", "LEFT JOIN",
         "RIGHT JOIN", "INNER JOIN", "FULL JOIN", "CROSS JOIN", "ON", "USING", "GROUP BY", "ORDER BY", "HAVING", "LIMIT", "OFFSET",
         "DISTINCT", "AS", "CASE", "WHEN", "THEN", "ELSE", "END", "UNION", "UNION ALL", "INSERT INTO", "VALUES", "UPDATE", "SET",
@@ -268,7 +268,7 @@ extension SQLText {
     /// and SELECT … INTO (a new table, in PostgreSQL), write. Text can't
     /// see what a function does — a read-only connection is the database's
     /// own guarantee.
-    static func agentReads(_ statement: String) -> Bool {
+    package static func agentReads(_ statement: String) -> Bool {
         guard onlyReads(statement) else { return false }
         let upper = stripped(statement).uppercased()
         let writes = #"\b(INSERT|UPDATE|DELETE|MERGE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|COPY|CALL)\b"#

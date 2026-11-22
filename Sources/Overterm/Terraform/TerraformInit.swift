@@ -7,19 +7,19 @@ import Foundation
 /// an `http://` source) and a provider the lock file doesn't list. The
 /// lock file pins providers only; a `?ref=main` module changes under the
 /// same lock file. Pure.
-enum TerraformInitPlan {
-    struct Item: Equatable, Sendable, Identifiable {
-        enum Kind: String, Sendable { case provider, module }
-        var kind: Kind
-        var name: String
-        var source: String
-        var version: String?
+package enum TerraformInitPlan {
+    package struct Item: Equatable, Sendable, Identifiable {
+        package enum Kind: String, Sendable { case provider, module }
+        package var kind: Kind
+        package var name: String
+        package var source: String
+        package var version: String?
         /// Why it is worth a look, or nil.
-        var flag: String?
-        var id: String { kind.rawValue + "." + name + "." + source }
+        package var flag: String?
+        package var id: String { kind.rawValue + "." + name + "." + source }
     }
 
-    static func items(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?) -> [Item] {
+    package static func items(config: TerraformConfigFacts, lockProviders: [TerraformLockFile.Provider]?) -> [Item] {
         var items: [Item] = []
         let locked = Set((lockProviders ?? []).map { "\($0.namespace)/\($0.type)" })
         let lockedTypes = Set((lockProviders ?? []).map(\.type))
@@ -39,14 +39,14 @@ enum TerraformInitPlan {
         return items
     }
 
-    static func moduleName(_ source: String) -> String {
+    package static func moduleName(_ source: String) -> String {
         let trimmed = source.split(separator: "?").first.map(String.init) ?? source
         return trimmed.split(separator: "/").last.map(String.init) ?? source
     }
 
     /// Why a module source is worth a look, or nil for a registry module
     /// at an exact version.
-    static func moduleFlag(_ source: String, version: String?) -> String? {
+    package static func moduleFlag(_ source: String, version: String?) -> String? {
         let lower = source.lowercased()
         if lower.hasPrefix("http://") || lower.contains("::http://") { return "fetched over plain HTTP" }
         if let ref = lower.range(of: "?ref=").map({ String(lower[$0.upperBound...]) }) {
@@ -68,7 +68,7 @@ enum TerraformInitPlan {
     }
 
     /// `namespace/name/provider`, or with a host in front.
-    static func isRegistry(_ source: String) -> Bool {
+    package static func isRegistry(_ source: String) -> Bool {
         let parts = source.split(separator: "/")
         guard (3...4).contains(parts.count), !source.contains("::"), !source.contains(":") || parts.count == 4 else { return false }
         return parts.allSatisfy { !$0.isEmpty && !$0.contains("?") }
@@ -77,7 +77,7 @@ enum TerraformInitPlan {
     /// Whether the plugin cache is offered at this Init (4.13, D-17): the
     /// person never answered, two worktrees of this repository have
     /// Terraform roots, and the user configures no CLI of their own.
-    static func offersCache(answered: Bool, worktreesWithRoots: Int, userConfiguresCLI: Bool) -> Bool {
+    package static func offersCache(answered: Bool, worktreesWithRoots: Int, userConfiguresCLI: Bool) -> Bool {
         !answered && worktreesWithRoots >= 2 && !userConfiguresCLI
     }
 }

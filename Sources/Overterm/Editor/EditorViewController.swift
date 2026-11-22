@@ -7,52 +7,52 @@ import SwiftUI
 /// completions and go-to from language servers, Zed's keys and (if asked)
 /// vim. One text view; each file is an EditorBuffer it swaps in.
 @MainActor
-final class EditorViewController: NSViewController, NSTextViewDelegate {
+package final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// Asked to hide the pane (after any unsaved-changes question).
-    var onClose: (() -> Void)?
+    package var onClose: (() -> Void)?
     /// Asked to fill the window with the editor, or give the terminal back.
-    var onToggleZoom: (() -> Void)?
+    package var onToggleZoom: (() -> Void)?
     /// A file was saved (the browser's reload on save).
-    var onSaved: (() -> Void)?
+    package var onSaved: (() -> Void)?
     /// The file the last save wrote, for `onSaved` — not always the active
     /// one: closing a tab saves the buffer being closed.
-    private(set) var lastSaved: URL?
+    package private(set) var lastSaved: URL?
     /// A file's tab closed (a copy made to be read goes with it).
-    var onBufferClosed: ((URL) -> Void)?
+    package var onBufferClosed: ((URL) -> Void)?
     /// Where Go to File looks: the window's checkout.
-    var workspaceRoot: (() -> URL?)?
+    package var workspaceRoot: (() -> URL?)?
     /// The window's API client: a `.bru` request opens as one, sent through it.
-    var apiWorkspace: APIWorkspace?
+    package var apiWorkspace: APIWorkspace?
     /// The window: a Kubernetes manifest's confirmations and its diff.
-    weak var kubernetesHost: KubeManifestHost?
+    package weak var kubernetesHost: KubeManifestHost?
     /// The window: Ask Why on a Terraform folder's failed validate.
-    weak var terraformHost: TerraformEditorHost?
+    package weak var terraformHost: TerraformEditorHost?
     /// The file showing changed (another tab, a rename, the last one closed):
     /// the notes panel highlights it.
-    var onActiveChanged: ((URL?) -> Void)?
+    package var onActiveChanged: ((URL?) -> Void)?
     /// A note's reading view, made the first time one is read.
-    var noteReader: NoteReaderView?
+    package var noteReader: NoteReaderView?
     /// The canvas showing, when the active buffer is a drawing.
-    var shownDrawing: DrawingView?
-    var noteObserver: AnyCancellable?
+    package var shownDrawing: DrawingView?
+    package var noteObserver: AnyCancellable?
     /// A #tag clicked in a note.
-    var onNoteTag: ((String) -> Void)?
+    package var onNoteTag: ((String) -> Void)?
 
-    let chrome: ChromeTheme
-    private(set) var theme: EditorTheme
+    package let chrome: ChromeTheme
+    package private(set) var theme: EditorTheme
     /// The header's ↗: the file in the app picked for files.
-    let opener: ExternalOpener
+    package let opener: ExternalOpener
 
-    private(set) var buffers: [EditorBuffer] = []
-    private(set) var activeIndex = -1
-    var active: EditorBuffer? { buffers.indices.contains(activeIndex) ? buffers[activeIndex] : nil }
+    package private(set) var buffers: [EditorBuffer] = []
+    package private(set) var activeIndex = -1
+    package var active: EditorBuffer? { buffers.indices.contains(activeIndex) ? buffers[activeIndex] : nil }
     /// Stands in while nothing is open, so `document` is never nil.
     private let emptyDocument = EditorDocument()
     /// The file showing — E2E, the window's close questions.
-    var document: EditorDocument { active?.document ?? emptyDocument }
+    package var document: EditorDocument { active?.document ?? emptyDocument }
     /// Files with unsaved edits, and cluster objects' YAML with edits not
     /// applied (never saved: closing loses them).
-    var unsavedNames: [String] {
+    package var unsavedNames: [String] {
         buffers.filter {
             ($0.document.isDirty && $0.document.unsaveable == nil) || $0.resource?.isEdited == true || ($0.sqlConsole?.unsavedEdits() ?? 0) > 0
         }.map(\.name)
@@ -60,63 +60,63 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// The Kubernetes detail's YAML tab (`KubeResourceYAMLView`): one
     /// buffer at a time — the resource's, shared with the window's editor —
     /// no tabs, no breadcrumb, its bar drawn over it by the page.
-    let embedded: Bool
+    package let embedded: Bool
 
-    private(set) var textView: CodeTextView!
-    private(set) var gutter: EditorGutter!
-    private(set) var scrollView: NSScrollView!
+    package private(set) var textView: CodeTextView!
+    package private(set) var gutter: EditorGutter!
+    package private(set) var scrollView: NSScrollView!
     private var header: EditorHeaderView!
-    private(set) var breadcrumb: EditorBreadcrumbView!
-    private(set) var statusBar: EditorStatusBar!
+    package private(set) var breadcrumb: EditorBreadcrumbView!
+    package private(set) var statusBar: EditorStatusBar!
     /// A `.sql` file's console, under its text (EditorViewController+Database).
-    private(set) var consoleHost: NSHostingView<AnyView>!
-    var consoleHeight: NSLayoutConstraint!
-    var consoleObserver: AnyCancellable?
+    package private(set) var consoleHost: NSHostingView<AnyView>!
+    package var consoleHeight: NSLayoutConstraint!
+    package var consoleObserver: AnyCancellable?
     /// How tall the console is with results showing; dragged by its edge.
-    var consoleResultsHeight: CGFloat = 260
-    private(set) var preview: MarkdownPreviewView!
+    package var consoleResultsHeight: CGFloat = 260
+    package private(set) var preview: MarkdownPreviewView!
     /// A Bruno request, shown in place of its file's text.
-    private(set) var requestHost: NSHostingView<AnyView>!
+    package private(set) var requestHost: NSHostingView<AnyView>!
     private var pendingPreview: DispatchWorkItem?
     private var messageLabel: NSTextField!
-    private(set) var lineHeight: EditorLineHeight!
+    package private(set) var lineHeight: EditorLineHeight!
     private var cancellables: Set<AnyCancellable> = []
     private var documentObservers: Set<AnyCancellable> = []
     private var flushScheduled = false
     /// While a buffer is being swapped in, its storage events aren't edits.
-    private(set) var isSwapping = false
+    package private(set) var isSwapping = false
     /// Held: a storage holds its layout managers, and this one moves from
     /// storage to storage.
     private var layout: NSLayoutManager!
 
     // Shared with the extensions.
-    var completion: CompletionState?
+    package var completion: CompletionState?
     /// Counts completion requests, for telling a stale answer apart.
-    var completionRequests = 0
-    lazy var completionPopup: CompletionPopup = {
+    package var completionRequests = 0
+    package lazy var completionPopup: CompletionPopup = {
         let popup = CompletionPopup(theme: theme)
         popup.onChoose = { [weak self] index in self?.acceptCompletion(at: index) }
         return popup
     }()
-    var picker: EditorPicker?
-    var hover: NSPopover?
-    var vim: VimEngine?
+    package var picker: EditorPicker?
+    package var hover: NSPopover?
+    package var vim: VimEngine?
     /// ⌘D's whole-word mode, kept between presses.
-    var occurrenceWholeWord = false
-    var settingSelection = false
-    var history = NavigationHistory()
-    var isZoomed = false {
+    package var occurrenceWholeWord = false
+    package var settingSelection = false
+    package var history = NavigationHistory()
+    package var isZoomed = false {
         didSet { header?.setZoomed(isZoomed) }
     }
-    var pendingSelectionWork: DispatchWorkItem?
-    var pendingGitWork: DispatchWorkItem?
-    var pendingServerChange: DispatchWorkItem?
+    package var pendingSelectionWork: DispatchWorkItem?
+    package var pendingGitWork: DispatchWorkItem?
+    package var pendingServerChange: DispatchWorkItem?
     /// A manifest's unknown fields, marked again once typing pauses.
-    var pendingKubeMarks: DispatchWorkItem?
+    package var pendingKubeMarks: DispatchWorkItem?
     /// The innermost symbol around the caret, from the language server.
-    var currentSymbols: [EditorSymbol] = []
+    package var currentSymbols: [EditorSymbol] = []
 
-    init(theme chrome: ChromeTheme, background: NSColor, foreground: NSColor, opener: ExternalOpener, embedded: Bool = false) {
+    package init(theme chrome: ChromeTheme, background: NSColor, foreground: NSColor, opener: ExternalOpener, embedded: Bool = false) {
         self.embedded = embedded
         self.chrome = chrome
         self.theme = Self.makeTheme(background: background)
@@ -124,13 +124,13 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
     // MARK: Views
 
-    override func loadView() {
+    package override func loadView() {
         let root = NSView()
         let header = EditorHeaderView(background: chrome.stripNS, text: theme.text, accent: theme.info)
         header.onSelect = { [weak self] in self?.activate($0) }
@@ -308,7 +308,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     // MARK: Opening and closing files
 
     /// Opens `url` in a tab of its own, or shows the tab it has.
-    func open(_ url: URL, then done: @escaping (Bool) -> Void = { _ in }) {
+    package func open(_ url: URL, then done: @escaping (Bool) -> Void = { _ in }) {
         _ = view
         // A cluster object's YAML is no file: its buffer, wherever it shows.
         if let resource = KubernetesModel.shared.resourceBuffers.resource(at: url) {
@@ -350,11 +350,11 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// no page over it, the window not hidden or minimised. A cluster
     /// object's YAML in the active tab is followed only then (reads only
     /// while shown); the embedded one's follow is the page's.
-    var isOnScreen = true {
+    package var isOnScreen = true {
         didSet { if isOnScreen != oldValue { updateResourceWatch() } }
     }
     /// The resource this editor follows now: its active tab's, while on screen.
-    private(set) weak var watching: KubeResourceBuffer?
+    package private(set) weak var watching: KubeResourceBuffer?
 
     private func updateResourceWatch(none: Bool = false) {
         let wanted = embedded || none || !isOnScreen ? nil : active?.resource
@@ -367,7 +367,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// The window closes: every cluster object's YAML let go — nothing
     /// followed or held for an editor that is gone (edits stay with the
     /// registry, which the quit asks about).
-    func releaseResources() {
+    package func releaseResources() {
         updateResourceWatch(none: true)
         for buffer in buffers {
             guard let resource = buffer.resource else { continue }
@@ -385,7 +385,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// A buffer made elsewhere — a cluster object's YAML, which the
     /// Kubernetes detail shows too — in a tab of its own, or the tab it has.
     /// The same buffer, not a copy: its edits are the same edits.
-    func adopt(_ buffer: EditorBuffer) {
+    package func adopt(_ buffer: EditorBuffer) {
         _ = view
         if let index = buffers.firstIndex(where: { $0 === buffer }) {
             activate(index)
@@ -400,7 +400,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// The embedded editor's one buffer: `buffer`, the one before let go
     /// (not closed — the resource keeps it).
-    func showOnly(_ buffer: EditorBuffer?) {
+    package func showOnly(_ buffer: EditorBuffer?) {
         _ = view
         if let buffer, buffers.count == 1, buffers[0] === buffer {
             if activeIndex != 0 { activate(0) }
@@ -442,7 +442,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// The relay's: an edit of `buffer`, from whichever editor made it.
-    func storageEdited(_ buffer: EditorBuffer) {
+    package func storageEdited(_ buffer: EditorBuffer) {
         if buffer === active { editedElsewhere = true }
         scheduleFlush()
     }
@@ -453,7 +453,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// A buffer's whole text replaced from outside (a cluster object
     /// followed): every editor showing it keeps its caret where it can.
-    static func replaceWhole(_ buffer: EditorBuffer, with text: String) {
+    package static func replaceWhole(_ buffer: EditorBuffer, with text: String) {
         let editors = buffer.relay.editors.allObjects
         let attributes = editors.first(where: \.isViewLoaded)?.baseAttributes ?? [.font: font]
         let carets = editors.map { $0.isViewLoaded && $0.active === buffer ? $0.textView.selectedRange() : nil }
@@ -472,7 +472,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// Shows the buffer at `index`, keeping where you were in the last one.
-    func activate(_ index: Int, recordHistory: Bool = false) {
+    package func activate(_ index: Int, recordHistory: Bool = false) {
         guard buffers.indices.contains(index), textView.layoutManager != nil else { return }
         if recordHistory { recordPosition() }
         hideTransientUI()
@@ -541,7 +541,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// Closes the file at `index`, asking first if it has unsaved edits.
-    func closeBuffer(at index: Int, then done: @escaping (Bool) -> Void = { _ in }) {
+    package func closeBuffer(at index: Int, then done: @escaping (Bool) -> Void = { _ in }) {
         guard buffers.indices.contains(index) else { return done(true) }
         if index != activeIndex { activate(index) }
         confirmDiscard(buffers[index]) { [weak self] proceed in
@@ -551,7 +551,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         }
     }
 
-    func removeBuffer(at index: Int) {
+    package func removeBuffer(at index: Int) {
         let buffer = buffers[index]
         if buffer === active {
             vim?.reset()
@@ -599,7 +599,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// A file (or a folder holding files) open here was renamed: its tabs
     /// follow it, edits and all.
-    func filesMoved(from old: URL, to new: URL) {
+    package func filesMoved(from old: URL, to new: URL) {
         let oldPath = old.standardizedFileURL.path
         for buffer in buffers {
             guard let url = buffer.url?.standardizedFileURL, url.path == oldPath || url.path.hasPrefix(oldPath + "/") else { continue }
@@ -611,7 +611,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// Files gone (moved to the Trash): their tabs close, whatever they held.
-    func filesRemoved(at removed: URL) {
+    package func filesRemoved(at removed: URL) {
         let path = removed.standardizedFileURL.path
         while let index = buffers.firstIndex(where: {
             guard let url = $0.url?.standardizedFileURL.path else { return false }
@@ -622,7 +622,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// The header's ✕: every file, asking about each with edits.
-    func requestClose() {
+    package func requestClose() {
         closeAll { [weak self] closed in
             if closed { self?.onClose?() }
         }
@@ -637,7 +637,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// Selects line `line` (1-based) and scrolls it to the middle.
-    func go(toLine line: Int, column: Int = 1) {
+    package func go(toLine line: Int, column: Int = 1) {
         _ = view
         let text = textView.string as NSString
         let starts = LineIndex.starts(of: text)
@@ -654,7 +654,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// Selects `range` and centres it on screen.
-    func reveal(_ range: NSRange, flash: Bool = true) {
+    package func reveal(_ range: NSRange, flash: Bool = true) {
         textView.setSelectedRange(range)
         textView.scrollRangeToVisible(range)
         if let layout = textView.layoutManager, let container = textView.textContainer {
@@ -668,7 +668,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// The selected line (1-based), for tests.
-    var selectedLine: Int {
+    package var selectedLine: Int {
         // The text view exists once the view is loaded; before any file was
         // opened it isn't, and reading it trapped.
         _ = view
@@ -677,7 +677,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// An agent may have rewritten a file: pick that up unless you have
     /// edits of your own.
-    func reloadIfChangedOnDisk() {
+    package func reloadIfChangedOnDisk() {
         for buffer in buffers {
             guard let url = buffer.url, buffer.document.changedOnDisk, !buffer.document.isDirty else { continue }
             let isActive = buffer === active
@@ -697,21 +697,21 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         }
     }
 
-    func focus() {
+    package func focus() {
         view.window?.makeFirstResponder(textView)
     }
 
     // MARK: Text and its colours
 
     /// Settings ▸ Editor's family and size.
-    static var font: NSFont {
+    package static var font: NSFont {
         let size = CGFloat(Settings.shared.editorFontSize)
         let family = Settings.shared.editorFontFamily
         if !family.isEmpty, let font = NSFont(name: family, size: size) { return font }
         return .monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
-    var baseAttributes: [NSAttributedString.Key: Any] {
+    package var baseAttributes: [NSAttributedString.Key: Any] {
         // The editor's font as Settings set it — not `textView.font`, which
         // is the first character's: a note opening on a Live Preview
         // heading made every line a heading's size.
@@ -726,14 +726,14 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// Settings changed: the editor takes whichever were its.
     /// One Dark / One Light, or the terminal theme's colours (Settings ▸
     /// Editor ▸ Colours).
-    static func makeTheme(background: NSColor = GhosttyRuntime.shared.backgroundColor) -> EditorTheme {
+    package static func makeTheme(background: NSColor = GhosttyRuntime.shared.backgroundColor) -> EditorTheme {
         guard Settings.shared.string("editor.theme") == "terminal" else { return EditorTheme(background: background, terminal: nil) }
         let runtime = GhosttyRuntime.shared
         let ansi = (0...15).compactMap { runtime.paletteColor($0) }
         return EditorTheme(background: background, terminal: .init(foreground: runtime.foregroundColor, ansi: ansi))
     }
 
-    func applySettings(_ keys: Set<String>? = nil) {
+    package func applySettings(_ keys: Set<String>? = nil) {
         guard isViewLoaded else { return }
         if keys?.contains("editor.theme") == true { applyTerminalColors() }
         let font = Self.font
@@ -768,7 +768,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// The size changed in Settings (the window's old entry point).
-    func applyFontSize() { applySettings(["editor.fontSize"]) }
+    package func applyFontSize() { applySettings(["editor.fontSize"]) }
 
     /// The pane is painted from the terminal's colours as well, so a theme
     /// picked in Settings ▸ Themes reaches it where it stands — the text
@@ -777,7 +777,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// object and has already been recomputed). What is made on demand (a
     /// completion list, a problems popover) is made from the new colours
     /// the next time it is asked for.
-    func applyTerminalColors() {
+    package func applyTerminalColors() {
         guard isViewLoaded else { return }
         theme = Self.makeTheme()
         textView.theme = theme
@@ -811,7 +811,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// Wraps long lines at the pane's edge, or lets code scroll sideways.
-    func applyWrap() {
+    package func applyWrap() {
         guard let container = textView.textContainer else { return }
         let wrap: Bool
         switch Settings.shared.editorSoftWrap {
@@ -843,7 +843,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// The parser hears of a burst of edits once, after the run loop pass
     /// that made them, and the screen's colours follow.
-    func scheduleFlush() {
+    package func scheduleFlush() {
         guard !flushScheduled else { return }
         flushScheduled = true
         DispatchQueue.main.async { [weak self] in
@@ -860,7 +860,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         }
     }
 
-    func textDidChange(_ notification: Notification) {
+    package func textDidChange(_ notification: Notification) {
         guard let buffer = active else { return }
         buffer.request?.textChanged(buffer.storage.string)
         drawingTextChanged(buffer)
@@ -884,13 +884,13 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         return lines
     }
 
-    func didScroll() {
+    package func didScroll() {
         gutter.needsDisplay = true
         paintVisible()
     }
 
     /// Asks for the colours of what is on screen, unless it has them.
-    func paintVisible() {
+    package func paintVisible() {
         guard let buffer = active, let syntax = buffer.syntax, isViewLoaded else { return }
         let range = paintRange
         guard range.length > 0, !buffer.painted.contains(integersIn: range.location..<NSMaxRange(range)) else { return }
@@ -958,7 +958,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     // MARK: Markdown preview
 
     /// ⇧⌘V or the header's eye: the file rendered, or its text again.
-    func toggleMarkdownPreview() {
+    package func toggleMarkdownPreview() {
         guard let buffer = active, buffer.language?.id == "markdown" || buffer.request != nil || buffer.isNote || buffer.drawing != nil else { return }
         buffer.showsPreview.toggle()
         updatePreview()
@@ -967,7 +967,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// The preview over the text for a markdown file that asks for it;
     /// the header's eye on every markdown file.
-    func updatePreview() {
+    package func updatePreview() {
         guard isViewLoaded else { return }
         let buffer = active
         if let buffer, let drawing = buffer.drawing, buffer.document.unavailable == nil {
@@ -1018,7 +1018,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     // MARK: Chrome
 
-    func refreshChrome() {
+    package func refreshChrome() {
         guard isViewLoaded else { return }
         header.update(
             buffers.map { .init(name: $0.name, path: $0.url?.path ?? "", dirty: $0.document.isDirty) }, active: activeIndex)
@@ -1027,7 +1027,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         onActiveChanged?(active?.url)
     }
 
-    func updateBreadcrumb() {
+    package func updateBreadcrumb() {
         guard let url = active?.url else { return breadcrumb.update(path: [], symbol: nil) }
         var parts: [String]
         if let root = workspaceRoot?() ?? Self.gitRoot(of: url), url.path.hasPrefix(root.path + "/") {
@@ -1039,7 +1039,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         breadcrumb.update(path: parts, symbol: symbolAtCaret()?.name)
     }
 
-    func updateStatus() {
+    package func updateStatus() {
         guard isViewLoaded else { return }
         guard let buffer = active else {
             statusBar.update(line: 0, column: 0, selected: 0, cursors: 0)
@@ -1069,7 +1069,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         statusBar.update(errors: errors, warnings: warnings)
     }
 
-    func updateProblemLines() {
+    package func updateProblemLines() {
         guard let buffer = active else { return }
         var lines: [Int: EditorDiagnostic.Severity] = [:]
         let starts = gutter.lineStarts
@@ -1082,13 +1082,13 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     // MARK: Selection
 
-    func textViewDidChangeSelection(_ notification: Notification) {
+    package func textViewDidChangeSelection(_ notification: Notification) {
         if !settingSelection, vim?.isSettingSelection == false { vim?.selectionDidChange() }
         occurrenceWholeWord = occurrenceWholeWord && textView.selectedRanges.count > 1
         selectionDidChange()
     }
 
-    func selectionDidChange() {
+    package func selectionDidChange() {
         guard isViewLoaded else { return }
         updateLivePreviewEditing()
         updateStatus()
@@ -1140,12 +1140,12 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         textView.wordHighlights = found.isEmpty ? [] : found + [word]
     }
 
-    static func isWordUnit(_ c: unichar) -> Bool {
+    package static func isWordUnit(_ c: unichar) -> Bool {
         c == 0x5F || (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) || c > 0x7F
     }
 
     /// The identifier at (or just before) `index`.
-    static func wordRange(at index: Int, in text: NSString) -> NSRange? {
+    package static func wordRange(at index: Int, in text: NSString) -> NSRange? {
         var start = min(index, text.length)
         var end = start
         while start > 0, isWordUnit(text.character(at: start - 1)) { start -= 1 }
@@ -1155,16 +1155,16 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     // MARK: Undo
 
-    func undoManager(for view: NSTextView) -> UndoManager? { active?.undo }
+    package func undoManager(for view: NSTextView) -> UndoManager? { active?.undo }
 
     // MARK: Saving
 
-    @objc func saveDocument(_ sender: Any?) {
+    @objc package func saveDocument(_ sender: Any?) {
         guard let buffer = active else { return }
         save(buffer, overwriting: false)
     }
 
-    func save(_ buffer: EditorBuffer, overwriting: Bool, formatted: Bool = false) {
+    package func save(_ buffer: EditorBuffer, overwriting: Bool, formatted: Bool = false) {
         // Overterm's copy of a cluster object: never written, never formatted (its text never leaves).
         if let why = buffer.document.unsaveable {
             buffer.kubeManifest?.say(why)
@@ -1260,7 +1260,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         }
     }
 
-    func hideTransientUI() {
+    package func hideTransientUI() {
         dismissCompletion()
         hover?.close()
         hover = nil

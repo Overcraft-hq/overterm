@@ -7,7 +7,7 @@ extension TerminalWindowController {
     /// The window's tabs' checkouts told to the attention watches (which
     /// follow only those with a tab open); their marks put on the bound
     /// checkout's tab, and "not watched" said where its failures can't mark it.
-    func wireKubernetesAttention() {
+    package func wireKubernetesAttention() {
         let attention = KubeAttentionWatches.shared
         store.$tabs
             .combineLatest(store.$selectedID, diff.$root)
@@ -25,11 +25,11 @@ extension TerminalWindowController {
     }
 
     /// A tab's checkout as a binding is keyed: its real path.
-    func kubernetesCheckoutKey(_ tab: Tab) -> String? { tab.checkoutSource.map { KubeBindingStore.key($0.root) } }
+    package func kubernetesCheckoutKey(_ tab: Tab) -> String? { tab.checkoutSource.map { KubeBindingStore.key($0.root) } }
 
     /// Which checkouts have a tab here, and the selected tab's — nothing
     /// while the marks are off, so nothing is followed for them.
-    func reportKubernetesCheckouts() {
+    package func reportKubernetesCheckouts() {
         let attention = KubeAttentionWatches.shared
         guard Settings.shared.kubernetesNotifyOnFailure else {
             attention.report(ObjectIdentifier(self), open: [], selected: nil)
@@ -40,7 +40,7 @@ extension TerminalWindowController {
     }
 
     /// The window is going: its checkouts no longer keep watches open.
-    func forgetKubernetesCheckouts() {
+    package func forgetKubernetesCheckouts() {
         KubeAttentionWatches.shared.forget(ObjectIdentifier(self))
     }
 
@@ -48,7 +48,7 @@ extension TerminalWindowController {
     /// selected one when it is the checkout's, else its agent's (Ask Why
     /// goes there), else the first —; cleared ones taken off every tab of
     /// it, the mark itself once nothing behind it stands.
-    func applyKubernetesAttention(_ event: KubeAttentionWatches.Event) {
+    package func applyKubernetesAttention(_ event: KubeAttentionWatches.Event) {
         let keys = Set(event.checkouts)
         let tabs = store.tabs.filter { kubernetesCheckoutKey($0).map(keys.contains) == true }
         guard !tabs.isEmpty else { return }
@@ -75,7 +75,7 @@ extension TerminalWindowController {
     }
 
     /// Each tab's "not watched": its checkout's state, when it has one.
-    func updateKubernetesNotWatched(_ states: [String: KubeAttentionWatches.State]) {
+    package func updateKubernetesNotWatched(_ states: [String: KubeAttentionWatches.State]) {
         for tab in store.tabs {
             let why = kubernetesCheckoutKey(tab).flatMap { states[$0]?.notWatched }
             if tab.kubeNotWatched != why { tab.kubeNotWatched = why }
@@ -86,7 +86,7 @@ extension TerminalWindowController {
     /// GETs through the context's proxy in a background slot, no Secret,
     /// scrubbed (`KubeAgentBriefing`), the checkout's deployed commit with
     /// it — in the Ask Agent sheet, that tab's agent first.
-    func askWhy(onMarkOf tab: Tab) {
+    package func askWhy(onMarkOf tab: Tab) {
         guard let alert = tab.kubeAlerts.first else { return NSSound.beep() }
         let model = KubernetesModel.shared
         let checkout = tab.checkoutSource?.root
@@ -121,7 +121,7 @@ extension TerminalWindowController {
     }
 
     /// The tab menu's item for a mark: Ask an Agent Why… about what failed last.
-    func kubernetesAttentionMenuItem(for tab: Tab) -> NSMenuItem? {
+    package func kubernetesAttentionMenuItem(for tab: Tab) -> NSMenuItem? {
         guard let alert = tab.kubeAlerts.first else { return nil }
         return ClosureMenuItem("Ask an Agent Why… (\(alert.object) \(alert.reason))") { [weak self] in self?.askWhy(onMarkOf: tab) }
     }
@@ -130,7 +130,7 @@ extension TerminalWindowController {
 // MARK: A bound release upgraded from the checkout's chart (stage 3a)
 
 extension TerminalWindowController: KubeHelmUpgradeHost {
-    func askHelmUpgrade(_ confirmation: KubeWriteConfirmation) async -> String? {
+    package func askHelmUpgrade(_ confirmation: KubeWriteConfirmation) async -> String? {
         guard let window else { return nil }
         return await WriteConfirmation(
             title: confirmation.title, scope: confirmation.scope, production: confirmation.production, detail: confirmation.detail,
@@ -138,13 +138,13 @@ extension TerminalWindowController: KubeHelmUpgradeHost {
         ).ask(on: window)
     }
 
-    func askHelmUpgrade(_ title: String, _ detail: String, _ button: String) async -> Bool {
+    package func askHelmUpgrade(_ title: String, _ detail: String, _ button: String) async -> Bool {
         guard let window else { return false }
         return await WriteConfirmation.splittingProduction(title: title, detail: detail, button: button).ask(on: window) != nil
     }
 
     /// The diff in the right-hand pane, where a manifest's diff shows.
-    func showHelmDiff(_ session: KubeHelmUpgradeSession) {
+    package func showHelmDiff(_ session: KubeHelmUpgradeSession) {
         kubernetesManifest.helm = session
         kubernetesManifest.showsHelm = true
         rightPane.manifestOpened = true
@@ -155,7 +155,7 @@ extension TerminalWindowController: KubeHelmUpgradeHost {
         updateRightPaneVisibility()
     }
 
-    func runHelmUpgrade(_ command: String, in context: KubeContext, namespace: String) {
+    package func runHelmUpgrade(_ command: String, in context: KubeContext, namespace: String) {
         runKubernetesCommand(command, in: context, namespace: namespace)
     }
 }

@@ -5,7 +5,7 @@ import SwiftUI
 /// Docker: the page over the body (⌥⌘P), the commands it types into
 /// terminal tabs, and the setting that turns it all off.
 extension TerminalWindowController {
-    var dockerActions: DockerActions {
+    package var dockerActions: DockerActions {
         DockerActions(
             run: { [weak self] command, folder in self?.runDockerCommand(command, in: folder) },
             confirm: { [weak self] title, detail, button, then in self?.confirmDocker(title, detail, button, then) },
@@ -85,7 +85,7 @@ extension TerminalWindowController {
 
     /// The panel follows the selected tab's checkout, and holds the
     /// model's poll only while it is on screen.
-    func wireDockerPanel() {
+    package func wireDockerPanel() {
         // The panel's menus and the right-hand pane are the page's verbs —
         // set before the page first opens — acting through the panel.
         dockerPage.actions = dockerActions
@@ -152,7 +152,7 @@ extension TerminalWindowController {
     /// The repository's root, else the tab's own folder. A checkout with a
     /// compose file wants Docker watched — its ports in the pane headers —
     /// whether or not Docker is on screen.
-    func updateDockerCheckout(root: URL?) {
+    package func updateDockerCheckout(root: URL?) {
         let folder = root ?? store.selected?.workingDirectory.map { URL(fileURLWithPath: $0) }
         if dockerPanel.checkout != folder { dockerPanel.checkout = folder }
         if Settings.shared.dockerEnabled, dockerPanel.composeFile != nil { DockerModel.shared.start() }
@@ -161,7 +161,7 @@ extension TerminalWindowController {
 
     /// The checkout's compose file is read while the panel or the page
     /// shows Docker in this window, and the engine answers.
-    func updateComposeFile() {
+    package func updateComposeFile() {
         let shown = (dockerPanelShown || dockerPage.visible) && Settings.shared.dockerEnabled && DockerModel.shared.connection.isRunning
         dockerPanel.checkoutCompose.update(checkout: dockerPanel.checkout, shown: shown)
     }
@@ -171,7 +171,7 @@ extension TerminalWindowController {
     /// A database container's connection — or a pod's, through its
     /// forward — in the form, filled in. The page steps aside for the
     /// Database panel once it is saved.
-    func newDatabaseConnection(from guess: DockerDatabaseGuess.Guess) {
+    package func newDatabaseConnection(from guess: DockerDatabaseGuess.Guess) {
         guard Settings.shared.databaseEnabled else { return openSettings(.database) }
         // What the scenarios read: the password only in an isolated run,
         // and only while the form shows — it is the form's, then the
@@ -197,15 +197,15 @@ extension TerminalWindowController {
     // MARK: A container's or a volume's files
 
     /// A container's file in the editor.
-    func openContainerFile(_ container: ContainerSummary, _ path: String) { openDockerFile(.of(container), path) }
+    package func openContainerFile(_ container: ContainerSummary, _ path: String) { openDockerFile(.of(container), path) }
 
     /// The largest container or volume file the editor opens.
-    nonisolated static let dockerFileEditLimit = 50 << 20
+    package nonisolated static let dockerFileEditLimit = 50 << 20
 
     /// A container's or a volume's file in the editor: a copy under
     /// Overterm's folder, written back where it came from when the editor
     /// saves it — a volume's through a helper made for the call.
-    func openDockerFile(_ source: DockerFileSource, _ path: String) {
+    package func openDockerFile(_ source: DockerFileSource, _ path: String) {
         guard let engine = DockerModel.shared.engine else { return }
         if store.showingOverlay != nil { hideOverlay(focus: false) }
         Task {
@@ -235,14 +235,14 @@ extension TerminalWindowController {
     }
 
     /// A volume's helper paths in what went wrong, as the volume's.
-    static func said(_ error: Error, in source: DockerFileSource) -> Error {
+    package static func said(_ error: Error, in source: DockerFileSource) -> Error {
         guard case .volume = source else { return error }
         return DockerError(status: (error as? DockerError)?.status ?? 0, message: DockerVolumeFiles.said(error.localizedDescription))
     }
 
     /// A copy made to be read (a resolved compose config), in the editor:
     /// it goes when its tab closes, or the window does.
-    func showDockerReadCopy(_ url: URL) {
+    package func showDockerReadCopy(_ url: URL) {
         guard let editor else { return }
         dockerReadCopies.insert(url.resolvingSymlinksInPath().path)
         if editor.onBufferClosed == nil {
@@ -252,12 +252,12 @@ extension TerminalWindowController {
         openInEditor(url)
     }
 
-    func removeDockerReadCopy(_ path: String) {
+    package func removeDockerReadCopy(_ path: String) {
         guard dockerReadCopies.remove(path) != nil else { return }
         try? FileManager.default.removeItem(atPath: path)
     }
 
-    func removeDockerReadCopies() {
+    package func removeDockerReadCopies() {
         let paths = dockerReadCopies
         paths.forEach(removeDockerReadCopy)
     }
@@ -278,7 +278,7 @@ extension TerminalWindowController {
 
     /// What a save found: the file changed there since it was read, or
     /// written — its stat now, if it could be read.
-    enum DockerSave: Sendable {
+    package enum DockerSave: Sendable {
         case changed
         case written(DockerTar.PathStat?)
     }
@@ -287,7 +287,7 @@ extension TerminalWindowController {
     /// changed where it is since it was opened (a process there wrote it,
     /// or another editor). One call: a volume's through one helper. Only
     /// to the engine it came from.
-    func saveDockerFile(_ copy: DockerFileCopy, from local: URL, overwrite: Bool = false) {
+    package func saveDockerFile(_ copy: DockerFileCopy, from local: URL, overwrite: Bool = false) {
         guard let engine = DockerModel.shared.engine else { return reportDockerError("Save \(copy.path)", DockerError.unreachable("Docker isn't running.")) }
         if let refusal = copy.refusal(through: engine.endpoint) {
             return reportDockerError("Save \(copy.path) into \(copy.source.title)", DockerError(status: 0, message: refusal))
@@ -321,7 +321,7 @@ extension TerminalWindowController {
     /// user says: streamed from the archive as it comes, never held whole,
     /// its progress in the Files tab's strip (`DockerFileTransfers`). Over
     /// something the user said to replace, it is swapped in once whole.
-    func downloadDockerFile(_ source: DockerFileSource, _ path: String) {
+    package func downloadDockerFile(_ source: DockerFileSource, _ path: String) {
         guard let window, DockerModel.shared.engine != nil else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = (path as NSString).lastPathComponent
@@ -334,7 +334,7 @@ extension TerminalWindowController {
     }
 
     /// What the page would say, as a sheet: the page isn't on screen.
-    func alertDocker(_ title: String, _ detail: String) {
+    package func alertDocker(_ title: String, _ detail: String) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title
@@ -342,7 +342,7 @@ extension TerminalWindowController {
         alert.beginSheetModal(for: window)
     }
 
-    func reportDockerError(_ what: String, _ error: Error) {
+    package func reportDockerError(_ what: String, _ error: Error) {
         dockerPage.error = "\(what): \(error.localizedDescription)"
         guard let window, store.showingOverlay != .docker else { return }
         let alert = NSAlert()
@@ -354,7 +354,7 @@ extension TerminalWindowController {
     // MARK: Attention
 
     /// A checkout's container dying on its own marks the checkout's tab.
-    func wireDockerAttention() {
+    package func wireDockerAttention() {
         DockerModel.shared.events
             .sink { [weak self] event in
                 guard let self, let alert = self.dockerAttention.note(event), Settings.shared.dockerNotifyOnExit,
@@ -367,13 +367,13 @@ extension TerminalWindowController {
 
     /// The tab whose checkout holds a project run in `folder`: the
     /// selected one when it does, else the first.
-    func tab(forProjectIn folder: String) -> Tab? {
+    package func tab(forProjectIn folder: String) -> Tab? {
         ([store.selected].compactMap { $0 } + store.tabs).first { checkoutHolds($0, folder) }
     }
 
     /// Whether the tab's checkout (its repository, else its folder) holds a
     /// project run in `folder`.
-    func checkoutHolds(_ tab: Tab, _ folder: String) -> Bool {
+    package func checkoutHolds(_ tab: Tab, _ folder: String) -> Bool {
         guard let checkout = checkout(of: tab) else { return false }
         return DockerAttention.belongs(folder, to: checkout)
     }
@@ -393,7 +393,7 @@ extension TerminalWindowController {
     /// Ask Why, or lines of a log: the container read once, now, then the
     /// Ask Agent sheet. A brief that can't be read (no engine: no secrets
     /// to take out) is said, never sent unscrubbed.
-    func askAgent(about question: DockerAgentQuestion) {
+    package func askAgent(about question: DockerAgentQuestion) {
         guard window?.attachedSheet == nil else { return NSSound.beep() }
         Task { [weak self] in
             do {
@@ -409,7 +409,7 @@ extension TerminalWindowController {
     /// closest of them first (`DockerAttention.closeness`); a new one opens
     /// in its compose folder. The git diff is offered when that folder is
     /// in the window's checkout.
-    func presentDockerBrief(_ brief: DockerAgentBrief) {
+    package func presentDockerBrief(_ brief: DockerAgentBrief) {
         guard window?.attachedSheet == nil else { return NSSound.beep() }
         let agents = store.tabs.filter { $0.agent != nil }
         let ranked = agents.enumerated().compactMap { index, tab -> (rank: Int, index: Int, tab: Tab)? in
@@ -434,7 +434,7 @@ extension TerminalWindowController {
 
     /// The containers' ports follow the containers — and the stacks put on
     /// ports of their own, whose pills say where each came from.
-    func wireDockerPorts() {
+    package func wireDockerPorts() {
         // A worktree removed takes its override with it.
         ComposePortStore.shared.prune()
         DockerModel.shared.$projects
@@ -479,12 +479,12 @@ extension TerminalWindowController {
             .store(in: &cancellables)
     }
 
-    func updateContainerPorts() {
+    package func updateContainerPorts() {
         for tab in store.tabs { updateContainerPorts(of: tab) }
     }
 
     /// What the compose projects of a tab's checkout publish.
-    func updateContainerPorts(of tab: Tab) {
+    package func updateContainerPorts(of tab: Tab) {
         let docker = DockerModel.shared
         var ports: [ListeningPort] = []
         // A remote engine's ports are its host's, not this checkout's servers.
@@ -495,7 +495,7 @@ extension TerminalWindowController {
         if tab.containerPorts != ports { tab.containerPorts = ports }
     }
 
-    func updateDockerVisibility(panel: SidebarPanel? = nil) {
+    package func updateDockerVisibility(panel: SidebarPanel? = nil) {
         // On screen too: the rail's choice is kept, and a minimized or
         // covered window polled the engine every 15 s with nobody looking.
         let shown =
@@ -509,7 +509,7 @@ extension TerminalWindowController {
     }
 
     /// The rail's shippingbox: the sidebar, on the Docker panel.
-    @objc func showDockerPanel(_ sender: Any?) {
+    @objc package func showDockerPanel(_ sender: Any?) {
         guard Settings.shared.dockerEnabled else { return }
         if sidebarItem?.isCollapsed == true { toggleFileTree(nil) }
         sidebarPanel.panel = .docker
@@ -517,7 +517,7 @@ extension TerminalWindowController {
     }
 
     /// A container in the right-hand pane, on its logs the first time.
-    func showContainer(_ container: ContainerSummary) {
+    package func showContainer(_ container: ContainerSummary) {
         dockerPanel.picked = container.Id
         rightPane.containerOpened = true
         rightPane.mode = .container
@@ -526,7 +526,7 @@ extension TerminalWindowController {
     }
 
     /// The Docker page, as the window wires it (WorkspacePage).
-    func dockerWorkspacePage() -> WorkspacePage {
+    package func dockerWorkspacePage() -> WorkspacePage {
         var page = WorkspacePage(.docker)
         // Made the first time it opens.
         page.makeView = { [weak self] in
@@ -562,7 +562,7 @@ extension TerminalWindowController {
     }
 
     /// The page declared, and its list given the keyboard when it asks.
-    func wireDockerPage() {
+    package func wireDockerPage() {
         declarePage(dockerWorkspacePage())
         dockerPage.$focusList
             .dropFirst()
@@ -571,26 +571,26 @@ extension TerminalWindowController {
     }
 
     /// View ▸ Docker (⌥⌘P): the page, or back to the terminal from it.
-    @objc func toggleDockerPage(_ sender: Any?) {
+    @objc package func toggleDockerPage(_ sender: Any?) {
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         togglePage(.docker)
     }
 
     /// The keyboard to the list's table (`focusPageList`).
-    func focusDockerList(attempts: Int = 10) { focusPageList(.docker, attempts: attempts) }
+    package func focusDockerList(attempts: Int = 10) { focusPageList(.docker, attempts: attempts) }
 
     /// The page shows in this window and its list has the keyboard
     /// (`pageListHasKeyboard`).
-    func dockerListHasKeyboard(_ event: NSEvent? = nil) -> Bool { pageListHasKeyboard(.docker, event) }
+    package func dockerListHasKeyboard(_ event: NSEvent? = nil) -> Bool { pageListHasKeyboard(.docker, event) }
 
     /// A key down: the list's when it has the keyboard and the key means
     /// something there (DockerKey) — `handlePageKey`, for Docker's page.
-    func handleDockerKey(_ event: NSEvent) -> Bool { store.showingOverlay == .docker && handlePageKey(event) }
+    package func handleDockerKey(_ event: NSEvent) -> Bool { store.showingOverlay == .docker && handlePageKey(event) }
 
     /// What this window holds of Docker's polling goes with it: kept, the
     /// app reloaded the list every 15 s for good, and Docker Desktop never
     /// rested (Resource Saver) — a closed window still "looking".
-    func dockerWindowClosing() {
+    package func dockerWindowClosing() {
         if dockerPanelShown {
             dockerPanelShown = false
             DockerModel.shared.hide()
@@ -605,7 +605,7 @@ extension TerminalWindowController {
 
     /// Holds `DockerModel.show()` while the page shows in a window on
     /// screen, and gives it back otherwise — and when the window closes.
-    func updateDockerPageHold(pageShowing: Bool? = nil) {
+    package func updateDockerPageHold(pageShowing: Bool? = nil) {
         let held = (pageShowing ?? (store.showingOverlay == .docker)) && dockerPage.windowVisible
         guard held != dockerPageHeld else { return }
         dockerPageHeld = held
@@ -617,13 +617,13 @@ extension TerminalWindowController {
     /// reads none (`DockerPageModel.windowVisible`). An isolated run stays
     /// in the background (AppDelegate), often under the user's own windows:
     /// there the window says nothing about the run, and counts as shown.
-    func updateDockerWindowVisible() {
+    package func updateDockerWindowVisible() {
         guard !AppEnvironment.isIsolated, let window else { return }
         let shown = window.occlusionState.contains(.visible)
         if dockerPage.windowVisible != shown { dockerPage.windowVisible = shown }
     }
 
-    func dockerSettingsChanged(_ keys: Set<String> = ["docker.enabled"]) {
+    package func dockerSettingsChanged(_ keys: Set<String> = ["docker.enabled"]) {
         // Agents' Docker tools come and go with the setting.
         BrowserBridge.shared.update()
         if !Settings.shared.dockerEnabled {
@@ -645,7 +645,7 @@ extension TerminalWindowController {
 
     /// A command in a new tab: compose in the project's folder, the rest
     /// in the selected tab's (or home).
-    func runDockerCommand(_ command: String, in folder: URL?) {
+    package func runDockerCommand(_ command: String, in folder: URL?) {
         let directory =
             folder.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil }
             ?? store.selected.flatMap { $0.workingDirectory.map { URL(fileURLWithPath: $0) } }
@@ -656,7 +656,7 @@ extension TerminalWindowController {
 
     /// Asks with the buttons given and Cancel; then the index of the one
     /// chosen. As a sheet: one already attached (New Task's) goes first.
-    func chooseDocker(_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) {
+    package func chooseDocker(_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title
@@ -672,7 +672,7 @@ extension TerminalWindowController {
         }
     }
 
-    func confirmDocker(_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) {
+    package func confirmDocker(_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title
@@ -688,7 +688,7 @@ extension TerminalWindowController {
 
     /// A container's port: the browser column when links open inside
     /// (the page steps aside for it), else the default browser.
-    func openDockerLink(_ url: URL) {
+    package func openDockerLink(_ url: URL) {
         if let dockerLinkRecorder { return dockerLinkRecorder(url) }
         guard BrowserLinks.opensInside(url, policy: Settings.shared.browserLinks), Settings.shared.browserEnabled else {
             NSWorkspace.shared.open(url)
@@ -704,7 +704,7 @@ extension TerminalWindowController {
 extension TerminalWindowController {
     /// ⇧⌥⌘P: the palette, on containers and compose projects. Docker is
     /// started if it wasn't; what it lists comes in as it answers.
-    @objc func showDockerSwitcher(_ sender: Any?) {
+    @objc package func showDockerSwitcher(_ sender: Any?) {
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         DockerModel.shared.start()
         togglePalette(scope: .container)
@@ -712,7 +712,7 @@ extension TerminalWindowController {
 
     /// Containers came or went while the palette shows them, or what a
     /// project's files say came in (Compose Watch).
-    func watchDockerPalette() -> AnyCancellable {
+    package func watchDockerPalette() -> AnyCancellable {
         DockerModel.shared.$containers.dropFirst().map { _ in () }
             .merge(with: dockerPage.$composeFacts.dropFirst().map { _ in () })
             .sink { [weak self] _ in DispatchQueue.main.async { self?.restockPalette() } }
@@ -721,7 +721,7 @@ extension TerminalWindowController {
     /// What the palette offers of Docker: the page, the checkout's stack's
     /// verbs, every container and project. A container's ↩ shows it on
     /// the page; ⌥↩ a shell in it (or starts it); a project's ⌥↩ is `up`.
-    func dockerPaletteItems() -> [PaletteItem] {
+    package func dockerPaletteItems() -> [PaletteItem] {
         guard Settings.shared.dockerEnabled else { return [] }
         let docker = DockerModel.shared
         var items = [
@@ -797,7 +797,7 @@ extension TerminalWindowController {
     /// The page, with this container (or `project:<name>`, or a test run's
     /// `testcontainers:<session>`) selected and in view: the filter
     /// cleared, its project or its run unfolded.
-    func revealOnDockerPage(_ tag: String) {
+    package func revealOnDockerPage(_ tag: String) {
         dockerPage.filter = ""
         if let container = DockerModel.shared.container(tag) {
             dockerPage.runningOnly = dockerPage.runningOnly && container.state.isUp
@@ -813,7 +813,7 @@ extension TerminalWindowController {
     // MARK: The checkout's stack
 
     /// The selected tab's checkout's compose projects.
-    func dockerPanelStack() -> [ComposeProject] {
+    package func dockerPanelStack() -> [ComposeProject] {
         updateDockerCheckout(root: diff.root)
         return dockerPanel.here
     }
@@ -822,7 +822,7 @@ extension TerminalWindowController {
     /// compose file at its top when none runs — its project before it
     /// runs, when it was read from the files as they are. Each looks at its
     /// ports first (`DockerPageModel.startUp`).
-    @objc func composeUp(_ sender: Any?) {
+    @objc package func composeUp(_ sender: Any?) {
         // Off in Settings ▸ Docker, nothing is read or run.
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         let stack = dockerPanelStack()
@@ -838,7 +838,7 @@ extension TerminalWindowController {
         }
     }
 
-    @objc func composeDown(_ sender: Any?) {
+    @objc package func composeDown(_ sender: Any?) {
         // Off in Settings ▸ Docker, nothing is read or run.
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         let stack = dockerPanelStack()
@@ -856,7 +856,7 @@ extension TerminalWindowController {
     }
 
     /// Restarted here, through the engine: nothing for a tab to show.
-    @objc func composeRestart(_ sender: Any?) {
+    @objc package func composeRestart(_ sender: Any?) {
         // Off in Settings ▸ Docker, nothing is read or run.
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         let stack = dockerPanelStack()
@@ -868,7 +868,7 @@ extension TerminalWindowController {
     /// service to watch — their files asked about now, Docker on screen or
     /// not; with no stack, the plan's, as Compose Up does. A beep when none
     /// has one.
-    @objc func composeWatch(_ sender: Any?) {
+    @objc package func composeWatch(_ sender: Any?) {
         // Off in Settings ▸ Docker, nothing is read or run.
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         let projects = composeWatchable(dockerPanelStack())

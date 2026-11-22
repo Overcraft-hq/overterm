@@ -7,14 +7,14 @@ import MySQLNIO
 extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserManagement {
     private var isMariaDB: Bool { config.kind == .mariadb }
 
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { MonitorPart.allCases }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { MonitorPart.allCases }
 
-    func editDialect() async -> SQLDialect {
+    package func editDialect() async -> SQLDialect {
         await identify()
         return SQLDialect(engine: isMariaDB ? .mariadb : .mysql, backslashEscapes: backslashEscapes ?? true)
     }
 
-    func userDialect() async -> UserDialect { isMariaDB ? .mariadb : .mysql }
+    package func userDialect() async -> UserDialect { isMariaDB ? .mariadb : .mysql }
 
     private func read(_ sql: String, limit: Int = 10_000) async throws -> QueryResult {
         try await execute(sql, limit: limit)
@@ -30,14 +30,14 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
     /// An error the server says for a privilege missing: 1142 (command
     /// denied), 1227 (needs a privilege), 1044 (access to a database).
-    static func isPrivilege(_ error: Error) -> Bool {
+    package static func isPrivilege(_ error: Error) -> Bool {
         let text = error.localizedDescription.lowercased()
         return text.contains("denied") || text.contains("privilege")
     }
 
     // MARK: Monitoring
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         await identify()
         let status = try await read(MySQLOps.statusSQL)
         let variables = try await read(MySQLOps.variablesSQL)
@@ -45,12 +45,12 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         return MySQLOps.overview(status: status, variables: variables, replica: replica)
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         await identify()
         return .value(MySQLOps.activity(try await read(MySQLOps.activitySQL)))
     }
 
-    func slowQueries() async throws -> Monitored<[SlowQuery]> {
+    package func slowQueries() async throws -> Monitored<[SlowQuery]> {
         let settings = ResultRow.rows(of: try await read("SELECT @@performance_schema AS ps, @@log_output AS output, @@slow_query_log AS slow")).first
         if settings?.bool("ps") == true {
             do {
@@ -73,7 +73,7 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         return .unavailable(MySQLOps.performanceSchemaOff(mariadb: isMariaDB))
     }
 
-    func locks() async throws -> Monitored<[LockWait]> {
+    package func locks() async throws -> Monitored<[LockWait]> {
         if !isMariaDB {
             let on = ResultRow.rows(of: try await read("SELECT @@performance_schema AS ps")).first?.bool("ps") == true
             guard on else { return .unavailable(MySQLOps.performanceSchemaOff(mariadb: false)) }
@@ -88,7 +88,7 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         }
     }
 
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         var sizes = DatabaseSizes()
         for (part, sql) in [("Databases", MySQLOps.databaseSizesSQL), ("Tables", MySQLOps.tableSizesSQL), ("Indexes", MySQLOps.indexSizesSQL)] {
             do {
@@ -106,7 +106,7 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         return .value(sizes)
     }
 
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly(terminate ? "KILL" : "KILL QUERY") }
         await identify()
         guard let id = Int(session) else { throw DatabaseError.failed("No session \(session).") }
@@ -116,7 +116,7 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
     // MARK: Editing rows
 
-    func key(of table: TableName) async throws -> TableKey? {
+    package func key(of table: TableName) async throws -> TableKey? {
         let dialect = await editDialect()
         let schema = table.schema.map(dialect.literal) ?? "DATABASE()"
         let result = try await read(MySQLOps.keySQL(schema: schema, table: dialect.literal(table.name)))
@@ -127,7 +127,7 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         return key
     }
 
-    func apply(_ statements: [EditStatement]) async throws {
+    package func apply(_ statements: [EditStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("saving the edits") }
         try await exclusive {
             guard let connection else { throw DatabaseError.notConnected }
@@ -159,7 +159,7 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
     // MARK: Users and roles
 
-    func users() async throws -> Monitored<[DatabaseUser]> {
+    package func users() async throws -> Monitored<[DatabaseUser]> {
         do {
             let users = try await read(isMariaDB ? MySQLOps.mariaUsersSQL : MySQLOps.mysqlUsersSQL)
             let edges = (try? await read(isMariaDB ? MySQLOps.mariaRolesSQL : MySQLOps.mysqlRolesSQL)) ?? QueryResult()
@@ -172,7 +172,7 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         }
     }
 
-    func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
+    package func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
         let dialect = await userDialect()
         do {
             let result = try await read("SHOW GRANTS FOR \(UserStatements.account(user, dialect: dialect))")
@@ -184,7 +184,7 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
     /// Sent as text (the simple protocol): MySQLNIO logs a prepared
     /// statement's text when it fails to close, a simple query's never.
-    func run(_ statements: [UserStatement]) async throws {
+    package func run(_ statements: [UserStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("changing users") }
         try await exclusive {
             guard let connection else { throw DatabaseError.notConnected }
@@ -201,27 +201,27 @@ extension MySQLDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
 /// MySQL's and MariaDB's statements for the Server and Users pages, and
 /// their answers read. Pure.
-enum MySQLOps {
-    static let system = "('mysql', 'information_schema', 'performance_schema', 'sys')"
+package enum MySQLOps {
+    package static let system = "('mysql', 'information_schema', 'performance_schema', 'sys')"
 
-    static let statusSQL = """
+    package static let statusSQL = """
         SHOW GLOBAL STATUS WHERE Variable_name IN ('Uptime', 'Threads_connected', 'Threads_running', 'Max_used_connections', 'Questions',
           'Slow_queries', 'Innodb_buffer_pool_read_requests', 'Innodb_buffer_pool_reads', 'Aborted_connects', 'Innodb_row_lock_waits')
         """
 
-    static let variablesSQL = """
+    package static let variablesSQL = """
         SELECT @@version AS version, @@version_comment AS comment, @@max_connections AS max_connections, @@read_only AS read_only,
           @@innodb_buffer_pool_size AS pool, DATABASE() AS db
         """
 
-    static let activitySQL = """
+    package static let activitySQL = """
         SELECT ID AS id, USER AS user, HOST AS client, DB AS `database`, COMMAND AS state, TIME AS seconds, STATE AS waiting, INFO AS query,
           ID = CONNECTION_ID() AS own
         FROM information_schema.PROCESSLIST WHERE COMMAND <> 'Daemon' ORDER BY COMMAND = 'Sleep', TIME DESC
         """
 
     /// The hundred costliest by total time and the hundred by mean.
-    static let digestSQL: String = {
+    package static let digestSQL: String = {
         let select = """
             SELECT DIGEST AS id, SCHEMA_NAME AS `database`, COUNT_STAR AS calls, SUM_TIMER_WAIT / 1e12 AS total,
               AVG_TIMER_WAIT / 1e12 AS mean, SUM_ROWS_SENT AS `rows`, DIGEST_TEXT AS query
@@ -230,20 +230,20 @@ enum MySQLOps {
         return "(\(select) ORDER BY SUM_TIMER_WAIT DESC LIMIT 100) UNION (\(select) ORDER BY AVG_TIMER_WAIT DESC LIMIT 100)"
     }()
 
-    static let slowLogSQL = """
+    package static let slowLogSQL = """
         SELECT MD5(sql_text) AS id, db AS `database`, COUNT(*) AS calls, SUM(TIME_TO_SEC(query_time)) AS total,
           AVG(TIME_TO_SEC(query_time)) AS mean, SUM(rows_sent) AS `rows`, CONVERT(sql_text USING utf8mb4) AS query
         FROM mysql.slow_log GROUP BY sql_text, db ORDER BY total DESC LIMIT 100
         """
 
-    static func performanceSchemaOff(mariadb: Bool) -> MonitorGap {
+    package static func performanceSchemaOff(mariadb: Bool) -> MonitorGap {
         MonitorGap(
             reason: "performance_schema is off — it is \(mariadb ? "MariaDB" : "MySQL")'s record of statements and locks.",
             fix: "performance_schema = ON in my.cnf, then restart the server"
                 + (mariadb ? " — or slow_query_log = 1 and log_output = 'TABLE', to read mysql.slow_log" : ""))
     }
 
-    static let mysqlLocksSQL = """
+    package static let mysqlLocksSQL = """
         SELECT wt.PROCESSLIST_ID AS waiting, wt.PROCESSLIST_USER AS waiting_user, wt.PROCESSLIST_INFO AS waiting_query,
           bt.PROCESSLIST_ID AS blocking, bt.PROCESSLIST_USER AS blocking_user, bt.PROCESSLIST_INFO AS blocking_query,
           CONCAT(wl.LOCK_MODE, ' on ', wl.OBJECT_SCHEMA, '.', wl.OBJECT_NAME) AS `lock`, wt.PROCESSLIST_TIME AS seconds
@@ -253,7 +253,7 @@ enum MySQLOps {
         JOIN performance_schema.threads bt ON bt.THREAD_ID = w.BLOCKING_THREAD_ID
         """
 
-    static let mariaLocksSQL = """
+    package static let mariaLocksSQL = """
         SELECT r.trx_mysql_thread_id AS waiting, rp.USER AS waiting_user, r.trx_query AS waiting_query,
           b.trx_mysql_thread_id AS blocking, bp.USER AS blocking_user, b.trx_query AS blocking_query,
           CONCAT(l.lock_mode, ' on ', l.lock_table) AS `lock`, TIMESTAMPDIFF(SECOND, r.trx_wait_started, NOW()) AS seconds
@@ -266,26 +266,26 @@ enum MySQLOps {
         """
 
     /// Every database, an empty one too.
-    static let databaseSizesSQL = """
+    package static let databaseSizesSQL = """
         SELECT s.SCHEMA_NAME AS name, COALESCE(SUM(t.DATA_LENGTH + t.INDEX_LENGTH), 0) AS bytes
         FROM information_schema.SCHEMATA s LEFT JOIN information_schema.TABLES t ON t.TABLE_SCHEMA = s.SCHEMA_NAME
         GROUP BY s.SCHEMA_NAME ORDER BY bytes DESC
         """
 
-    static let tableSizesSQL = """
+    package static let tableSizesSQL = """
         SELECT TABLE_SCHEMA AS `schema`, TABLE_NAME AS name, DATA_LENGTH + INDEX_LENGTH AS bytes,
           CONCAT('rows ≈ ', COALESCE(TABLE_ROWS, 0), ', ', COALESCE(ENGINE, '')) AS detail
         FROM information_schema.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA NOT IN \(system)
         ORDER BY bytes DESC LIMIT 50
         """
 
-    static let indexSizesSQL = """
+    package static let indexSizesSQL = """
         SELECT database_name AS `schema`, index_name AS name, stat_value * @@innodb_page_size AS bytes, CONCAT('on ', table_name) AS detail
         FROM mysql.innodb_index_stats WHERE stat_name = 'size' AND database_name NOT IN \(system)
         ORDER BY bytes DESC LIMIT 50
         """
 
-    static func keySQL(schema: String, table: String) -> String {
+    package static func keySQL(schema: String, table: String) -> String {
         """
         SELECT TABLE_SCHEMA AS `schema`, TABLE_NAME AS name, INDEX_NAME AS `index`, COLUMN_NAME AS `column`, NULLABLE AS nullable,
           SUB_PART AS sub_part
@@ -294,13 +294,13 @@ enum MySQLOps {
         """
     }
 
-    static func columnKindsSQL(schema: String, table: String) -> String {
+    package static func columnKindsSQL(schema: String, table: String) -> String {
         "SELECT COLUMN_NAME AS name, DATA_TYPE AS type, EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = \(schema) AND TABLE_NAME = \(table)"
     }
 
     /// Never `authentication_string` (or `Password`): a password's hash is
     /// never read, so never shown or told to an agent.
-    static let mysqlUsersSQL = """
+    package static let mysqlUsersSQL = """
         SELECT User AS name, Host AS host, account_locked AS locked, password_expired AS expired, Super_priv AS super,
           max_user_connections AS max_connections, plugin
         FROM mysql.user ORDER BY User, Host
@@ -308,19 +308,19 @@ enum MySQLOps {
 
     /// MariaDB's mysql.user is a view; whether an account is locked is in
     /// global_priv's JSON. Never `Password` or `authentication_string`.
-    static let mariaUsersSQL = """
+    package static let mariaUsersSQL = """
         SELECT u.User AS name, u.Host AS host, u.is_role, COALESCE(JSON_VALUE(g.Priv, '$.account_locked'), 'false') AS locked,
           u.password_expired AS expired, u.Super_priv AS super, u.max_user_connections AS max_connections, u.plugin
         FROM mysql.user u LEFT JOIN mysql.global_priv g ON g.User = u.User AND g.Host = u.Host
         ORDER BY u.is_role, u.User, u.Host
         """
 
-    static let mysqlRolesSQL = "SELECT FROM_USER AS role, FROM_HOST AS role_host, TO_USER AS member, TO_HOST AS member_host FROM mysql.role_edges"
-    static let mariaRolesSQL = "SELECT Role AS role, User AS member, Host AS member_host FROM mysql.roles_mapping"
+    package static let mysqlRolesSQL = "SELECT FROM_USER AS role, FROM_HOST AS role_host, TO_USER AS member, TO_HOST AS member_host FROM mysql.role_edges"
+    package static let mariaRolesSQL = "SELECT Role AS role, User AS member, Host AS member_host FROM mysql.roles_mapping"
 
     // MARK: Answers
 
-    static func overview(status: QueryResult, variables: QueryResult, replica: QueryResult?) -> ServerOverview {
+    package static func overview(status: QueryResult, variables: QueryResult, replica: QueryResult?) -> ServerOverview {
         var values: [String: String] = [:]
         for row in status.rows where row.count >= 2 {
             if let name = row[0], let value = row[1] { values[name.lowercased()] = value }
@@ -351,7 +351,7 @@ enum MySQLOps {
         return ServerOverview(facts: facts)
     }
 
-    static func activity(_ result: QueryResult) -> [DatabaseActivity] {
+    package static func activity(_ result: QueryResult) -> [DatabaseActivity] {
         ResultRow.rows(of: result).map { row in
             DatabaseActivity(
                 id: row["id"] ?? "", user: row["user"], database: row["database"], client: row["client"], state: row["state"],
@@ -360,10 +360,10 @@ enum MySQLOps {
         }
     }
 
-    static func slowQueries(_ result: QueryResult) -> [SlowQuery] { PostgresOps.slowQueries(result) }
+    package static func slowQueries(_ result: QueryResult) -> [SlowQuery] { PostgresOps.slowQueries(result) }
 
     /// The primary key, else the first unique index over whole NOT NULL columns.
-    static func key(_ result: QueryResult) -> TableKey? {
+    package static func key(_ result: QueryResult) -> TableKey? {
         var order: [String] = []
         var indexes: [String: (schema: String, table: String, columns: [String], usable: Bool)] = [:]
         for row in ResultRow.rows(of: result) {
@@ -388,7 +388,7 @@ enum MySQLOps {
     }
 
     /// Generated columns can't be written; a binary one's text isn't its value.
-    static func readOnlyColumns(_ result: QueryResult) -> Set<String> {
+    package static func readOnlyColumns(_ result: QueryResult) -> Set<String> {
         let binary: Set<String> = [
             "blob", "tinyblob", "mediumblob", "longblob", "binary", "varbinary", "geometry", "point", "linestring", "polygon", "multipoint",
             "multilinestring", "multipolygon", "geometrycollection",
@@ -402,7 +402,7 @@ enum MySQLOps {
             })
     }
 
-    static func users(_ result: QueryResult, roles: QueryResult) -> [DatabaseUser] {
+    package static func users(_ result: QueryResult, roles: QueryResult) -> [DatabaseUser] {
         var memberOf: [String: [String]] = [:]
         var roleAccounts: Set<String> = []
         for row in ResultRow.rows(of: roles) {
@@ -429,7 +429,7 @@ enum MySQLOps {
     /// SHOW GRANTS' lines as grants — a password's hash (MariaDB's
     /// `IDENTIFIED BY PASSWORD '*…'`, `IDENTIFIED VIA … USING '…'`) cut out
     /// before anything reads them.
-    static func grants(_ lines: [String]) -> [DatabaseGrant] {
+    package static func grants(_ lines: [String]) -> [DatabaseGrant] {
         lines.compactMap { raw in
             let line = redact(raw)
             guard line.uppercased().hasPrefix("GRANT ") else { return nil }
@@ -458,7 +458,7 @@ enum MySQLOps {
     }
 
     /// `*.*`, `` `db`.* ``, `` `db`.`t` `` as a target; nil for a routine's.
-    static func target(_ object: String) -> GrantTarget? {
+    package static func target(_ object: String) -> GrantTarget? {
         if object == "*.*" { return .server }
         var parts: [String] = []
         var current = ""
@@ -491,7 +491,7 @@ enum MySQLOps {
     /// to the grant's own options (`WITH GRANT OPTION`, `WITH ADMIN OPTION`,
     /// `WITH MAX_…`) or the end — scanned outside quoted names and strings.
     /// Never up to any `WITH`: `IDENTIFIED WITH plugin AS '*hash'` has one.
-    static func redact(_ line: String) -> String {
+    package static func redact(_ line: String) -> String {
         guard let identified = find(" IDENTIFIED ", in: line) else { return line }
         let kept = String(line[..<identified.lowerBound])
         let rest = String(line[identified.lowerBound...])

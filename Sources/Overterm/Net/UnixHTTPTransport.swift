@@ -4,18 +4,18 @@ import NIOHTTP1
 import NIOPosix
 
 /// One answer from a server over a transport.
-struct HTTPResponse: Sendable {
-    var status: Int
-    var headers: [(String, String)]
-    var body: Data
+package struct HTTPResponse: Sendable {
+    package var status: Int
+    package var headers: [(String, String)]
+    package var body: Data
 
-    func header(_ name: String) -> String? {
+    package func header(_ name: String) -> String? {
         headers.first { $0.0.caseInsensitiveCompare(name) == .orderedSame }?.1
     }
 
     /// The server's own error message (`{"message": …}`: Docker's error,
     /// Kubernetes's Status), else the body's start, else the status.
-    var errorMessage: String {
+    package var errorMessage: String {
         if let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any], let message = json["message"] as? String {
             return message
         }
@@ -25,34 +25,34 @@ struct HTTPResponse: Sendable {
 
 /// A server's error status and its message, or (status 0) a server that
 /// couldn't be reached.
-struct HTTPError: LocalizedError, Equatable, Sendable {
-    var status: Int
-    var message: String
+package struct HTTPError: LocalizedError, Equatable, Sendable {
+    package var status: Int
+    package var message: String
     /// The error's answer whole — its headers (`Content-Type`, a 429's
     /// `Retry-After`) and body — when a stream's server sent one.
-    var response: HTTPResponse?
+    package var response: HTTPResponse?
 
-    init(status: Int, message: String, response: HTTPResponse? = nil) {
+    package init(status: Int, message: String, response: HTTPResponse? = nil) {
         self.status = status
         self.message = message
         self.response = response
     }
 
     /// From an answer that isn't a success.
-    init(_ response: HTTPResponse) {
+    package init(_ response: HTTPResponse) {
         self.init(status: response.status, message: response.errorMessage, response: response)
     }
 
-    var errorDescription: String? { message }
+    package var errorDescription: String? { message }
 
-    static func unreachable(_ detail: String) -> HTTPError { HTTPError(status: 0, message: detail) }
+    package static func unreachable(_ detail: String) -> HTTPError { HTTPError(status: 0, message: detail) }
 
-    static func == (lhs: HTTPError, rhs: HTTPError) -> Bool { lhs.status == rhs.status && lhs.message == rhs.message }
+    package static func == (lhs: HTTPError, rhs: HTTPError) -> Bool { lhs.status == rhs.status && lhs.message == rhs.message }
 }
 
 /// How bytes get to a server and back: NIO over a socket for the app, the
 /// same over a fake server's socket in the tests.
-protocol HTTPTransport: Sendable {
+package protocol HTTPTransport: Sendable {
     func send(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse
     /// A request whose body is written as `body` hands it over, its
     /// `length` said first: a folder's archive is read from disk as it
@@ -84,8 +84,8 @@ protocol HTTPTransport: Sendable {
 /// The Host header is the server's to check — Docker ignores it (`docker`),
 /// `kubectl proxy` refuses any but `localhost` — and the readiness path is
 /// the server's own.
-struct UnixHTTPTransport: HTTPTransport {
-    enum Address: Sendable {
+package struct UnixHTTPTransport: HTTPTransport {
+    package enum Address: Sendable {
         case unix(String)
         case tcp(host: String, port: Int)
         /// A unix socket whose path is found (or made) when a connection
@@ -93,22 +93,22 @@ struct UnixHTTPTransport: HTTPTransport {
         case socket(@Sendable () async throws -> String)
     }
 
-    let address: Address
+    package let address: Address
     /// What every request says in `Host`.
-    let host: String
+    package let host: String
     /// The path `ready` asks with a GET.
-    let readinessPath: String
+    package let readinessPath: String
     /// Who answers, in the errors: "Docker isn't answering".
-    let service: String
+    package let service: String
 
-    init(address: Address, host: String, readinessPath: String, service: String) {
+    package init(address: Address, host: String, readinessPath: String, service: String) {
         self.address = address
         self.host = host
         self.readinessPath = readinessPath
         self.service = service
     }
 
-    func ready() async throws -> HTTPResponse {
+    package func ready() async throws -> HTTPResponse {
         try await send(.GET, readinessPath, body: nil, headers: [])
     }
 
@@ -174,7 +174,7 @@ struct UnixHTTPTransport: HTTPTransport {
         channel.writeAndFlush(HTTPClientRequestPart.end(nil), promise: nil)
     }
 
-    func send(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
+    package func send(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
         let collector = ResponseCollector(service: service)
         let channel = try await connectUncancelled(collector)
         write(channel, method, path, body: body, headers: headers)
@@ -189,7 +189,7 @@ struct UnixHTTPTransport: HTTPTransport {
     /// socket's pace is the disk's. The server may answer before it has
     /// read everything — a read-only rootfs, a file over a folder — and
     /// close; the write then fails, and its answer is what is said.
-    func send(
+    package func send(
         _ method: HTTPMethod, _ path: String, length: Int, body: @escaping @Sendable () async throws -> Data?, headers: [(String, String)],
         sent: @escaping @Sendable (Int) -> Void
     ) async throws -> HTTPResponse {
@@ -237,7 +237,7 @@ struct UnixHTTPTransport: HTTPTransport {
         }
     }
 
-    func stream(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> {
+    package func stream(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> {
         AsyncThrowingStream { continuation in
             let streamer = ResponseStreamer(continuation)
             let state = StreamChannel()
@@ -263,7 +263,7 @@ struct UnixHTTPTransport: HTTPTransport {
     /// server (or a socket) busy enough to drop a new connection — is asked
     /// once more: a GET or a HEAD changes nothing, and nothing of it was
     /// consumed.
-    func receive(_ method: HTTPMethod, _ path: String, headers: [(String, String)], consume: (Data) async throws -> Void) async throws {
+    package func receive(_ method: HTTPMethod, _ path: String, headers: [(String, String)], consume: (Data) async throws -> Void) async throws {
         let answered = Answered()
         do {
             try await receiveOnce(method, path, headers: headers, answered: answered, consume: consume)

@@ -10,14 +10,14 @@ import PostgresNIO
 extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserManagement {
     private var isRedshift: Bool { config.kind == .redshift }
 
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { MonitorPart.allCases }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { MonitorPart.allCases }
 
     /// Redshift declares primary keys but never enforces them: a "key" may
     /// find two rows, so its rows aren't edited.
-    static func editsRows(_ kind: DatabaseKind) -> Bool { kind == .postgres }
+    package static func editsRows(_ kind: DatabaseKind) -> Bool { kind == .postgres }
 
-    func editDialect() async -> SQLDialect { isRedshift ? .redshift : .postgres }
-    func userDialect() async -> UserDialect { isRedshift ? .redshift : .postgres }
+    package func editDialect() async -> SQLDialect { isRedshift ? .redshift : .postgres }
+    package func userDialect() async -> UserDialect { isRedshift ? .redshift : .postgres }
 
     /// A read of the Server's: its rows, or the server's own words thrown.
     private func read(_ sql: String, limit: Int = 10_000) async throws -> QueryResult {
@@ -34,7 +34,7 @@ extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUser
 
     // MARK: Monitoring
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         await identify()
         if isRedshift {
             let result = try await read(PostgresOps.redshiftOverviewSQL)
@@ -43,13 +43,13 @@ extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUser
         return PostgresOps.overview(try await read(PostgresOps.overviewSQL), redshift: false)
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         await identify()
         let result = try await read(isRedshift ? PostgresOps.redshiftActivitySQL : PostgresOps.activitySQL)
         return .value(PostgresOps.activity(result))
     }
 
-    func slowQueries() async throws -> Monitored<[SlowQuery]> {
+    package func slowQueries() async throws -> Monitored<[SlowQuery]> {
         if isRedshift {
             do {
                 return .value(PostgresOps.slowQueries(try await read(PostgresOps.redshiftSlowSQL)))
@@ -74,12 +74,12 @@ extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUser
         }
     }
 
-    func locks() async throws -> Monitored<[LockWait]> {
+    package func locks() async throws -> Monitored<[LockWait]> {
         let result = try await read(isRedshift ? PostgresOps.redshiftLocksSQL : PostgresOps.locksSQL)
         return .value(PostgresOps.locks(result))
     }
 
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         var sizes = DatabaseSizes()
         if isRedshift {
             do {
@@ -105,7 +105,7 @@ extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUser
         return .value(sizes)
     }
 
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly(terminate ? "terminating a session" : "cancelling a statement") }
         await identify()
         guard let pid = Int(session) else { throw DatabaseError.failed("No session \(session).") }
@@ -119,7 +119,7 @@ extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUser
 
     // MARK: Editing rows
 
-    func key(of table: TableName) async throws -> TableKey? {
+    package func key(of table: TableName) async throws -> TableKey? {
         guard !isRedshift else { return nil }
         let dialect = SQLDialect.postgres
         let regclass = dialect.literal(dialect.qualified(table))
@@ -134,7 +134,7 @@ extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUser
         return key
     }
 
-    func apply(_ statements: [EditStatement]) async throws {
+    package func apply(_ statements: [EditStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("saving the edits") }
         try await exclusive {
             guard let connection else { throw DatabaseError.notConnected }
@@ -159,7 +159,7 @@ extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUser
 
     // MARK: Users and roles
 
-    func users() async throws -> Monitored<[DatabaseUser]> {
+    package func users() async throws -> Monitored<[DatabaseUser]> {
         if isRedshift {
             let users = try await read(PostgresOps.redshiftUsersSQL)
             let groups = (try? await read(PostgresOps.redshiftGroupsSQL)) ?? QueryResult()
@@ -168,7 +168,7 @@ extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUser
         return .value(PostgresOps.users(try await read(PostgresOps.usersSQL)))
     }
 
-    func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
+    package func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
         let name = DatabaseDrivers.literal(user.name)
         if isRedshift {
             do {
@@ -180,7 +180,7 @@ extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUser
         return .value(PostgresOps.grants(try await read(PostgresOps.grantsSQL(name))))
     }
 
-    func run(_ statements: [UserStatement]) async throws {
+    package func run(_ statements: [UserStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("changing users") }
         try await exclusive {
             guard let connection else { throw DatabaseError.notConnected }
@@ -196,8 +196,8 @@ extension PostgresDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUser
 }
 
 /// Why a Save stopped, said with the statement as it is shown.
-enum EditApplyError {
-    static func wrongCount(index: Int, changed: Int, sql: String) -> String {
+package enum EditApplyError {
+    package static func wrongCount(index: Int, changed: Int, sql: String) -> String {
         "Statement \(index + 1) changed \(changed) rows, not 1 — the row has changed or gone since it was read. Nothing was saved.\n\(sql)"
     }
 }
@@ -205,7 +205,7 @@ enum EditApplyError {
 extension UserStatement {
     /// An error's text with what the mask hides taken out — a server that
     /// quotes the statement back never shows the password.
-    func scrub(_ message: String) -> String {
+    package func scrub(_ message: String) -> String {
         guard sql != shown else { return message }
         // What differs between the two is the secret's literal.
         let common = zip(sql, shown).prefix { $0 == $1 }.count
@@ -224,10 +224,10 @@ extension UserStatement {
 
 /// PostgreSQL's and Redshift's statements for the Server and Users pages,
 /// and their answers read. Pure.
-enum PostgresOps {
+package enum PostgresOps {
     // MARK: Statements
 
-    static let overviewSQL = """
+    package static let overviewSQL = """
         SELECT version() AS version, current_setting('server_version') AS server_version,
           EXTRACT(EPOCH FROM now() - pg_postmaster_start_time())::float8 AS uptime,
           (SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend')::int8 AS connections,
@@ -242,13 +242,13 @@ enum PostgresOps {
           (SELECT sum(deadlocks)::int8 FROM pg_stat_database) AS deadlocks
         """
 
-    static let redshiftOverviewSQL = """
+    package static let redshiftOverviewSQL = """
         SELECT version() AS version, current_database() AS database,
           (SELECT count(*) FROM stv_sessions)::int8 AS connections,
           (SELECT count(*) FROM stv_recents WHERE status = 'Running')::int8 AS running
         """
 
-    static let activitySQL = """
+    package static let activitySQL = """
         SELECT pid::text AS id, usename AS user, datname AS database, client_addr::text AS client, application_name AS application,
           state, wait_event_type, wait_event, query,
           EXTRACT(EPOCH FROM now() - CASE WHEN state = 'active' THEN query_start ELSE COALESCE(state_change, backend_start) END)::float8 AS seconds,
@@ -257,7 +257,7 @@ enum PostgresOps {
         ORDER BY state = 'active' DESC, seconds DESC NULLS LAST
         """
 
-    static let redshiftActivitySQL = """
+    package static let redshiftActivitySQL = """
         SELECT s.process::text AS id, TRIM(s.user_name) AS user, TRIM(s.db_name) AS database,
           CASE WHEN r.pid IS NULL THEN 'idle' ELSE 'active' END AS state, TRIM(r.query) AS query,
           CASE WHEN r.pid IS NULL THEN DATEDIFF(second, s.starttime, GETDATE()) ELSE r.duration / 1000000.0 END AS seconds,
@@ -267,7 +267,7 @@ enum PostgresOps {
         """
 
     /// Ranked by total time and by mean: the hundred of each.
-    static func slowSQL(version: Int) -> String {
+    package static func slowSQL(version: Int) -> String {
         let (total, mean) = version >= 130000 || version == 0 ? ("total_exec_time", "mean_exec_time") : ("total_time", "mean_time")
         let select = """
             SELECT s.queryid::text AS id, d.datname AS database, r.rolname AS user, s.calls, s.\(total) / 1000 AS total,
@@ -277,19 +277,19 @@ enum PostgresOps {
         return "(\(select) ORDER BY s.\(total) DESC LIMIT 100) UNION (\(select) ORDER BY s.\(mean) DESC LIMIT 100)"
     }
 
-    static let redshiftSlowSQL = """
+    package static let redshiftSlowSQL = """
         SELECT md5(query_text) AS id, database_name AS database, COUNT(*) AS calls, SUM(elapsed_time) / 1000000.0 AS total,
           AVG(elapsed_time) / 1000000.0 AS mean, SUM(returned_rows) AS rows, query_text AS query
         FROM sys_query_history GROUP BY query_text, database_name ORDER BY total DESC LIMIT 100
         """
 
-    static func statementsMissing(database: String) -> MonitorGap {
+    package static func statementsMissing(database: String) -> MonitorGap {
         MonitorGap(
             reason: "pg_stat_statements isn't installed\(database.isEmpty ? "" : " in \(database)") — it is PostgreSQL's record of statements.",
             fix: "shared_preload_libraries = 'pg_stat_statements' in postgresql.conf (a restart), then: CREATE EXTENSION pg_stat_statements;")
     }
 
-    static let locksSQL = """
+    package static let locksSQL = """
         SELECT w.pid::text AS waiting, w.usename AS waiting_user, w.query AS waiting_query,
           b.pid::text AS blocking, b.usename AS blocking_user, b.query AS blocking_query,
           (SELECT string_agg(DISTINCT l.mode || COALESCE(' on ' || l.relation::regclass::text, ' (' || l.locktype || ')'), ', ')
@@ -301,19 +301,19 @@ enum PostgresOps {
         ORDER BY seconds DESC NULLS LAST
         """
 
-    static let redshiftLocksSQL = """
+    package static let redshiftLocksSQL = """
         SELECT w.pid::text AS waiting, TRIM(w.txn_owner) AS waiting_user, h.pid::text AS blocking, TRIM(h.txn_owner) AS blocking_user,
           w.lock_mode || ' on ' || w.relation AS lock, DATEDIFF(second, w.txn_start, GETDATE()) AS seconds
         FROM svv_transactions w JOIN svv_transactions h ON h.relation = w.relation AND h.granted AND h.pid <> w.pid
         WHERE NOT w.granted
         """
 
-    static let databaseSizesSQL = """
+    package static let databaseSizesSQL = """
         SELECT datname AS name, CASE WHEN has_database_privilege(datname, 'CONNECT') THEN pg_database_size(datname) END AS bytes
         FROM pg_database WHERE NOT datistemplate ORDER BY bytes DESC NULLS LAST
         """
 
-    static let tableSizesSQL = """
+    package static let tableSizesSQL = """
         SELECT n.nspname AS schema, c.relname AS name, pg_total_relation_size(c.oid) AS bytes,
           'rows ≈ ' || GREATEST(c.reltuples, 0)::int8 || ', data ' || pg_size_pretty(pg_relation_size(c.oid)) AS detail
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -321,20 +321,20 @@ enum PostgresOps {
         ORDER BY bytes DESC NULLS LAST LIMIT 50
         """
 
-    static let indexSizesSQL = """
+    package static let indexSizesSQL = """
         SELECT n.nspname AS schema, c.relname AS name, pg_relation_size(c.oid) AS bytes, 'on ' || t.relname AS detail
         FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_toast%'
         ORDER BY bytes DESC NULLS LAST LIMIT 50
         """
 
-    static let redshiftTablesSQL = """
+    package static let redshiftTablesSQL = """
         SELECT "schema" AS schema, "table" AS name, size::int8 * 1048576 AS bytes, 'rows ≈ ' || tbl_rows AS detail
         FROM svv_table_info ORDER BY size DESC LIMIT 50
         """
 
     /// A table's unique indexes over plain columns, the primary key first.
-    static func keySQL(regclass: String) -> String {
+    package static func keySQL(regclass: String) -> String {
         """
         SELECT n.nspname AS schema, c.relname AS name, i.indexrelid::regclass::text AS index, i.indisprimary AS is_primary,
           a.attname AS column, a.attnotnull AS not_null
@@ -349,7 +349,7 @@ enum PostgresOps {
 
     /// `pg_roles`, never `pg_authid`: its password column is always `********`,
     /// and isn't asked for anyway.
-    static let usersSQL = """
+    package static let usersSQL = """
         SELECT r.rolname AS name, r.rolsuper, r.rolinherit, r.rolcreaterole, r.rolcreatedb, r.rolcanlogin, r.rolreplication, r.rolbypassrls,
           r.rolconnlimit, r.rolvaliduntil::text AS valid_until,
           COALESCE((SELECT array_to_json(array_agg(b.rolname ORDER BY b.rolname))::text
@@ -357,12 +357,12 @@ enum PostgresOps {
         FROM pg_roles r WHERE r.rolname !~ '^pg_' ORDER BY r.rolcanlogin DESC, r.rolname
         """
 
-    static let redshiftUsersSQL = "SELECT usename AS name, usesuper AS rolsuper, usecreatedb AS rolcreatedb, valuntil::text AS valid_until FROM pg_user ORDER BY usename"
-    static let redshiftGroupsSQL = "SELECT g.groname AS role, u.usename AS member FROM pg_group g LEFT JOIN pg_user u ON u.usesysid = ANY(g.grolist)"
+    package static let redshiftUsersSQL = "SELECT usename AS name, usesuper AS rolsuper, usecreatedb AS rolcreatedb, valuntil::text AS valid_until FROM pg_user ORDER BY usename"
+    package static let redshiftGroupsSQL = "SELECT g.groname AS role, u.usename AS member FROM pg_group g LEFT JOIN pg_user u ON u.usesysid = ANY(g.grolist)"
 
     /// What a role may do, from the catalog's ACLs (readable by anyone), and
     /// what it owns — in the connection's database, plus every database's.
-    static func grantsSQL(_ name: String) -> String {
+    package static func grantsSQL(_ name: String) -> String {
         let system = "n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_%'"
         let privileges = "string_agg(a.privilege_type, ', ' ORDER BY a.privilege_type) AS privileges, bool_or(a.is_grantable) AS grantable"
         return """
@@ -385,7 +385,7 @@ enum PostgresOps {
             """
     }
 
-    static func redshiftGrantsSQL(_ name: String) -> String {
+    package static func redshiftGrantsSQL(_ name: String) -> String {
         """
         SELECT 'table' AS kind, namespace_name || '.' || relation_name AS object, namespace_name AS schema_name, relation_name AS object_name,
           LISTAGG(privilege_type, ', ') WITHIN GROUP (ORDER BY privilege_type) AS privileges, bool_or(admin_option) AS grantable
@@ -395,7 +395,7 @@ enum PostgresOps {
 
     // MARK: Answers
 
-    static func overview(_ result: QueryResult, redshift: Bool) -> ServerOverview {
+    package static func overview(_ result: QueryResult, redshift: Bool) -> ServerOverview {
         guard let row = ResultRow.rows(of: result).first else { return ServerOverview() }
         var facts: [ServerFact] = []
         let version = row["version"] ?? ""
@@ -424,7 +424,7 @@ enum PostgresOps {
         return ServerOverview(facts: facts)
     }
 
-    static func activity(_ result: QueryResult) -> [DatabaseActivity] {
+    package static func activity(_ result: QueryResult) -> [DatabaseActivity] {
         ResultRow.rows(of: result).map { row in
             let wait = [row["wait_event_type"], row["wait_event"]].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ": ")
             return DatabaseActivity(
@@ -434,7 +434,7 @@ enum PostgresOps {
         }
     }
 
-    static func slowQueries(_ result: QueryResult) -> [SlowQuery] {
+    package static func slowQueries(_ result: QueryResult) -> [SlowQuery] {
         ResultRow.rows(of: result).enumerated().map { index, row in
             SlowQuery(
                 id: (row["id"] ?? "") + "\u{1}\(row["database"] ?? "")\u{1}\(row["user"] ?? "")\u{1}\(index)", statement: row["query"] ?? "",
@@ -444,7 +444,7 @@ enum PostgresOps {
         .sorted { $0.total > $1.total }
     }
 
-    static func locks(_ result: QueryResult) -> [LockWait] {
+    package static func locks(_ result: QueryResult) -> [LockWait] {
         ResultRow.rows(of: result).map { row in
             LockWait(
                 waiting: row["waiting"] ?? "", waitingUser: row["waiting_user"], waitingStatement: row["waiting_query"], blocking: row["blocking"] ?? "",
@@ -452,7 +452,7 @@ enum PostgresOps {
         }
     }
 
-    static func sizes(_ result: QueryResult) -> [SizeEntry] {
+    package static func sizes(_ result: QueryResult) -> [SizeEntry] {
         ResultRow.rows(of: result).compactMap { row in
             guard let name = row["name"] else { return nil }
             return SizeEntry(name: name, schema: row["schema"], bytes: row.int64("bytes") ?? 0, detail: row["detail"])
@@ -461,7 +461,7 @@ enum PostgresOps {
 
     /// The first unique index whose columns can't be NULL — the primary key
     /// when there is one (its rows come first).
-    static func key(_ result: QueryResult) -> TableKey? {
+    package static func key(_ result: QueryResult) -> TableKey? {
         var order: [String] = []
         var indexes: [String: (schema: String, table: String, primary: Bool, columns: [String], notNull: Bool)] = [:]
         for row in ResultRow.rows(of: result) {
@@ -480,7 +480,7 @@ enum PostgresOps {
         return nil
     }
 
-    static func users(_ result: QueryResult) -> [DatabaseUser] {
+    package static func users(_ result: QueryResult) -> [DatabaseUser] {
         ResultRow.rows(of: result).map { row in
             var attributes: [String] = []
             if row.bool("rolcreatedb") { attributes.append("creates databases") }
@@ -497,7 +497,7 @@ enum PostgresOps {
         }
     }
 
-    static func redshiftUsers(_ users: QueryResult, groups: QueryResult) -> [DatabaseUser] {
+    package static func redshiftUsers(_ users: QueryResult, groups: QueryResult) -> [DatabaseUser] {
         var memberships: [String: [String]] = [:]
         var groupNames: [String] = []
         for row in ResultRow.rows(of: groups) {
@@ -514,7 +514,7 @@ enum PostgresOps {
         return people + groupNames.sorted().map { DatabaseUser(name: $0, isRole: true, canLogin: false) }
     }
 
-    static func grants(_ result: QueryResult) -> [DatabaseGrant] {
+    package static func grants(_ result: QueryResult) -> [DatabaseGrant] {
         ResultRow.rows(of: result).map { row in
             let kind = row["kind"] ?? ""
             var target: GrantTarget?

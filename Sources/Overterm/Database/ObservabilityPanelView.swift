@@ -4,17 +4,17 @@ import SwiftUI
 /// What a Prometheus, Loki or Tempo connection lists in the panel: metric
 /// names; labels; tags — each one's labels or values read as it opens.
 @MainActor
-final class ObservabilityCatalog: ObservableObject {
+package final class ObservabilityCatalog: ObservableObject {
     private weak var session: DatabaseSession?
-    @Published private(set) var names: [String] = []
-    @Published private(set) var loaded = false
-    @Published private(set) var error: String?
-    @Published private(set) var values: [String: [String]] = [:]
-    @Published private(set) var failed: [String: String] = [:]
+    @Published package private(set) var names: [String] = []
+    @Published package private(set) var loaded = false
+    @Published package private(set) var error: String?
+    @Published package private(set) var values: [String: [String]] = [:]
+    @Published package private(set) var failed: [String: String] = [:]
 
-    init(session: DatabaseSession) { self.session = session }
+    package init(session: DatabaseSession) { self.session = session }
 
-    func load(force: Bool = false) async {
+    package func load(force: Bool = false) async {
         guard force || !loaded, let driver = session?.observability else { return }
         do {
             names = try await driver.names()
@@ -25,7 +25,7 @@ final class ObservabilityCatalog: ObservableObject {
         loaded = true
     }
 
-    func loadValues(_ name: String) async {
+    package func loadValues(_ name: String) async {
         guard values[name] == nil, let driver = session?.observability else { return }
         do {
             values[name] = try await driver.values(of: name)
@@ -38,7 +38,7 @@ final class ObservabilityCatalog: ObservableObject {
 
 extension DatabaseSession {
     /// What a query on one value looks like in each language.
-    nonisolated static func selector(_ kind: DatabaseKind, name: String, value: String) -> String {
+    package nonisolated static func selector(_ kind: DatabaseKind, name: String, value: String) -> String {
         let quoted = "\"" + value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\""
         switch kind {
         case .loki: return "{\(name)=\(quoted)}"
@@ -52,18 +52,18 @@ extension DatabaseSession {
     }
 }
 
-struct ObservabilityTree: View {
-    let connection: DatabaseConnection
-    @ObservedObject var session: DatabaseSession
-    @ObservedObject var catalog: ObservabilityCatalog
-    @ObservedObject var model: DatabaseModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DatabaseActions
+package struct ObservabilityTree: View {
+    package let connection: DatabaseConnection
+    @ObservedObject package var session: DatabaseSession
+    @ObservedObject package var catalog: ObservabilityCatalog
+    @ObservedObject package var model: DatabaseModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DatabaseActions
 
     private var key: String { connection.id.uuidString }
 
     /// Names shown at most: a Prometheus with ten thousand metrics is filtered, not scrolled.
-    static let shownLimit = 500
+    package static let shownLimit = 500
 
     private var folderTitle: String {
         switch connection.kind {
@@ -73,7 +73,7 @@ struct ObservabilityTree: View {
         }
     }
 
-    var body: some View {
+    package var body: some View {
         Group {
             switch connection.kind {
             case .prometheus:

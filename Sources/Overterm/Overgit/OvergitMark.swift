@@ -9,11 +9,11 @@ import SwiftUI
 /// not, beside Apple's own symbols.
 ///
 /// An arch over a branch: Overterm's "over", and git's.
-struct OvergitMark: View {
+package struct OvergitMark: View {
     /// The design is drawn on a 24×24 square and scaled from there.
     private nonisolated static let side: CGFloat = 24
 
-    var body: some View {
+    package var body: some View {
         GeometryReader { geometry in
             let scale = min(geometry.size.width, geometry.size.height) / Self.side
             ZStack {

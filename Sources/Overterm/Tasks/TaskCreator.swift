@@ -2,11 +2,11 @@ import Foundation
 
 /// A "task" is a worktree on its own branch with a tab (and usually an
 /// agent) in it. This is the git half.
-enum TaskCreator {
+package enum TaskCreator {
     /// Where a task's worktree goes: next to the repository, as
     /// `<repo>-wt-<branch>` — the layout already used by hand — or, as
     /// Settings may say, inside it as `<repo>/.worktrees/<branch>`.
-    static func worktreePath(repo: URL, branch: String, location: Settings.WorktreeLocation = .sibling) -> URL {
+    package static func worktreePath(repo: URL, branch: String, location: Settings.WorktreeLocation = .sibling) -> URL {
         switch location {
         case .sibling:
             let parent = repo.standardizedFileURL.deletingLastPathComponent()
@@ -18,7 +18,7 @@ enum TaskCreator {
 
     /// `.worktrees/` in the repository's own exclude file (.git/info/exclude):
     /// ignored locally, no tracked file changed. Once.
-    static func excludeWorktreesFolder(in repo: URL) async {
+    package static func excludeWorktreesFolder(in repo: URL) async {
         guard let gitDir = try? await Git.run(["rev-parse", "--git-common-dir"], in: repo) else { return }
         // Relative (".git") from the main checkout, absolute from a linked
         // one. Not URL(relativeTo:): without a trailing slash it replaces the
@@ -34,7 +34,7 @@ enum TaskCreator {
     }
 
     /// `feat/Cosign signing` → `feat-cosign-signing`.
-    static func slug(_ branch: String) -> String {
+    package static func slug(_ branch: String) -> String {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
         var result = ""
         for scalar in branch.lowercased().unicodeScalars {
@@ -45,11 +45,11 @@ enum TaskCreator {
         return result.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 
-    enum Failure: LocalizedError {
+    package enum Failure: LocalizedError {
         case invalidBranch(String)
         case pathExists(URL)
 
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .invalidBranch(let name): "“\(name)” isn’t a valid branch name."
             case .pathExists(let url): "\(url.path) already exists."
@@ -59,7 +59,7 @@ enum TaskCreator {
 
     /// Creates the worktree and returns its path. A new branch starts at
     /// `base`; an existing branch is checked out as it is (`base` unused).
-    static func create(repo: URL, branch: String, base: String, location: Settings.WorktreeLocation = .sibling) async throws -> URL {
+    package static func create(repo: URL, branch: String, base: String, location: Settings.WorktreeLocation = .sibling) async throws -> URL {
         guard (try? await Git.run(["check-ref-format", "--branch", branch], in: repo)) != nil else {
             throw Failure.invalidBranch(branch)
         }

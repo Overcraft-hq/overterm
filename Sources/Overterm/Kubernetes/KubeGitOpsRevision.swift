@@ -14,25 +14,25 @@ import Foundation
 ///
 /// A commit here is a candidate only: it reaches git through
 /// `KubeGitOpsGitArgs`, which verifies it. Pure.
-enum KubeGitOpsRevision {
-    struct Parsed: Equatable, Sendable {
+package enum KubeGitOpsRevision {
+    package struct Parsed: Equatable, Sendable {
         /// What a row shows, 7 hex digits of a SHA.
-        var shown: String
+        package var shown: String
         /// The commit, when the revision names one: a whole SHA (40 hex), or
         /// a Helm chart version's 12-character prefix (`prefix` true).
-        var commit: String?
+        package var commit: String?
         /// Whether `commit` is a prefix that must resolve to one commit first.
-        var prefix = false
+        package var prefix = false
         /// The branch or tag it was fetched from, `refs/heads/` dropped.
-        var ref: String?
+        package var ref: String?
         /// A content digest (`sha256:…`), which names no commit.
-        var digest: String?
+        package var digest: String?
     }
 
     /// How many hex digits a row shows.
-    static let short = 7
+    package static let short = 7
 
-    static func parse(_ text: String) -> Parsed {
+    package static func parse(_ text: String) -> Parsed {
         let text = text.trimmingCharacters(in: .whitespaces)
         // `<ref>@sha1:<40>` / `<ref>@sha256:<64>`, and the bare digests.
         if let at = text.range(of: "@", options: .backwards) {
@@ -69,10 +69,10 @@ enum KubeGitOpsRevision {
     }
 
     /// `main@a77b0d1`, `a77b0d1`, `sha256:1f2e3d4`, `1.2.3`.
-    static func shown(_ text: String) -> String { parse(text).shown }
+    package static func shown(_ text: String) -> String { parse(text).shown }
 
     /// The commit a revision names, else nil (a digest, a chart version without a build).
-    static func commit(_ text: String) -> String? { parse(text).commit }
+    package static func commit(_ text: String) -> String? { parse(text).commit }
 
     /// `sha1:<40>` or `sha256:<64>`.
     private static func parseDigest(_ text: String) -> Parsed {
@@ -99,7 +99,7 @@ enum KubeGitOpsRevision {
     /// A row's Revision column: Argo CD's `live → target` while OutOfSync
     /// (each source's, `·` between, for several); Flux's applied revision;
     /// a Source's artifact. "" when nothing is known.
-    static func column(_ object: KubeGitOpsObject) -> String {
+    package static func column(_ object: KubeGitOpsObject) -> String {
         let revisions = object.revisions
         switch object.role {
         case .application:

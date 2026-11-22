@@ -12,55 +12,55 @@ import Foundation
 /// `environment`, `env_file`, `secrets`, `configs` or `labels`: Compose
 /// answers with the variables' values filled in. Pure, but for
 /// `stamp(of:)` and `dotEnvSecrets(in:)`.
-struct ComposeConfig: Equatable, Sendable {
-    struct Port: Hashable, Sendable {
+package struct ComposeConfig: Equatable, Sendable {
+    package struct Port: Hashable, Sendable {
         /// The host's port, as Compose writes it (`"8080"`, a range); nil
         /// when it publishes none.
-        var published: String?
-        var target: Int
-        var proto: String
+        package var published: String?
+        package var target: Int
+        package var proto: String
         /// The host address it binds, when not every one (`127.0.0.1`).
-        var hostIP: String? = nil
+        package var hostIP: String? = nil
         /// `host`, swarm's; nil for Compose's own, `ingress`.
-        var mode: String? = nil
+        package var mode: String? = nil
         /// The long syntax's own: a name, and what it speaks (`http`).
-        var name: String? = nil
-        var appProtocol: String? = nil
+        package var name: String? = nil
+        package var appProtocol: String? = nil
 
-        var label: String { (published.map { "\($0)→" } ?? "") + "\(target)" + (proto == "tcp" ? "" : "/\(proto)") }
+        package var label: String { (published.map { "\($0)→" } ?? "") + "\(target)" + (proto == "tcp" ? "" : "/\(proto)") }
 
         /// The one host port it publishes; nil for a range (`7000-7010`)
         /// or none (Docker picks one).
-        var hostPort: Int? { published.flatMap { Int($0) } }
+        package var hostPort: Int? { published.flatMap { Int($0) } }
     }
 
     /// A named volume as Compose resolved it: its name on the engine
     /// (`<project>_<key>` unless the files gave one), and whether it is
     /// made elsewhere.
-    struct Volume: Equatable, Sendable {
-        var name: String?
-        var external = false
+    package struct Volume: Equatable, Sendable {
+        package var name: String?
+        package var external = false
     }
 
-    struct Service: Equatable, Sendable {
-        var name: String
+    package struct Service: Equatable, Sendable {
+        package var name: String
         /// Nil when it is built and not tagged.
-        var image: String?
+        package var image: String?
         /// The folder it is built from, absolute (or a git URL).
-        var buildContext: String?
-        var dependsOn: [String]
-        var profiles: [String]
-        var ports: [Port]
+        package var buildContext: String?
+        package var dependsOn: [String]
+        package var profiles: [String]
+        package var ports: [Port]
         /// The containers `up` makes of it.
-        var replicas: Int
-        var containerName: String?
+        package var replicas: Int
+        package var containerName: String?
         /// It has a `develop.watch` of its own: `compose watch` syncs or
         /// rebuilds it as its files change, and refuses a project with none.
-        var watched = false
+        package var watched = false
 
         /// What it runs, as a row says it: its image, the folder it is built
         /// from (relative to the checkout), the services it waits for.
-        func summary(in folder: String?) -> String {
+        package func summary(in folder: String?) -> String {
             var parts: [String] = []
             if let image { parts.append(image) }
             if let buildContext { parts.append("built from " + ComposeConfig.relative(buildContext, to: folder)) }
@@ -69,35 +69,35 @@ struct ComposeConfig: Equatable, Sendable {
         }
     }
 
-    var name: String
+    package var name: String
     /// By name.
-    var services: [Service]
+    package var services: [Service]
     /// By their key in the files.
-    var volumes: [String: Volume] = [:]
+    package var volumes: [String: Volume] = [:]
 
     /// The volumes named after the project (`shop_data`): what a project of
     /// another name makes anew, empty. By key.
-    var projectVolumes: [String] {
+    package var projectVolumes: [String] {
         volumes.filter { !$0.value.external && $0.value.name == name + "_" + $0.key }.map(\.key).sorted()
     }
 
     /// What `docker compose config` is asked for the list: JSON. Profiles
     /// before the command, as Compose takes them. `DockerCLI.composeConfig`
     /// adds `--no-env-resolution`.
-    static func arguments(profiles: [String] = []) -> [String] {
+    package static func arguments(profiles: [String] = []) -> [String] {
         ["compose"] + profiles.flatMap { ["--profile", $0] } + ["config", "--format", "json"]
     }
 
     /// Leaves env files' contents out of the answer (Compose 2.35 and later).
-    static let noEnvResolution = "--no-env-resolution"
+    package static let noEnvResolution = "--no-env-resolution"
 
     /// Compose before 2.35 doesn't know the flag: asked again without it.
-    static func lacksEnvResolution(_ stderr: String) -> Bool {
+    package static func lacksEnvResolution(_ stderr: String) -> Bool {
         stderr.contains("unknown flag: --no-env-resolution")
     }
 
     /// What Compose answered, read for what a list shows and nothing else.
-    static func parse(_ output: String) throws -> ComposeConfig {
+    package static func parse(_ output: String) throws -> ComposeConfig {
         let notAProject = DockerError(status: 0, message: "Compose's answer isn't a project.")
         guard let start = output.firstIndex(of: "{"),
             let json = try? JSONSerialization.jsonObject(with: Data(output[start...].utf8)) as? [String: Any],
@@ -146,7 +146,7 @@ struct ComposeConfig: Equatable, Sendable {
 
     /// The project before it runs: its services have no containers, and
     /// `up` runs in its folder without `-f`, so it reads what this did.
-    func project(in folder: String) -> ComposeProject {
+    package func project(in folder: String) -> ComposeProject {
         ComposeProject(
             name: name, workingDir: folder, configFiles: [],
             services: services.map { ComposeService(project: name, name: $0.name, containers: [], dependsOn: $0.dependsOn, spec: $0) }, planned: true)
@@ -154,7 +154,7 @@ struct ComposeConfig: Equatable, Sendable {
 
     /// What Compose said when it couldn't, in its own words: its warnings
     /// (an unset variable) left out, `msg="…"` unwrapped, three lines at most.
-    static func message(_ error: Error) -> String {
+    package static func message(_ error: Error) -> String {
         guard let error = error as? GitError else { return error.localizedDescription }
         if error.status == -1 { return "docker compose config didn't answer in time." }
         let lines = error.stderr.split(whereSeparator: \.isNewline).compactMap { line -> String? in
@@ -179,7 +179,7 @@ struct ComposeConfig: Equatable, Sendable {
     /// masked and a URL's password (`DockerSecrets`, as a container's env
     /// is shown); anywhere else (`command`, a healthcheck), each of
     /// `secrets` — the project's `.env` ones (`dotEnvSecrets`).
-    static func masked(_ yaml: String, secrets: [String] = []) -> String {
+    package static func masked(_ yaml: String, secrets: [String] = []) -> String {
         var lines: [String] = []
         // The indent of the `environment:` or `args:` the lines are under.
         var block: Int?
@@ -240,7 +240,7 @@ struct ComposeConfig: Equatable, Sendable {
 
     /// Each of `values` taken out of `text` where it stands on its own —
     /// not inside a longer word.
-    static func redact(_ text: String, _ values: [String]) -> String {
+    package static func redact(_ text: String, _ values: [String]) -> String {
         values.sorted { $0.count > $1.count }.reduce(text) { text, value in
             let pattern = "(?<![A-Za-z0-9_])" + NSRegularExpression.escapedPattern(for: value) + "(?![A-Za-z0-9_])"
             guard let expression = try? NSRegularExpression(pattern: pattern) else { return text }
@@ -252,13 +252,13 @@ struct ComposeConfig: Equatable, Sendable {
     /// The secrets a project's `.env` holds, which Compose fills in wherever
     /// the files name them: secret-looking variables' values, long enough
     /// not to be a word found anywhere (`true`).
-    static func dotEnvSecrets(in folder: URL) -> [String] {
+    package static func dotEnvSecrets(in folder: URL) -> [String] {
         guard let text = try? String(contentsOf: folder.appendingPathComponent(".env"), encoding: .utf8) else { return [] }
         return DockerSecrets.values(in: DotEnv.parse(text).map { (key: $0.key, value: $0.value) }).filter { $0.count >= 6 }
     }
 
     /// A build folder as a row says it: `./api` inside the checkout.
-    static func relative(_ path: String, to folder: String?) -> String {
+    package static func relative(_ path: String, to folder: String?) -> String {
         guard let folder, !folder.isEmpty else { return (path as NSString).abbreviatingWithTildeInPath }
         let base = folder.hasSuffix("/") ? String(folder.dropLast()) : folder
         if path == base { return "./" }
@@ -270,11 +270,11 @@ struct ComposeConfig: Equatable, Sendable {
 
     /// The files at a checkout's top that Compose reads, each with its size
     /// and modification time: a read is due when this changes.
-    struct Stamp: Equatable, Sendable {
-        var files: [String: String]
+    package struct Stamp: Equatable, Sendable {
+        package var files: [String: String]
     }
 
-    static func stamp(of folder: URL) -> Stamp {
+    package static func stamp(of folder: URL) -> Stamp {
         let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
         let entries = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: keys)) ?? []
         var files: [String: String] = [:]
@@ -286,13 +286,13 @@ struct ComposeConfig: Equatable, Sendable {
     }
 
     /// The compose files, their overrides and `COMPOSE_FILE`'s, and `.env`.
-    static func isComposeInput(_ name: String) -> Bool {
+    package static func isComposeInput(_ name: String) -> Bool {
         name == ".env" || name.hasSuffix(".env") || name.hasSuffix(".yaml") || name.hasSuffix(".yml")
     }
 
     /// Whether FSEvents' paths include the folder itself — a change among
     /// its own entries, not deeper. `/var` and `/tmp` are `/private`'s.
-    static func touches(_ paths: [String], folder: String) -> Bool {
+    package static func touches(_ paths: [String], folder: String) -> Bool {
         paths.contains { path in
             var path = path
             while path.count > 1, path.hasSuffix("/") { path.removeLast() }
@@ -307,7 +307,7 @@ extension DockerCLI {
     /// where Compose can. Compose before 2.35 doesn't know the flag and is
     /// asked again without it: its answer holds them then, and what reads
     /// it keeps none (the list) or masks them (the editor's copy).
-    func composeConfig(_ arguments: [String], in folder: URL, timeout: TimeInterval) async throws -> String {
+    package func composeConfig(_ arguments: [String], in folder: URL, timeout: TimeInterval) async throws -> String {
         do {
             return try await run(arguments + [ComposeConfig.noEnvResolution], in: folder, timeout: timeout)
         } catch let error as GitError where ComposeConfig.lacksEnvResolution(error.stderr) {

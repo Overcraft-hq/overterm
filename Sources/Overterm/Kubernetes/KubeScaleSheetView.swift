@@ -3,15 +3,15 @@ import SwiftUI
 /// `=`: how many replicas — the context and namespace said, the current
 /// count read from the scale subresource. Scale goes on to the write's own
 /// confirmation (`KubernetesPageModel.write`); nothing changes here.
-struct KubeScaleSheetView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
+package struct KubeScaleSheetView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
 
     /// The replicas field's placeholder — how the scenario finds the field
     /// that has the keyboard.
-    static let placeholder = "count"
+    package static let placeholder = "count"
 
-    var body: some View {
+    package var body: some View {
         if let draft = page.scaleDraft {
             ZStack(alignment: .top) {
                 Color.black.opacity(0.001).onTapGesture { page.closeScaleSheet() }

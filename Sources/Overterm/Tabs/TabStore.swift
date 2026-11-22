@@ -4,72 +4,72 @@ import Foundation
 /// The ordered tabs of one window and which one is selected. Pure state; the
 /// window controller turns changes into view changes.
 @MainActor
-final class TabStore: ObservableObject {
-    @Published private(set) var tabs: [Tab] = []
-    @Published private(set) var selectedID: Tab.ID?
+package final class TabStore: ObservableObject {
+    @Published package private(set) var tabs: [Tab] = []
+    @Published package private(set) var selectedID: Tab.ID?
     /// The tab whose name is being edited in the strip, if any.
-    @Published var renamingID: Tab.ID?
+    @Published package var renamingID: Tab.ID?
 
     /// The islands (TabStore+Groups). Their order in the strip comes from
     /// the tabs, not from this list.
-    @Published var groups: [TabGroup] = []
+    @Published package var groups: [TabGroup] = []
     /// Focus on one group: only its island is in the strip. Set it through
     /// `setFocused`, which moves the selection with it.
-    @Published var focusedGroupID: TabGroup.ID?
+    @Published package var focusedGroupID: TabGroup.ID?
     /// The group whose name is being edited in its chip, if any.
-    @Published var renamingGroupID: TabGroup.ID?
+    @Published package var renamingGroupID: TabGroup.ID?
     /// Where the arrows are in the group switcher (⌃⌘G).
-    @Published var switcherHighlight: TabGroup.ID?
+    @Published package var switcherHighlight: TabGroup.ID?
 
     /// ⌘-clicked tabs, for "Add 2 Tabs to New Group". The selected tab is
     /// not in here: `selectedTabs` adds it.
-    @Published private(set) var multiSelection: Set<Tab.ID> = []
+    @Published package private(set) var multiSelection: Set<Tab.ID> = []
 
     /// What a group command acts on: the ⌘-clicked tabs in strip order,
     /// with the selected one, or just the selected one.
-    var selectedTabs: [Tab] {
+    package var selectedTabs: [Tab] {
         let marked = tabs.filter { multiSelection.contains($0.id) || $0.id == selectedID }
         return marked.isEmpty ? [selected].compactMap { $0 } : marked
     }
 
     /// ⌘-click: add or remove a tab from the marked set. The selected tab
     /// can't be unmarked — it is always part of the command.
-    func toggleMultiSelection(_ tab: Tab) {
+    package func toggleMultiSelection(_ tab: Tab) {
         guard tab.id != selectedID else { return }
         if multiSelection.contains(tab.id) { multiSelection.remove(tab.id) } else { multiSelection.insert(tab.id) }
     }
 
-    func clearMultiSelection() {
+    package func clearMultiSelection() {
         guard !multiSelection.isEmpty else { return }
         multiSelection = []
     }
 
-    func isMarked(_ tab: Tab) -> Bool { multiSelection.contains(tab.id) }
+    package func isMarked(_ tab: Tab) -> Bool { multiSelection.contains(tab.id) }
     /// Pages, not terminals, after the terminal tabs while open (Warp's
     /// Settings tab), in the order they were opened. Selecting one covers
     /// the window's body; the selected terminal tab stays selected
     /// underneath. One shows at a time.
-    @Published private(set) var openOverlays: [WorkspaceOverlay] = []
-    @Published private(set) var showingOverlay: WorkspaceOverlay?
+    @Published package private(set) var openOverlays: [WorkspaceOverlay] = []
+    @Published package private(set) var showingOverlay: WorkspaceOverlay?
 
-    var settingsOpen: Bool { openOverlays.contains(.settings) }
-    var settingsShowing: Bool { showingOverlay == .settings }
+    package var settingsOpen: Bool { openOverlays.contains(.settings) }
+    package var settingsShowing: Bool { showingOverlay == .settings }
 
     /// In the strip (if it wasn't) and over the body, in place of any other
     /// page or review.
-    func showOverlay(_ overlay: WorkspaceOverlay) {
+    package func showOverlay(_ overlay: WorkspaceOverlay) {
         if !openOverlays.contains(overlay) { openOverlays.append(overlay) }
         if showingOverlay != overlay { showingOverlay = overlay }
         if reviewShowing != nil { reviewShowing = nil }
     }
 
     /// The selected terminal tab uncovered; the pages stay in the strip.
-    func hideOverlay() {
+    package func hideOverlay() {
         if showingOverlay != nil { showingOverlay = nil }
     }
 
     /// Out of the strip, and uncovering the terminal tab if it showed.
-    func closeOverlay(_ overlay: WorkspaceOverlay) {
+    package func closeOverlay(_ overlay: WorkspaceOverlay) {
         if showingOverlay == overlay { showingOverlay = nil }
         openOverlays.removeAll { $0 == overlay }
     }
@@ -77,16 +77,16 @@ final class TabStore: ObservableObject {
     /// Review tabs: pages too, after the terminal tabs (before the other
     /// pages), each a review of its own. `reviewShowing` is the one covering
     /// the window — the selected terminal tab stays selected under it.
-    @Published var reviews: [ReviewModel] = []
-    @Published var reviewShowing: UUID?
+    @Published package var reviews: [ReviewModel] = []
+    @Published package var reviewShowing: UUID?
 
     /// A page — Settings, Docker or a review — covers the terminal tabs.
-    var pageShowing: Bool { showingOverlay != nil || reviewShowing != nil }
+    package var pageShowing: Bool { showingOverlay != nil || reviewShowing != nil }
 
-    var selected: Tab? { tabs.first { $0.id == selectedID } }
-    var selectedIndex: Int? { tabs.firstIndex { $0.id == selectedID } }
+    package var selected: Tab? { tabs.first { $0.id == selectedID } }
+    package var selectedIndex: Int? { tabs.firstIndex { $0.id == selectedID } }
 
-    func index(of tab: Tab) -> Int? { tabs.firstIndex { $0.id == tab.id } }
+    package func index(of tab: Tab) -> Int? { tabs.firstIndex { $0.id == tab.id } }
 
     /// Invariant: pinned tabs come first. Index of the first unpinned tab.
     private var pinnedCount: Int { tabs.prefix { $0.isPinned }.count }
@@ -99,7 +99,7 @@ final class TabStore: ObservableObject {
     /// inherited group swallowed every new tab silently. A tab that joins
     /// nothing is inserted after the anchor all the same and `normalize`
     /// then slides it past the anchor's island, which keeps its run whole.
-    func insert(_ tab: Tab, after anchor: Tab?, joining group: TabGroup.ID? = nil) {
+    package func insert(_ tab: Tab, after anchor: Tab?, joining group: TabGroup.ID? = nil) {
         if let group { tab.groupID = group }
         if let anchor, let i = index(of: anchor) {
             tabs.insert(tab, at: max(i + 1, pinnedCount))
@@ -112,9 +112,9 @@ final class TabStore: ObservableObject {
 
     /// Reorders the whole list. Only the group layer (TabStore+Groups) uses
     /// it, and only to restore the invariants it documents.
-    func replaceTabs(_ newTabs: [Tab]) { tabs = newTabs }
+    package func replaceTabs(_ newTabs: [Tab]) { tabs = newTabs }
 
-    func setPinned(_ tab: Tab, _ pinned: Bool) {
+    package func setPinned(_ tab: Tab, _ pinned: Bool) {
         guard tab.isPinned != pinned, let i = index(of: tab) else { return }
         tabs.remove(at: i)
         tab.isPinned = pinned
@@ -124,7 +124,7 @@ final class TabStore: ObservableObject {
 
     /// Removes the tab. If it was selected, selection moves to its right
     /// neighbour, else the left one (Chrome's rule).
-    func remove(_ tab: Tab) {
+    package func remove(_ tab: Tab) {
         guard let i = index(of: tab) else { return }
         tabs.remove(at: i)
         if selectedID == tab.id {
@@ -133,7 +133,7 @@ final class TabStore: ObservableObject {
         pruneEmptyGroups()
     }
 
-    func select(_ tab: Tab) {
+    package func select(_ tab: Tab) {
         // A plain click starts a new command: the ⌘-clicked set goes.
         clearMultiSelection()
         // Re-selecting would still publish, and the window answers a
@@ -143,13 +143,13 @@ final class TabStore: ObservableObject {
         selectedID = tab.id
     }
 
-    func select(index: Int) {
+    package func select(index: Int) {
         guard tabs.indices.contains(index) else { return }
         selectedID = tabs[index].id
     }
 
     /// Next/previous with wrap-around.
-    func selectAdjacent(_ offset: Int) {
+    package func selectAdjacent(_ offset: Int) {
         guard let i = selectedIndex, !tabs.isEmpty else { return }
         let n = tabs.count
         select(index: ((i + offset) % n + n) % n)
@@ -157,32 +157,32 @@ final class TabStore: ObservableObject {
 
     /// Where each tab is drawn in the strip (top-left origin), so the window
     /// can tell which tab a right-click landed on.
-    var tabFrames: [Tab.ID: CGRect] = [:]
+    package var tabFrames: [Tab.ID: CGRect] = [:]
 
     /// The same for the islands' chips.
-    var groupChipFrames: [TabGroup.ID: CGRect] = [:]
+    package var groupChipFrames: [TabGroup.ID: CGRect] = [:]
 
     /// The island a dragged tab would land in, while it is being dragged —
     /// so the strip can say which one will take it before you let go.
-    @Published var dropGroupID: TabGroup.ID?
+    @Published package var dropGroupID: TabGroup.ID?
 
     /// Where the dragged tab's copy is drawn, its left edge in the strip:
     /// it follows the pointer. Nil when no tab is being dragged.
-    @Published var dragX: CGFloat?
+    @Published package var dragX: CGFloat?
 
-    func group(at point: CGPoint) -> TabGroup? {
+    package func group(at point: CGPoint) -> TabGroup? {
         groups.first { groupChipFrames[$0.id]?.contains(point) == true }
     }
 
-    func tab(at point: CGPoint) -> Tab? {
+    package func tab(at point: CGPoint) -> Tab? {
         tabs.first { tabFrames[$0.id]?.contains(point) == true }
     }
 
     /// A session is being rebuilt: islands without their tabs yet are kept.
-    var restoring = false
+    package var restoring = false
 
     /// The tab being dragged in the strip, if any (drawn slightly faded).
-    @Published var draggingID: Tab.ID?
+    @Published package var draggingID: Tab.ID?
 
     /// Where a dragged tab belongs for a pointer at `x`: after every other tab
     /// of its group whose middle is left of the pointer.
@@ -191,7 +191,7 @@ final class TabStore: ObservableObject {
     /// frames a moment after a move, and a swap-with-the-tab-under-the-pointer
     /// rule then saw the tab it had just swapped with still "under" the
     /// pointer and swapped back — 30 flip-flops in one drag.
-    func dragMove(_ tab: Tab, toPointerX x: CGFloat) {
+    package func dragMove(_ tab: Tab, toPointerX x: CGFloat) {
         let others = tabs.filter { $0.isPinned == tab.isPinned && $0.id != tab.id }
         let position = others.filter { (tabFrames[$0.id]?.midX ?? .infinity) < x }.count
         let groupStart = tab.isPinned ? 0 : pinnedCount
@@ -205,7 +205,7 @@ final class TabStore: ObservableObject {
     }
 
     /// Moves `tab` to where `target` is, if both are in the same group.
-    func move(_ tab: Tab, to target: Tab) {
+    package func move(_ tab: Tab, to target: Tab) {
         guard tab.id != target.id, tab.isPinned == target.isPinned,
             let from = index(of: tab), let to = index(of: target)
         else { return }
@@ -213,7 +213,7 @@ final class TabStore: ObservableObject {
     }
 
     /// Moves a tab by `offset` places, clamped to its group (pinned or not).
-    func move(_ tab: Tab, by offset: Int) {
+    package func move(_ tab: Tab, by offset: Int) {
         guard let from = index(of: tab) else { return }
         let group = tab.isPinned ? 0..<pinnedCount : pinnedCount..<tabs.count
         let to = max(group.lowerBound, min(group.upperBound - 1, from + offset))

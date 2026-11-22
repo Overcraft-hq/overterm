@@ -5,16 +5,16 @@ import UserNotifications
 /// notification (clicking it brings the tab up), a Dock bounce, and the
 /// Dock badge counting such tabs.
 @MainActor
-enum AttentionNotifier {
-    nonisolated static let tabIDKey = "tabID"
+package enum AttentionNotifier {
+    package nonisolated static let tabIDKey = "tabID"
 
     /// Notifications an isolated run would have posted (it posts none).
-    static var suppressed = 0
+    package static var suppressed = 0
 
     /// `note` and `mark`: a notice that isn't the tab's own mark (a cluster
     /// failure while an agent's waiting mark holds the tab) — posted beside
     /// the tab's own notification, not over it.
-    static func notify(tab: Tab, note: String? = nil, mark: TabActivity.Mark? = nil) {
+    package static func notify(tab: Tab, note: String? = nil, mark: TabActivity.Mark? = nil) {
         // Settings ▸ Notifications: on at all, and for this kind of mark.
         guard !NSApp.isActive, Settings.shared.notifies(mark ?? tab.activity.mark) else { return }
         if AppEnvironment.isIsolated {
@@ -42,7 +42,7 @@ enum AttentionNotifier {
     /// traps when it runs anywhere else: the app crashed (EXC_BREAKPOINT in
     /// dispatch_assert_queue) at an agent's notification while in the
     /// background, 2026-09-28.
-    nonisolated static func authorized(
+    package nonisolated static func authorized(
         then request: UNNotificationRequest, add: @escaping @Sendable (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
     ) -> @Sendable (Bool, (any Error)?) -> Void {
         nonisolated(unsafe) let request = request
@@ -54,7 +54,7 @@ enum AttentionNotifier {
 
     /// Leaving focus: everything that waited, as one notice rather than a
     /// burst — the point of focusing was not to be interrupted.
-    static func summarize(_ held: [GroupFocus.Held]) {
+    package static func summarize(_ held: [GroupFocus.Held]) {
         guard !NSApp.isActive, Settings.shared.notifications, !held.isEmpty else { return }
         if AppEnvironment.isIsolated {
             suppressed += 1
@@ -70,17 +70,17 @@ enum AttentionNotifier {
     /// A notice beside the tab's own (`notify(tab:note:mark:)`).
     private static func sideIdentifier(_ tab: Tab) -> String { tab.id.uuidString + "-cluster" }
 
-    static func withdraw(tab: Tab) {
+    package static func withdraw(tab: Tab) {
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [tab.id.uuidString, sideIdentifier(tab)])
     }
 
     /// Only the notice beside the tab's own: what it said has gone, the tab's mark hasn't.
-    static func withdrawSide(tab: Tab) {
+    package static func withdrawSide(tab: Tab) {
         guard !AppEnvironment.isIsolated else { return }
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [sideIdentifier(tab)])
     }
 
-    static func updateBadge(count: Int) {
+    package static func updateBadge(count: Int) {
         NSApp.dockTile.badgeLabel = count > 0 && Settings.shared.dockBadge ? "\(count)" : nil
     }
 }

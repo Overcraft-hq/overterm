@@ -11,7 +11,7 @@ import Security
 /// thread — but `ProcessSignals`', a deliberate fresh read at a button
 /// (7.1), each bounded. Its calls — one process read now, the audit
 /// token, the signal — are here too, so a fake can say a refusal made none.
-protocol ActivityKernel: Sendable {
+package protocol ActivityKernel: Sendable {
     /// The user the census reads for: `getuid()`.
     var uid: uid_t { get }
     /// `CLOCK_UPTIME_RAW`, ns: what every rate divides by.
@@ -136,29 +136,29 @@ protocol ActivityKernel: Sendable {
 /// executable image of one process — its pid, and the pid's version, which
 /// an `exec` moves on. A signal sent by it reaches that image or nothing:
 /// once the process ended or exec'd, the call answers ESRCH.
-struct ActivityAuditToken: Hashable, Sendable {
+package struct ActivityAuditToken: Hashable, Sendable {
     /// `audit_token_t`'s eight words, as the kernel fills them: libbsm's
     /// accessors read the same places (`audit_token_to_pid` the sixth).
-    let words: [UInt32]
+    package let words: [UInt32]
 
-    init(_ token: audit_token_t) {
+    package init(_ token: audit_token_t) {
         words = withUnsafeBytes(of: token.val) { Array($0.bindMemory(to: UInt32.self)) }
     }
 
     /// A fake's.
-    init(pid: pid_t, effectiveUID: uid_t, realUID: uid_t? = nil, version: UInt32) {
+    package init(pid: pid_t, effectiveUID: uid_t, realUID: uid_t? = nil, version: UInt32) {
         words = [0, effectiveUID, 0, realUID ?? effectiveUID, 0, UInt32(bitPattern: pid), 0, version]
     }
 
     /// Who it was when the token was taken: its effective and real uids
     /// (libbsm's second and fourth words).
-    var effectiveUID: uid_t { words[1] }
-    var realUID: uid_t { words[3] }
-    var pid: pid_t { pid_t(bitPattern: words[5]) }
+    package var effectiveUID: uid_t { words[1] }
+    package var realUID: uid_t { words[3] }
+    package var pid: pid_t { pid_t(bitPattern: words[5]) }
     /// The pid's version: an `exec` moves it on.
-    var version: UInt32 { words[7] }
+    package var version: UInt32 { words[7] }
 
-    var token: audit_token_t {
+    package var token: audit_token_t {
         var token = audit_token_t()
         withUnsafeMutableBytes(of: &token.val) { raw in
             for (index, word) in words.prefix(8).enumerated() { raw.storeBytes(of: word, toByteOffset: index * 4, as: UInt32.self) }
@@ -168,7 +168,7 @@ struct ActivityAuditToken: Hashable, Sendable {
 }
 
 /// What `csops` said.
-enum CodeSigningAnswer: Hashable, Sendable {
+package enum CodeSigningAnswer: Hashable, Sendable {
     case flags(ActivityCodeSigning)
     /// The process is gone.
     case gone
@@ -178,16 +178,16 @@ enum CodeSigningAnswer: Hashable, Sendable {
 
 extension ActivityKernel {
     /// A kernel that knows no sleep: its uptime.
-    func continuousTime() -> UInt64 { uptime() }
-    func meterCounters() -> SystemMeterCounters? { nil }
-    func responsiblePID(of pid: pid_t) -> pid_t? { nil }
-    var readsResponsibility: Bool { false }
-    func sleepAssertions() -> [pid_t: ActivitySleepHold]? { nil }
+    package func continuousTime() -> UInt64 { uptime() }
+    package func meterCounters() -> SystemMeterCounters? { nil }
+    package func responsiblePID(of pid: pid_t) -> pid_t? { nil }
+    package var readsResponsibility: Bool { false }
+    package func sleepAssertions() -> [pid_t: ActivitySleepHold]? { nil }
 
     /// `pid`'s code signing: `csops`, else Security.framework's answer
     /// while `fallbacks` lasts (each over a millisecond); nil is unknown — never
     /// "macOS" (3.3).
-    func codeSigning(of pid: pid_t, fallbacks: inout Int) -> ActivityCodeSigning? {
+    package func codeSigning(of pid: pid_t, fallbacks: inout Int) -> ActivityCodeSigning? {
         switch codeSigningStatus(of: pid) {
         case .flags(let signing): return signing
         case .gone: return nil
@@ -200,18 +200,18 @@ extension ActivityKernel {
 }
 
 /// The kernel itself: libproc, sysctl, Mach.
-struct LiveActivityKernel: ActivityKernel {
-    let uid = getuid()
+package struct LiveActivityKernel: ActivityKernel {
+    package let uid = getuid()
 
-    func uptime() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
+    package func uptime() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
 
-    func continuousTime() -> UInt64 { clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) }
+    package func continuousTime() -> UInt64 { clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) }
 
-    func meterCounters() -> SystemMeterCounters? { readMeterCounters() }
+    package func meterCounters() -> SystemMeterCounters? { readMeterCounters() }
 
-    func sleepAssertions() -> [pid_t: ActivitySleepHold]? { ActivitySleepHold.read() }
+    package func sleepAssertions() -> [pid_t: ActivitySleepHold]? { ActivitySleepHold.read() }
 
-    func processes() -> [ActivityProcess]? {
+    package func processes() -> [ActivityProcess]? {
         func call(_ buffer: UnsafeMutableRawPointer?, _ size: inout Int) -> Int32 {
             var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
             return sysctl(&mib, 3, buffer, &size, nil, 0) == 0 ? 0 : errno
@@ -225,7 +225,7 @@ struct LiveActivityKernel: ActivityKernel {
         return entries?.compactMap(ProcessTable.record)
     }
 
-    func usage(of pid: pid_t) -> ActivityUsage? {
+    package func usage(of pid: pid_t) -> ActivityUsage? {
         var task = proc_taskallinfo()
         let size = Int32(MemoryLayout<proc_taskallinfo>.size)
         guard proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, &task, size) == size else { return nil }
@@ -260,12 +260,12 @@ struct LiveActivityKernel: ActivityKernel {
         return (UInt64(max(info.numer, 1)), UInt64(max(info.denom, 1)))
     }()
 
-    static func nanoseconds(_ ticks: UInt64) -> UInt64 {
+    package static func nanoseconds(_ ticks: UInt64) -> UInt64 {
         let (high, low) = ticks.multipliedFullWidth(by: timebase.numer)
         return timebase.denom > high ? timebase.denom.dividingFullWidth((high, low)).quotient : .max
     }
 
-    func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? {
+    package func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? {
         guard group > 0, limit > 0 else { return [] }
         var pids = [pid_t](repeating: 0, count: limit)
         let bytes = pids.withUnsafeMutableBytes { proc_listpids(UInt32(PROC_PGRP_ONLY), UInt32(group), $0.baseAddress, Int32($0.count)) }
@@ -273,17 +273,17 @@ struct LiveActivityKernel: ActivityKernel {
         return pids.prefix(Int(bytes) / MemoryLayout<pid_t>.stride).filter { $0 > 0 }
     }
 
-    func name(of pid: pid_t) -> String? {
+    package func name(of pid: pid_t) -> String? {
         var buffer = [UInt8](repeating: 0, count: 2 * Int(MAXCOMLEN) + 1)
         let length = proc_name(pid, &buffer, UInt32(buffer.count))
         guard length > 0 else { return nil }
         return String(decoding: buffer.prefix(Int(length)), as: UTF8.self)
     }
 
-    func responsiblePID(of pid: pid_t) -> pid_t? { ProcessResponsibility.responsible(for: pid) }
-    var readsResponsibility: Bool { ProcessResponsibility.isAvailable }
+    package func responsiblePID(of pid: pid_t) -> pid_t? { ProcessResponsibility.responsible(for: pid) }
+    package var readsResponsibility: Bool { ProcessResponsibility.isAvailable }
 
-    func path(of pid: pid_t) -> String? {
+    package func path(of pid: pid_t) -> String? {
         var buffer = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
         guard length > 0 else { return nil }
@@ -296,7 +296,7 @@ struct LiveActivityKernel: ActivityKernel {
     /// up, and Security.framework asked where it is missing.
     private static let csops: CSOps? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "csops").map { unsafeBitCast($0, to: CSOps.self) }
 
-    func codeSigningStatus(of pid: pid_t) -> CodeSigningAnswer {
+    package func codeSigningStatus(of pid: pid_t) -> CodeSigningAnswer {
         guard let csops = Self.csops else { return .unavailable }
         var flags: UInt32 = 0
         // CS_OPS_STATUS is 0.
@@ -304,7 +304,7 @@ struct LiveActivityKernel: ActivityKernel {
         return errno == ESRCH ? .gone : .unavailable
     }
 
-    func securityCodeSigning(of pid: pid_t) -> ActivityCodeSigning? {
+    package func securityCodeSigning(of pid: pid_t) -> ActivityCodeSigning? {
         var code: SecCode?
         let attributes = [kSecGuestAttributePid: NSNumber(value: pid)] as CFDictionary
         guard SecCodeCopyGuestWithAttributes(nil, attributes, [], &code) == errSecSuccess, let code else { return nil }
@@ -318,21 +318,21 @@ struct LiveActivityKernel: ActivityKernel {
         return ActivityCodeSigning(flags: status.uint32Value)
     }
 
-    func argumentsLength(of pid: pid_t) -> Int? {
+    package func argumentsLength(of pid: pid_t) -> Int? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
         guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return nil }
         return size
     }
 
-    func readArguments(of pid: pid_t, into region: UnsafeMutableRawBufferPointer) -> Int? {
+    package func readArguments(of pid: pid_t, into region: UnsafeMutableRawBufferPointer) -> Int? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = region.count
         guard sysctl(&mib, 3, region.baseAddress, &size, nil, 0) == 0 else { return nil }
         return size
     }
 
-    func descriptors(of pid: pid_t) -> [proc_fdinfo]? {
+    package func descriptors(of pid: pid_t) -> [proc_fdinfo]? {
         let stride = MemoryLayout<proc_fdinfo>.stride
         errno = 0
         let needed = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
@@ -355,13 +355,13 @@ struct LiveActivityKernel: ActivityKernel {
         return nil
     }
 
-    func socket(of pid: pid_t, descriptor: Int32) -> socket_fdinfo? {
+    package func socket(of pid: pid_t, descriptor: Int32) -> socket_fdinfo? {
         var info = socket_fdinfo()
         let size = Int32(MemoryLayout<socket_fdinfo>.size)
         return proc_pidfdinfo(pid, descriptor, PROC_PIDFDSOCKETINFO, &info, size) == size ? info : nil
     }
 
-    func vnodePath(of pid: pid_t, descriptor: Int32) -> String? {
+    package func vnodePath(of pid: pid_t, descriptor: Int32) -> String? {
         var info = vnode_fdinfowithpath()
         let size = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
         guard proc_pidfdinfo(pid, descriptor, PROC_PIDFDVNODEPATHINFO, &info, size) == size else { return nil }
@@ -369,7 +369,7 @@ struct LiveActivityKernel: ActivityKernel {
         return path.isEmpty ? nil : path
     }
 
-    func workingDirectory(of pid: pid_t) -> String? {
+    package func workingDirectory(of pid: pid_t) -> String? {
         var info = proc_vnodepathinfo()
         let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
         guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
@@ -377,7 +377,7 @@ struct LiveActivityKernel: ActivityKernel {
         return path.isEmpty ? nil : path
     }
 
-    func process(_ pid: pid_t) -> ActivityProcess? {
+    package func process(_ pid: pid_t) -> ActivityProcess? {
         guard pid >= 0 else { return nil }
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.stride
@@ -387,7 +387,7 @@ struct LiveActivityKernel: ActivityKernel {
         return ProcessTable.record(info)
     }
 
-    func auditToken(of pid: pid_t) -> ActivityAuditToken? {
+    package func auditToken(of pid: pid_t) -> ActivityAuditToken? {
         var name: mach_port_name_t = 0
         guard pid > 0, task_name_for_pid(mach_task_self_, pid, &name) == KERN_SUCCESS else { return nil }
         defer { mach_port_deallocate(mach_task_self_, name) }
@@ -400,7 +400,7 @@ struct LiveActivityKernel: ActivityKernel {
         return answer == KERN_SUCCESS ? ActivityAuditToken(token) : nil
     }
 
-    func path(of token: ActivityAuditToken) -> String? {
+    package func path(of token: ActivityAuditToken) -> String? {
         var audit = token.token
         var buffer = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
         let length = proc_pidpath_audittoken(&audit, &buffer, UInt32(buffer.count))
@@ -417,9 +417,9 @@ struct LiveActivityKernel: ActivityKernel {
         unsafeBitCast($0, to: SignalByToken.self)
     }
 
-    var signalsByToken: Bool { Self.signalByToken != nil }
+    package var signalsByToken: Bool { Self.signalByToken != nil }
 
-    func signal(_ signal: Int32, by token: ActivityAuditToken) -> Int32 {
+    package func signal(_ signal: Int32, by token: ActivityAuditToken) -> Int32 {
         // Never this process nor launchd, whoever asks.
         guard token.pid > 1, token.pid != getpid() else { return EPERM }
         // The isolated-run gate, whoever holds this kernel (6.10 step 11):
@@ -432,19 +432,19 @@ struct LiveActivityKernel: ActivityKernel {
         return answer == -1 ? errno : answer
     }
 
-    func signal(_ signal: Int32, pid: pid_t) -> Int32 {
+    package func signal(_ signal: Int32, pid: pid_t) -> Int32 {
         guard pid > 1, pid != getpid() else { return EPERM }
         if let refused = ActivitySignalGate.shared.refusal(of: pid, kernel: self) { return refused }
         return kill(pid, signal) == 0 ? 0 : errno
     }
 
-    func session(of pid: pid_t) -> pid_t? {
+    package func session(of pid: pid_t) -> pid_t? {
         guard pid > 0 else { return nil }
         let session = getsid(pid)
         return session > 0 ? session : nil
     }
 
-    func signal(_ signal: Int32, group: pid_t) -> Int32 {
+    package func signal(_ signal: Int32, group: pid_t) -> Int32 {
         guard group > 1, group != getpgrp(), group != getpid() else { return EPERM }
         // The isolated-run gate, for every member the group has now.
         if ActivitySignalGate.shared.guards {
@@ -456,7 +456,7 @@ struct LiveActivityKernel: ActivityKernel {
         return killpg(group, signal) == 0 ? 0 : errno
     }
 
-    func setPriority(_ change: ActivityPriorityChange, pid: pid_t) -> Int32 {
+    package func setPriority(_ change: ActivityPriorityChange, pid: pid_t) -> Int32 {
         guard pid > 1, pid != getpid() else { return EPERM }
         // The isolated-run gate, as the sends make it (6.10 step 11).
         if let refused = ActivitySignalGate.shared.refusal(of: pid, kernel: self) { return refused }
@@ -470,7 +470,7 @@ struct LiveActivityKernel: ActivityKernel {
         return answer == 0 ? 0 : errno
     }
 
-    func quitApp(pid: pid_t, executable: String?, force: Bool) -> Int32 {
+    package func quitApp(pid: pid_t, executable: String?, force: Bool) -> Int32 {
         guard pid > 1, pid != getpid() else { return EPERM }
         // The isolated-run gate, as the sends make it (6.10 step 11).
         if let refused = ActivitySignalGate.shared.refusal(of: pid, kernel: self) { return refused }
@@ -494,60 +494,60 @@ struct LiveActivityKernel: ActivityKernel {
 /// cost time or hold it. Its signals reach nothing real: each is recorded
 /// (`sent`), a stop and a continue change the record's state, and a
 /// token answers ESRCH once its process is gone or exec'd (`exec`).
-final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
-    struct Process {
-        var record: ActivityProcess
+package final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
+    package struct Process {
+        package var record: ActivityProcess
         /// Its counters; `time` is the clock's when read.
-        var usage: ActivityUsage?
-        var name: String?
-        var path: String?
-        var codeSigning: ActivityCodeSigning?
+        package var usage: ActivityUsage?
+        package var name: String?
+        package var path: String?
+        package var codeSigning: ActivityCodeSigning?
         /// `KERN_PROCARGS2`'s bytes (`FakeActivityKernel.arguments`).
-        var arguments: [UInt8]?
+        package var arguments: [UInt8]?
         /// What an `exec` between the size query and the read put in
         /// `arguments`' place: the size asked is `arguments`', what is read
         /// these.
-        var argumentsAfterExec: [UInt8]?
-        var descriptors: [proc_fdinfo] = []
-        var sockets: [Int32: socket_fdinfo] = [:]
+        package var argumentsAfterExec: [UInt8]?
+        package var descriptors: [proc_fdinfo] = []
+        package var sockets: [Int32: socket_fdinfo] = [:]
         /// Its working folder (`PROC_PIDVNODEPATHINFO`).
-        var folder: String?
+        package var folder: String?
         /// The files its descriptors hold open, by descriptor
         /// (`PROC_PIDFDVNODEPATHINFO`): list them in `descriptors` too, as
         /// vnodes (`descriptor(_:socket: false)`).
-        var files: [Int32: String] = [:]
+        package var files: [Int32: String] = [:]
         /// The pid's version, as an audit token carries it: each image's own,
         /// as the kernel's are — `add` gives a process one, `exec` the next.
-        var image: UInt32 = 0
+        package var image: UInt32 = 0
         /// Its session (`getsid`); nil: unreadable.
-        var session: pid_t?
+        package var session: pid_t?
         /// The process macOS holds responsible for it (D-31); nil: its own.
-        var responsible: pid_t?
+        package var responsible: pid_t?
     }
 
     /// A signal the fake was asked to send.
-    struct Sent: Hashable, Sendable {
-        let pid: pid_t
-        let signal: Int32
+    package struct Sent: Hashable, Sendable {
+        package let pid: pid_t
+        package let signal: Int32
         /// By an audit token; false for the fallback's `kill(pid, …)`.
-        let pinned: Bool
+        package let pinned: Bool
         /// To the process group `pid` names (`killpg`).
-        var group = false
+        package var group = false
     }
 
     /// A priority the fake was asked to set.
-    struct Priority: Hashable, Sendable {
-        let pid: pid_t
-        let change: ActivityPriorityChange
+    package struct Priority: Hashable, Sendable {
+        package let pid: pid_t
+        package let change: ActivityPriorityChange
     }
 
     /// An app the fake was asked to quit.
-    struct Quit: Hashable, Sendable {
-        let pid: pid_t
-        let force: Bool
+    package struct Quit: Hashable, Sendable {
+        package let pid: pid_t
+        package let force: Bool
     }
 
-    let uid: uid_t
+    package let uid: uid_t
     private let lock = NSLock()
     private var table: [pid_t: Process] = [:]
     private var reniced: [Priority] = []
@@ -572,13 +572,13 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     private var responsibility = true
     private var sleepHolds: [pid_t: ActivitySleepHold]? = [:]
 
-    init(uid: uid_t = 501) { self.uid = uid }
+    package init(uid: uid_t = 501) { self.uid = uid }
 
     // MARK: The test's side
 
     /// A process, its image a new one: a token taken of whatever held its
     /// pid before names nothing now.
-    func add(_ process: Process) {
+    package func add(_ process: Process) {
         lock.withLock {
             var process = process
             lastImage += 1
@@ -587,9 +587,9 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         }
     }
 
-    func remove(_ pid: pid_t) { _ = lock.withLock { table.removeValue(forKey: pid) } }
+    package func remove(_ pid: pid_t) { _ = lock.withLock { table.removeValue(forKey: pid) } }
 
-    func update(_ pid: pid_t, _ change: (inout Process) -> Void) {
+    package func update(_ pid: pid_t, _ change: (inout Process) -> Void) {
         lock.withLock {
             guard var process = table[pid] else { return }
             change(&process)
@@ -598,29 +598,29 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     }
 
     /// Moves the clock on.
-    func advance(_ nanoseconds: UInt64) { lock.withLock { clock += nanoseconds } }
+    package func advance(_ nanoseconds: UInt64) { lock.withLock { clock += nanoseconds } }
 
     /// The Mac slept for `nanoseconds`: the continuous clock moves, uptime doesn't.
-    func sleep(_ nanoseconds: UInt64) { lock.withLock { slept += nanoseconds } }
+    package func sleep(_ nanoseconds: UInt64) { lock.withLock { slept += nanoseconds } }
 
     /// Without `csops`, as a system that dropped it.
-    func dropCodeSigningCall() { lock.withLock { csops = false } }
+    package func dropCodeSigningCall() { lock.withLock { csops = false } }
 
     /// `KERN_PROC_ALL` refused while set, as a failing sysctl.
-    func refuseTable(_ refused: Bool) { lock.withLock { tableRefused = refused } }
+    package func refuseTable(_ refused: Bool) { lock.withLock { tableRefused = refused } }
 
     /// No audit token for anyone while set, as the one same-uid process in
     /// 856 that gave none (6.10 step 6).
-    func refuseTokens(_ refused: Bool) { lock.withLock { tokens = !refused } }
+    package func refuseTokens(_ refused: Bool) { lock.withLock { tokens = !refused } }
 
     /// Without `proc_signal_with_audittoken`, as a system that lacks it.
-    func dropTokenSignal() { lock.withLock { tokenCall = false } }
+    package func dropTokenSignal() { lock.withLock { tokenCall = false } }
 
     /// `pid` an app LaunchServices lists; `asked`: false when it can't be
     /// asked to quit (`terminate` answering false); `executable`: its
     /// bundle's, where the image it runs is another (a launcher that
     /// exec'd a runtime).
-    func app(_ pid: pid_t, asked: Bool = true, executable: String? = nil) {
+    package func app(_ pid: pid_t, asked: Bool = true, executable: String? = nil) {
         lock.withLock {
             apps.insert(pid)
             bundleExecutables[pid] = executable
@@ -630,11 +630,11 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// Without the responsibility call, as a system that lacks it or where
     /// it turned itself off (D-31): it answers nothing.
-    func dropResponsibilityCall() { lock.withLock { responsibility = false } }
+    package func dropResponsibilityCall() { lock.withLock { responsibility = false } }
 
     /// `pid` execs `path`: the same pid and start, another image — its
     /// version moved on, so a token taken before names nothing now.
-    func exec(_ pid: pid_t, path: String?, name: String) {
+    package func exec(_ pid: pid_t, path: String?, name: String) {
         lock.withLock {
             guard var process = table[pid] else { return }
             lastImage += 1
@@ -647,16 +647,16 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     }
 
     /// The signals it was asked to send, in order.
-    var sent: [Sent] { lock.withLock { sends } }
+    package var sent: [Sent] { lock.withLock { sends } }
 
     /// The priorities it was asked to set, in order.
-    var priorities: [Priority] { lock.withLock { reniced } }
+    package var priorities: [Priority] { lock.withLock { reniced } }
 
     /// The apps it was asked to quit, in order.
-    var quitsAsked: [Quit] { lock.withLock { quits } }
+    package var quitsAsked: [Quit] { lock.withLock { quits } }
 
     /// `record` with another state, or another name.
-    static func record(_ record: ActivityProcess, status: Int32, shortName: String? = nil) -> ActivityProcess {
+    package static func record(_ record: ActivityProcess, status: Int32, shortName: String? = nil) -> ActivityProcess {
         ActivityProcess(
             identity: record.identity, parentPID: record.parentPID, group: record.group, terminal: record.terminal,
             terminalGroup: record.terminalGroup, effectiveUID: record.effectiveUID, realUID: record.realUID, savedUID: record.savedUID,
@@ -665,15 +665,15 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     }
 
     /// How many times `call` ("processes", "usage", "socket"…) was made.
-    func count(_ call: String) -> Int { lock.withLock { counts[call] ?? 0 } }
+    package func count(_ call: String) -> Int { lock.withLock { counts[call] ?? 0 } }
 
-    func resetCounts() { lock.withLock { counts = [:] } }
+    package func resetCounts() { lock.withLock { counts = [:] } }
 
     /// Runs as each call but `uptime` is made, with the call's name,
     /// outside the fake's lock: a test moves the clock as a call costs, or
     /// holds a call until it lets go (a tick in flight, a folder on a
     /// mount that doesn't answer). Nil removes it.
-    func onCall(_ hook: (@Sendable (String) -> Void)?) { lock.withLock { self.hook = hook } }
+    package func onCall(_ hook: (@Sendable (String) -> Void)?) { lock.withLock { self.hook = hook } }
 
     private func asked<T>(_ call: String, _ body: () -> T) -> T {
         let hook = lock.withLock { () -> (@Sendable (String) -> Void)? in
@@ -686,7 +686,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// A process record, as `KERN_PROC_ALL` would give it. `uid` is its
     /// effective uid; its real and saved ones are `uid` unless given.
-    static func record(
+    package static func record(
         pid: pid_t, start: UInt64, parent: pid_t, uid: uid_t = 501, realUID: uid_t? = nil, savedUID: uid_t? = nil, group: pid_t? = nil,
         terminal: dev_t? = nil, status: Int32 = SRUN, flags: ActivityProcess.Flags = [], ignoredSignals: UInt32 = 0, name: String = "fake"
     ) -> ActivityProcess {
@@ -697,7 +697,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     }
 
     /// Usage counters, `time` filled in when read.
-    static func usage(cpuTime: UInt64 = 0, footprint: UInt64 = 0, threads: Int32 = 1, running: Int32 = 0, energy: UInt64? = 0) -> ActivityUsage {
+    package static func usage(cpuTime: UInt64 = 0, footprint: UInt64 = 0, threads: Int32 = 1, running: Int32 = 0, energy: UInt64? = 0) -> ActivityUsage {
         ActivityUsage(
             time: 0, cpuTime: cpuTime, footprint: footprint, residentSize: footprint, threads: threads, runningThreads: running, priority: 31,
             energy: energy, idleWakeups: 0, interruptWakeups: 0, diskRead: 0, diskWritten: 0)
@@ -708,7 +708,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     /// launchd's own strings. `title`: written over argv's words in place,
     /// as libuv's `uv_set_process_title` writes it — cut to the words'
     /// area with its NUL, NULs after it to the area's end.
-    static func arguments(
+    package static func arguments(
         executable: String, _ words: [String], environment: [String] = [], apple: [String] = ["ptr_munge="], title: String? = nil
     ) -> [UInt8] {
         var bytes: [UInt8] = []
@@ -729,12 +729,12 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     }
 
     /// A socket descriptor of `PROC_PIDLISTFDS`'s.
-    static func descriptor(_ fd: Int32, socket: Bool = true) -> proc_fdinfo {
+    package static func descriptor(_ fd: Int32, socket: Bool = true) -> proc_fdinfo {
         proc_fdinfo(proc_fd: fd, proc_fdtype: UInt32(socket ? PROX_FDTYPE_SOCKET : PROX_FDTYPE_VNODE))
     }
 
     /// A TCP socket as `PROC_PIDFDSOCKETINFO` gives it.
-    static func tcp(
+    package static func tcp(
         local: String, port: UInt16, remote: String? = nil, remotePort: UInt16 = 0, state: TCPState = .listen, dualStack: Bool = false,
         handle: UInt64 = 1, backlog: Int16 = 0, backlogLimit: Int16 = 128
     ) -> socket_fdinfo {
@@ -751,7 +751,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     }
 
     /// A UDP socket.
-    static func udp(local: String, port: UInt16, remote: String? = nil, remotePort: UInt16 = 0, handle: UInt64 = 1) -> socket_fdinfo {
+    package static func udp(local: String, port: UInt16, remote: String? = nil, remotePort: UInt16 = 0, handle: UInt64 = 1) -> socket_fdinfo {
         var info = internet(local: local, port: port, remote: remote, remotePort: remotePort, dualStack: false, handle: handle)
         info.psi.soi_kind = Int32(SOCKINFO_IN)
         info.psi.soi_protocol = IPPROTO_UDP
@@ -761,7 +761,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// A unix socket; bound to `path` and accepting (`SO_ACCEPTCONN`) when
     /// `listening` (D-32).
-    static func unix(handle: UInt64 = 1, path: String? = nil, listening: Bool = false) -> socket_fdinfo {
+    package static func unix(handle: UInt64 = 1, path: String? = nil, listening: Bool = false) -> socket_fdinfo {
         var info = socket_fdinfo()
         info.psi.soi_so = handle
         info.psi.soi_kind = Int32(SOCKINFO_UN)
@@ -803,25 +803,25 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     // MARK: ActivityKernel
 
-    func uptime() -> UInt64 { lock.withLock { clock } }
+    package func uptime() -> UInt64 { lock.withLock { clock } }
 
-    func continuousTime() -> UInt64 { lock.withLock { clock + slept } }
+    package func continuousTime() -> UInt64 { lock.withLock { clock + slept } }
 
-    func meterCounters() -> SystemMeterCounters? { asked("meters") { meters } }
+    package func meterCounters() -> SystemMeterCounters? { asked("meters") { meters } }
 
-    func sleepAssertions() -> [pid_t: ActivitySleepHold]? { asked("sleepAssertions") { sleepHolds } }
+    package func sleepAssertions() -> [pid_t: ActivitySleepHold]? { asked("sleepAssertions") { sleepHolds } }
 
     /// Who holds a sleep assertion next (nil: unreadable).
-    func setSleepHolds(_ holds: [pid_t: ActivitySleepHold]?) { lock.withLock { sleepHolds = holds } }
+    package func setSleepHolds(_ holds: [pid_t: ActivitySleepHold]?) { lock.withLock { sleepHolds = holds } }
 
     /// What the meters read next (nil: unreadable).
-    func setMeters(_ counters: SystemMeterCounters?) { lock.withLock { meters = counters } }
+    package func setMeters(_ counters: SystemMeterCounters?) { lock.withLock { meters = counters } }
 
-    func processes() -> [ActivityProcess]? {
+    package func processes() -> [ActivityProcess]? {
         asked("processes") { tableRefused ? nil : table.values.map(\.record).sorted { $0.pid < $1.pid } }
     }
 
-    func usage(of pid: pid_t) -> ActivityUsage? {
+    package func usage(of pid: pid_t) -> ActivityUsage? {
         asked("usage") {
             guard let process = table[pid], process.record.effectiveUID == uid, !process.record.isZombie, let usage = process.usage else { return nil }
             return ActivityUsage(
@@ -831,23 +831,23 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         }
     }
 
-    func name(of pid: pid_t) -> String? {
+    package func name(of pid: pid_t) -> String? {
         asked("name") { table[pid]?.name }
     }
 
-    func path(of pid: pid_t) -> String? { asked("path") { table[pid]?.path } }
+    package func path(of pid: pid_t) -> String? { asked("path") { table[pid]?.path } }
 
-    func responsiblePID(of pid: pid_t) -> pid_t? { asked("responsible") { responsibility ? table[pid]?.responsible : nil } }
+    package func responsiblePID(of pid: pid_t) -> pid_t? { asked("responsible") { responsibility ? table[pid]?.responsible : nil } }
 
-    var readsResponsibility: Bool { lock.withLock { responsibility } }
+    package var readsResponsibility: Bool { lock.withLock { responsibility } }
 
-    func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? {
+    package func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? {
         asked("groupMembers") {
             Array(table.values.map(\.record).filter { $0.group == group && !$0.isZombie }.map(\.pid).sorted().prefix(max(limit, 0)))
         }
     }
 
-    func codeSigningStatus(of pid: pid_t) -> CodeSigningAnswer {
+    package func codeSigningStatus(of pid: pid_t) -> CodeSigningAnswer {
         asked("csops") {
             guard csops else { return .unavailable }
             guard let process = table[pid] else { return .gone }
@@ -855,16 +855,16 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         }
     }
 
-    func securityCodeSigning(of pid: pid_t) -> ActivityCodeSigning? { asked("security") { table[pid]?.codeSigning } }
+    package func securityCodeSigning(of pid: pid_t) -> ActivityCodeSigning? { asked("security") { table[pid]?.codeSigning } }
 
-    func argumentsLength(of pid: pid_t) -> Int? {
+    package func argumentsLength(of pid: pid_t) -> Int? {
         asked("argumentsLength") { table[pid].flatMap { $0.record.effectiveUID == uid ? $0.arguments?.count : nil } }
     }
 
     /// As XNU's `sysctl_procargsx` answers: the bytes whole when the region
     /// holds them; a region too small gets argc and the strings' last
     /// bytes — never their head — and no error.
-    func readArguments(of pid: pid_t, into region: UnsafeMutableRawBufferPointer) -> Int? {
+    package func readArguments(of pid: pid_t, into region: UnsafeMutableRawBufferPointer) -> Int? {
         asked("arguments") {
             guard let process = table[pid], process.record.effectiveUID == uid,
                 let bytes = process.argumentsAfterExec ?? process.arguments, region.count > 4
@@ -879,43 +879,43 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         }
     }
 
-    func descriptors(of pid: pid_t) -> [proc_fdinfo]? {
+    package func descriptors(of pid: pid_t) -> [proc_fdinfo]? {
         asked("descriptors") { table[pid].flatMap { $0.record.effectiveUID == uid ? $0.descriptors : nil } }
     }
 
-    func socket(of pid: pid_t, descriptor: Int32) -> socket_fdinfo? {
+    package func socket(of pid: pid_t, descriptor: Int32) -> socket_fdinfo? {
         asked("socket") { table[pid].flatMap { $0.record.effectiveUID == uid ? $0.sockets[descriptor] : nil } }
     }
 
-    func vnodePath(of pid: pid_t, descriptor: Int32) -> String? {
+    package func vnodePath(of pid: pid_t, descriptor: Int32) -> String? {
         asked("vnodePath") { table[pid].flatMap { $0.record.effectiveUID == uid ? $0.files[descriptor] : nil } }
     }
 
-    func workingDirectory(of pid: pid_t) -> String? {
+    package func workingDirectory(of pid: pid_t) -> String? {
         asked("folder") { table[pid].flatMap { $0.record.effectiveUID == uid && !$0.record.isZombie ? $0.folder : nil } }
     }
 
-    func process(_ pid: pid_t) -> ActivityProcess? { asked("process") { table[pid]?.record } }
+    package func process(_ pid: pid_t) -> ActivityProcess? { asked("process") { table[pid]?.record } }
 
     /// As the kernel answers: the user's live processes only — a setuid
     /// one's effective uid is root's, and gives no token.
-    func auditToken(of pid: pid_t) -> ActivityAuditToken? {
+    package func auditToken(of pid: pid_t) -> ActivityAuditToken? {
         asked("token") {
             guard tokens, let process = table[pid], process.record.effectiveUID == uid, !process.record.isZombie else { return nil }
             return ActivityAuditToken(pid: pid, effectiveUID: uid, realUID: process.record.realUID, version: process.image)
         }
     }
 
-    func path(of token: ActivityAuditToken) -> String? {
+    package func path(of token: ActivityAuditToken) -> String? {
         asked("tokenPath") {
             guard let process = table[token.pid], process.image == token.version, !process.record.isZombie else { return nil }
             return process.path
         }
     }
 
-    var signalsByToken: Bool { lock.withLock { tokenCall } }
+    package var signalsByToken: Bool { lock.withLock { tokenCall } }
 
-    func signal(_ signal: Int32, by token: ActivityAuditToken) -> Int32 {
+    package func signal(_ signal: Int32, by token: ActivityAuditToken) -> Int32 {
         asked("signal") {
             guard tokenCall else { return ENOSYS }
             guard let process = table[token.pid], process.image == token.version, !process.record.isZombie else { return ESRCH }
@@ -925,7 +925,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     }
 
     /// As `kill(2)` answers: a zombie takes it too.
-    func signal(_ signal: Int32, pid: pid_t) -> Int32 {
+    package func signal(_ signal: Int32, pid: pid_t) -> Int32 {
         asked("kill") {
             guard pid > 1, let process = table[pid] else { return ESRCH }
             deliver(signal, to: process, pinned: false)
@@ -933,11 +933,11 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         }
     }
 
-    func session(of pid: pid_t) -> pid_t? { asked("session") { table[pid]?.session } }
+    package func session(of pid: pid_t) -> pid_t? { asked("session") { table[pid]?.session } }
 
     /// As `killpg` answers: every member of the group takes it, recorded
     /// once, as the group's.
-    func signal(_ signal: Int32, group: pid_t) -> Int32 {
+    package func signal(_ signal: Int32, group: pid_t) -> Int32 {
         asked("killpg") {
             guard group > 1 else { return EPERM }
             let members = table.values.filter { $0.record.group == group }
@@ -954,7 +954,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// Recorded; a nice changes its record's, never downward (EACCES, as
     /// the kernel answers the user).
-    func setPriority(_ change: ActivityPriorityChange, pid: pid_t) -> Int32 {
+    package func setPriority(_ change: ActivityPriorityChange, pid: pid_t) -> Int32 {
         asked("priority") {
             guard pid > 1, var process = table[pid], !process.record.isZombie else { return ESRCH }
             if case .nice(let value) = change {
@@ -974,7 +974,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// Recorded for an app it lists, its executable the one named — none
     /// named, nothing asked (ENOENT); a Force Quit ends it at once.
-    func quitApp(pid: pid_t, executable: String?, force: Bool) -> Int32 {
+    package func quitApp(pid: pid_t, executable: String?, force: Bool) -> Int32 {
         asked("quit") {
             guard pid > 1, let process = table[pid], !process.record.isZombie else { return ESRCH }
             guard apps.contains(pid), let executable else { return ENOENT }

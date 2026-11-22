@@ -19,15 +19,15 @@ import Foundation
 /// 5. the class check again, then the command typed into a new tab pinned
 ///    to the context — in a scenario, recorded instead.
 extension KubernetesPageModel {
-    static let helmWriteVerbs: [KubeProcessVerb] = [.helmRollback, .helmUninstall]
+    package static let helmWriteVerbs: [KubeProcessVerb] = [.helmRollback, .helmUninstall]
 
     /// The context the Helm section's releases are of.
-    var helmContext: KubeContext? { model.contexts.context(named: helm.context ?? model.selectedName ?? "") }
+    package var helmContext: KubeContext? { model.contexts.context(named: helm.context ?? model.selectedName ?? "") }
 
     /// A release's writes — its detail's buttons, its row's menu, the
     /// palette's — each greyed with why: a read-only context, Helm 2, no
     /// earlier revision, the access review's no (asked as they are shown).
-    func helmWriteVerbs(for release: KubeHelmRelease) -> [ResourceVerb] {
+    package func helmWriteVerbs(for release: KubeHelmRelease) -> [ResourceVerb] {
         guard let context = helmContext else { return [] }
         return Self.helmWriteVerbs.map { verb in
             ResourceVerb(
@@ -39,7 +39,7 @@ extension KubernetesPageModel {
     }
 
     /// Why `verb` can't be done on the release now; nil when it can.
-    func helmWriteUnavailable(_ verb: KubeProcessVerb, _ context: KubeContext, _ release: KubeHelmRelease) -> String? {
+    package func helmWriteUnavailable(_ verb: KubeProcessVerb, _ context: KubeContext, _ release: KubeHelmRelease) -> String? {
         if let refused = KubeProcessCheck.rule(verb, for: context).refused { return refused }
         if let refused = KubeHelmWrite.refusal(name: release.name, storage: release.storage) { return refused }
         if verb == .helmRollback, KubeHelmWrite.choices(release).isEmpty { return Self.noEarlierRevision(release) }
@@ -52,16 +52,16 @@ extension KubernetesPageModel {
         return nil
     }
 
-    static func noEarlierRevision(_ release: KubeHelmRelease) -> String {
+    package static func noEarlierRevision(_ release: KubeHelmRelease) -> String {
         "Helm release \(release.namespace)/\(release.name) has no earlier revision kept to roll back to."
     }
 
     /// The release a key or the palette acts on: the row highlighted —
     /// ↑ ↓ move it off the one opened —, else the one opened.
-    var helmPicked: KubeHelmRelease? { helm.selectedRelease ?? helm.opened?.release }
+    package var helmPicked: KubeHelmRelease? { helm.selectedRelease ?? helm.opened?.release }
 
     /// ⌫ in the Helm section: the release highlighted, uninstalled — asked, its name typed.
-    func helmDeleteKey() -> Bool {
+    package func helmDeleteKey() -> Bool {
         guard let release = helmPicked else { return false }
         runHelmWrite(.helmUninstall, on: release)
         return true
@@ -70,7 +70,7 @@ extension KubernetesPageModel {
     /// `verb` on the release, by the one path every tab write takes; a
     /// rollback goes to `revision` when given (its History row), else
     /// to one picked from the history.
-    func runHelmWrite(_ verb: KubeProcessVerb, on release: KubeHelmRelease, revision: Int? = nil) {
+    package func runHelmWrite(_ verb: KubeProcessVerb, on release: KubeHelmRelease, revision: Int? = nil) {
         guard writeChecking == nil else { return }
         writeStatus = nil
         guard Self.helmWriteVerbs.contains(verb) else {

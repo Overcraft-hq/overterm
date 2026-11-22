@@ -7,7 +7,7 @@ import Foundation
 /// by kubectl's pid; a database tunnel, by ssh's pid and port; Overterm's
 /// MCP bridge; a pane's process; then a known holder, a launchd job, an
 /// app, macOS, another user's or the user's elsewhere.
-enum ActivityPortOwner: Hashable, Sendable {
+package enum ActivityPortOwner: Hashable, Sendable {
     case container(name: String, project: String?)
     case forward(target: String)
     case tunnel(name: String)
@@ -30,7 +30,7 @@ enum ActivityPortOwner: Hashable, Sendable {
     case leftBehind
 
     /// The filter's `owner:` word (6.6).
-    var word: String {
+    package var word: String {
         switch self {
         case .container, .engine: "container"
         case .forward: "forward"
@@ -51,7 +51,7 @@ enum ActivityPortOwner: Hashable, Sendable {
     /// An app's, macOS's or a known holder's: what folds into "N ephemeral
     /// listeners of your apps" (6.8). A server the user started elsewhere,
     /// a launchd job and every named source never fold.
-    var foldsWhenEphemeral: Bool {
+    package var foldsWhenEphemeral: Bool {
         switch self {
         case .app, .macOS, .known: true
         default: false
@@ -65,8 +65,8 @@ enum ActivityPortOwner: Hashable, Sendable {
 /// holders" —; a container's published port nobody in scope is seen
 /// holding; a connection, paired by the 4-tuple when both ends are the
 /// user's; or the fold of apps' ephemeral listeners.
-struct ActivityPortRow: ResourceTableRow, Sendable {
-    enum Kind: Hashable, Sendable {
+package struct ActivityPortRow: ResourceTableRow, Sendable {
+    package enum Kind: Hashable, Sendable {
         case listener
         case connection
         /// A unix socket a process of the user's listens on (D-32, behind
@@ -76,72 +76,72 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
         case folded
     }
 
-    let id: String
-    var kind = Kind.listener
-    let port: Int
-    let proto: String
+    package let id: String
+    package var kind = Kind.listener
+    package let port: Int
+    package let proto: String
     /// The bound address as lsof prints it (`*`, `127.0.0.1`, `[::1]`).
-    let address: String
-    let families: SocketRecord.Families
-    let scope: ListeningPort.Scope
-    var process: String
-    let holder: ActivityProcessID?
+    package let address: String
+    package let families: SocketRecord.Families
+    package let scope: ListeningPort.Scope
+    package var process: String
+    package let holder: ActivityProcessID?
     /// The tab `o` opens it in (6.8, Open): its holder's, a container's
     /// checkout's, a forward's.
-    var tab: UUID?
-    var tabTitle: String?
+    package var tab: UUID?
+    package var tabTitle: String?
     /// Where a browser reaches it; nil when there is none to open.
-    var url: URL?
+    package var url: URL?
     /// Who holds it, in the filter's `owner:` words (6.6).
-    var owner = "elsewhere"
-    var portOwner = ActivityPortOwner.elsewhere
+    package var owner = "elsewhere"
+    package var portOwner = ActivityPortOwner.elsewhere
     /// The Owner column's words.
-    var ownerText = ""
+    package var ownerText = ""
     /// The Where column's: tab · checkout · branch · agent.
-    var whereText = ""
+    package var whereText = ""
     /// Others holding the very socket (`soi_so`).
-    var coHolders: [ActivityProcessID] = []
+    package var coHolders: [ActivityProcessID] = []
     /// The holder's start (a socket has no time of its own): Since.
-    var since: Date?
-    var sinceText = ""
+    package var since: Date?
+    package var sinceText = ""
     /// The user's established connections to it, paired by the 4-tuple.
-    var clients = 0
+    package var clients = 0
     /// Accepted by the kernel and not yet by the process, against its limit.
-    var backlog = 0
-    var backlogLimit = 0
+    package var backlog = 0
+    package var backlogLimit = 0
     /// A loopback listener a tunnel client is connected to: "cloudflared
     /// (pid 4242)" — not This Mac only.
-    var forwardedBy: String?
+    package var forwardedBy: String?
     /// A collision with another holder, or what a known holder is (6.8).
-    var note: String?
-    var collisions: [PortCollision.Kind] = []
+    package var note: String?
+    package var collisions: [PortCollision.Kind] = []
     /// Its bound addresses, and its sockets' kernel handles: what
     /// collisions are found by.
-    var bound: [ActivityAddress?] = []
-    var sockets: Set<UInt64> = []
+    package var bound: [ActivityAddress?] = []
+    package var sockets: Set<UInt64> = []
     /// In the ephemeral range and nobody's in particular: folded (6.8).
-    var ephemeral = false
+    package var ephemeral = false
     /// A connection's count, a fold's listeners.
-    var count = 1
+    package var count = 1
     /// A fold's state.
-    var folded = false
+    package var folded = false
     /// The checkout it belongs to, by its folder's name.
-    var checkout: String?
+    package var checkout: String?
     /// Another user's listener, from nettop: whose (D-25).
-    var user: String?
+    package var user: String?
     /// What a forward typed in a terminal reaches (6.8 rule 6, stage 4).
-    var target: String?
+    package var target: String?
 
-    var height: CGFloat { 24 }
+    package var height: CGFloat { 24 }
 
     /// A fold spans the columns.
-    var spansColumns: Bool { kind == .folded }
+    package var spansColumns: Bool { kind == .folded }
 
-    var backlogFull: Bool { backlogLimit > 0 && backlog >= backlogLimit }
+    package var backlogFull: Bool { backlogLimit > 0 && backlog >= backlogLimit }
 
     /// "This Mac" or "Network" (6.1), the one address it is bound to, or
     /// who forwards it.
-    var reach: String {
+    package var reach: String {
         if kind == .unix { return "This Mac · socket file" }
         if let forwardedBy { return "forwarded by \(forwardedBy)" }
         switch scope {
@@ -151,7 +151,7 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
         }
     }
 
-    var familyWords: String {
+    package var familyWords: String {
         switch (families.contains(.v4), families.contains(.v6)) {
         case (true, true): "v4 + v6"
         case (true, false): "v4"
@@ -161,14 +161,14 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
     }
 
     /// "node · 4242", "+2 holders" when a forked server shares the socket.
-    var processText: String {
+    package var processText: String {
         guard kind == .listener else { return process }
         var text = process
         if !coHolders.isEmpty { text += " +\(coHolders.count) holder\(coHolders.count == 1 ? "" : "s")" }
         return text
     }
 
-    var accessibilityLabel: String {
+    package var accessibilityLabel: String {
         if kind == .folded { return process + (folded ? ", folded" : "") }
         if kind == .unix { return (["unix socket \(address)", processText] + (holder.map { ["pid \($0.pid)"] } ?? []) + [ownerText]).joined(separator: ", ") }
         var words = [kind == .connection ? "connection to :\(port)" : ":\(port) \(proto)", processText]
@@ -182,54 +182,54 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
 }
 
 /// Listening's rows from one snapshot (6.8): pure, off the main thread.
-enum ActivityPorts {
+package enum ActivityPorts {
     /// What the rows are made with besides the snapshot.
-    struct Inputs: Sendable {
-        var context = ActivityContext()
+    package struct Inputs: Sendable {
+        package var context = ActivityContext()
         /// Tabs' facts, titles masked.
-        var tabs: [UUID: ActivityTabFacts] = [:]
+        package var tabs: [UUID: ActivityTabFacts] = [:]
         /// The running containers, with their compose project's folder.
-        var containers: [ActivityContainer] = []
-        var launchAgents: [LaunchdJobs.Agent] = []
+        package var containers: [ActivityContainer] = []
+        package var launchAgents: [LaunchdJobs.Agent] = []
         /// `net.inet.ip.portrange.first`.
-        var ephemeralFirst = 49_152
+        package var ephemeralFirst = 49_152
         /// The user's established connections too (the header's toggle,
         /// `c`, or `state:established`).
-        var connections = false
+        package var connections = false
         /// The fold of apps' ephemeral listeners: folded unless false.
-        var folds: [String: Bool] = [:]
+        package var folds: [String: Bool] = [:]
         /// A filter shows its matches, never folded away.
-        var unfold = false
-        var scope = ActivityScope.mac
+        package var unfold = false
+        package var scope = ActivityScope.mac
         /// Every user's listeners as nettop last read them (D-25), shown
         /// when the read is believed, at the Mac's scope, with everyone's.
-        var others: NettopListeners.Reading?
-        var everyone = true
+        package var others: NettopListeners.Reading?
+        package var everyone = true
         /// launchd's socket jobs (`LaunchdSockets`): what names pid 1's.
-        var launchdSockets: [LaunchdSockets.Job] = []
+        package var launchdSockets: [LaunchdSockets.Job] = []
         /// The user's unix-socket listeners too (D-32).
-        var unixSockets = false
+        package var unixSockets = false
     }
 
     /// What they make: Listening's rows, listeners first, and every
     /// listener (the detail's, the switcher's) whatever the fold says.
-    struct Made: Sendable {
-        var rows: [ActivityPortRow] = []
-        var listeners: [ActivityPortRow] = []
+    package struct Made: Sendable {
+        package var rows: [ActivityPortRow] = []
+        package var listeners: [ActivityPortRow] = []
         /// Connection lines past the cap: said, never listed.
-        var droppedConnections = 0
+        package var droppedConnections = 0
     }
 
-    static let ephemeralFold = "ports:ephemeral"
-    static let ephemeralOthersFold = "ports:ephemeral-others"
+    package static let ephemeralFold = "ports:ephemeral"
+    package static let ephemeralOthersFold = "ports:ephemeral-others"
     /// Connections listed at most (6.8).
-    static let connectionCap = 500
+    package static let connectionCap = 500
 
     /// Tunnel clients by executable: a loopback listener one is connected
     /// to reaches past this Mac (6.8, Scope).
-    static let tunnelClients: Set<String> = ["ngrok", "cloudflared", "tailscale", "tailscaled", "bore", "frpc", "localtunnel", "lt"]
+    package static let tunnelClients: Set<String> = ["ngrok", "cloudflared", "tailscale", "tailscaled", "bore", "frpc", "localtunnel", "lt"]
 
-    static func make(of rows: [ActivityProcessRow], in snapshot: ActivitySnapshot, inputs: Inputs) -> Made {
+    package static func make(of rows: [ActivityProcessRow], in snapshot: ActivitySnapshot, inputs: Inputs) -> Made {
         let byIdentity = Dictionary(rows.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first })
         let own = rows.filter(\.isOwn).sorted { ($0.identity.start, $0.identity.pid) < ($1.identity.start, $1.identity.pid) }
         var listeners = holders(own, in: snapshot, published: inputs.context.published)
@@ -288,7 +288,7 @@ enum ActivityPorts {
     /// or a pre-fork server's worker — is that row's co-holder (6.8). An
     /// engine's sockets on one number for two containers (published on
     /// two host addresses) are a row each.
-    static func holders(_ own: [ActivityProcessRow], in snapshot: ActivitySnapshot, published: [ActivityContext.PublishedPort] = []) -> [ActivityPortRow] {
+    package static func holders(_ own: [ActivityProcessRow], in snapshot: ActivitySnapshot, published: [ActivityContext.PublishedPort] = []) -> [ActivityPortRow] {
         var result: [ActivityPortRow] = []
         var byKey: [String: [Int]] = [:]
         for process in own {
@@ -331,7 +331,7 @@ enum ActivityPorts {
     }
 
     /// `row`'s owner, by 6.8's order, and the words its columns say.
-    static func attribute(_ row: inout ActivityPortRow, process: ActivityProcessRow?, snapshot: ActivitySnapshot, inputs: Inputs) {
+    package static func attribute(_ row: inout ActivityPortRow, process: ActivityProcessRow?, snapshot: ActivitySnapshot, inputs: Inputs) {
         let context = inputs.context
         guard let holder = row.holder else { return }
         let records =
@@ -447,7 +447,7 @@ enum ActivityPorts {
     }
 
     /// `row` as `published`'s container: its owner, its checkout's tab.
-    static func container(_ row: inout ActivityPortRow, _ published: ActivityContext.PublishedPort, inputs: Inputs) {
+    package static func container(_ row: inout ActivityPortRow, _ published: ActivityContext.PublishedPort, inputs: Inputs) {
         row.portOwner = .container(name: published.container, project: published.project)
         row.ownerText = "container \(published.container)" + (published.project.map { " · \($0)" } ?? "")
         row.owner = row.portOwner.word
@@ -472,7 +472,7 @@ enum ActivityPorts {
     /// for every address, both families): `localhost` only where both
     /// families are published, `127.0.0.1` for `0.0.0.0`, `[::1]` for
     /// `::`, else that address — none for a link-local one. Pure.
-    static func url(publishedOn address: String, port: UInt16) -> URL? {
+    package static func url(publishedOn address: String, port: UInt16) -> URL? {
         let host: String
         switch address {
         case "", "*": host = "localhost"
@@ -488,7 +488,7 @@ enum ActivityPorts {
     /// What a port published on `address` is bound to, as a holder's
     /// sockets would say it: its families and addresses — a wildcard of
     /// each family for every address. Pure.
-    static func bound(publishedOn address: String) -> (families: SocketRecord.Families, bound: [ActivityAddress?]) {
+    package static func bound(publishedOn address: String) -> (families: SocketRecord.Families, bound: [ActivityAddress?]) {
         switch address {
         case "", "*": return ([.v4, .v6], [.v4(0), .v6(0, 0)])
         case "0.0.0.0": return (.v4, [.v4(0)])
@@ -505,7 +505,7 @@ enum ActivityPorts {
     /// container's own rows: at the Mac and wider than a tab, its checkout
     /// in scope (6.5: "a checkout's stack … at the checkout's scope and
     /// wider").
-    static func unseenContainers(_ listeners: [ActivityPortRow], in snapshot: ActivitySnapshot, inputs: Inputs) -> [ActivityPortRow] {
+    package static func unseenContainers(_ listeners: [ActivityPortRow], in snapshot: ActivitySnapshot, inputs: Inputs) -> [ActivityPortRow] {
         var rows: [ActivityPortRow] = []
         var seen = Set<String>()
         // A container published on both families' wildcards is published
@@ -550,7 +550,7 @@ enum ActivityPorts {
         return rows
     }
 
-    static func folder(of published: ActivityContext.PublishedPort, _ containers: [ActivityContainer]) -> String? {
+    package static func folder(of published: ActivityContext.PublishedPort, _ containers: [ActivityContainer]) -> String? {
         containers.first { $0.name == published.container }?.folder
             ?? published.project.flatMap { project in
                 containers.first { $0.project == project && $0.folder != nil }?.folder
@@ -558,13 +558,13 @@ enum ActivityPorts {
     }
 
     /// The first tab, in the strips' order, showing `folder`.
-    static func tab(of folder: String, _ tabs: [UUID: ActivityTabFacts]) -> UUID? {
+    package static func tab(of folder: String, _ tabs: [UUID: ActivityTabFacts]) -> UUID? {
         let path = URL(fileURLWithPath: folder).standardizedFileURL.path
         return tabs.values.filter { $0.checkout == path || $0.checkout == folder }.min { $0.order < $1.order }?.id
     }
 
     /// The Where column's words: tab · checkout · branch · agent.
-    static func whereText(_ process: ActivityProcessRow) -> String {
+    package static func whereText(_ process: ActivityProcessRow) -> String {
         guard let title = process.tabTitle else { return process.whereText }
         var words = ["“\(title)”"]
         if let checkout = process.checkout { words.append(checkout) }
@@ -576,9 +576,9 @@ enum ActivityPorts {
     // MARK: Connections
 
     /// One end of an established TCP connection.
-    struct End: Sendable {
-        let holder: ActivityProcessID
-        let record: SocketRecord
+    package struct End: Sendable {
+        package let holder: ActivityProcessID
+        package let record: SocketRecord
     }
 
     /// The user's established connections (6.8): two of the user's local
@@ -590,7 +590,7 @@ enum ActivityPorts {
     /// holder's. At most 500 lines, the rest counted in `dropped`; Clients
     /// and the tunnels a listener is forwarded by come from every pair.
     /// Remote addresses stay on the page: never in a row's id.
-    static func pairs(
+    package static func pairs(
         _ own: [ActivityProcessRow], in snapshot: ActivitySnapshot, byIdentity: [ActivityProcessID: ActivityProcessRow], inputs: Inputs
     ) -> (rows: [ActivityPortRow], clients: [String: Int], tunnels: [String: String], dropped: Int) {
         struct Endpoint: Hashable {
@@ -693,7 +693,7 @@ enum ActivityPorts {
     }
 
     /// "cloudflared (pid 4242)" when `holder` is a tunnel client.
-    static func tunnelClient(_ holder: ActivityProcessID, port: Int, byIdentity: [ActivityProcessID: ActivityProcessRow]) -> String? {
+    package static func tunnelClient(_ holder: ActivityProcessID, port: Int, byIdentity: [ActivityProcessID: ActivityProcessRow]) -> String? {
         guard let process = byIdentity[holder] else { return nil }
         let file = process.path.map(ActivityAttribution.fileName) ?? process.name
         if file == "ssh" {
@@ -709,7 +709,7 @@ enum ActivityPorts {
     /// The listeners' clients, and a loopback listener a tunnel client
     /// reaches marked forwarded (6.8, Scope) — both by the server's
     /// identity and port, from every pair, listed or past the cap.
-    static func count(_ listeners: inout [ActivityPortRow], clients: [String: Int], tunnels: [String: String]) {
+    package static func count(_ listeners: inout [ActivityPortRow], clients: [String: Int], tunnels: [String: String]) {
         for index in listeners.indices {
             guard let holder = listeners[index].holder else { continue }
             let row = listeners[index]
@@ -723,7 +723,7 @@ enum ActivityPorts {
 /// What the Activity page holds of Docker's (6.5, 6.8): nothing; its
 /// model shown — the running containers' published ports, Listening's
 /// owners —; or that and their usage, while Processes lists them.
-enum ActivityContainerWant: Hashable, Sendable {
+package enum ActivityContainerWant: Hashable, Sendable {
     case none, listed, usage
 }
 
@@ -733,7 +733,7 @@ extension ActivityPorts {
 
     /// `net.inet.ip.portrange.first`, read once for the app; 49152 where
     /// it can't be.
-    static func ephemeralRangeFirst() -> Int {
+    package static func ephemeralRangeFirst() -> Int {
         if let known = ephemeralLock.withLock({ ephemeralRead }) { return known }
         var value: Int32 = 0
         var size = MemoryLayout<Int32>.size
@@ -746,7 +746,7 @@ extension ActivityPorts {
 extension ActivityAddress {
     /// An address as Docker's `HostIp` writes it, IPv4 or IPv6 (a v4-mapped
     /// one taken as the IPv4 it maps); nil for anything else. Pure.
-    init?(text: String) {
+    package init?(text: String) {
         var v4 = in_addr()
         if inet_pton(AF_INET, text, &v4) == 1 {
             self.init(v4: v4)
@@ -770,7 +770,7 @@ extension ActivityPorts {
     /// named from its socket jobs (`LaunchdSockets`), the user's own
     /// LaunchAgent's as its service; macOS's daemons by name
     /// (`KnownHolders`); the rest by their user.
-    static func others(_ listeners: [ActivityPortRow], in snapshot: ActivitySnapshot, inputs: Inputs) -> [ActivityPortRow] {
+    package static func others(_ listeners: [ActivityPortRow], in snapshot: ActivitySnapshot, inputs: Inputs) -> [ActivityPortRow] {
         guard let reading = inputs.others, reading.isBelieved, inputs.everyone, inputs.scope == .mac else { return [] }
         var order: [String] = []
         var groups: [String: (process: ActivityProcess, name: String, records: [SocketRecord])] = [:]
@@ -805,7 +805,7 @@ extension ActivityPorts {
     }
 
     /// Another user's listener's owner (6.8 rules 8 and 9).
-    static func attributeOther(_ row: inout ActivityPortRow, process: ActivityProcess, snapshot: ActivitySnapshot, inputs: Inputs) {
+    package static func attributeOther(_ row: inout ActivityPortRow, process: ActivityProcess, snapshot: ActivitySnapshot, inputs: Inputs) {
         let file = snapshot.facts[process.identity]?.path.map(ActivityAttribution.fileName) ?? row.process
         if process.pid == 1, let job = LaunchdSockets.job(port: row.port, proto: row.proto, in: inputs.launchdSockets) {
             if job.domain == .user {
@@ -834,7 +834,7 @@ extension ActivityPorts {
     /// The user's unix-socket listeners (D-32): a row a holder and path,
     /// what shares the very socket as its co-holders, its owner as a port's
     /// is found. No URL, no Free: a socket file is freed by what made it.
-    static func unix(
+    package static func unix(
         _ own: [ActivityProcessRow], in snapshot: ActivitySnapshot, byIdentity: [ActivityProcessID: ActivityProcessRow], inputs: Inputs
     ) -> [ActivityPortRow] {
         var rows: [ActivityPortRow] = []

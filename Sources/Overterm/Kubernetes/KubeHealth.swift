@@ -18,9 +18,9 @@ import Foundation
 /// - **What needs another object** (`related`): a Service selecting no pod;
 ///   an Ingress sending to a Service that isn't there, or to a port it hasn't.
 ///   Said only when the list it needs was read whole.
-enum KubeHealth {
+package enum KubeHealth {
     /// A check: its code, how bad, what it is called.
-    enum Check: String, CaseIterable, Equatable, Hashable, Sendable {
+    package enum Check: String, CaseIterable, Equatable, Hashable, Sendable {
         case noReadinessProbe = "K101"
         case noLivenessProbe = "K102"
         case noRequests = "K103"
@@ -37,16 +37,16 @@ enum KubeHealth {
         case argoDegraded = "K602"
         case argoOutOfSync = "K603"
 
-        var code: String { rawValue }
+        package var code: String { rawValue }
 
-        var severity: Severity {
+        package var severity: Severity {
             switch self {
             case .serviceSelectsNone, .ingressMissingService, .ingressMissingPort, .recentRestarts, .pendingLong, .notReady, .argoDegraded: .error
             default: .warning
             }
         }
 
-        var title: String {
+        package var title: String {
             switch self {
             case .noReadinessProbe: "No readiness probe"
             case .noLivenessProbe: "No liveness probe"
@@ -67,42 +67,42 @@ enum KubeHealth {
         }
     }
 
-    enum Severity: Int, Comparable, Sendable {
+    package enum Severity: Int, Comparable, Sendable {
         case warning = 1
         case error = 2
 
-        static func < (lhs: Severity, rhs: Severity) -> Bool { lhs.rawValue < rhs.rawValue }
+        package static func < (lhs: Severity, rhs: Severity) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
     /// The object a finding is about: enough to link to it.
-    struct Subject: Hashable, Sendable {
-        var apiVersion: String
-        var kind: String
-        var namespace: String?
-        var name: String
+    package struct Subject: Hashable, Sendable {
+        package var apiVersion: String
+        package var kind: String
+        package var namespace: String?
+        package var name: String
 
-        var link: KubeLink { KubeLink(apiVersion: apiVersion, kind: kind, namespace: namespace, name: name) }
+        package var link: KubeLink { KubeLink(apiVersion: apiVersion, kind: kind, namespace: namespace, name: name) }
         /// `deployment/web`.
-        var said: String { "\(kind.lowercased())/\(name)" }
-        var group: String { apiVersion.contains("/") ? String(apiVersion.split(separator: "/").first ?? "") : "" }
+        package var said: String { "\(kind.lowercased())/\(name)" }
+        package var group: String { apiVersion.contains("/") ? String(apiVersion.split(separator: "/").first ?? "") : "" }
     }
 
-    struct Finding: Equatable, Hashable, Sendable, Identifiable {
-        var check: Check
-        var subject: Subject
+    package struct Finding: Equatable, Hashable, Sendable, Identifiable {
+        package var check: Check
+        package var subject: Subject
         /// A plain sentence: `container web has no readiness probe`.
-        var sentence: String
+        package var sentence: String
         /// A Flux object's K601 that the GitOps section calls Failed: its
         /// own Ready False — not a generation it hasn't looked at yet
         /// (Progressing, then Unknown), nor a source or dependency that
         /// isn't ready (Blocked). What the health card's GitOps line counts.
-        var fluxFailing = false
+        package var fluxFailing = false
 
-        var id: String { [check.code, subject.namespace ?? "", subject.kind, subject.name, sentence].joined(separator: "\u{0}") }
-        var severity: Severity { check.severity }
+        package var id: String { [check.code, subject.namespace ?? "", subject.kind, subject.name, sentence].joined(separator: "\u{0}") }
+        package var severity: Severity { check.severity }
 
         /// Worst first, then by code, then by object.
-        static func ordered(_ a: Finding, _ b: Finding) -> Bool {
+        package static func ordered(_ a: Finding, _ b: Finding) -> Bool {
             if a.severity != b.severity { return a.severity > b.severity }
             if a.check.code != b.check.code { return a.check.code < b.check.code }
             if (a.subject.namespace ?? "") != (b.subject.namespace ?? "") { return (a.subject.namespace ?? "") < (b.subject.namespace ?? "") }
@@ -112,13 +112,13 @@ enum KubeHealth {
     }
 
     /// How recent a restart must be to count.
-    static let restartWindow: TimeInterval = 3600
+    package static let restartWindow: TimeInterval = 3600
     /// How long a pod may be Pending before it is said.
-    static let pendingAfter: TimeInterval = 60
+    package static let pendingAfter: TimeInterval = 60
 
     /// The groups Kubernetes itself serves: a `Ready` False there is the
     /// kind's own business (a pod's is its containers', said otherwise).
-    static let builtinGroups: Set<String> = [
+    package static let builtinGroups: Set<String> = [
         "", "apps", "batch", "policy", "autoscaling", "networking.k8s.io", "rbac.authorization.k8s.io", "storage.k8s.io", "discovery.k8s.io",
         "events.k8s.io", "apiextensions.k8s.io", "admissionregistration.k8s.io", "coordination.k8s.io", "node.k8s.io", "scheduling.k8s.io",
         "certificates.k8s.io", "flowcontrol.apiserver.k8s.io", "apiregistration.k8s.io", "metrics.k8s.io", "resource.k8s.io",
@@ -127,14 +127,14 @@ enum KubeHealth {
     // MARK: One object
 
     /// A controller as an object's `ownerReferences` name it.
-    struct Owner: Hashable, Sendable {
-        var group: String
-        var kind: String
-        var namespace: String?
-        var name: String
+    package struct Owner: Hashable, Sendable {
+        package var group: String
+        package var kind: String
+        package var namespace: String?
+        package var name: String
 
         /// Of an object's metadata: its controller, if it has one.
-        static func controller(of metadata: [String: Any]) -> Owner? {
+        package static func controller(of metadata: [String: Any]) -> Owner? {
             guard let reference = (metadata["ownerReferences"] as? [[String: Any]] ?? []).first(where: { $0["controller"] as? Bool == true }) else {
                 return nil
             }
@@ -145,7 +145,7 @@ enum KubeHealth {
         }
 
         /// The object itself, as the owner its own children name.
-        static func of(_ object: [String: Any]) -> Owner {
+        package static func of(_ object: [String: Any]) -> Owner {
             let metadata = object["metadata"] as? [String: Any] ?? [:]
             let apiVersion = object["apiVersion"] as? String ?? ""
             return Owner(
@@ -159,7 +159,7 @@ enum KubeHealth {
     /// its pods', a CronJob its Jobs', a Job its pods'. A pod (or a
     /// ReplicaSet, a Job) owned by anything else — an Argo Rollout, a
     /// StrimziPodSet, an operator — has its own containers checked.
-    static func covers(_ owner: Owner) -> Bool {
+    package static func covers(_ owner: Owner) -> Bool {
         switch (owner.group, owner.kind) {
         case ("apps", "Deployment"), ("apps", "ReplicaSet"), ("apps", "StatefulSet"), ("apps", "DaemonSet"), ("batch", "CronJob"), ("batch", "Job"):
             true
@@ -172,7 +172,7 @@ enum KubeHealth {
     /// whether its controller's checks cover its containers — alone (a
     /// detail), any kind that has them (`covers`); in a report, only one
     /// that was read and checked.
-    static func object(_ object: [String: Any], now: Date = Date(), covered: (Owner) -> Bool = covers) -> [Finding] {
+    package static func object(_ object: [String: Any], now: Date = Date(), covered: (Owner) -> Bool = covers) -> [Finding] {
         let kind = object["kind"] as? String ?? ""
         let apiVersion = object["apiVersion"] as? String ?? ""
         let metadata = object["metadata"] as? [String: Any] ?? [:]
@@ -249,7 +249,7 @@ enum KubeHealth {
 
     /// A pod spec's containers, each check once a container. `probes`: only
     /// for what runs on (a Job's pods end — no probe is wanted there).
-    static func containers(_ spec: [String: Any], subject: Subject, probes: Bool) -> [Finding] {
+    package static func containers(_ spec: [String: Any], subject: Subject, probes: Bool) -> [Finding] {
         var found: [Finding] = []
         for container in spec["containers"] as? [[String: Any]] ?? [] {
             let name = container["name"] as? String ?? "?"
@@ -278,7 +278,7 @@ enum KubeHealth {
 
     /// `nginx`, `nginx:latest`, `registry:5000/app:latest` — not `app@sha256:…`
     /// or `registry:5000/app` with a tag.
-    static func isLatest(_ image: String) -> Bool {
+    package static func isLatest(_ image: String) -> Bool {
         if image.contains("@") { return false }
         let last = image.split(separator: "/").last.map(String.init) ?? image
         guard let colon = last.lastIndex(of: ":") else { return true }
@@ -287,7 +287,7 @@ enum KubeHealth {
 
     /// Each container restarted in the last hour: its last termination's
     /// end, else — no end said — when it started running again.
-    static func restarts(_ pod: [String: Any], subject: Subject, now: Date) -> [Finding] {
+    package static func restarts(_ pod: [String: Any], subject: Subject, now: Date) -> [Finding] {
         let status = pod["status"] as? [String: Any] ?? [:]
         var found: [Finding] = []
         for item in (status["initContainerStatuses"] as? [[String: Any]] ?? []) + (status["containerStatuses"] as? [[String: Any]] ?? []) {
@@ -308,7 +308,7 @@ enum KubeHealth {
 
     /// Pending for more than `pendingAfter`: since it was made, with the
     /// scheduler's word when it has one.
-    static func pending(_ pod: [String: Any], subject: Subject, now: Date) -> Finding? {
+    package static func pending(_ pod: [String: Any], subject: Subject, now: Date) -> Finding? {
         let status = pod["status"] as? [String: Any] ?? [:]
         guard status["phase"] as? String == "Pending",
             let created = ((pod["metadata"] as? [String: Any])?["creationTimestamp"] as? String).flatMap(KubeTime.date),
@@ -326,7 +326,7 @@ enum KubeHealth {
     /// condition), nor a suspended object (Flux looks at nothing then), nor
     /// one that says no `observedGeneration`, or Flux's `-1` before its
     /// first reconcile (not yet reconciled at all — its Ready says so). One read can't time the lag: no "after a minute".
-    static func fluxGenerationLag(_ object: [String: Any], group: String) -> (generation: Int, observed: Int)? {
+    package static func fluxGenerationLag(_ object: [String: Any], group: String) -> (generation: Int, observed: Int)? {
         guard group.hasSuffix(".toolkit.fluxcd.io") else { return nil }
         if (object["spec"] as? [String: Any])?["suspend"] as? Bool == true { return nil }
         guard let generation = KubeRollout.int((object["metadata"] as? [String: Any])?["generation"]),
@@ -336,14 +336,14 @@ enum KubeHealth {
     }
 
     /// A `Ready` condition's reason, whatever its status.
-    static func readyReason(_ object: [String: Any]) -> String? {
+    package static func readyReason(_ object: [String: Any]) -> String? {
         let conditions = (object["status"] as? [String: Any])?["conditions"] as? [[String: Any]] ?? []
         return conditions.first { $0["type"] as? String == "Ready" }?["reason"] as? String
     }
 
     /// A `Ready` condition False: its reason and message; nil when there is
     /// none, or it isn't False.
-    static func readyFalse(_ object: [String: Any]) -> String? {
+    package static func readyFalse(_ object: [String: Any]) -> String? {
         let conditions = (object["status"] as? [String: Any])?["conditions"] as? [[String: Any]] ?? []
         guard let ready = conditions.first(where: { $0["type"] as? String == "Ready" }), ready["status"] as? String == "False" else { return nil }
         return [ready["reason"] as? String, ready["message"] as? String].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " — ")
@@ -354,7 +354,7 @@ enum KubeHealth {
     /// A Service's selector against the pods read: one that picks none.
     /// `pods` must be the namespace's every pod (or every one its selector
     /// picks) — a cut list says nothing.
-    static func serviceSelection(_ service: [String: Any], pods: [[String: Any]]) -> Finding? {
+    package static func serviceSelection(_ service: [String: Any], pods: [[String: Any]]) -> Finding? {
         let spec = service["spec"] as? [String: Any] ?? [:]
         guard spec["type"] as? String != "ExternalName", let selector = spec["selector"] as? [String: String], !selector.isEmpty else { return nil }
         let metadata = service["metadata"] as? [String: Any] ?? [:]
@@ -369,7 +369,7 @@ enum KubeHealth {
 
     /// An Ingress's backends against the Services read: one missing, or
     /// without the port it is sent to. `services` must be the namespace's every one.
-    static func ingressBackends(_ ingress: [String: Any], services: [[String: Any]]) -> [Finding] {
+    package static func ingressBackends(_ ingress: [String: Any], services: [[String: Any]]) -> [Finding] {
         let metadata = ingress["metadata"] as? [String: Any] ?? [:]
         let namespace = metadata["namespace"] as? String
         let subject = Subject(
@@ -399,7 +399,7 @@ enum KubeHealth {
     /// A detail's tree read what its root's relations need: a Service's
     /// pods (by its selector), an Ingress's Services. Said only from a list
     /// read whole.
-    static func related(_ root: KubeTree.Root, read: KubeTreeRead) -> [Finding] {
+    package static func related(_ root: KubeTree.Root, read: KubeTreeRead) -> [Finding] {
         let object = read.rootObject
         switch root {
         case .service:
@@ -416,23 +416,23 @@ enum KubeHealth {
     // MARK: A namespace
 
     /// A list the namespace's checks read: where, how many at most.
-    struct Read: Equatable, Hashable, Sendable {
-        var group: String
-        var resource: String
-        var limit: Int
+    package struct Read: Equatable, Hashable, Sendable {
+        package var group: String
+        package var resource: String
+        package var limit: Int
 
-        var fullName: String { group.isEmpty ? resource : "\(resource).\(group)" }
+        package var fullName: String { group.isEmpty ? resource : "\(resource).\(group)" }
     }
 
-    static let podLimit = 200
-    static let listLimit = 500
+    package static let podLimit = 200
+    package static let listLimit = 500
 
     /// Every list the checks use, in the order read — pods, the workloads
     /// (ReplicaSets and Jobs too: what owns a pod must be read for its
     /// containers to be left to it), what routes to them, the budgets and
     /// autoscalers, then the GitOps and certificate resources a context may
     /// serve. Never a Secret or a ConfigMap.
-    static let reads: [Read] = [
+    package static let reads: [Read] = [
         Read(group: "", resource: "pods", limit: podLimit),
         Read(group: "apps", resource: "deployments", limit: listLimit),
         Read(group: "apps", resource: "statefulsets", limit: listLimit),
@@ -457,7 +457,7 @@ enum KubeHealth {
     /// of the whole object, managedFields, a URL's userinfo (a source's
     /// `repoURL: https://bot:token@…`, and its status copies), a message's
     /// quoted manifest (gitops.md, 5.3, step 1). Dropped as each list is decoded.
-    static func kept(_ object: [String: Any]) -> [String: Any] {
+    package static func kept(_ object: [String: Any]) -> [String: Any] {
         var object = object
         if var metadata = object["metadata"] as? [String: Any] {
             metadata["managedFields"] = nil
@@ -480,7 +480,7 @@ enum KubeHealth {
     /// `tlas`, every kind of patch, Flux's `postBuild.substitute`, an
     /// ApplicationSet generator's `elements`, an operation's raw
     /// `manifests`, a Secret's or ConfigMap's data.
-    static let secretKeys: Set<String> = [
+    package static let secretKeys: Set<String> = [
         "values", "valuesObject", "valuesFrom", "parameters", "fileParameters", "data", "stringData", "extVars", "tlas", "patches",
         "patchesStrategicMerge", "patchesJson6902", "substitute", "elements", "manifests",
     ]
@@ -512,7 +512,7 @@ enum KubeHealth {
     /// beginning `apiVersion:`, `kind:`, `data:`, `stringData:` or
     /// `metadata:`, or a `---` marker — then "… manifest omitted": a
     /// BuildFailed or a sync's error quotes whole YAML, a Secret's too.
-    static func cutAtManifest(_ message: String) -> String {
+    package static func cutAtManifest(_ message: String) -> String {
         let starts = ["apiVersion:", "kind:", "data:", "stringData:", "metadata:"]
         var kept: [Substring] = []
         for line in message.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -530,23 +530,23 @@ enum KubeHealth {
 
     /// What the checks read: each list's objects (in its kind: a list's
     /// items carry none), whether it was all of them, and what couldn't be read.
-    struct Lists: @unchecked Sendable {
-        struct List {
-            var items: [[String: Any]]
-            var complete: Bool
+    package struct Lists: @unchecked Sendable {
+        package struct List {
+            package var items: [[String: Any]]
+            package var complete: Bool
         }
 
-        private(set) var lists: [String: List] = [:]
-        var notes: [String] = []
+        package private(set) var lists: [String: List] = [:]
+        package var notes: [String] = []
         /// The lists that a namespace (or more) couldn't give: refused, or not JSON.
-        private(set) var failed: Set<String> = []
+        package private(set) var failed: Set<String> = []
 
-        init() {}
+        package init() {}
 
         /// One list's answer: its objects, each given its kind and version —
         /// those of `scope`'s namespaces (a list across the cluster for
         /// more than the cap), added to the kind's others (one a namespace).
-        mutating func add(_ read: Read, kind: String, apiVersion: String, body: Data, place: String, scope: KubeScope = .all) {
+        package mutating func add(_ read: Read, kind: String, apiVersion: String, body: Data, place: String, scope: KubeScope = .all) {
             guard let list = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
                 notes.append("The \(read.fullName) list couldn't be read: the answer isn't JSON.")
                 failed.insert(read.fullName)
@@ -568,42 +568,42 @@ enum KubeHealth {
             }
         }
 
-        mutating func failed(_ read: Read, _ reason: String, place: String) {
+        package mutating func failed(_ read: Read, _ reason: String, place: String) {
             notes.append("The \(read.fullName) in \(place) couldn't be listed: \(reason)")
             failed.insert(read.fullName)
         }
 
-        func list(_ fullName: String) -> List? { lists[fullName] }
+        package func list(_ fullName: String) -> List? { lists[fullName] }
         /// Read, and read whole: every namespace answered, none cut at its limit.
-        func whole(_ fullName: String) -> Bool { lists[fullName]?.complete == true && !failed.contains(fullName) }
+        package func whole(_ fullName: String) -> Bool { lists[fullName]?.complete == true && !failed.contains(fullName) }
         /// Not read at all: not served (a CRD not installed), not asked.
-        func absent(_ fullName: String) -> Bool { lists[fullName] == nil && !failed.contains(fullName) }
-        var read: Int { lists.count }
-        var objects: Int { lists.values.reduce(0) { $0 + $1.items.count } }
+        package func absent(_ fullName: String) -> Bool { lists[fullName] == nil && !failed.contains(fullName) }
+        package var read: Int { lists.count }
+        package var objects: Int { lists.values.reduce(0) { $0 + $1.items.count } }
     }
 
     /// What a namespace's (or every namespace's) checks found.
-    struct Report: Equatable, Sendable {
-        var findings: [Finding] = []
+    package struct Report: Equatable, Sendable {
+        package var findings: [Finding] = []
         /// How many objects were checked, and what wasn't read.
-        var checked = 0
-        var notes: [String] = []
+        package var checked = 0
+        package var notes: [String] = []
         /// The checks that ran over lists read whole — what found nothing
         /// among them passes; one over a list refused, cut short or never
         /// read says nothing (`KubeHealth.ran`).
-        var ran: Set<Check> = []
+        package var ran: Set<Check> = []
 
-        var errors: Int { findings.count { $0.severity == .error } }
-        var warnings: Int { findings.count { $0.severity == .warning } }
+        package var errors: Int { findings.count { $0.severity == .error } }
+        package var warnings: Int { findings.count { $0.severity == .warning } }
         /// `3 problems, 12 warnings`, or that nothing was found.
-        var said: String {
+        package var said: String {
             guard !findings.isEmpty else { return "No finding in \(checked) object\(checked == 1 ? "" : "s")" }
             let parts = [errors > 0 ? "\(errors) problem\(errors == 1 ? "" : "s")" : nil, warnings > 0 ? "\(warnings) warning\(warnings == 1 ? "" : "s")" : nil]
             return parts.compactMap { $0 }.joined(separator: ", ")
         }
 
         /// The findings of each check, the worst first.
-        var byCheck: [(check: Check, findings: [Finding])] {
+        package var byCheck: [(check: Check, findings: [Finding])] {
             let grouped = Dictionary(grouping: findings, by: \.check)
             return grouped.keys.sorted { a, b in a.severity != b.severity ? a.severity > b.severity : a.code < b.code }.map { ($0, grouped[$0]!) }
         }
@@ -611,7 +611,7 @@ enum KubeHealth {
 
     /// Every check over what was read: each object's own, a Service's pods
     /// and an Ingress's Services where those lists were read whole.
-    static func report(_ lists: Lists, now: Date = Date()) -> Report {
+    package static func report(_ lists: Lists, now: Date = Date()) -> Report {
         var report = Report(checked: lists.objects, notes: lists.notes)
         var found: [Finding] = []
         // What owns a pod is checked first, top down: a container left to
@@ -681,7 +681,7 @@ enum KubeHealth {
     }
 
     /// The checks whose lists were all read whole.
-    static func ran(_ lists: Lists) -> Set<Check> {
+    package static func ran(_ lists: Lists) -> Set<Check> {
         Set(
             Check.allCases.filter { check in
                 let needs = needs(check)

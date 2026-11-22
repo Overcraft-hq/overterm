@@ -5,21 +5,21 @@ import Foundation
 /// backend does. Two roots with one identity share their state — in two
 /// worktrees, or under two folder names — and production follows the
 /// identity (5.1). Pure.
-struct TerraformStateIdentity: Hashable, Codable, Sendable, CustomStringConvertible {
+package struct TerraformStateIdentity: Hashable, Codable, Sendable, CustomStringConvertible {
     /// `terraform`; `tofu` later (stage 3).
-    var product: String
-    var backend: String
+    package var product: String
+    package var backend: String
     /// The location, as one string per backend: `acme-tfstate/env:/acme-stage/net.tfstate`.
-    var location: String
+    package var location: String
 
-    var description: String { "\(product) \(backend) \(location)" }
+    package var description: String { "\(product) \(backend) \(location)" }
 
     /// The identity of `backend` for `workspace`, `root` being the
     /// root's absolute folder (a local backend's state is a file in it).
     /// Nil when the backend's keys don't say where its state is: a
     /// partial configuration (`-backend-config` files, never read), `pg`
     /// (its location is in a connection string, a secret).
-    static func of(backend: TerraformConfigFacts.Backend?, workspace: String, root: URL, product: String = "terraform") -> TerraformStateIdentity? {
+    package static func of(backend: TerraformConfigFacts.Backend?, workspace: String, root: URL, product: String = "terraform") -> TerraformStateIdentity? {
         let backend = backend ?? TerraformConfigFacts.Backend(type: "local")
         let settings = backend.settings
         let isDefault = workspace == "default"
@@ -59,7 +59,7 @@ struct TerraformStateIdentity: Hashable, Codable, Sendable, CustomStringConverti
     /// `terraform.tfstate`) for `default` only; any other under
     /// `<workspace_dir, default terraform.tfstate.d>/<ws>/terraform.tfstate`
     /// (spike 28). Relative to the root.
-    static func localStatePath(backend: TerraformConfigFacts.Backend?, workspace: String, root: URL) -> URL {
+    package static func localStatePath(backend: TerraformConfigFacts.Backend?, workspace: String, root: URL) -> URL {
         let settings = backend?.settings ?? [:]
         func resolved(_ path: String) -> URL {
             path.hasPrefix("/") ? URL(fileURLWithPath: path) : root.appendingPathComponent(path)
@@ -71,7 +71,7 @@ struct TerraformStateIdentity: Hashable, Codable, Sendable, CustomStringConverti
 
     /// The backend as the root chip says it (6.2): `s3 · acme-tfstate/prod/network.tfstate · eu-west-1`,
     /// `cloud · globex/net-prod`, `local · terraform.tfstate`.
-    static func summary(of backend: TerraformConfigFacts.Backend?, workspace: String) -> String {
+    package static func summary(of backend: TerraformConfigFacts.Backend?, workspace: String) -> String {
         let backend = backend ?? TerraformConfigFacts.Backend(type: "local")
         let settings = backend.settings
         var parts = [backend.type]
@@ -107,13 +107,13 @@ struct TerraformStateIdentity: Hashable, Codable, Sendable, CustomStringConverti
 
     /// The backend in effect: the init record's when `init` has run (it is
     /// what terraform reads), else the HCL's; none at all is `local`.
-    static func effective(config: TerraformConfigFacts.Backend?, record: TerraformConfigFacts.Backend?) -> TerraformConfigFacts.Backend {
+    package static func effective(config: TerraformConfigFacts.Backend?, record: TerraformConfigFacts.Backend?) -> TerraformConfigFacts.Backend {
         record ?? config ?? TerraformConfigFacts.Backend(type: "local")
     }
 
     /// Whether the HCL's backend and the init record's disagree on what
     /// both say: plans refuse then (4.11, stage 1d); the chip says so now.
-    static func changedSinceInit(config: TerraformConfigFacts.Backend?, record: TerraformConfigFacts.Backend?) -> Bool {
+    package static func changedSinceInit(config: TerraformConfigFacts.Backend?, record: TerraformConfigFacts.Backend?) -> Bool {
         guard let config, let record else { return false }
         if config.type != record.type { return true }
         for (key, value) in config.settings where key != "use_lockfile" {

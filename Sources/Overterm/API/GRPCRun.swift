@@ -3,25 +3,25 @@ import Foundation
 /// A gRPC request as it is sent: its address, the method, the metadata
 /// (the collection's and folders' headers, the request's own, its auth)
 /// and its messages as JSON — variables filled as an HTTP request's are.
-struct GRPCPlan: Equatable, Sendable {
-    var address: String
-    var method: String
-    var metadata: [(String, String)]
-    var messages: [JSONValue]
-    var protoFiles: [URL]
-    var importPaths: [URL]
+package struct GRPCPlan: Equatable, Sendable {
+    package var address: String
+    package var method: String
+    package var metadata: [(String, String)]
+    package var messages: [JSONValue]
+    package var protoFiles: [URL]
+    package var importPaths: [URL]
 
-    static func == (a: GRPCPlan, b: GRPCPlan) -> Bool {
+    package static func == (a: GRPCPlan, b: GRPCPlan) -> Bool {
         a.address == b.address && a.method == b.method && a.metadata.map { "\($0.0)=\($0.1)" } == b.metadata.map { "\($0.0)=\($0.1)" }
             && a.messages == b.messages && a.protoFiles == b.protoFiles
     }
 
-    struct Problem: LocalizedError, Equatable {
-        let message: String
-        var errorDescription: String? { message }
+    package struct Problem: LocalizedError, Equatable {
+        package let message: String
+        package var errorDescription: String? { message }
     }
 
-    static func make(_ file: BruFile, context: APIRequestPlan.Context, collection: BrunoCollection?) throws -> GRPCPlan {
+    package static func make(_ file: BruFile, context: APIRequestPlan.Context, collection: BrunoCollection?) throws -> GRPCPlan {
         var vars = context.variables
         vars.collection = APIVariables.map(context.collectionFile?.preRequestVars ?? [])
         vars.folders = context.folderFiles.map { APIVariables.map($0.preRequestVars) }
@@ -90,24 +90,24 @@ struct GRPCPlan: Equatable, Sendable {
 }
 
 /// What a gRPC call gave back.
-struct GRPCResult: Equatable, Sendable {
-    var method = ""
-    var kind = ""
-    var sent: [JSONValue] = []
-    var received: [JSONValue] = []
-    var status: Int?
-    var statusMessage = ""
-    var headers: [String] = []
-    var trailers: [String] = []
-    var duration: TimeInterval = 0
-    var error: String?
-    var running = false
+package struct GRPCResult: Equatable, Sendable {
+    package var method = ""
+    package var kind = ""
+    package var sent: [JSONValue] = []
+    package var received: [JSONValue] = []
+    package var status: Int?
+    package var statusMessage = ""
+    package var headers: [String] = []
+    package var trailers: [String] = []
+    package var duration: TimeInterval = 0
+    package var error: String?
+    package var running = false
 
-    var statusName: String { status.map(GRPCConnection.statusName) ?? "" }
-    var succeeded: Bool { error == nil && status == 0 }
+    package var statusName: String { status.map(GRPCConnection.statusName) ?? "" }
+    package var succeeded: Bool { error == nil && status == 0 }
 }
 
-enum GRPCSchemaState: Equatable, Sendable {
+package enum GRPCSchemaState: Equatable, Sendable {
     case loading
     case loaded(Protobuf.Registry)
     case failed(String)
@@ -126,23 +126,23 @@ extension APIWorkspace {
         return (context, collection(containing: url))
     }
 
-    func grpcPlan(_ file: BruFile, at url: URL) throws -> GRPCPlan {
+    package func grpcPlan(_ file: BruFile, at url: URL) throws -> GRPCPlan {
         let (context, collection) = grpcContext(file, at: url)
         return try GRPCPlan.make(file, context: context, collection: collection)
     }
 
     /// Where a request's methods come from: its .proto files, else its server.
-    static func grpcSchemaKey(_ plan: GRPCPlan) -> String {
+    package static func grpcSchemaKey(_ plan: GRPCPlan) -> String {
         plan.protoFiles.isEmpty ? "reflection:" + plan.address : "proto:" + plan.protoFiles.map(\.path).joined(separator: ",")
     }
 
-    func grpcSchema(_ file: BruFile, at url: URL) -> GRPCSchemaState? {
+    package func grpcSchema(_ file: BruFile, at url: URL) -> GRPCSchemaState? {
         (try? grpcPlan(file, at: url)).flatMap { grpcSchemas[Self.grpcSchemaKey($0)] }
     }
 
     /// The services and methods, read once until Refresh: protoc on the
     /// collection's .proto files, or the server's reflection.
-    func loadGRPCSchema(_ file: BruFile, at url: URL, force: Bool = false) {
+    package func loadGRPCSchema(_ file: BruFile, at url: URL, force: Bool = false) {
         guard let plan = try? grpcPlan(file, at: url), !plan.address.isEmpty || !plan.protoFiles.isEmpty else { return }
         let key = Self.grpcSchemaKey(plan)
         if !force, let state = grpcSchemas[key] {
@@ -160,7 +160,7 @@ extension APIWorkspace {
         }
     }
 
-    nonisolated static func registry(for plan: GRPCPlan) async throws -> Protobuf.Registry {
+    package nonisolated static func registry(for plan: GRPCPlan) async throws -> Protobuf.Registry {
         if !plan.protoFiles.isEmpty {
             let files = plan.protoFiles
             let imports = plan.importPaths
@@ -172,11 +172,11 @@ extension APIWorkspace {
         return try await GRPCReflection.registry(connection, metadata: plan.metadata, prefix: endpoint.prefix)
     }
 
-    func grpcResult(for url: URL) -> GRPCResult? { grpcResults[Self.key(url)] }
+    package func grpcResult(for url: URL) -> GRPCResult? { grpcResults[Self.key(url)] }
 
     /// Sends it: its schema read (or reused), its messages encoded by the
     /// method's input type, the replies shown as they arrive.
-    func sendGRPC(_ file: BruFile, at url: URL) {
+    package func sendGRPC(_ file: BruFile, at url: URL) {
         let key = Self.key(url)
         grpcTasks[key]?.cancel()
         var result = GRPCResult(method: file.grpcMethod, running: true)
@@ -242,7 +242,7 @@ extension APIWorkspace {
         }
     }
 
-    func cancelGRPC(_ url: URL) {
+    package func cancelGRPC(_ url: URL) {
         let key = Self.key(url)
         grpcTasks[key]?.cancel()
         grpcTasks[key] = nil

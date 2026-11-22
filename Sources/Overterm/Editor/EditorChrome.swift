@@ -4,20 +4,20 @@ import AppKit
 /// zoom, open-in-app and close. AppKit: a SwiftUI header in this pane,
 /// created while the pane was collapsed, never drew.
 @MainActor
-final class EditorHeaderView: NSView {
-    struct Item: Equatable {
-        let name: String
-        let path: String
-        let dirty: Bool
+package final class EditorHeaderView: NSView {
+    package struct Item: Equatable {
+        package let name: String
+        package let path: String
+        package let dirty: Bool
     }
 
-    var onSelect: ((Int) -> Void)?
-    var onCloseTab: ((Int) -> Void)?
-    var onZoom: (() -> Void)?
-    var onPreview: (() -> Void)?
-    var onReveal: (() -> Void)?
-    var onClose: (() -> Void)?
-    var revealMenu: (() -> NSMenu?)? {
+    package var onSelect: ((Int) -> Void)?
+    package var onCloseTab: ((Int) -> Void)?
+    package var onZoom: (() -> Void)?
+    package var onPreview: (() -> Void)?
+    package var onReveal: (() -> Void)?
+    package var onClose: (() -> Void)?
+    package var revealMenu: (() -> NSMenu?)? {
         didSet { reveal.menuProvider = revealMenu }
     }
 
@@ -33,16 +33,16 @@ final class EditorHeaderView: NSView {
     private var items: [Item] = []
     private var active = -1
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         background.setFill()
         dirtyRect.intersection(bounds).fill()
         text.withAlphaComponent(0.08).setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
     }
 
-    override var isFlipped: Bool { true }
+    package override var isFlipped: Bool { true }
 
-    init(background: NSColor, text: NSColor, accent: NSColor) {
+    package init(background: NSColor, text: NSColor, accent: NSColor) {
         self.background = background
         self.text = text
         self.accent = accent
@@ -104,13 +104,13 @@ final class EditorHeaderView: NSView {
         ])
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
     /// The terminal's theme changed while the pane was open
     /// (`EditorViewController.applyTerminalColors`).
-    func recolor(background: NSColor, text: NSColor, accent: NSColor) {
+    package func recolor(background: NSColor, text: NSColor, accent: NSColor) {
         self.background = background
         self.text = text
         self.accent = accent
@@ -125,7 +125,7 @@ final class EditorHeaderView: NSView {
         needsDisplay = true
     }
 
-    func update(_ items: [Item], active: Int) {
+    package func update(_ items: [Item], active: Int) {
         guard items != self.items || active != self.active else { return }
         // Two files of one name show their folder, as Zed does.
         let names = Dictionary(grouping: items, by: \.name)
@@ -148,7 +148,7 @@ final class EditorHeaderView: NSView {
         }
     }
 
-    func setZoomed(_ zoomed: Bool) {
+    package func setZoomed(_ zoomed: Bool) {
         let symbol = zoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
         zoom.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
         zoom.toolTip = zoomed ? "Give the Terminal Back — ⇧⎋" : "Zoom Editor — ⇧⎋"
@@ -156,13 +156,13 @@ final class EditorHeaderView: NSView {
     }
 
     /// "Open in Zed", or "Open With…" while no app is picked.
-    func setRevealTitle(_ tip: String) {
+    package func setRevealTitle(_ tip: String) {
         reveal.toolTip = tip
         reveal.setAccessibilityLabel(tip)
     }
 
     @discardableResult
-    static func style<Button: NSButton>(
+    package static func style<Button: NSButton>(
         _ button: Button, _ symbol: String, tip: String, color: NSColor, target: AnyObject, action: Selector, size: CGFloat = 11
     ) -> Button {
         button.image =
@@ -182,7 +182,7 @@ final class EditorHeaderView: NSView {
     /// Markdown files only: the eye shows it rendered, the brackets go back.
     /// The eye: Markdown rendered, or a Bruno request shown as one — and
     /// the way back to the text.
-    func setPreview(available: Bool, showing: Bool, request: Bool = false) {
+    package func setPreview(available: Bool, showing: Bool, request: Bool = false) {
         preview.isHidden = !available
         let symbol = showing ? "chevron.left.forwardslash.chevron.right" : (request ? "arrow.left.arrow.right" : "eye")
         preview.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
@@ -304,10 +304,10 @@ private final class EditorTabView: NSView {
 
 /// A button with a menu on right-click (NSView asks `menu(for:)`), built
 /// when asked: Open With depends on the file and on the app in use.
-final class MenuButton: NSButton {
-    var menuProvider: (() -> NSMenu?)?
+package final class MenuButton: NSButton {
+    package var menuProvider: (() -> NSMenu?)?
 
-    override func menu(for event: NSEvent) -> NSMenu? {
+    package override func menu(for event: NSEvent) -> NSMenu? {
         menuProvider?() ?? super.menu(for: event)
     }
 }
@@ -315,13 +315,13 @@ final class MenuButton: NSButton {
 /// Under the header: where the file is (folders › file) and the symbol the
 /// caret is in, as Zed's breadcrumbs. A click on it opens ⇧⌘O.
 @MainActor
-final class EditorBreadcrumbView: NSView {
+package final class EditorBreadcrumbView: NSView {
     private let label = NSTextField(labelWithString: "")
     private var background: NSColor
     private var text: NSColor
-    var onClick: (() -> Void)?
+    package var onClick: (() -> Void)?
 
-    init(background: NSColor, text: NSColor) {
+    package init(background: NSColor, text: NSColor) {
         self.background = background
         self.text = text
         super.init(frame: .zero)
@@ -343,11 +343,11 @@ final class EditorBreadcrumbView: NSView {
         ])
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         background.setFill()
         dirtyRect.intersection(bounds).fill()
     }
@@ -355,7 +355,7 @@ final class EditorBreadcrumbView: NSView {
     /// The terminal's theme changed under the pane
     /// (`EditorViewController.applyTerminalColors`): the line is written
     /// again, since its colours are in the attributed string.
-    func recolor(background: NSColor, text: NSColor) {
+    package func recolor(background: NSColor, text: NSColor) {
         self.background = background
         self.text = text
         update(path: lastPath, symbol: lastSymbol)
@@ -365,7 +365,7 @@ final class EditorBreadcrumbView: NSView {
     private var lastPath: [String] = []
     private var lastSymbol: String?
 
-    func update(path: [String], symbol: String?) {
+    package func update(path: [String], symbol: String?) {
         lastPath = path
         lastSymbol = symbol
         let out = NSMutableAttributedString()
@@ -382,13 +382,13 @@ final class EditorBreadcrumbView: NSView {
         label.attributedStringValue = out
     }
 
-    override func mouseDown(with event: NSEvent) { onClick?() }
+    package override func mouseDown(with event: NSEvent) { onClick?() }
 }
 
 /// The bottom line: problems, vim's mode or command line, then the caret's
 /// line and column, indentation, language and its server.
 @MainActor
-final class EditorStatusBar: NSView {
+package final class EditorStatusBar: NSView {
     private let problems = NSButton()
     private let mode = NSTextField(labelWithString: "")
     private let position = NSTextField(labelWithString: "")
@@ -397,9 +397,9 @@ final class EditorStatusBar: NSView {
     private let server = NSTextField(labelWithString: "")
     private var background: NSColor
     private var text: NSColor
-    var onProblems: (() -> Void)?
+    package var onProblems: (() -> Void)?
 
-    init(background: NSColor, text: NSColor) {
+    package init(background: NSColor, text: NSColor) {
         self.background = background
         self.text = text
         super.init(frame: .zero)
@@ -439,12 +439,12 @@ final class EditorStatusBar: NSView {
         update(errors: 0, warnings: 0)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
     /// The terminal's theme changed under the pane.
-    func recolor(background: NSColor, text: NSColor) {
+    package func recolor(background: NSColor, text: NSColor) {
         self.background = background
         self.text = text
         recolorLabels()
@@ -458,7 +458,7 @@ final class EditorStatusBar: NSView {
         problems.contentTintColor = text.withAlphaComponent(0.7)
     }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         background.setFill()
         dirtyRect.intersection(bounds).fill()
         text.withAlphaComponent(0.08).setFill()
@@ -467,7 +467,7 @@ final class EditorStatusBar: NSView {
 
     private var counts: (errors: Int, warnings: Int)?
 
-    func update(errors: Int, warnings: Int) {
+    package func update(errors: Int, warnings: Int) {
         // Every caret move updates the bar: only a change reaches the button.
         if let counts, counts == (errors, warnings) { return }
         counts = (errors, warnings)
@@ -486,12 +486,12 @@ final class EditorStatusBar: NSView {
         problems.setAccessibilityLabel("\(errors) errors, \(warnings) warnings")
     }
 
-    func update(mode text: String) {
+    package func update(mode text: String) {
         if mode.stringValue != text { mode.stringValue = text }
         if mode.isHidden != text.isEmpty { mode.isHidden = text.isEmpty }
     }
 
-    func update(line: Int, column: Int, selected: Int, cursors: Int) {
+    package func update(line: Int, column: Int, selected: Int, cursors: Int) {
         var value = "\(line):\(column)"
         if cursors > 1 {
             value += " (\(cursors) selections)"
@@ -501,7 +501,7 @@ final class EditorStatusBar: NSView {
         if position.stringValue != value { position.stringValue = value }
     }
 
-    func update(indent: String, language: String, server: String?) {
+    package func update(indent: String, language: String, server: String?) {
         if self.indent.stringValue != indent { self.indent.stringValue = indent }
         if self.language.stringValue != language { self.language.stringValue = language }
         if self.server.stringValue != server ?? "" {

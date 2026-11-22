@@ -6,9 +6,9 @@ import UniformTypeIdentifiers
 // MARK: The Kubernetes page (⌥⌘J), as the window wires it (WorkspacePage)
 
 extension TerminalWindowController {
-    var kubernetesView: NSView? { pages.view(.kubernetes) }
+    package var kubernetesView: NSView? { pages.view(.kubernetes) }
 
-    var kubernetesActions: KubernetesActions {
+    package var kubernetesActions: KubernetesActions {
         KubernetesActions(
             run: { [weak self] command in self?.runDockerCommand(command, in: nil) },
             settings: { [weak self] in self?.openSettings(.kubernetes) },
@@ -95,7 +95,7 @@ extension TerminalWindowController {
     /// and the page steps aside so it shows beside the terminal. The slot
     /// is on screen before the page hides: the tab's reads go on for it
     /// without a pause.
-    func showKubernetesExpandedChart(_ chart: KubeExpandedChart) {
+    package func showKubernetesExpandedChart(_ chart: KubeExpandedChart) {
         kubernetesManifest.show(chart)
         rightPane.manifestOpened = true
         rightPane.mode = .manifest
@@ -111,20 +111,20 @@ extension TerminalWindowController {
     /// the page hidden: Live's idle time starts again (metrics.md 3.5,
     /// "without input in the window") — the terminal typed in beside the
     /// chart is the input that matters, and the page's own keys no longer see it.
-    func noteKubernetesWindowInput(_ event: NSEvent) {
+    package func noteKubernetesWindowInput(_ event: NSEvent) {
         guard event.window === window, kubernetesPage.holdsChartsForExpansion else { return }
         kubernetesPage.noteMetricsInput()
     }
 
     /// "Show in Kubernetes" from the slot: the page, on the chart's object's Metrics tab.
-    func showKubernetesExpandedSource(_ chart: KubeExpandedChart) {
+    package func showKubernetesExpandedSource(_ chart: KubeExpandedChart) {
         kubernetesPage.showExpandedChartSource(chart)
         showKubernetesPage()
     }
 
     /// A Kubernetes snippet's own `{{…}}`, asked for as Snippets asks;
     /// none, it goes straight on.
-    func fillKubernetesSnippet(_ snippet: Snippet, _ then: @escaping (String) -> Void) {
+    package func fillKubernetesSnippet(_ snippet: Snippet, _ then: @escaping (String) -> Void) {
         guard !snippet.placeholders.isEmpty else { return then(snippet.command) }
         presentSheet { close in
             SnippetFillView(
@@ -139,7 +139,7 @@ extension TerminalWindowController {
 
     /// A workload's change, its diff masked, in the right-hand pane where a
     /// manifest's diff shows — the page steps aside so it can be read.
-    func showKubernetesChange(_ change: KubeChangeDiff) {
+    package func showKubernetesChange(_ change: KubeChangeDiff) {
         kubernetesManifest.show(change)
         rightPane.manifestOpened = true
         rightPane.mode = .manifest
@@ -151,14 +151,14 @@ extension TerminalWindowController {
     }
 
     /// A template's copy in the editor, the page stepping aside.
-    func openKubernetesEdit(_ url: URL) {
+    package func openKubernetesEdit(_ url: URL) {
         if store.showingOverlay != nil { hideOverlay(focus: false) }
         openInEditor(url)
     }
 
     /// `y`: an object's YAML — the YAML tab's buffer, the same edits — in
     /// the window's editor, the page stepping aside.
-    func openKubernetesResource(_ resource: KubeResourceBuffer) {
+    package func openKubernetesResource(_ resource: KubeResourceBuffer) {
         if store.showingOverlay != nil { hideOverlay(focus: false) }
         openInEditor(resource.url)
     }
@@ -168,7 +168,7 @@ extension TerminalWindowController {
     /// and namespace — red on production —, its button and Cancel, and —
     /// where rule 4 asks it — a field for the object's name. What was typed
     /// goes back to the page, which checks it; Cancel sends nothing.
-    func confirmKubernetesWrite(_ confirmation: KubeWriteConfirmation, _ then: @escaping (KubeWriteAnswer) -> Void) {
+    package func confirmKubernetesWrite(_ confirmation: KubeWriteConfirmation, _ then: @escaping (KubeWriteAnswer) -> Void) {
         guard let window else { return }
         WriteConfirmation(
             title: confirmation.title, scope: confirmation.scope, production: confirmation.production, detail: confirmation.detail,
@@ -179,17 +179,17 @@ extension TerminalWindowController {
 
     /// The page's other asks (production's switch, a shell on production):
     /// the same sheet, a production scope on its first line drawn red.
-    func confirmKubernetes(_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) {
+    package func confirmKubernetes(_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) {
         guard let window else { return }
         WriteConfirmation.splittingProduction(title: title, detail: detail, button: button).present(on: window) { _ in then() }
     }
 
     /// The typed-name field's identifier, for the scenario.
-    static let kubernetesTypedNameField = WriteConfirmation.typedNameField
+    package static let kubernetesTypedNameField = WriteConfirmation.typedNameField
 
     /// Run Locally (3.12): the Docker page over the body, its Run window
     /// filled in from the pod — Run in a Tab is the user's press.
-    func runOnDockerPage(_ spec: DockerRunSpec) {
+    package func runOnDockerPage(_ spec: DockerRunSpec) {
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         if store.showingOverlay != .docker { showOverlay(.docker) }
         dockerPage.runSpec = spec
@@ -197,7 +197,7 @@ extension TerminalWindowController {
 
     /// Scan (3.12): the Docker page's Images, the image's Vulnerabilities
     /// tab, scanned — asked first when the engine hasn't got it.
-    func scanOnDockerPage(_ image: KubeRunLocally.Image, from origin: String) {
+    package func scanOnDockerPage(_ image: KubeRunLocally.Image, from origin: String) {
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }
         if store.showingOverlay != .docker { showOverlay(.docker) }
         dockerPage.scanImage(named: image.name, digest: image.digest, from: origin)
@@ -206,7 +206,7 @@ extension TerminalWindowController {
 
     /// An Ingress's host, in the default browser. An isolated run opens
     /// nothing of the user's: it records what it would have opened.
-    func openKubernetesExternally(_ url: URL) {
+    package func openKubernetesExternally(_ url: URL) {
         if AppEnvironment.isIsolated {
             kubernetesOpenedExternally.append(url)
             return
@@ -217,7 +217,7 @@ extension TerminalWindowController {
     /// A forward's OpenAPI document, imported on a press as the API
     /// panel imports a tab's server: into the checkout's collection, its
     /// first request opened — the panel on screen, saying what went wrong.
-    func importForwardAPI(_ source: APIDiscovery.Source) {
+    package func importForwardAPI(_ source: APIDiscovery.Source) {
         showAPIClient(nil)
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -240,7 +240,7 @@ extension TerminalWindowController {
     /// the browser column's empty page): the app's forwards that tab asked
     /// for, kept as they change — the emitted list, since `forwards` isn't
     /// set yet.
-    func followKubernetesForwards() {
+    package func followKubernetesForwards() {
         KubeForwards.shared.$forwards
             .sink { [weak self] forwards in
                 DispatchQueue.main.async { self?.updateForwardPorts(forwards) }
@@ -258,7 +258,7 @@ extension TerminalWindowController {
             .store(in: &cancellables)
     }
 
-    func updateForwardPorts(_ forwards: [KubeForward] = KubeForwards.shared.forwards) {
+    package func updateForwardPorts(_ forwards: [KubeForward] = KubeForwards.shared.forwards) {
         for tab in store.tabs {
             let ports = forwards.filter { $0.spec.tab == tab.id }.compactMap(\.listeningPort)
             if tab.forwardPorts != ports { tab.forwardPorts = ports }
@@ -266,19 +266,19 @@ extension TerminalWindowController {
     }
 
     /// A forward's pill's Kubernetes: the page's Forwards section.
-    func showKubernetesForwards() {
+    package func showKubernetesForwards() {
         kubernetesPage.showForwards()
         showKubernetesPage()
     }
 
     /// The page on its Helm section (the palette's Kubernetes Helm Releases).
-    func showKubernetesHelm() {
+    package func showKubernetesHelm() {
         kubernetesPage.showSection(.helm)
         showKubernetesPage()
     }
 
     /// The Overview section: what fails, usage, counts, applications.
-    func showKubernetesOverview() {
+    package func showKubernetesOverview() {
         kubernetesPage.showSection(.overview)
         showKubernetesPage()
     }
@@ -292,7 +292,7 @@ extension TerminalWindowController {
     /// never changed. It opens in the context's `terminalDirectory`, else
     /// the home folder. It is the user's own kubectl: on production it is
     /// asked first, naming the context, and its pane carries the red band.
-    func openKubernetesTerminal(_ context: KubeContext, namespace: String? = nil) {
+    package func openKubernetesTerminal(_ context: KubeContext, namespace: String? = nil) {
         let pin = KubeTerminalPin(context, namespace: namespace)
         guard context.isProduction else { return startKubernetesTerminal(context, pin) }
         let scope = pin.namespace.map { ", namespace \($0)" } ?? ""
@@ -312,7 +312,7 @@ extension TerminalWindowController {
     /// of the command being typed.
     /// `podEnv`: the pod's plain env values, when the command is a pod's
     /// own (a shell, attach, a log followed) — what ⌘L in its tab scrubs.
-    func runKubernetesCommand(_ command: String, in context: KubeContext, namespace: String, podEnv: [(key: String, value: String)] = []) {
+    package func runKubernetesCommand(_ command: String, in context: KubeContext, namespace: String, podEnv: [(key: String, value: String)] = []) {
         startKubernetesTerminal(context, KubeTerminalPin(context, namespace: namespace), running: command, podEnv: podEnv)
     }
 
@@ -358,14 +358,14 @@ extension TerminalWindowController {
     /// Blocking the first time (the shell is asked), at launch, and only
     /// when a saved pane was pinned: its shell can't start before its
     /// `KUBECONFIG` is known.
-    static func kubernetesRestoreList() -> (files: [URL], list: KubeContextList) {
+    package static func kubernetesRestoreList() -> (files: [URL], list: KubeContextList) {
         let files = AppEnvironment.kubeconfigs(extra: Settings.shared.kubernetesKubeconfigs)
         return (files, KubeContextList.load(files: files, settings: Settings.shared.kubernetesContexts, guarded: AppEnvironment.guardsKubeconfig))
     }
 
     /// The pin a pane is saved with: the one it has, else the one it lost
     /// (tried again on the next launch). Never neither for a pinned pane.
-    static func savedKubePin(_ pane: TerminalView) -> KubeTerminalPin? {
+    package static func savedKubePin(_ pane: TerminalView) -> KubeTerminalPin? {
         pane.kubePin ?? pane.kubePinLost?.pin
     }
 
@@ -374,7 +374,7 @@ extension TerminalWindowController {
     /// changes (a `use-context` or `set-context` typed in the pane rewrites
     /// it) and when the contexts change (a class set in Settings). Started
     /// by the first pinned pane; called again, it reads every pin once.
-    func followKubernetesPins() {
+    package func followKubernetesPins() {
         if kubePinWatcher == nil {
             let folder = KubeTerminalFiles.defaultFolder
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -387,7 +387,7 @@ extension TerminalWindowController {
 
     /// Every pinned pane's files read as kubectl merges them, off the main
     /// thread; a pane whose answer changed shows it, and its tab is saved.
-    func readKubernetesPins() {
+    package func readKubernetesPins() {
         let panes = store.tabs.flatMap { tab in tab.terminals.filter { $0.kubePin != nil }.map { (tab, $0) } }
         guard !panes.isEmpty else { return }
         let work = panes.map { (_, pane) in (KubeTerminalFollow.files(of: pane.environment["KUBECONFIG"]), pane.kubePin!) }
@@ -413,7 +413,7 @@ extension TerminalWindowController {
     /// that fails is said — an alert on the window, and the page's
     /// `exportProblem`, which a scenario checks — never a place picked and
     /// no file.
-    func saveKubernetesFile(_ name: String, _ text: String) {
+    package func saveKubernetesFile(_ name: String, _ text: String) {
         if AppEnvironment.isIsolated {
             let folder = Self.kubernetesExportFolder
             writeKubernetesFile(text, to: folder.appendingPathComponent(name), alert: false) {
@@ -445,7 +445,7 @@ extension TerminalWindowController {
     /// Lines of a pod's log, already scrubbed (`KubernetesPageModel.askAboutLogLines`):
     /// the Ask Agent sheet, the window's agents offered, a new one in the
     /// selected tab's folder.
-    func askAgent(aboutKubernetes text: String, _ about: AskAgentModel.Part) {
+    package func askAgent(aboutKubernetes text: String, _ about: AskAgentModel.Part) {
         guard window?.attachedSheet == nil else { return NSSound.beep() }
         let agents = store.tabs.filter { $0.agent != nil }
         presentAskAgent(text: text, command: nil, folder: store.selected?.workingDirectory, targets: agents, parts: [about])
@@ -458,7 +458,7 @@ extension TerminalWindowController {
     /// tab's — the one under the page — then the window's others, or a new
     /// one in the bound checkout (else the selected tab's folder). No git
     /// diff is offered: the sheet shows the whole of what is sent.
-    func presentKubernetesBrief(_ brief: KubeAgentBrief, preferring marked: Tab? = nil) {
+    package func presentKubernetesBrief(_ brief: KubeAgentBrief, preferring marked: Tab? = nil) {
         guard window?.attachedSheet == nil else { return NSSound.beep() }
         let folder = brief.checkout ?? store.selected?.workingDirectory
         // A mark's Ask Why: that tab's own agent before the checkout's others.
@@ -473,15 +473,15 @@ extension TerminalWindowController {
     }
 
     /// Where an isolated run's exports go: its own support folder.
-    static var kubernetesExportFolder: URL { AppEnvironment.supportDirectory.appendingPathComponent("Exports", isDirectory: true) }
+    package static var kubernetesExportFolder: URL { AppEnvironment.supportDirectory.appendingPathComponent("Exports", isDirectory: true) }
 
     /// File ▸ Export Kubernetes List as CSV…: the page's list, while it shows.
-    @objc func exportKubernetesList(_ sender: Any?) {
+    @objc package func exportKubernetesList(_ sender: Any?) {
         guard store.showingOverlay == .kubernetes else { return }
         kubernetesPage.exportCSV()
     }
 
-    func kubernetesWorkspacePage() -> WorkspacePage {
+    package func kubernetesWorkspacePage() -> WorkspacePage {
         var page = WorkspacePage(.kubernetes)
         // Made the first time it opens.
         page.makeView = { [weak self] in
@@ -525,7 +525,7 @@ extension TerminalWindowController {
     }
 
     /// The page declared, and its list given the keyboard when it asks.
-    func wireKubernetesPage() {
+    package func wireKubernetesPage() {
         declarePage(kubernetesWorkspacePage())
         // What the manifest pane shows decides whether an expanded chart reads: after it lands.
         kubernetesManifest.$shown.combineLatest(kubernetesManifest.$chart.map { $0?.id })
@@ -550,17 +550,17 @@ extension TerminalWindowController {
 
     /// View ▸ Kubernetes (⌥⌘J): the page, or back to the terminal from it.
     /// With Kubernetes off it opens on saying so, and reads nothing.
-    @objc func toggleKubernetesPage(_ sender: Any?) {
+    @objc package func toggleKubernetesPage(_ sender: Any?) {
         togglePage(.kubernetes)
     }
 
     /// The page shows in this window and its list has the keyboard.
-    func kubernetesListHasKeyboard(_ event: NSEvent? = nil) -> Bool { pageListHasKeyboard(.kubernetes, event) }
+    package func kubernetesListHasKeyboard(_ event: NSEvent? = nil) -> Bool { pageListHasKeyboard(.kubernetes, event) }
 
     /// Holds `KubernetesModel.show()` while the page shows in a window on
     /// screen, and gives it back otherwise — and when the window closes:
     /// a page nobody sees watches no pods.
-    func updateKubernetesPageHold(pageShowing: Bool? = nil) {
+    package func updateKubernetesPageHold(pageShowing: Bool? = nil) {
         let held = (pageShowing ?? (store.showingOverlay == .kubernetes)) && kubernetesPage.windowVisible
         guard held != kubernetesPageHeld else { return }
         kubernetesPageHeld = held
@@ -575,13 +575,13 @@ extension TerminalWindowController {
 
     /// Whether the window is on screen at all. An isolated run stays in the
     /// background, often under the user's own windows: there it counts as shown.
-    func updateKubernetesWindowVisible() {
+    package func updateKubernetesWindowVisible() {
         guard !AppEnvironment.isIsolated, let window else { return }
         let shown = window.occlusionState.contains(.visible)
         if kubernetesPage.windowVisible != shown { kubernetesPage.windowVisible = shown }
     }
 
-    func kubernetesWindowClosing() {
+    package func kubernetesWindowClosing() {
         // Nothing followed or held for views that are going: a cluster
         // object's edits stay with the registry, which the quit asks about.
         kubernetesPage.detail?.cancel()
@@ -607,7 +607,7 @@ extension TerminalWindowController {
     /// so the kubeconfig is read and the context's pods followed, and what
     /// it lists comes in as the cluster answers. With Kubernetes off, its
     /// settings.
-    @objc func showKubernetesSwitcher(_ sender: Any?) {
+    @objc package func showKubernetesSwitcher(_ sender: Any?) {
         guard Settings.shared.kubernetesEnabled else { return openSettings(.kubernetes) }
         togglePalette(scope: .kubernetes)
         guard paletteView?.isHidden == false, palette.scope == .kubernetes, !kubernetesSwitcherHeld else { return }
@@ -618,7 +618,7 @@ extension TerminalWindowController {
     /// The palette closed: the switcher's hold goes — after what was picked
     /// has opened the page, so the page's hold comes first and the watch
     /// runs on rather than starting again.
-    func releaseKubernetesSwitcher(now: Bool = false) {
+    package func releaseKubernetesSwitcher(now: Bool = false) {
         guard kubernetesSwitcherHeld else { return }
         let release: @MainActor @Sendable () -> Void = { [weak self] in
             guard let self, self.kubernetesSwitcherHeld, self.paletteView?.isHidden != false else { return }
@@ -635,7 +635,7 @@ extension TerminalWindowController {
 
     /// What the switcher lists changed while the palette shows it — the
     /// forwards too: one started or stopped, its server's API found.
-    func watchKubernetesPalette() -> AnyCancellable {
+    package func watchKubernetesPalette() -> AnyCancellable {
         let model = KubernetesModel.shared
         let forwards = KubeForwards.shared
         return model.$contexts.dropFirst().map { _ in () }
@@ -654,7 +654,7 @@ extension TerminalWindowController {
     /// before: a page's `label:` goes when it hides, and one that shows in
     /// some window is said on each row. ↩ shows each on the page: a context
     /// or a namespace switched to, a kind shown, a row selected.
-    func kubernetesPaletteItems() -> [PaletteItem] {
+    package func kubernetesPaletteItems() -> [PaletteItem] {
         guard Settings.shared.kubernetesEnabled else { return [] }
         let model = KubernetesModel.shared
         var items = [
@@ -757,7 +757,7 @@ extension TerminalWindowController {
     /// The page's own commands, while it shows in this window: what its
     /// keys do, findable by name — the pickers, `:`, Copy as kubectl, the
     /// CSV, wide and all namespaces.
-    func kubernetesPageCommands() -> [PaletteItem] {
+    package func kubernetesPageCommands() -> [PaletteItem] {
         guard store.showingOverlay == .kubernetes, KubernetesModel.shared.selected != nil else { return [] }
         let page = kubernetesPage
         func command(_ id: String, _ title: String, _ subtitle: String, _ symbol: String, _ run: @escaping @MainActor (KubernetesPageModel) -> Void)
@@ -854,14 +854,14 @@ extension TerminalWindowController {
 
     /// View ▸ Terminal in Kubernetes Context…: the switcher on its
     /// Terminal in items — the kubeconfig read, if it wasn't.
-    @objc func openKubernetesTerminalPicker(_ sender: Any?) {
+    @objc package func openKubernetesTerminalPicker(_ sender: Any?) {
         guard Settings.shared.kubernetesEnabled else { return openSettings(.kubernetes) }
         if paletteView?.isHidden != false || palette.scope != .kubernetes { showKubernetesSwitcher(sender) }
         palette.query = "Terminal in "
     }
 
     /// The page, its list given the keyboard.
-    func showKubernetesPage() {
+    package func showKubernetesPage() {
         if store.showingOverlay != .kubernetes { showOverlay(.kubernetes) }
         focusPageList(.kubernetes)
     }
@@ -869,7 +869,7 @@ extension TerminalWindowController {
     /// The page, on the kind's list (Pods unless said), with this row
     /// selected and in view — the filter cleared when it hides it, or has a
     /// `label:` that may: the rows the switcher saw weren't asked for with it.
-    func revealOnKubernetesPage(_ id: KubeRowID, kind: KubeResourceKind = .pods) {
+    package func revealOnKubernetesPage(_ id: KubeRowID, kind: KubeResourceKind = .pods) {
         let page = kubernetesPage
         if KubernetesModel.shared.kind.fullName != kind.fullName || !page.showsSection { page.showKind(kind) }
         if !page.selectorReading.selectors.isEmpty || !page.rows.contains(where: { $0.row.id == id }) { page.filter = "" }
@@ -884,7 +884,7 @@ extension TerminalWindowController: KubeManifestHost {
     /// An apply asked as every write is (`WriteConfirmation`): its scope red
     /// on production, the dry-run diff and the owners in its detail, the
     /// name typed where asked. An isolated run with no window answers no.
-    func askManifestWrite(_ confirmation: KubeWriteConfirmation) async -> String? {
+    package func askManifestWrite(_ confirmation: KubeWriteConfirmation) async -> String? {
         guard let window else { return nil }
         return await WriteConfirmation(
             title: confirmation.title, scope: confirmation.scope, production: confirmation.production, detail: confirmation.detail,
@@ -893,18 +893,18 @@ extension TerminalWindowController: KubeManifestHost {
     }
 
     /// Said on the page: the copy's tab is gone, and the bar with it.
-    func manifestTemplateApplied(_ said: String) {
+    package func manifestTemplateApplied(_ said: String) {
         kubernetesPage.writeStatus = .done(said + " The template's copy is closed: nothing typed in it is kept.")
     }
 
-    func askManifest(_ title: String, _ detail: String, _ button: String) async -> Bool {
+    package func askManifest(_ title: String, _ detail: String, _ button: String) async -> Bool {
         guard let window else { return false }
         return await WriteConfirmation.splittingProduction(title: title, detail: detail, button: button).ask(on: window) != nil
     }
 
     /// The diff in the right-hand pane — the slot the browser shares, so it
     /// steps aside as it does for the changes pane.
-    func showManifestDiff(_ session: KubeManifestSession) {
+    package func showManifestDiff(_ session: KubeManifestSession) {
         // The detail's YAML tab on screen: its diff there — this pane is under the page.
         if store.showingOverlay == .kubernetes, let resource = session.resource, kubernetesPage.detail?.resource === resource,
             kubernetesPage.detailTab == .yaml
@@ -923,7 +923,7 @@ extension TerminalWindowController: KubeManifestHost {
     }
 
     /// `kubectl explain` from the cluster's docs, in the same pane (3.15).
-    func showExplain(_ session: KubeExplainSession) {
+    package func showExplain(_ session: KubeExplainSession) {
         kubernetesManifest.explain = session
         kubernetesManifest.shown = .explain
         rightPane.manifestOpened = true
@@ -936,7 +936,7 @@ extension TerminalWindowController: KubeManifestHost {
 
     /// The explain view on the page's context: nothing read until Explain is pressed.
     @discardableResult
-    func showKubernetesExplain(_ query: String = "") -> KubeExplainSession {
+    package func showKubernetesExplain(_ query: String = "") -> KubeExplainSession {
         let session = KubeExplainSession(query: query, context: KubernetesModel.shared.selectedName, model: .shared)
         showExplain(session)
         return session
@@ -948,7 +948,7 @@ extension TerminalWindowController: KubeManifestHost {
 extension TerminalWindowController {
     /// What New Task offers: Overterm's contexts but production, the
     /// repository's bound one first (`KubeTaskPin`). Read off the main thread.
-    static func kubernetesTaskOffer(for repo: URL) async -> KubeTaskPin.Offer {
+    package static func kubernetesTaskOffer(for repo: URL) async -> KubeTaskPin.Offer {
         let extra = Settings.shared.kubernetesKubeconfigs
         let settings = Settings.shared.kubernetesContexts
         let list = await KubeBlocking.run { KubeContextList.load(files: AppEnvironment.kubeconfigs(extra: extra), settings: settings, guarded: AppEnvironment.guardsKubeconfig) }
@@ -960,7 +960,7 @@ extension TerminalWindowController {
     /// written once the worktree is made (`KubeTerminalLaunch.prepare`), so
     /// a task that fails leaves no pin behind. The namespace is the
     /// repository's binding's on it, else the context's own.
-    func kubernetesTaskPin(_ name: String, repo: URL) async throws -> (pin: KubeTerminalPin, kubeconfigs: [URL]) {
+    package func kubernetesTaskPin(_ name: String, repo: URL) async throws -> (pin: KubeTerminalPin, kubeconfigs: [URL]) {
         let extra = Settings.shared.kubernetesKubeconfigs
         let settings = Settings.shared.kubernetesContexts
         let (files, list) = await KubeBlocking.run {
@@ -980,7 +980,7 @@ extension TerminalWindowController {
 
 extension TerminalWindowController {
     /// A new resource from each template, in the editor — and the user's templates' folder.
-    func kubernetesTemplateItems() -> [PaletteItem] {
+    package func kubernetesTemplateItems() -> [PaletteItem] {
         let namespace = kubernetesPage.templateNamespace
         var items = KubeTemplates.list().map { template in
             PaletteItem(
@@ -1002,7 +1002,7 @@ extension TerminalWindowController {
     }
 
     /// Each saved filter of a context the kubeconfig names: shown again on ↩.
-    func kubernetesSavedFilterItems(_ model: KubernetesModel) -> [PaletteItem] {
+    package func kubernetesSavedFilterItems(_ model: KubernetesModel) -> [PaletteItem] {
         KubeSavedFilters.shared.all.filter { model.contexts.context(named: $0.context) != nil }.flatMap { saved in
             [
                 PaletteItem(
@@ -1027,7 +1027,7 @@ extension TerminalWindowController {
     /// The window's editor follows a cluster object's YAML only while it is
     /// on screen (`EditorViewController.isOnScreen`): its pane open, no page
     /// or review over it, the window not hidden or minimised.
-    func followEditorOnScreen() {
+    package func followEditorOnScreen() {
         guard let editorItem else { return }
         editorItem.publisher(for: \.isCollapsed)
             .removeDuplicates()
@@ -1039,7 +1039,7 @@ extension TerminalWindowController {
             .store(in: &cancellables)
     }
 
-    func updateEditorOnScreen() {
+    package func updateEditorOnScreen() {
         guard let editor, let window else { return }
         // An isolated run stays in the background, often under the user's own windows: there it counts as shown.
         let windowShown = window.isVisible && (AppEnvironment.isIsolated || window.occlusionState.contains(.visible))
@@ -1049,7 +1049,7 @@ extension TerminalWindowController {
 
     /// No other Overterm window is open: closing this one loses whatever
     /// edits the app keeps for nobody.
-    var isLastWindow: Bool {
+    package var isLastWindow: Bool {
         !NSApp.windows.contains { $0 !== window && $0.isVisible && $0.windowController is TerminalWindowController }
     }
 
@@ -1057,7 +1057,7 @@ extension TerminalWindowController {
     /// loses: the editor's unsaved files, and cluster objects' YAML with
     /// edits not applied — the editor's tabs, the detail's YAML tab, and,
     /// with `everyWindow`, the ones kept after the detail moved on.
-    func unsavedNames(everyWindow: Bool) -> [String] {
+    package func unsavedNames(everyWindow: Bool) -> [String] {
         var names = editor?.unsavedNames ?? []
         var resources = everyWindow ? KubernetesModel.shared.resourceBuffers.edited : []
         if let shown = kubernetesPage.detail?.resource, shown.isEdited { resources.append(shown) }

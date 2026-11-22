@@ -3,33 +3,33 @@ import Foundation
 /// A compose project as its containers' labels describe it. Compose keeps
 /// no other record — `docker compose ls` reads the same labels — so a
 /// project is there while one of its containers is, running or not.
-struct ComposeProject: Identifiable, Equatable, Sendable {
-    var name: String
+package struct ComposeProject: Identifiable, Equatable, Sendable {
+    package var name: String
     /// Where `compose up` ran, as Compose resolved it (`/private/tmp/…`,
     /// the spike): compared with a checkout's real path.
-    var workingDir: String?
-    var configFiles: [String]
-    var services: [ComposeService]
+    package var workingDir: String?
+    package var configFiles: [String]
+    package var services: [ComposeService]
     /// Made from a checkout's compose files (`ComposeConfig`) before any
     /// of its containers exist: its services have none, and `up` runs in
     /// its folder without `-f`.
-    var planned = false
+    package var planned = false
 
-    var id: String { name }
-    var containers: [ContainerSummary] { services.flatMap(\.containers) }
-    var running: Int { containers.filter { $0.state == .running }.count }
+    package var id: String { name }
+    package var containers: [ContainerSummary] { services.flatMap(\.containers) }
+    package var running: Int { containers.filter { $0.state == .running }.count }
 
     /// The containers it is made of, one-offs left out — for a project
     /// before it runs, the ones `up` would make, replicas counted.
-    var expected: Int {
+    package var expected: Int {
         planned ? services.reduce(0) { $0 + ($1.spec?.replicas ?? 1) } : containers.filter { !$0.isOneOff }.count
     }
 
-    enum Status: Equatable, Sendable { case running, partial, stopped }
+    package enum Status: Equatable, Sendable { case running, partial, stopped }
 
     /// Every container up, some, none — one-offs (`compose run`) left out:
     /// one that finished doesn't make the stack partial.
-    var status: Status {
+    package var status: Status {
         let lasting = containers.filter { !$0.isOneOff }
         let up = lasting.filter { $0.state.isUp }.count
         if up == 0 { return .stopped }
@@ -38,7 +38,7 @@ struct ComposeProject: Identifiable, Equatable, Sendable {
 
     /// Something wrong in it: a service exited non-zero, unhealthy, or
     /// left `created` (a port already taken leaves it there, the spike).
-    var failing: [ContainerSummary] {
+    package var failing: [ContainerSummary] {
         containers.filter { container in
             !container.isOneOff
                 && (container.health == "unhealthy" || container.state == .dead || (container.exitCode.map { $0 != 0 } ?? false)
@@ -47,22 +47,22 @@ struct ComposeProject: Identifiable, Equatable, Sendable {
     }
 }
 
-struct ComposeService: Identifiable, Equatable, Sendable {
-    var project: String
-    var name: String
+package struct ComposeService: Identifiable, Equatable, Sendable {
+    package var project: String
+    package var name: String
     /// Its replicas by container number, `compose run`'s one-offs after.
-    var containers: [ContainerSummary]
+    package var containers: [ContainerSummary]
     /// The services it waits for (`com.docker.compose.depends_on`).
-    var dependsOn: [String]
+    package var dependsOn: [String]
     /// What the compose files say of it, for a project before it runs.
-    var spec: ComposeConfig.Service? = nil
+    package var spec: ComposeConfig.Service? = nil
 
-    var id: String { project + "/" + name }
+    package var id: String { project + "/" + name }
 }
 
 /// The projects among the containers, and the containers in none. Pure.
-enum ComposeProjects {
-    static func group(_ containers: [ContainerSummary]) -> (projects: [ComposeProject], loose: [ContainerSummary]) {
+package enum ComposeProjects {
+    package static func group(_ containers: [ContainerSummary]) -> (projects: [ComposeProject], loose: [ContainerSummary]) {
         var byProject: [String: [ContainerSummary]] = [:]
         var loose: [ContainerSummary] = []
         for container in containers {
@@ -95,7 +95,7 @@ enum ComposeProjects {
     /// What a checkout's projects publish, as a pane header shows ports:
     /// running containers' host ports, each once, by number. A port Up on
     /// Free Ports moved says where it came from (`overrides`, by project).
-    static func ports(of projects: [ComposeProject], overrides: [String: ComposePortOverride] = [:]) -> [ListeningPort] {
+    package static func ports(of projects: [ComposeProject], overrides: [String: ComposePortOverride] = [:]) -> [ListeningPort] {
         var seen = Set<Int>()
         var ports: [ListeningPort] = []
         for project in projects {
@@ -117,13 +117,13 @@ enum ComposeProjects {
 
     /// The names `docker compose` looks for at a folder's top, in its order
     /// (compose-go's `DefaultFileNames`)…
-    static let composeFileNames = ["compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"]
+    package static let composeFileNames = ["compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"]
     /// …and the override it adds to the first of them found
     /// (`DefaultOverrideFileNames`).
-    static let overrideFileNames = ["compose.override.yml", "compose.override.yaml", "docker-compose.override.yml", "docker-compose.override.yaml"]
+    package static let overrideFileNames = ["compose.override.yml", "compose.override.yaml", "docker-compose.override.yml", "docker-compose.override.yaml"]
 
     /// The compose file at a folder's top, as `docker compose` looks for it.
-    static func composeFile(in folder: URL) -> URL? {
+    package static func composeFile(in folder: URL) -> URL? {
         composeFiles(in: folder).first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
@@ -133,7 +133,7 @@ enum ComposeProjects {
     /// the first default name there and the first override name. Passing
     /// files with `-f` turns that search off, so whoever passes them passes
     /// these. The shell's own `COMPOSE_FILE` isn't seen.
-    static func composeFiles(in folder: URL) -> [URL] {
+    package static func composeFiles(in folder: URL) -> [URL] {
         let env = dotEnv(in: folder)
         if let list = env["COMPOSE_FILE"], !list.isEmpty {
             let separator = env["COMPOSE_PATH_SEPARATOR"].flatMap { $0.isEmpty ? nil : $0 } ?? ":"
@@ -166,7 +166,7 @@ enum ComposeProjects {
     /// The folder Compose makes a checkout's project of: its first file's,
     /// as a real path (what the labels' `working_dir` says). Nil with no
     /// compose file.
-    static func projectFolder(in checkout: URL) -> String? {
+    package static func projectFolder(in checkout: URL) -> String? {
         composeFiles(in: checkout).first.map { FileTreeModel.realPath($0.deletingLastPathComponent()) }
     }
 
@@ -176,14 +176,14 @@ enum ComposeProjects {
     /// the checkout as its project folder — its build contexts, its mounts,
     /// its `.env` and its name. Given the target, they would all be the
     /// target's folder's.
-    static func composePath(_ file: URL) -> String {
+    package static func composePath(_ file: URL) -> String {
         let folder = FileTreeModel.realPath(file.deletingLastPathComponent())
         return (folder.hasSuffix("/") ? folder : folder + "/") + file.lastPathComponent
     }
 
     /// The folder's `.env`, as Compose reads it for itself (`COMPOSE_FILE`,
     /// `COMPOSE_PROFILES`, `COMPOSE_PROJECT_NAME`).
-    static func dotEnv(in folder: URL) -> [String: String] {
+    package static func dotEnv(in folder: URL) -> [String: String] {
         guard let text = try? String(contentsOf: folder.appendingPathComponent(".env"), encoding: .utf8) else { return [:] }
         return DotEnv.parse(text)
     }
@@ -193,7 +193,7 @@ enum ComposeProjects {
     /// same compose file under another (`-p`, a `COMPOSE_PROJECT_NAME` in
     /// the shell). The plan's Up would then make a second copy of the same
     /// services, its ports already taken. Pure.
-    static func replaces(_ project: ComposeProject, _ planned: ComposeProject) -> Bool {
+    package static func replaces(_ project: ComposeProject, _ planned: ComposeProject) -> Bool {
         if project.name == planned.name { return true }
         guard let folder = planned.workingDir else { return false }
         let base = folder.hasSuffix("/") ? String(folder.dropLast()) : folder
@@ -203,7 +203,7 @@ enum ComposeProjects {
     }
 
     /// `db:service_started:false,cache:service_healthy:true` → db, cache.
-    static func dependencies(_ label: String?) -> [String] {
+    package static func dependencies(_ label: String?) -> [String] {
         (label ?? "").split(separator: ",").compactMap { $0.split(separator: ":").first.map(String.init) }.filter { !$0.isEmpty }
     }
 
@@ -217,7 +217,7 @@ enum ComposeProjects {
     /// The projects a checkout holds: run in it or below it, or from a
     /// compose file in it (`-f` from elsewhere, `--project-directory`).
     /// `checkout` is a real path (FileTreeModel.realPath).
-    static func projects(_ projects: [ComposeProject], in checkout: String) -> [ComposeProject] {
+    package static func projects(_ projects: [ComposeProject], in checkout: String) -> [ComposeProject] {
         guard checkout.count > 1 else { return [] }
         let folder = checkout.hasSuffix("/") ? String(checkout.dropLast()) : checkout
         func inside(_ path: String) -> Bool { path == folder || path.hasPrefix(folder + "/") }

@@ -5,10 +5,10 @@ import Foundation
 /// of a sync or of Obsidian's own; and a file iCloud hasn't downloaded (a
 /// `.name.md.icloud` placeholder) listed under its real name and fetched
 /// when it is opened.
-enum NoteFiles {
-    enum Problem: LocalizedError {
+package enum NoteFiles {
+    package enum Problem: LocalizedError {
         case notDownloaded(String)
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .notDownloaded(let name): "“\(name)” is still downloading from iCloud."
             }
@@ -18,22 +18,22 @@ enum NoteFiles {
     // MARK: Placeholders
 
     /// `.Note.md.icloud` → `Note.md`; nil for anything else.
-    static func realName(ofPlaceholder name: String) -> String? {
+    package static func realName(ofPlaceholder name: String) -> String? {
         guard name.hasPrefix("."), name.hasSuffix(".icloud"), name.count > 8 else { return nil }
         return String(name.dropFirst().dropLast(7))
     }
 
-    static func placeholder(of url: URL) -> URL {
+    package static func placeholder(of url: URL) -> URL {
         url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".icloud")
     }
 
     /// Whether `url` is only a placeholder on this Mac.
-    static func isEvicted(_ url: URL) -> Bool {
+    package static func isEvicted(_ url: URL) -> Bool {
         !FileManager.default.fileExists(atPath: url.path) && FileManager.default.fileExists(atPath: placeholder(of: url).path)
     }
 
     /// Asks iCloud for the file and waits for it, a few seconds at most.
-    static func download(_ url: URL, timeout: TimeInterval = 15) throws {
+    package static func download(_ url: URL, timeout: TimeInterval = 15) throws {
         guard isEvicted(url) else { return }
         try FileManager.default.startDownloadingUbiquitousItem(at: url)
         let deadline = Date().addingTimeInterval(timeout)
@@ -43,7 +43,7 @@ enum NoteFiles {
 
     // MARK: Reading and writing, coordinated
 
-    static func read(_ url: URL) throws -> String {
+    package static func read(_ url: URL) throws -> String {
         try download(url)
         var result: Result<String, Error> = .failure(CocoaError(.fileReadUnknown))
         var coordinationError: NSError?
@@ -54,7 +54,7 @@ enum NoteFiles {
         return try result.get()
     }
 
-    static func write(_ text: String, to url: URL) throws {
+    package static func write(_ text: String, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         var result: Result<Void, Error> = .success(())
         var coordinationError: NSError?
@@ -66,7 +66,7 @@ enum NoteFiles {
     }
 
     /// An empty note at `url` — never over one that is there, here or in iCloud.
-    static func create(_ url: URL) throws {
+    package static func create(_ url: URL) throws {
         if FileManager.default.fileExists(atPath: url.path) || isEvicted(url) { throw CocoaError(.fileWriteFileExists) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         var result: Result<Void, Error> = .success(())
@@ -81,7 +81,7 @@ enum NoteFiles {
     /// Asks iCloud for a file only a placeholder is here for, and calls back
     /// on the main thread once it has come (or, after `timeout`, hasn't) —
     /// without holding the main thread meanwhile.
-    @MainActor static func whenDownloaded(_ url: URL, timeout: TimeInterval = 30, _ done: @escaping @MainActor (Bool) -> Void) {
+    @MainActor package static func whenDownloaded(_ url: URL, timeout: TimeInterval = 30, _ done: @escaping @MainActor (Bool) -> Void) {
         guard isEvicted(url) else { return done(true) }
         do {
             try FileManager.default.startDownloadingUbiquitousItem(at: url)
@@ -97,7 +97,7 @@ enum NoteFiles {
         poll()
     }
 
-    static func move(_ from: URL, to: URL) throws {
+    package static func move(_ from: URL, to: URL) throws {
         var result: Result<Void, Error> = .success(())
         var coordinationError: NSError?
         NSFileCoordinator().coordinate(
@@ -114,7 +114,7 @@ enum NoteFiles {
     /// The vault's folders and files, Obsidian's way: folders first, then
     /// files, each by name as Finder sorts them (numbers by value); hidden
     /// and excluded ones left out; placeholders under their real names.
-    static func tree(of vault: NotesVault) -> NoteItem {
+    package static func tree(of vault: NotesVault) -> NoteItem {
         func walk(_ folder: URL, depth: Int, isExcluded: Bool = false) -> [NoteItem] {
             guard depth < 32,
                 let children = try? FileManager.default.contentsOfDirectory(
@@ -150,11 +150,11 @@ enum NoteFiles {
 }
 
 /// A folder or a file of the vault.
-struct NoteItem: Identifiable, Equatable, Hashable, Sendable {
-    enum Kind: String, Sendable {
+package struct NoteItem: Identifiable, Equatable, Hashable, Sendable {
+    package enum Kind: String, Sendable {
         case folder, note, drawing, canvas, image, pdf, other
 
-        init(_ url: URL) {
+        package init(_ url: URL) {
             // Before `.md`: an Excalidraw drawing is markdown too.
             if DrawingFile.isDrawing(url) {
                 self = .drawing
@@ -170,20 +170,20 @@ struct NoteItem: Identifiable, Equatable, Hashable, Sendable {
         }
     }
 
-    let url: URL
-    let kind: Kind
-    var children: [NoteItem]?
-    var modified: Date = .distantPast
+    package let url: URL
+    package let kind: Kind
+    package var children: [NoteItem]?
+    package var modified: Date = .distantPast
     /// Only a placeholder on this Mac: iCloud fetches it when opened.
-    var isEvicted = false
+    package var isEvicted = false
     /// Under Obsidian's "Excluded files": left out of the tree, kept in the index.
-    var isExcluded = false
+    package var isExcluded = false
 
-    var id: String { url.path }
-    var isFolder: Bool { kind == .folder }
+    package var id: String { url.path }
+    package var isFolder: Bool { kind == .folder }
     /// As Obsidian shows it: a note without `.md`, a drawing without
     /// `.excalidraw.md`, anything else whole.
-    var name: String {
+    package var name: String {
         switch kind {
         case .note: url.deletingPathExtension().lastPathComponent
         case .drawing: DrawingFile.title(of: url)
@@ -191,25 +191,25 @@ struct NoteItem: Identifiable, Equatable, Hashable, Sendable {
         }
     }
 
-    var allNotes: [NoteItem] {
+    package var allNotes: [NoteItem] {
         guard let children else { return kind == .note ? [self] : [] }
         return children.flatMap(\.allNotes)
     }
 
-    var allFiles: [NoteItem] {
+    package var allFiles: [NoteItem] {
         guard let children else { return [self] }
         return children.flatMap(\.allFiles)
     }
 
     /// The tree without what "Excluded files" lists — what the panel shows.
-    var shown: NoteItem {
+    package var shown: NoteItem {
         var copy = self
         copy.children = children?.filter { !$0.isExcluded }.map(\.shown)
         return copy
     }
 
     /// Notes and folders whose name holds `query`, the folders around them kept.
-    func filtered(_ query: String) -> NoteItem? {
+    package func filtered(_ query: String) -> NoteItem? {
         guard !query.isEmpty else { return self }
         guard let children else { return name.localizedCaseInsensitiveContains(query) ? self : nil }
         let kept = children.compactMap { $0.filtered(query) }

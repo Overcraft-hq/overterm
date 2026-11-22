@@ -2,82 +2,82 @@ import AppKit
 import SwiftUI
 
 /// What the file tree asks the window to do with an entry.
-struct FileTreeActions {
+package struct FileTreeActions {
     /// Type the entry's path into the selected terminal.
-    var insertPath: (URL) -> Void
+    package var insertPath: (URL) -> Void
     /// Show a file in the editor pane.
-    var openInEditor: (URL) -> Void
+    package var openInEditor: (URL) -> Void
     /// Open a file in the app picked for files (ExternalOpener), asking
     /// which the first time.
-    var openExternally: (URL) -> Void
+    package var openExternally: (URL) -> Void
     /// Open a new tab whose shell starts in this folder.
-    var newTab: (URL) -> Void
+    package var newTab: (URL) -> Void
     /// The path as the selected tab's shell would write it (relative to its
     /// cwd when inside it).
-    var relativePath: (URL) -> String
+    package var relativePath: (URL) -> String
     /// A new file or folder in this folder, asking for its name.
-    var newFile: (URL) -> Void = { _ in }
-    var newFolder: (URL) -> Void = { _ in }
+    package var newFile: (URL) -> Void = { _ in }
+    package var newFolder: (URL) -> Void = { _ in }
     /// Asks for a new name.
-    var rename: (URL) -> Void = { _ in }
+    package var rename: (URL) -> Void = { _ in }
     /// Moves it to the Trash, after asking.
-    var trash: (URL) -> Void = { _ in }
+    package var trash: (URL) -> Void = { _ in }
 }
 
 /// What the worktree list asks the window to do.
-struct WorktreeActions {
+package struct WorktreeActions {
     /// Go to a tab in this worktree, or open one.
-    var open: (Worktree) -> Void
-    var newTab: (Worktree) -> Void
-    var newAgentTab: (Worktree, Agent) -> Void
-    var remove: (Worktree) -> Void
+    package var open: (Worktree) -> Void
+    package var newTab: (Worktree) -> Void
+    package var newAgentTab: (Worktree, Agent) -> Void
+    package var remove: (Worktree) -> Void
     /// Pin the selected tab's sidebar and diff to this worktree.
-    var attach: (Worktree) -> Void
+    package var attach: (Worktree) -> Void
     /// Back to following the agent / shell.
-    var detach: () -> Void
-    var newTask: () -> Void
+    package var detach: () -> Void
+    package var newTask: () -> Void
     /// Remove the merged (and vanished) linked worktrees, after confirming.
-    var cleanUp: () -> Void
+    package var cleanUp: () -> Void
     /// The right pane on the current checkout's pull request.
-    var showPullRequest: () -> Void
+    package var showPullRequest: () -> Void
 }
 
 /// What the snippet list asks the window to do.
-struct SnippetActions {
+package struct SnippetActions {
     /// Use it: type it in (run: and press Return), asking for placeholder
     /// values first if it has any.
-    var use: (Snippet, _ run: Bool) -> Void
+    package var use: (Snippet, _ run: Bool) -> Void
     /// Open the editor; nil for a new snippet.
-    var edit: (Snippet?) -> Void
+    package var edit: (Snippet?) -> Void
 }
 
 /// What the Sessions panel asks the window to do.
-struct SessionActions {
+package struct SessionActions {
     /// Go to the tab it runs in, else resume it in a new tab there.
-    var resume: (ClaudeSession) -> Void
+    package var resume: (ClaudeSession) -> Void
     /// Always a new tab, even when it runs somewhere.
-    var resumeInNewTab: (ClaudeSession) -> Void
-    var refresh: () -> Void
+    package var resumeInNewTab: (ClaudeSession) -> Void
+    package var refresh: () -> Void
 }
 
 /// What the sidebar can show, one at a time — the rail down its left
 /// edge picks between them (`SidebarRail`).
-enum SidebarPanel: String, CaseIterable, Identifiable {
+package enum SidebarPanel: String, CaseIterable, Identifiable {
     case files, git, sessions, snippets, api, notes, database, docker, kubernetes, terraform
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
     /// The rail's icons, in the user's order (`general.sidebarOrder`): each
     /// optional panel's only while Settings has it on.
-    @MainActor static var shown: [SidebarPanel] { order.filter(\.isEnabled) }
+    @MainActor package static var shown: [SidebarPanel] { order.filter(\.isEnabled) }
 
     /// Every panel, in the order the rail draws them.
-    @MainActor static var order: [SidebarPanel] { ordered(Settings.shared.value("general.sidebarOrder")?.list ?? []) }
+    @MainActor package static var order: [SidebarPanel] { ordered(Settings.shared.value("general.sidebarOrder")?.list ?? []) }
 
     /// The panels in the order `names` gives: names it doesn't know (or
     /// gives twice) are passed over, and panels it leaves out keep their
     /// place at the end — a new panel turns up in an old order.
-    static func ordered(_ names: [String]) -> [SidebarPanel] {
+    package static func ordered(_ names: [String]) -> [SidebarPanel] {
         var panels: [SidebarPanel] = []
         for name in names {
             guard let panel = SidebarPanel(rawValue: name), !panels.contains(panel) else { continue }
@@ -88,7 +88,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
 
     /// `order` with `panel` moved `offset` places among `visible` — past
     /// the next one you can see, not a hidden one between the two.
-    static func moving(_ panel: SidebarPanel, by offset: Int, in order: [SidebarPanel], visible: [SidebarPanel]) -> [SidebarPanel] {
+    package static func moving(_ panel: SidebarPanel, by offset: Int, in order: [SidebarPanel], visible: [SidebarPanel]) -> [SidebarPanel] {
         guard let at = visible.firstIndex(of: panel), visible.indices.contains(at + offset),
             let from = order.firstIndex(of: panel), let to = order.firstIndex(of: visible[at + offset])
         else { return order }
@@ -99,14 +99,14 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
     }
 
     /// Moves the panel in the rail and writes the order to settings.json.
-    @MainActor static func move(_ panel: SidebarPanel, by offset: Int) {
+    @MainActor package static func move(_ panel: SidebarPanel, by offset: Int) {
         let moved = moving(panel, by: offset, in: order, visible: shown)
         Settings.shared.set("general.sidebarOrder", .list(moved.map(\.rawValue)))
     }
 
     /// The toggle that shows the panel; nil for Files and Overgit, which
     /// are always there.
-    var toggleKey: String? {
+    package var toggleKey: String? {
         switch self {
         case .api: "api.enabled"
         case .notes: "notes.enabled"
@@ -120,12 +120,12 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         }
     }
 
-    @MainActor var isEnabled: Bool { toggleKey.map { Settings.shared.bool($0) } ?? true }
+    @MainActor package var isEnabled: Bool { toggleKey.map { Settings.shared.bool($0) } ?? true }
 
     /// What the stored choice means. `worktrees` had an icon of its own
     /// until Overgit took it in; somebody who left the sidebar there finds
     /// their worktrees where they went, not an empty panel.
-    init(stored: String?) {
+    package init(stored: String?) {
         switch stored {
         case "worktrees": self = .git
         default: self = stored.flatMap(SidebarPanel.init(rawValue:)) ?? .files
@@ -138,7 +138,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
     /// One symbol each, no `.fill` twin: three of the four have none, and a
     /// set that changes shape for the open panel reads as four different
     /// icons rather than one of them being on.
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .files: "doc.on.doc"
         case .git: "arrow.triangle.branch"
@@ -155,7 +155,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
 
     /// The glyph as the rail draws it: the open panel's is a shade heavier,
     /// which is all the weight the selection needs beside its bar.
-    @ViewBuilder func icon(selected: Bool, compact: Bool = false) -> some View {
+    @ViewBuilder package func icon(selected: Bool, compact: Bool = false) -> some View {
         switch self {
         // Wider than the symbols beside it: a drawn mark with this much
         // air in it reads a size smaller than Apple's do.
@@ -164,7 +164,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .git: "Overgit"
         case .api: "API"
@@ -175,42 +175,42 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
 
 /// The left column: a rail down its edge choosing Files, Overgit, Sessions
 /// or Snippets, and the chosen one filling the rest.
-struct SidebarView: View {
-    @ObservedObject var sidebar: SidebarModel
-    @ObservedObject var tree: FileTreeModel
-    @ObservedObject var worktrees: WorktreeModel
-    @ObservedObject var overgit: OvergitModel
+package struct SidebarView: View {
+    @ObservedObject package var sidebar: SidebarModel
+    @ObservedObject package var tree: FileTreeModel
+    @ObservedObject package var worktrees: WorktreeModel
+    @ObservedObject package var overgit: OvergitModel
     /// The working tree's numbers, which Overgit's overview reads rather
     /// than asking git for them a second time.
-    @ObservedObject var diff: DiffModel
-    @ObservedObject var snippets: SnippetStore
-    @ObservedObject var sessions: SessionsModel
-    @ObservedObject var api: APIWorkspace
-    @ObservedObject var notes: NotesModel
-    @ObservedObject var database: DatabaseModel
-    @ObservedObject var dockerPanel: DockerPanelModel
-    @ObservedObject var kubernetesPanel: KubernetesPanelModel
-    @ObservedObject var terraformPanel: TerraformPanelModel
+    @ObservedObject package var diff: DiffModel
+    @ObservedObject package var snippets: SnippetStore
+    @ObservedObject package var sessions: SessionsModel
+    @ObservedObject package var api: APIWorkspace
+    @ObservedObject package var notes: NotesModel
+    @ObservedObject package var database: DatabaseModel
+    @ObservedObject package var dockerPanel: DockerPanelModel
+    @ObservedObject package var kubernetesPanel: KubernetesPanelModel
+    @ObservedObject package var terraformPanel: TerraformPanelModel
     /// The tabs, for the island the panels are scoped to.
-    @ObservedObject var store: TabStore
-    let opener: ExternalOpener
-    @ObservedObject var theme: ChromeTheme
-    let actions: FileTreeActions
-    let worktreeActions: WorktreeActions
-    let overgitActions: OvergitActions
-    let snippetActions: SnippetActions
-    let sessionActions: SessionActions
-    let apiActions: APIActions
-    let notesActions: NotesActions
-    let databaseActions: DatabaseActions
-    let dockerActions: DockerActions
-    let terraformActions: TerraformPanelActions
+    @ObservedObject package var store: TabStore
+    package let opener: ExternalOpener
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: FileTreeActions
+    package let worktreeActions: WorktreeActions
+    package let overgitActions: OvergitActions
+    package let snippetActions: SnippetActions
+    package let sessionActions: SessionActions
+    package let apiActions: APIActions
+    package let notesActions: NotesActions
+    package let databaseActions: DatabaseActions
+    package let dockerActions: DockerActions
+    package let terraformActions: TerraformPanelActions
     /// The Kubernetes page, from the panel's header.
-    let openKubernetesPage: () -> Void
+    package let openKubernetesPage: () -> Void
     /// The buttons at the foot of the rail: Activity, the gear, Hide.
-    let railAction: (SidebarRailAction) -> Void
+    package let railAction: (SidebarRailAction) -> Void
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 0) {
             SidebarRail(sidebar: sidebar, theme: theme, perform: railAction)
             VStack(spacing: 0) {
@@ -275,8 +275,8 @@ struct SidebarView: View {
 }
 
 /// A file tree row, dragged: its file URL.
-enum FileTreeDrag {
-    static func item(for url: URL) -> NSItemProvider {
+package enum FileTreeDrag {
+    package static func item(for url: URL) -> NSItemProvider {
         let provider = NSItemProvider(object: url as NSURL)
         provider.suggestedName = url.lastPathComponent
         return provider
@@ -284,7 +284,7 @@ enum FileTreeDrag {
 
     /// The file URLs a drop holds, handed over on the main thread once
     /// every one is read: a bucket's upload, a container's copy.
-    static func urls(_ providers: [NSItemProvider], done: @escaping @MainActor ([URL]) -> Void) {
+    package static func urls(_ providers: [NSItemProvider], done: @escaping @MainActor ([URL]) -> Void) {
         let lock = NSLock()
         nonisolated(unsafe) var urls: [URL] = []
         let group = DispatchGroup()
@@ -424,18 +424,18 @@ private struct OpenWithItems: View {
 
 /// One worktree, in Overgit's Worktrees section: the branch, what is
 /// happening in it, and everything you can do to it.
-struct WorktreeRowView: View {
-    let worktree: Worktree
-    let isCurrent: Bool
+package struct WorktreeRowView: View {
+    package let worktree: Worktree
+    package let isCurrent: Bool
     /// The tabs working in this checkout, so the row says what is going on
     /// in it rather than only that it exists.
-    let tabs: [Tab]
+    package let tabs: [Tab]
     /// Why the selected tab shows this worktree, when it does.
-    let reason: CheckoutReason?
-    let merged: MergedWorktrees.Reason?
-    let pullRequest: PullRequestSummary?
-    @ObservedObject var theme: ChromeTheme
-    let actions: WorktreeActions
+    package let reason: CheckoutReason?
+    package let merged: MergedWorktrees.Reason?
+    package let pullRequest: PullRequestSummary?
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: WorktreeActions
     @State private var hovering = false
 
     private var mergedHelp: String {
@@ -499,7 +499,7 @@ struct WorktreeRowView: View {
         .foregroundStyle(isCurrent ? theme.text : theme.text2)
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             top
             if let subtitle {

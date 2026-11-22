@@ -15,11 +15,11 @@ import Foundation
 /// then the values of that hash compared byte for byte. A `contains` per
 /// value per string was 512 scans of every string, and values sharing a
 /// prefix (`acme-pw-…`) defeat any index by first bytes. Pure.
-struct TerraformSensitiveValues: Sendable {
-    static let none = TerraformSensitiveValues([])
+package struct TerraformSensitiveValues: Sendable {
+    package static let none = TerraformSensitiveValues([])
 
     /// Every value, whole.
-    let exact: Set<String>
+    package let exact: Set<String>
     /// The longest value's bytes: a longer leaf is equal to none.
     private let longest: Int
     /// The values long enough to hunt for, by length, longest first.
@@ -38,7 +38,7 @@ struct TerraformSensitiveValues: Sendable {
 
     private static let base: UInt64 = 1_099_511_628_211
 
-    init(_ values: Set<String>) {
+    package init(_ values: Set<String>) {
         exact = values
         longest = values.map(\.utf8.count).max() ?? 0
         var byLength: [Int: [UInt64: [[UInt8]]]] = [:]
@@ -56,24 +56,24 @@ struct TerraformSensitiveValues: Sendable {
         }
     }
 
-    var isEmpty: Bool { exact.isEmpty }
+    package var isEmpty: Bool { exact.isEmpty }
 
     /// Whether `leaf` is one of the values, or holds one.
-    func isSecret(_ leaf: String) -> Bool {
+    package func isSecret(_ leaf: String) -> Bool {
         guard !exact.isEmpty else { return false }
         if leaf.utf8.count <= longest, exact.contains(leaf) { return true }
         return contains(leaf)
     }
 
     /// Whether `text` holds one of the values long enough to hunt for.
-    func contains(_ text: String) -> Bool {
+    package func contains(_ text: String) -> Bool {
         guard !groups.isEmpty else { return false }
         return Self.bytes(of: text) { bytes in groups.contains { !matches(of: $0, in: bytes, first: true).isEmpty } }
     }
 
     /// `text` with each value it holds replaced by ••••••, the longest
     /// first where two overlap.
-    func redact(_ text: String) -> String {
+    package func redact(_ text: String) -> String {
         guard !groups.isEmpty else { return text }
         return Self.bytes(of: text) { bytes -> String in
             var found: [(start: Int, length: Int)] = []
@@ -141,27 +141,27 @@ struct TerraformSensitiveValues: Sendable {
 /// keeps them as salted digests (`TerraformHashedValues`) for an apply
 /// followed again after a crash. It never describes, reflects or prints a
 /// value, so a model holding it says nothing of them.
-final class TerraformValueMask: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
-    static let none = TerraformValueMask(.none)
+package final class TerraformValueMask: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    package static let none = TerraformValueMask(.none)
 
     private let values: TerraformSensitiveValues
     private let hashed: TerraformHashedValues?
 
-    init(_ values: TerraformSensitiveValues) {
+    package init(_ values: TerraformSensitiveValues) {
         self.values = values
         hashed = nil
     }
 
     /// An apply's found again: its run folder's digests.
-    init(hashed: TerraformHashedValues) {
+    package init(hashed: TerraformHashedValues) {
         values = .none
         self.hashed = hashed
     }
 
-    var isEmpty: Bool { values.isEmpty && (hashed?.exact.isEmpty ?? true) }
+    package var isEmpty: Bool { values.isEmpty && (hashed?.exact.isEmpty ?? true) }
 
     /// `text` masked by the plan's values, then scrubbed.
-    func scrub(_ text: String) -> String {
+    package func scrub(_ text: String) -> String {
         if let hashed { return TerraformPlan.scrub(hashed.redact(text)) }
         guard !values.isEmpty else { return TerraformPlan.scrub(text) }
         if values.exact.contains(text) || values.exact.contains(text.trimmingCharacters(in: .whitespacesAndNewlines)) { return TerraformPlan.redaction }
@@ -169,10 +169,10 @@ final class TerraformValueMask: Sendable, CustomStringConvertible, CustomDebugSt
     }
 
     /// What the run folder keeps: digests, salted, never a value.
-    func digests() -> TerraformHashedValues { hashed ?? TerraformHashedValues(values.exact) }
+    package func digests() -> TerraformHashedValues { hashed ?? TerraformHashedValues(values.exact) }
 
     /// Kept in `folder` (0600, a new file): the apply's, removed with it.
-    func write(to folder: URL) throws {
+    package func write(to folder: URL) throws {
         guard !isEmpty else { return }
         let data = try JSONEncoder().encode(digests())
         let fd = open(folder.appendingPathComponent(TerraformHashedValues.file).path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
@@ -183,7 +183,7 @@ final class TerraformValueMask: Sendable, CustomStringConvertible, CustomDebugSt
     }
 
     /// An apply's run folder's, or `none`.
-    static func read(_ folder: URL) -> TerraformValueMask {
+    package static func read(_ folder: URL) -> TerraformValueMask {
         let url = folder.appendingPathComponent(TerraformHashedValues.file)
         var info = stat()
         guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(), info.st_size < 64 << 20,
@@ -192,9 +192,9 @@ final class TerraformValueMask: Sendable, CustomStringConvertible, CustomDebugSt
         return TerraformValueMask(hashed: hashed)
     }
 
-    var description: String { "TerraformValueMask(\(hashed?.exact.count ?? values.exact.count) values)" }
-    var debugDescription: String { description }
-    var customMirror: Mirror { Mirror(self, children: [], displayStyle: .class) }
+    package var description: String { "TerraformValueMask(\(hashed?.exact.count ?? values.exact.count) values)" }
+    package var debugDescription: String { description }
+    package var customMirror: Mirror { Mirror(self, children: [], displayStyle: .class) }
 }
 
 /// A plan's sensitive values as salted SHA-256 digests (4.7, 5.6): what a
@@ -203,18 +203,18 @@ final class TerraformValueMask: Sendable, CustomStringConvertible, CustomDebugSt
 /// string equal to one is masked; values at least `minimumSecret` long are
 /// hunted inside strings, window by window, by their lengths (the longest
 /// `maxLengths`). Pure.
-struct TerraformHashedValues: Codable, Equatable, Sendable {
-    static let file = "mask.json"
-    static let maxLengths = 32
+package struct TerraformHashedValues: Codable, Equatable, Sendable {
+    package static let file = "mask.json"
+    package static let maxLengths = 32
     /// Hunted inside a string's first bytes only; the rest is cut.
-    static let maxHunted = 16 << 10
+    package static let maxHunted = 16 << 10
 
-    var salt: Data
-    var exact: Set<Data>
+    package var salt: Data
+    package var exact: Set<Data>
     /// The hunted values' digests by their length in bytes.
-    var byLength: [Int: Set<Data>]
+    package var byLength: [Int: Set<Data>]
 
-    init(_ values: Set<String>, salt: Data? = nil) {
+    package init(_ values: Set<String>, salt: Data? = nil) {
         let salt = salt ?? Data((0..<16).map { _ in UInt8.random(in: 0...255) })
         self.salt = salt
         func digest(_ bytes: [UInt8]) -> Data { Self.digest(bytes[...], salt: salt) }
@@ -227,7 +227,7 @@ struct TerraformHashedValues: Codable, Equatable, Sendable {
         self.byLength = byLength.filter { kept.contains($0.key) }
     }
 
-    static func digest(_ bytes: ArraySlice<UInt8>, salt: Data) -> Data {
+    package static func digest(_ bytes: ArraySlice<UInt8>, salt: Data) -> Data {
         var hasher = SHA256()
         hasher.update(data: salt)
         bytes.withUnsafeBytes { hasher.update(bufferPointer: $0) }
@@ -235,7 +235,7 @@ struct TerraformHashedValues: Codable, Equatable, Sendable {
     }
 
     /// `text` with each value found replaced by ••••••.
-    func redact(_ text: String) -> String {
+    package func redact(_ text: String) -> String {
         let all = Array(text.utf8)
         if exact.contains(Self.digest(all[...], salt: salt)) { return TerraformPlan.redaction }
         let trimmed = Array(text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)

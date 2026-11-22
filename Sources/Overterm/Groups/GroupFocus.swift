@@ -8,28 +8,28 @@ import Foundation
 /// held permission prompt is the one interruption that costs you more by
 /// waiting than by arriving, so `.waiting` is never queued.
 @MainActor
-final class GroupFocus: ObservableObject {
-    struct Held: Identifiable, Equatable {
-        let id: Tab.ID
-        let title: String
-        let note: String
-        let groupName: String
+package final class GroupFocus: ObservableObject {
+    package struct Held: Identifiable, Equatable {
+        package let id: Tab.ID
+        package let title: String
+        package let note: String
+        package let groupName: String
     }
 
-    @Published private(set) var groupID: TabGroup.ID?
+    @Published package private(set) var groupID: TabGroup.ID?
     /// What was kept back while focusing, newest last.
-    @Published private(set) var held: [Held] = []
+    @Published package private(set) var held: [Held] = []
 
-    var isFocusing: Bool { groupID != nil }
+    package var isFocusing: Bool { groupID != nil }
 
-    func begin(_ groupID: TabGroup.ID) {
+    package func begin(_ groupID: TabGroup.ID) {
         self.groupID = groupID
         held = []
     }
 
     /// Leaves focus and hands back what was kept, for one summary.
     @discardableResult
-    func end() -> [Held] {
+    package func end() -> [Held] {
         groupID = nil
         let kept = held
         held = []
@@ -38,7 +38,7 @@ final class GroupFocus: ObservableObject {
 
     /// Whether `tab`'s notice goes out now. Pure given its arguments, so
     /// the rule can be tested without notifications.
-    nonisolated static func breaksThrough(tabGroup: TabGroup.ID?, focused: TabGroup.ID?, mark: TabActivity.Mark) -> Bool {
+    package nonisolated static func breaksThrough(tabGroup: TabGroup.ID?, focused: TabGroup.ID?, mark: TabActivity.Mark) -> Bool {
         guard let focused else { return true }
         if tabGroup == focused { return true }
         // A blocked agent always breaks through.
@@ -49,7 +49,7 @@ final class GroupFocus: ObservableObject {
     /// a held one is queued for the summary instead.
     /// `note` and `mark`: what the notice says, when it isn't the tab's own
     /// mark (a cluster failure under an agent's waiting mark).
-    func shouldNotify(tab: Tab, groupName: String, note: String? = nil, mark: TabActivity.Mark? = nil) -> Bool {
+    package func shouldNotify(tab: Tab, groupName: String, note: String? = nil, mark: TabActivity.Mark? = nil) -> Bool {
         guard let groupID else { return true }
         let mark = mark ?? tab.activity.mark
         if Self.breaksThrough(tabGroup: tab.groupID, focused: groupID, mark: mark) { return true }
@@ -63,9 +63,9 @@ final class GroupFocus: ObservableObject {
     }
 
     /// Dropped when its tab closes, so the summary never names a dead tab.
-    func forget(_ id: Tab.ID) { held.removeAll { $0.id == id } }
+    package func forget(_ id: Tab.ID) { held.removeAll { $0.id == id } }
 
-    nonisolated static func describe(_ mark: TabActivity.Mark) -> String {
+    package nonisolated static func describe(_ mark: TabActivity.Mark) -> String {
         switch mark {
         case .waiting: "needs you"
         case .failed: "failed"

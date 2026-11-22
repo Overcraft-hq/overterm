@@ -12,30 +12,30 @@ import Foundation
 /// entry stored or deflated. An encrypted plan (OpenTofu) is no zip:
 /// "unknown". Bounded: 64 MB an entry, 4,096 entries. Pure over the bytes
 /// it is given by `read`.
-struct TerraformPlanZip: Equatable, Sendable {
-    var lineage: String?
-    var serial: Int?
-    var lockFileSHA256: String?
+package struct TerraformPlanZip: Equatable, Sendable {
+    package var lineage: String?
+    package var serial: Int?
+    package var lockFileSHA256: String?
     /// The lock file pins no provider: the header `init` writes for a
     /// configuration of builtin providers only — what a root with no lock
     /// file at all plans with.
-    var lockFilePinsNothing = false
+    package var lockFilePinsNothing = false
 
-    struct Entry: Equatable, Sendable {
-        var name: String
-        var method: UInt16
-        var compressedSize: Int
-        var size: Int
-        var localHeader: Int
+    package struct Entry: Equatable, Sendable {
+        package var name: String
+        package var method: UInt16
+        package var compressedSize: Int
+        package var size: Int
+        package var localHeader: Int
     }
 
-    enum Failure: Error, Equatable { case notZip, tooLarge, unreadable }
+    package enum Failure: Error, Equatable { case notZip, tooLarge, unreadable }
 
-    static let maxEntry = 64 << 20
-    static let maxEntries = 4_096
+    package static let maxEntry = 64 << 20
+    package static let maxEntries = 4_096
 
     /// The entries of a zip, from its end of central directory.
-    static func entries(size: Int, read: (Int, Int) -> Data?) throws -> [Entry] {
+    package static func entries(size: Int, read: (Int, Int) -> Data?) throws -> [Entry] {
         let tail = min(size, 65_557)
         guard tail >= 22, let end = read(size - tail, tail) else { throw Failure.notZip }
         var found: Int?
@@ -73,7 +73,7 @@ struct TerraformPlanZip: Equatable, Sendable {
     }
 
     /// An entry's bytes, inflated.
-    static func contents(of entry: Entry, read: (Int, Int) -> Data?) throws -> Data {
+    package static func contents(of entry: Entry, read: (Int, Int) -> Data?) throws -> Data {
         guard entry.size <= maxEntry, entry.compressedSize <= maxEntry else { throw Failure.tooLarge }
         guard let header = read(entry.localHeader, 30), header.uint32(at: 0) == 0x0403_4B50 else { throw Failure.notZip }
         let start = entry.localHeader + 30 + Int(header.uint16(at: 26)) + Int(header.uint16(at: 28))
@@ -99,7 +99,7 @@ struct TerraformPlanZip: Equatable, Sendable {
     }
 
     /// The facts of a plan whose bytes `read` gives (`offset`, `length`).
-    static func read(size: Int, read: (Int, Int) -> Data?) -> TerraformPlanZip? {
+    package static func read(size: Int, read: (Int, Int) -> Data?) -> TerraformPlanZip? {
         guard let entries = try? entries(size: size, read: read) else { return nil }
         var facts = TerraformPlanZip()
         if let state = entries.first(where: { $0.name == "tfstate" }), let data = try? contents(of: state, read: read),
@@ -116,7 +116,7 @@ struct TerraformPlanZip: Equatable, Sendable {
     }
 
     /// The facts of the plan open as `descriptor`. Blocking.
-    static func read(descriptor: Int32) -> TerraformPlanZip? {
+    package static func read(descriptor: Int32) -> TerraformPlanZip? {
         var info = stat()
         guard fstat(descriptor, &info) == 0 else { return nil }
         return read(size: Int(info.st_size)) { offset, length in

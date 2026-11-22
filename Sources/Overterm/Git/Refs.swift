@@ -1,53 +1,53 @@
 import Foundation
 
 /// A branch, local or remote-tracking, as Overgit lists it.
-struct BranchRef: Identifiable, Equatable {
+package struct BranchRef: Identifiable, Equatable {
     /// The short name: `main`, `feature/x`, `origin/main`.
-    let name: String
-    let isRemote: Bool
-    let sha: String
+    package let name: String
+    package let isRemote: Bool
+    package let sha: String
     /// The remote branch this one follows, if any.
-    let upstream: String?
-    let ahead: Int
-    let behind: Int
+    package let upstream: String?
+    package let ahead: Int
+    package let behind: Int
     /// Its upstream is gone — the branch was merged and deleted on the
     /// remote, usually.
-    let isGone: Bool
-    let date: Date
-    let subject: String
+    package let isGone: Bool
+    package let date: Date
+    package let subject: String
 
-    var id: String { (isRemote ? "remote:" : "local:") + name }
+    package var id: String { (isRemote ? "remote:" : "local:") + name }
     /// The last component, for a tree row: `x` of `feature/x`.
-    var leaf: String { name.split(separator: "/").last.map(String.init) ?? name }
+    package var leaf: String { name.split(separator: "/").last.map(String.init) ?? name }
 }
 
-struct TagRef: Identifiable, Equatable {
-    let name: String
-    let sha: String
-    let date: Date
-    let subject: String
+package struct TagRef: Identifiable, Equatable {
+    package let name: String
+    package let sha: String
+    package let date: Date
+    package let subject: String
 
-    var id: String { name }
+    package var id: String { name }
 }
 
-struct Remote: Identifiable, Equatable {
-    let name: String
+package struct Remote: Identifiable, Equatable {
+    package let name: String
     /// As git says it, without the userinfo a URL can carry
     /// (`url.*.insteadOf` may add a token): the raw output is never kept.
-    let url: String
+    package let url: String
 
-    init(name: String, url: String) {
+    package init(name: String, url: String) {
         self.name = name
         self.url = GitRemoteURL.withoutUserinfo(url)
     }
 
-    var id: String { name }
+    package var id: String { name }
     /// The repository it names, normalised (`GitRemoteURL`); nil for one that names none.
-    var repo: GitRemoteURL? { GitRemoteURL(url) }
+    package var repo: GitRemoteURL? { GitRemoteURL(url) }
 
     /// The host, for the row's subtitle: `github.com` out of either an
     /// https URL or `git@github.com:owner/repo.git`.
-    var host: String? {
+    package var host: String? {
         if let host = URL(string: url)?.host { return host }
         guard let at = url.firstIndex(of: "@") else { return nil }
         let rest = url[url.index(after: at)...]
@@ -57,18 +57,18 @@ struct Remote: Identifiable, Equatable {
 }
 
 /// Branches, tags and remotes — `for-each-ref` and `remote -v`.
-enum Refs {
+package enum Refs {
     /// One record a line, fields NUL-separated. The subject is last and
     /// `%(contents:subject)` folds a paragraph into one line, so a newline
     /// is always a record boundary.
     private static let format =
         "--format=%(refname)%00%(objectname:short)%00%(upstream:short)%00%(upstream:track)%00%(committerdate:unix)%00%(contents:subject)"
 
-    static func branchArguments(includeRemotes: Bool = true) -> [String] {
+    package static func branchArguments(includeRemotes: Bool = true) -> [String] {
         ["for-each-ref", "--sort=-committerdate", format, "refs/heads"] + (includeRemotes ? ["refs/remotes"] : [])
     }
 
-    static func parse(branches output: String) -> [BranchRef] {
+    package static func parse(branches output: String) -> [BranchRef] {
         output.split(separator: "\n").compactMap { line in
             let f = line.components(separatedBy: "\0")
             guard f.count >= 6 else { return nil }
@@ -88,7 +88,7 @@ enum Refs {
 
     /// Parses `%(upstream:track)`: `[ahead 2, behind 1]`, `[gone]`, or
     /// nothing at all when the branch is level with its upstream.
-    static func track(_ text: String) -> (ahead: Int, behind: Int, gone: Bool) {
+    package static func track(_ text: String) -> (ahead: Int, behind: Int, gone: Bool) {
         guard !text.isEmpty else { return (0, 0, false) }
         if text.contains("gone") { return (0, 0, true) }
         func number(after word: String) -> Int {
@@ -99,14 +99,14 @@ enum Refs {
         return (number(after: "ahead"), number(after: "behind"), false)
     }
 
-    static func tagArguments(limit: Int = 200) -> [String] {
+    package static func tagArguments(limit: Int = 200) -> [String] {
         [
             "for-each-ref", "--sort=-creatordate", "--count=\(max(1, limit))",
             "--format=%(refname:short)%00%(objectname:short)%00%(creatordate:unix)%00%(contents:subject)", "refs/tags",
         ]
     }
 
-    static func parse(tags output: String) -> [TagRef] {
+    package static func parse(tags output: String) -> [TagRef] {
         output.split(separator: "\n").compactMap { line in
             let f = line.components(separatedBy: "\0")
             guard f.count >= 4, !f[0].isEmpty else { return nil }
@@ -114,13 +114,13 @@ enum Refs {
         }
     }
 
-    static let remoteArguments = ["remote", "-v"]
+    package static let remoteArguments = ["remote", "-v"]
 
     /// Parses `git remote -v`: `origin\t<url>\t(fetch)`, twice per remote.
     /// The fetch URL is the one worth showing; a push-only remote keeps its.
     /// Each URL goes straight to `Remote`, which keeps it without its
     /// userinfo — nothing raw leaves the parser.
-    static func parse(remotes output: String) -> [Remote] {
+    package static func parse(remotes output: String) -> [Remote] {
         var urls: [String: String] = [:]
         var order: [String] = []
         for line in output.split(separator: "\n") {
@@ -137,27 +137,27 @@ enum Refs {
 }
 
 /// One row of the branch list: a branch, or the folder a `/` makes.
-struct BranchNode: Identifiable, Equatable {
+package struct BranchNode: Identifiable, Equatable {
     /// The path so far — `feature` or `feature/x`. Unique in a list.
-    let id: String
+    package let id: String
     /// The last component, which is what the row shows.
-    let name: String
-    let depth: Int
+    package let name: String
+    package let depth: Int
     /// nil for a folder.
-    let branch: BranchRef?
+    package let branch: BranchRef?
     /// A folder: how many branches are under it.
-    let count: Int
+    package let count: Int
 
-    var isFolder: Bool { branch == nil }
+    package var isFolder: Bool { branch == nil }
 }
 
 /// `feature/a` and `feature/b` under `feature`, as the file tree does it:
 /// flattened to rows here rather than nested in the view, so scrolling a
 /// thousand branches costs what a list costs.
-enum BranchTree {
+package enum BranchTree {
     /// The branches whose name holds every word of `query` (any case,
     /// any order): `pay fix` finds `fix/payments`. Empty: all of them.
-    static func matching(_ branches: [BranchRef], query: String) -> [BranchRef] {
+    package static func matching(_ branches: [BranchRef], query: String) -> [BranchRef] {
         let words = query.lowercased().split(whereSeparator: \.isWhitespace)
         guard !words.isEmpty else { return branches }
         return branches.filter { branch in
@@ -167,7 +167,7 @@ enum BranchTree {
     }
 
     /// Every folder the branches sit in — open while a search shows them.
-    static func folders(of branches: [BranchRef]) -> Set<String> {
+    package static func folders(of branches: [BranchRef]) -> Set<String> {
         var folders = Set<String>()
         for branch in branches {
             let parts = branch.name.split(separator: "/").dropLast()
@@ -180,7 +180,7 @@ enum BranchTree {
         return folders
     }
 
-    static func rows(_ branches: [BranchRef], expanded: Set<String>, depth: Int = 0, prefix: String = "") -> [BranchNode] {
+    package static func rows(_ branches: [BranchRef], expanded: Set<String>, depth: Int = 0, prefix: String = "") -> [BranchNode] {
         var folders: [String: [BranchRef]] = [:]
         var folderOrder: [String] = []
         var leaves: [BranchRef] = []

@@ -2,31 +2,31 @@ import Foundation
 
 /// A Claude Code conversation that can be picked back up: one transcript
 /// in ~/.claude/projects, and what its end says.
-struct ClaudeSession: Identifiable, Equatable {
+package struct ClaudeSession: Identifiable, Equatable {
     /// The session id — the transcript's file name, what --resume takes.
-    let id: String
-    let file: URL
+    package let id: String
+    package let file: URL
     /// Where it ran; resuming must start there.
-    let directory: String
-    let updated: Date
-    let activity: ClaudeActivity
+    package let directory: String
+    package let updated: Date
+    package let activity: ClaudeActivity
 
     /// A session id is what Claude Code names its transcripts: a UUID.
     /// Anything else is not typed into a shell.
-    static func isValidID(_ id: String) -> Bool {
+    package static func isValidID(_ id: String) -> Bool {
         !id.isEmpty && id.allSatisfy { $0.isHexDigit || $0 == "-" }
     }
 }
 
-enum ClaudeSessions {
+package enum ClaudeSessions {
     /// A session list reads only this much of each transcript's end.
-    static let tail = 128 * 1024
+    package static let tail = 128 * 1024
 
     /// The newest `limit` sessions run in `directories` or below them,
     /// newest first. Claude's project folders flatten paths (every
     /// non-alphanumeric is "-"), so a folder is a candidate by prefix and
     /// kept only if its transcript's cwd really is inside a directory.
-    static func list(in directories: [String], limit: Int = 60) -> [ClaudeSession] {
+    package static func list(in directories: [String], limit: Int = 60) -> [ClaudeSession] {
         let roots = directories.map { URL(fileURLWithPath: $0).standardizedFileURL.path }
         var sessions: [ClaudeSession] = []
         for candidate in transcripts(in: roots.map { ClaudeUsageReader.projectFolder(for: $0) }) {
@@ -46,7 +46,7 @@ enum ClaudeSessions {
     /// `ClaudeUsageReader.projectFolder`) and — `below` — in those of the
     /// folders under them, newest first. By name only: a look-alike
     /// (`repo-other` for `repo`) is a candidate too.
-    static func transcripts(
+    package static func transcripts(
         in folders: [String], below: Bool = true, projects: URL = ClaudeUsageReader.projectsDirectory
     ) -> [(file: URL, updated: Date)] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: projects.path)) ?? []

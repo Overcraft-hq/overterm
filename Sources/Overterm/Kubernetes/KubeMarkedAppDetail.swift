@@ -30,38 +30,38 @@ import Foundation
 /// a member opens in its own list with the verbs it has there. Apps
 /// grouped by `app.kubernetes.io/instance` alone are only "probably" Argo
 /// CD's in every word. Pure.
-enum KubeMarkedAppDetail {
+package enum KubeMarkedAppDetail {
     // MARK: What a detail reads (M4)
 
     /// The detail's bounds (14.2.3): a GET of at most 50 members, a
     /// workload's pods up to 200 by its selector, a CronJob's Jobs from one
     /// list of its namespace, the newest 5 kept; 50 pods drawn under one
     /// owner, the rest counted.
-    struct Bounds: Equatable, Sendable {
-        var members = 50
-        var pods = 200
-        var replicaSets = 50
-        var jobs = 500
-        var jobsKept = 5
-        var podsShown = 50
+    package struct Bounds: Equatable, Sendable {
+        package var members = 50
+        package var pods = 200
+        package var replicaSets = 50
+        package var jobs = 500
+        package var jobsKept = 5
+        package var podsShown = 50
     }
 
     /// The controller an object's `ownerReferences` name: its kind and name.
-    struct Owner: Equatable, Hashable, Sendable {
-        var kind: String
-        var name: String
+    package struct Owner: Equatable, Hashable, Sendable {
+        package var kind: String
+        package var name: String
     }
 
     /// One object a detail's list found under a member: a ReplicaSet, a
     /// pod, a Job — from its row: its cells' health, its controller, and
     /// a tracking id naming somebody else (a copy) — nothing else of it.
-    struct Child: Equatable, Hashable, Sendable {
-        enum Kind: String, Sendable {
+    package struct Child: Equatable, Hashable, Sendable {
+        package enum Kind: String, Sendable {
             case replicaSet = "ReplicaSet"
             case pod = "Pod"
             case job = "Job"
 
-            var group: String {
+            package var group: String {
                 switch self {
                 case .replicaSet: "apps"
                 case .pod: ""
@@ -70,7 +70,7 @@ enum KubeMarkedAppDetail {
             }
 
             /// Its kind's full name, as discovery serves it.
-            var resource: String {
+            package var resource: String {
                 switch self {
                 case .replicaSet: "replicasets.apps"
                 case .pod: "pods"
@@ -79,36 +79,36 @@ enum KubeMarkedAppDetail {
             }
 
             /// "pods", "ReplicaSets", "Jobs": a note's word.
-            var plural: String { self == .pod ? "pods" : rawValue + "s" }
+            package var plural: String { self == .pod ? "pods" : rawValue + "s" }
         }
 
-        var kind: Kind
-        var namespace: String
-        var name: String
-        var created: Date?
-        var owner: Owner?
+        package var kind: Kind
+        package var namespace: String
+        package var name: String
+        package var created: Date?
+        package var owner: Owner?
         /// The tracking id it carries when it names another object: a copy
         /// its controller made — never a member.
-        var copied: KubeTrackingID?
-        var health: KubeMarkedHealth.Verdict?
+        package var copied: KubeTrackingID?
+        package var health: KubeMarkedHealth.Verdict?
         /// A ReplicaSet's desired replicas: an old one at 0 is folded.
-        var replicas: Int?
+        package var replicas: Int?
 
         /// Which object it is, whichever list found it.
-        struct Place: Hashable, Sendable {
-            var kind: Kind
-            var namespace: String
-            var name: String
+        package struct Place: Hashable, Sendable {
+            package var kind: Kind
+            package var namespace: String
+            package var name: String
         }
 
-        var place: Place { Place(kind: kind, namespace: namespace, name: name) }
+        package var place: Place { Place(kind: kind, namespace: namespace, name: name) }
     }
 
     /// Each object once, as the first list found it: two workloads whose
     /// selectors overlap (`app=web`, and `app=web,track=canary`) list the
     /// narrower one's ReplicaSets and pods twice — drawn twice under it
     /// with one id, and its pods counted twice.
-    static func unique(_ children: [Child]) -> [Child] {
+    package static func unique(_ children: [Child]) -> [Child] {
         var seen = Set<Child.Place>()
         return children.filter { seen.insert($0.place).inserted }
     }
@@ -116,38 +116,38 @@ enum KubeMarkedAppDetail {
     /// One list a detail reads: a member's children in its namespace, by
     /// its own selector (a CronJob's Jobs by their owner, from its
     /// namespace's list) — rows with their metadata, never whole objects.
-    struct List: Equatable, Hashable, Sendable {
-        var what: Child.Kind
-        var namespace: String
+    package struct List: Equatable, Hashable, Sendable {
+        package var what: Child.Kind
+        package var namespace: String
         /// The workload's selector as its object says it; nil: the
         /// namespace's Jobs, kept by their owner.
-        var selector: String?
-        var limit: Int
+        package var selector: String?
+        package var limit: Int
         /// Whose children: what a note names.
-        var of: KubeMarkedMember.ID
+        package var of: KubeMarkedMember.ID
     }
 
     /// What a detail read.
-    struct Read: Equatable, Sendable {
+    package struct Read: Equatable, Sendable {
         /// Each member read by Argo CD's rule: the detail's own GET, or the
         /// section's when it is that fresh.
-        var objects: [KubeMarkedMember.ID: KubeMarkedSettled] = [:]
+        package var objects: [KubeMarkedMember.ID: KubeMarkedSettled] = [:]
         /// A member that couldn't be read, and why: said from its row.
-        var unread: [KubeMarkedMember.ID: String] = [:]
+        package var unread: [KubeMarkedMember.ID: String] = [:]
         /// Members whose rule reads their object, past the first 50: from their rows.
-        var past: [KubeMarkedMember.ID] = []
+        package var past: [KubeMarkedMember.ID] = []
         /// What the lists found under its workloads.
-        var children: [Child] = []
+        package var children: [Child] = []
         /// A list refused, cut or failed, said.
-        var notes: [String] = []
+        package var notes: [String] = []
         /// When it was read; nil while nothing came.
-        var at: Date?
+        package var at: Date?
     }
 
     /// The kinds whose rule reads the object (a workload's, a CronJob's,
     /// an HPA's): a detail GETs those. A Service's, an Ingress's and a
     /// claim's rule reads what their cells show, exactly.
-    static func readsObject(_ kind: KubeMarkedKind) -> Bool {
+    package static func readsObject(_ kind: KubeMarkedKind) -> Bool {
         switch kind {
         case .deployment, .statefulSet, .daemonSet, .rollout, .cronJob, .job, .horizontalPodAutoscaler: true
         default: false
@@ -156,7 +156,7 @@ enum KubeMarkedAppDetail {
 
     /// The members a detail GETs, in the members' order (workloads first):
     /// the first `limit`, and those past it, said from their rows.
-    static func fetched(_ app: KubeMarkedApp, limit: Int) -> (read: [KubeMarkedMember.ID], past: [KubeMarkedMember.ID]) {
+    package static func fetched(_ app: KubeMarkedApp, limit: Int) -> (read: [KubeMarkedMember.ID], past: [KubeMarkedMember.ID]) {
         let wanted = app.members.filter { readsObject($0.id.kind) }.map(\.id)
         return (Array(wanted.prefix(limit)), Array(wanted.dropFirst(limit)))
     }
@@ -168,7 +168,7 @@ enum KubeMarkedAppDetail {
     /// the workload's own selector in its own namespace; none for a
     /// workload whose selector isn't read, or selects everything. The same
     /// list once.
-    static func lists(_ app: KubeMarkedApp, objects: [KubeMarkedMember.ID: KubeMarkedSettled], bounds: Bounds = Bounds()) -> [List] {
+    package static func lists(_ app: KubeMarkedApp, objects: [KubeMarkedMember.ID: KubeMarkedSettled], bounds: Bounds = Bounds()) -> [List] {
         var lists: [List] = []
         var seen = Set<String>()
         func add(_ what: Child.Kind, _ namespace: String, _ selector: String?, _ limit: Int, of id: KubeMarkedMember.ID) {
@@ -209,7 +209,7 @@ enum KubeMarkedAppDetail {
     /// (an Argo Rollout is a custom resource: its fields aren't checked by
     /// the API server as a Deployment's are) — never a query of the
     /// cluster's own making.
-    static func selector(_ wire: KubeMarkedWorkloadWire?) -> String? {
+    package static func selector(_ wire: KubeMarkedWorkloadWire?) -> String? {
         guard let selector = wire?.spec?.selector, !selector.unusable else { return nil }
         let labels = (selector.matchLabels ?? [:]).sorted { $0.key < $1.key }
         guard labels.allSatisfy({ isLabelKey($0.key) && isLabelValue($0.value) }) else { return nil }
@@ -231,7 +231,7 @@ enum KubeMarkedAppDetail {
     /// A label's key as Kubernetes takes it: an optional DNS-subdomain
     /// prefix and `/`, then a name of 1–63 of `[A-Za-z0-9._-]` starting and
     /// ending alphanumeric.
-    static func isLabelKey(_ key: String) -> Bool {
+    package static func isLabelKey(_ key: String) -> Bool {
         let parts = key.split(separator: "/", omittingEmptySubsequences: false)
         switch parts.count {
         case 1: return isLabelName(parts[0])
@@ -241,7 +241,7 @@ enum KubeMarkedAppDetail {
     }
 
     /// A label's value: empty, or a label name.
-    static func isLabelValue(_ value: String) -> Bool { value.isEmpty || isLabelName(Substring(value)) }
+    package static func isLabelValue(_ value: String) -> Bool { value.isEmpty || isLabelName(Substring(value)) }
 
     private static func isLabelName(_ name: Substring) -> Bool {
         let bytes = name.utf8
@@ -261,7 +261,7 @@ enum KubeMarkedAppDetail {
     /// of it is kept (no annotation, label, env or field set). `more`: rows
     /// past the list's limit — their count when the server says it, 0 when
     /// it only says there are more; nil when the list was whole.
-    static func children(_ data: Data, list: List, kind: KubeResourceKind, now: Date) throws -> (children: [Child], more: Int?) {
+    package static func children(_ data: Data, list: List, kind: KubeResourceKind, now: Date) throws -> (children: [Child], more: Int?) {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], object["kind"] as? String == "Table" else {
             throw KubeTableReader.Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self))
         }
@@ -308,7 +308,7 @@ enum KubeMarkedAppDetail {
 
     /// The controller its `ownerReferences` name (else its first owner):
     /// the kind and name, capped, nothing else of them.
-    static func owner(_ metadata: Any?) -> Owner? {
+    package static func owner(_ metadata: Any?) -> Owner? {
         let references = (metadata as? [String: Any])?["ownerReferences"] as? [[String: Any]] ?? []
         guard let chosen = references.first(where: { $0["controller"] as? Bool == true }) ?? references.first,
             let kind = KubeMarkWire.text(chosen["kind"], cap: KubeTrackingID.maxLabel), let name = KubeMarkWire.text(chosen["name"], cap: KubeTrackingID.maxName)
@@ -319,8 +319,8 @@ enum KubeMarkedAppDetail {
     // MARK: The detail
 
     /// One node of its tree.
-    struct Node: Equatable, Sendable, Identifiable {
-        enum Role: Equatable, Sendable {
+    package struct Node: Equatable, Sendable, Identifiable {
+        package enum Role: Equatable, Sendable {
             /// One of its objects, counted toward its health.
             case member
             /// One of its objects Argo CD leaves out (`ignore-healthcheck`).
@@ -333,31 +333,31 @@ enum KubeMarkedAppDetail {
             case hook
         }
 
-        var id: String
+        package var id: String
         /// "" for the core group.
-        var group: String
-        var kind: String
-        var namespace: String?
-        var name: String
-        var role: Role
+        package var group: String
+        package var kind: String
+        package var namespace: String?
+        package var name: String
+        package var role: Role
         /// Argo CD's word for it; nil: no rule for its kind here, or not read.
-        var status: KubeMarkedHealth.Status?
-        var sentence: String
+        package var status: KubeMarkedHealth.Status?
+        package var sentence: String
         /// Said from its row's cells, not its object.
-        var fromRow = false
+        package var fromRow = false
         /// What it is beside its health: "not counted, as in Argo CD", a copy's.
-        var note: String?
-        var children: [Node] = []
+        package var note: String?
+        package var children: [Node] = []
         /// Its children not drawn, counted, and what they are.
-        var more: String?
+        package var more: String?
 
         /// The object it is, to open: its group's version as discovery serves it.
-        var link: KubeLink {
+        package var link: KubeLink {
             KubeLink(apiVersion: group.isEmpty ? "v1" : "\(group)/v1", kind: kind, namespace: namespace, name: name)
         }
 
         /// Its health's word: Argo CD's, else what it has instead.
-        var word: String {
+        package var word: String {
             if let status { return status.word }
             return sentence.isEmpty ? "no health rule here" : "not read yet"
         }
@@ -369,12 +369,12 @@ enum KubeMarkedAppDetail {
         /// their controller's, or nobody's), a hook (Argo CD keeps no sync
         /// status of one), nor a copy of a mark (it names somebody else): a
         /// write on those says nothing of Argo CD.
-        var mayBeUndone: Bool { role == .member || role == .ignored }
+        package var mayBeUndone: Bool { role == .member || role == .ignored }
 
         /// One line: `Deployment acme-cart — Degraded: rollout stalled
         /// (ProgressDeadlineExceeded)`, a namespace in front when its app
         /// spans several.
-        func said(namespaced: Bool) -> String {
+        package func said(namespaced: Bool) -> String {
             let place = namespaced ? namespace.map { "\($0)/" } ?? "" : ""
             if role == .copy { return "\(kind) \(place)\(name) — \(note ?? "a copy, not a member")" }
             var line = "\(kind) \(place)\(name) — \(word)"
@@ -386,80 +386,80 @@ enum KubeMarkedAppDetail {
         }
 
         /// It and every node under it.
-        var all: [Node] { [self] + children.flatMap(\.all) }
+        package var all: [Node] { [self] + children.flatMap(\.all) }
     }
 
     /// The nodes the keyboard walks (↑ ↓; 14.2.3, ↩ on a node): the tree
     /// depth first, as it is drawn, then the hooks.
-    static func walk(_ detail: Detail) -> [Node] { detail.tree.flatMap(\.all) + detail.hooks }
+    package static func walk(_ detail: Detail) -> [Node] { detail.tree.flatMap(\.all) + detail.hooks }
 
     /// The node `step` from `id` along `nodes`, held at either end; the
     /// first when `id` is none of them; nil when there are none.
-    static func step(_ nodes: [Node], from id: String?, by step: Int) -> String? {
+    package static func step(_ nodes: [Node], from id: String?, by step: Int) -> String? {
         guard let first = nodes.first else { return nil }
         guard let index = id.flatMap({ id in nodes.firstIndex { $0.id == id } }) else { return first.id }
         return nodes[min(max(index + step, 0), nodes.count - 1)].id
     }
 
     /// One thing only the Application knows, and where it is.
-    struct Known: Equatable, Sendable {
-        var field: String
-        var place: String
+    package struct Known: Equatable, Sendable {
+        package var field: String
+        package var place: String
     }
 
-    struct Detail: Equatable, Sendable {
+    package struct Detail: Equatable, Sendable {
         /// "Argo CD app", or — grouped by `app.kubernetes.io/instance`
         /// alone — "Probably an Argo CD app".
-        var label: String
+        package var label: String
         /// `payments/checkout-api`, or a bare name in Argo CD's namespace.
-        var title: String
+        package var title: String
         /// Argo CD's word for it, as the detail read its objects.
-        var word: String
-        var state: KubeGitOpsState
-        var why: String
+        package var word: String
+        package var state: KubeGitOpsState
+        package var why: String
         /// The state's hover: Argo CD's word, each cause, what isn't known.
-        var hover: String
+        package var hover: String
         /// The mode's sentence: why it is read from marks.
-        var lead: String?
+        package var lead: String?
         /// Its installation, its Application's namespace, its namespaces.
-        var facts: [String]
-        var knowsTitle: String
-        var knows: [Known]
+        package var facts: [String]
+        package var knowsTitle: String
+        package var knows: [Known]
         /// Its members, by kind, each with what is under it.
-        var tree: [Node]
+        package var tree: [Node]
         /// Its hooks, apart.
-        var hooks: [Node]
+        package var hooks: [Node]
         /// Whether its members span several namespaces: each said with its own.
-        var namespaced: Bool
+        package var namespaced: Bool
         /// sync-wave, sync-options, compare-options, links — text.
-        var hints: [String]
+        package var hints: [String]
         /// Each image and the members running it.
-        var images: [String]
+        package var images: [String]
         /// The commit an image's tag names.
-        var commits: [String]
+        package var commits: [String]
         /// The manifests' revision: the Application's alone.
-        var manifests: String
+        package var manifests: String
         /// Why the Application's verbs aren't here.
-        var absent: String
+        package var absent: String
         /// Promote and abort are Argo Rollouts' own.
-        var rollouts: String?
+        package var rollouts: String?
         /// What couldn't be read, or was read from rows only.
-        var notes: [String]
+        package var notes: [String]
     }
 
-    static let podsNotCounted = "Pods are shown with their own health: as in Argo CD, they don't count toward the app's."
-    static let notCounted = "not counted, as in Argo CD"
-    static let rolloutVerbs = "promote and abort are Argo Rollouts' — not here"
+    package static let podsNotCounted = "Pods are shown with their own health: as in Argo CD, they don't count toward the app's."
+    package static let notCounted = "not counted, as in Argo CD"
+    package static let rolloutVerbs = "promote and abort are Argo Rollouts' — not here"
 
     /// The six things only the Application says (14.2.3).
-    static let applicationFields = [
+    package static let applicationFields = [
         "Sync status", "Repository and path", "Target and live revision", "Sync policy (automated, prune, selfHeal)", "Last sync", "Project",
     ]
 
     /// The detail of one app as the section ranks it, its members settled
     /// by what the detail read (`read`): the header's state is the detail's
     /// own when it read anything, else the section's.
-    static func make(
+    package static func make(
         _ ranked: KubeMarkedRanked, read: Read = Read(), mode: KubeMarkedAppsMode, context: String, bounds: Bounds = Bounds()
     ) -> Detail {
         let app = settled(ranked.app, read)
@@ -497,7 +497,7 @@ enum KubeMarkedAppDetail {
 
     /// The app with each member settled by what the detail read: Argo CD's
     /// rule from its object in place of its row's cells.
-    static func settled(_ app: KubeMarkedApp, _ read: Read) -> KubeMarkedApp {
+    package static func settled(_ app: KubeMarkedApp, _ read: Read) -> KubeMarkedApp {
         guard !read.objects.isEmpty else { return app }
         var app = app
         app.members = app.members.map { member in read.objects[member.id].map { member.settled(by: $0.wire) } ?? member }
@@ -507,7 +507,7 @@ enum KubeMarkedAppDetail {
     /// Its members by kind, each with what is under it — by its owner
     /// references — and the copies of its mark; a copy naming none of its
     /// members at the end.
-    static func tree(_ app: KubeMarkedApp, read: Read, bounds: Bounds = Bounds()) -> [Node] {
+    package static func tree(_ app: KubeMarkedApp, read: Read, bounds: Bounds = Bounds()) -> [Node] {
         var copies = app.copies
         var nodes: [Node] = []
         let index = ChildIndex(read.children)
@@ -654,7 +654,7 @@ enum KubeMarkedAppDetail {
     /// sync-wave, sync-options (`Prune=false`, `ServerSideApply=true`),
     /// compare-options and `link.argocd.argoproj.io/*` — text to read and
     /// copy, never a link opened (D-3). At most 50 lines.
-    static func hints(_ app: KubeMarkedApp) -> [String] {
+    package static func hints(_ app: KubeMarkedApp) -> [String] {
         var lines: [String] = []
         let namespaced = app.namespaces.count > 1
         for member in app.members + app.hooks {
@@ -670,7 +670,7 @@ enum KubeMarkedAppDetail {
 
     /// Each image, once, and the members running it (in their namespaces
     /// when the app spans several) — at most 20, capped.
-    static func images(_ app: KubeMarkedApp) -> [String] {
+    package static func images(_ app: KubeMarkedApp) -> [String] {
         var order: [String] = []
         var runners: [String: [String]] = [:]
         let namespaced = app.namespaces.count > 1
@@ -685,7 +685,7 @@ enum KubeMarkedAppDetail {
 
     /// The commit each image's tag is shaped like — the deployed code, not
     /// the manifests: compared with a checkout in its rail.
-    static func commits(_ app: KubeMarkedApp) -> [String] {
+    package static func commits(_ app: KubeMarkedApp) -> [String] {
         KubeDeployedCommit.candidates(images: app.images).prefix(10).map { candidate in
             "commit \(candidate.sha.prefix(12)) — \(candidate.source.said)" + (candidate.image.map { " (\(KubeMarkedSection.shortImage($0)))" } ?? "")
         }
@@ -693,7 +693,7 @@ enum KubeMarkedAppDetail {
 
     /// What couldn't be read, or is said from rows only — each object in
     /// its namespace when the app spans several.
-    static func notes(_ app: KubeMarkedApp, read: Read) -> [String] {
+    package static func notes(_ app: KubeMarkedApp, read: Read) -> [String] {
         var notes: [String] = []
         if !read.past.isEmpty {
             notes.append("\(KubeMarkedSection.counted(read.past.count, "object")) past the first 50 \(read.past.count == 1 ? "shows" : "show") from its row: a detail reads at most 50")
@@ -709,7 +709,7 @@ enum KubeMarkedAppDetail {
     /// Where the Application is, in the mode's words: only `notServed`
     /// says Argo CD's cluster; an app only probably Argo CD's, nothing of
     /// where Argo CD runs.
-    static func whereTheApplicationIs(_ mode: KubeMarkedAppsMode, probable: Bool = false) -> String {
+    package static func whereTheApplicationIs(_ mode: KubeMarkedAppsMode, probable: Bool = false) -> String {
         if probable { return "in its Application, if Argo CD deploys it — none is read here" }
         switch mode {
         case .only(.notServed): return "in the Application, in Argo CD's cluster"
@@ -723,7 +723,7 @@ enum KubeMarkedAppDetail {
     /// What a write on one of its objects says (14.2.3): Argo CD may undo
     /// it, and whether it does — selfHeal — is the Application's, in the
     /// mode's words. Said, never a guard.
-    static func undone(_ mode: KubeMarkedAppsMode, probable: Bool = false) -> String {
+    package static func undone(_ mode: KubeMarkedAppsMode, probable: Bool = false) -> String {
         if probable { return "Argo CD may undo this if it deploys it: whether selfHeal is on is in its Application, which isn't read here." }
         switch mode {
         case .only(.notServed): return "Argo CD may undo this: whether selfHeal is on is in the Application, in another cluster."
@@ -739,7 +739,7 @@ enum KubeMarkedAppDetail {
     /// opened from this detail: a delete, a restart, a scale, a pause or
     /// resume, a CronJob suspended or resumed — never a Job triggered from
     /// a CronJob (a new object nobody tracks).
-    static let undoneVerbs: Set<KubeWriteVerb> = [.delete, .restart, .scale, .pause, .resume, .suspend, .unsuspend]
+    package static let undoneVerbs: Set<KubeWriteVerb> = [.delete, .restart, .scale, .pause, .resume, .suspend, .unsuspend]
 
     /// An apply's warning on a live object Argo CD tracks (its own tracking
     /// id, or its instance label alone) where Argo CD's Applications aren't
@@ -747,14 +747,14 @@ enum KubeMarkedAppDetail {
     /// selfHeal can't be known, so "may undo", never "will be reverted".
     /// nil for a copy, an object Argo CD doesn't mark, or a context whose
     /// Applications are read.
-    static func applyWarning(live: [String: Any]?, reason: KubeMarkedAppsMode.Reason?) -> String? {
+    package static func applyWarning(live: [String: Any]?, reason: KubeMarkedAppsMode.Reason?) -> String? {
         guard let reason, tracks(live) else { return nil }
         return undone(.only(reason))
     }
 
     /// Whether Argo CD tracks a live object: its own tracking id names it,
     /// or — with none — its instance label. A copy names somebody else.
-    static func tracks(_ live: [String: Any]?) -> Bool {
+    package static func tracks(_ live: [String: Any]?) -> Bool {
         guard let live, let identity = KubeTrackingID.Identity.of(live),
             let marks = KubeMarkWire.read(metadata: live["metadata"] as? [String: Any], self: identity)
         else { return false }
@@ -766,7 +766,7 @@ enum KubeMarkedAppDetail {
     }
 
     /// Copy Names: each of its objects, one a line — `Deployment team-2/acme-cart`.
-    static func names(_ app: KubeMarkedApp) -> String {
+    package static func names(_ app: KubeMarkedApp) -> String {
         (app.members + app.hooks).map { "\($0.id.kind.kind) \($0.id.namespace.map { "\($0)/" } ?? "")\($0.id.name)" }.joined(separator: "\n")
     }
 }

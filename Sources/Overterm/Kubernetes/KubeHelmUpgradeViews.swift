@@ -1,11 +1,11 @@
 import SwiftUI
 
 /// How a bound release's diff or upgrade stands, under its buttons in the rail.
-struct KubeHelmUpgradeStatus: View {
-    @ObservedObject var session: KubeHelmUpgradeSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeHelmUpgradeStatus: View {
+    @ObservedObject package var session: KubeHelmUpgradeSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if let text = session.state.text {
             Text(verbatim: text)
                 .font(.system(size: ChromeMetrics.text(10.5)))
@@ -20,17 +20,17 @@ struct KubeHelmUpgradeStatus: View {
 /// The right-hand pane's diff of a bound release against the checkout's
 /// chart (`KubeHelmUpgradeSession`): what it was rendered with, each
 /// object's diff — masked —, and Upgrade….
-struct KubeHelmDiffContent: View {
-    @ObservedObject var session: KubeHelmUpgradeSession
-    @ObservedObject var theme: ChromeTheme
-    let onClose: () -> Void
+package struct KubeHelmDiffContent: View {
+    @ObservedObject package var session: KubeHelmUpgradeSession
+    @ObservedObject package var theme: ChromeTheme
+    package let onClose: () -> Void
     /// The chart's folder, in the editor.
-    let onOpen: (URL) -> Void
+    package let onOpen: (URL) -> Void
     @State private var folded: Set<String> = []
 
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.3)

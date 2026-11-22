@@ -4,7 +4,7 @@ import SwiftUI
 /// The database client: the sidebar's panel over the saved connections, a
 /// connection's console in the editor, and the sheet that makes one.
 extension TerminalWindowController {
-    var databaseActions: DatabaseActions {
+    package var databaseActions: DatabaseActions {
         DatabaseActions(
             edit: { [weak self] connection, kind in self?.editDatabaseConnection(connection, kind: kind) },
             delete: { [weak self] in self?.deleteDatabaseConnection($0) },
@@ -41,19 +41,19 @@ extension TerminalWindowController {
         )
     }
 
-    func wireDatabase() {
+    package func wireDatabase() {
         EditorViewController.onNewDatabaseConnection = { [weak self] in self?.editDatabaseConnection(nil, kind: nil) }
         EditorViewController.onOpenTrace = { [weak self] id in self?.openTrace(id) }
     }
 
     /// View ▸ Database (⌥⌘B): the sidebar, on the database panel.
-    @objc func showDatabase(_ sender: Any?) {
+    @objc package func showDatabase(_ sender: Any?) {
         guard Settings.shared.databaseEnabled else { return }
         if sidebarItem?.isCollapsed == true { toggleFileTree(nil) }
         sidebarPanel.panel = .database
     }
 
-    func databaseSettingsChanged() {
+    package func databaseSettingsChanged() {
         // Agents' database tools come and go with the setting.
         BrowserBridge.shared.update()
         if !Settings.shared.databaseEnabled, sidebarPanel.panel == .database { sidebarPanel.panel = .files }
@@ -62,7 +62,7 @@ extension TerminalWindowController {
     }
 
     /// New Connection… (with a kind picked) and Edit Connection…, in a sheet.
-    func editDatabaseConnection(_ connection: DatabaseConnection?, kind: DatabaseKind?) {
+    package func editDatabaseConnection(_ connection: DatabaseConnection?, kind: DatabaseKind?) {
         let model = DatabaseModel.shared
         let start = connection ?? DatabaseConnection(name: kind?.title ?? "PostgreSQL", kind: kind ?? .postgres)
         presentSheet { close in
@@ -81,7 +81,7 @@ extension TerminalWindowController {
         }
     }
 
-    func deleteDatabaseConnection(_ connection: DatabaseConnection) {
+    package func deleteDatabaseConnection(_ connection: DatabaseConnection) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = "Delete “\(connection.name)”?"
@@ -102,7 +102,7 @@ extension TerminalWindowController {
     }
 
     /// The connection's console, in the editor.
-    func openDatabaseConsole(_ connection: DatabaseConnection, then done: ((EditorViewController) -> Void)? = nil) {
+    package func openDatabaseConsole(_ connection: DatabaseConnection, then done: ((EditorViewController) -> Void)? = nil) {
         let url = DatabaseModel.shared.console(for: connection)
         openInEditor(url)
         guard let editor else { return }
@@ -116,7 +116,7 @@ extension TerminalWindowController {
 
     /// A query from the panel (Select Top 100): written at the end of the
     /// console and run there, so it stays with what else was run.
-    func runInDatabaseConsole(_ connection: DatabaseConnection, _ sql: String) {
+    package func runInDatabaseConsole(_ connection: DatabaseConnection, _ sql: String) {
         openDatabaseConsole(connection) { editor in
             guard let buffer = editor.active, let console = buffer.sqlConsole else { return }
             let text = buffer.storage.string
@@ -138,7 +138,7 @@ extension TerminalWindowController {
 // MARK: Storage
 
 extension TerminalWindowController {
-    var storageObjectActions: StorageObjectActions {
+    package var storageObjectActions: StorageObjectActions {
         StorageObjectActions(
             download: { [weak self] in
                 guard let self, let session = self.storageObject.session, let object = self.storageObject.object else { return }
@@ -161,7 +161,7 @@ extension TerminalWindowController {
     }
 
     /// A stored file in the right-hand pane, which it joins as every pane there does.
-    func openStorageObject(_ session: StorageSession, _ bucket: String, _ object: StorageObject) {
+    package func openStorageObject(_ session: StorageSession, _ bucket: String, _ object: StorageObject) {
         storageObject.show(object, in: bucket, session: session)
         if zoomedColumn != nil { setZoomed(nil) }
         rightPane.objectOpened = true
@@ -171,7 +171,7 @@ extension TerminalWindowController {
     }
 
     /// Asks — how many files, the first few by name — then deletes them.
-    func deleteStorageObjects(
+    package func deleteStorageObjects(
         _ session: StorageSession, _ bucket: String, _ keys: [String], refreshing prefix: String, then done: (() -> Void)? = nil
     ) {
         guard let window, !keys.isEmpty else { return }
@@ -195,7 +195,7 @@ extension TerminalWindowController {
         }
     }
 
-    func uploadToStorage(_ session: StorageSession, _ bucket: String, _ prefix: String) {
+    package func uploadToStorage(_ session: StorageSession, _ bucket: String, _ prefix: String) {
         guard let window else { return }
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -214,7 +214,7 @@ extension TerminalWindowController {
     }
 
     /// The whole file to where it is saved — through a file, never in memory.
-    func downloadStorageObject(_ session: StorageSession, _ bucket: String, _ object: StorageObject) {
+    package func downloadStorageObject(_ session: StorageSession, _ bucket: String, _ object: StorageObject) {
         guard let window else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = object.name
@@ -234,7 +234,7 @@ extension TerminalWindowController {
     }
 
     /// A copy in Overterm's cache, in the editor — read as text, not sent back.
-    func openStorageObjectInEditor() {
+    package func openStorageObjectInEditor() {
         guard let session = storageObject.session, let object = storageObject.object else { return }
         let bucket = storageObject.bucket
         let folder = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -252,7 +252,7 @@ extension TerminalWindowController {
     }
 
     /// S3: a presigned link for an hour; GCS: the console's page.
-    func copyStorageLink(_ session: StorageSession, _ bucket: String, _ key: String) {
+    package func copyStorageLink(_ session: StorageSession, _ bucket: String, _ key: String) {
         Task {
             do {
                 guard let link = try await session.client.link(bucket: bucket, key: key, expires: 3600) else { return }
@@ -264,7 +264,7 @@ extension TerminalWindowController {
         }
     }
 
-    func reportDatabaseError(_ error: Error) {
+    package func reportDatabaseError(_ error: Error) {
         guard let window else { return }
         NSAlert(error: error).beginSheetModal(for: window)
     }
@@ -275,7 +275,7 @@ extension TerminalWindowController {
 extension TerminalWindowController {
     /// A trace's id (a log line's): in a Tempo connection's console, as a
     /// tab of its own — the first saved one; with none, one is asked for.
-    func openTrace(_ id: String) {
+    package func openTrace(_ id: String) {
         guard let tempo = DatabaseModel.shared.store.connections.first(where: { $0.kind == .tempo }) else {
             reportDatabaseError(DatabaseError.failed("Trace \(id) — add a Tempo connection (Database ▸ + ▸ Tempo) to open it here."))
             return
@@ -287,7 +287,7 @@ extension TerminalWindowController {
 // MARK: Redis
 
 extension TerminalWindowController {
-    var redisSlotActions: RedisSlotActions {
+    package var redisSlotActions: RedisSlotActions {
         RedisSlotActions(
             confirm: { [weak self] title, detail, button, then in self?.confirmRedis(title, detail, button, then: then) },
             openKey: { [weak self] session, db, key in self?.openRedisKey(session, db, key) },
@@ -299,7 +299,7 @@ extension TerminalWindowController {
     }
 
     /// The Redis page in the right-hand pane, which it joins as every pane there does.
-    func showRedisSlot() {
+    package func showRedisSlot() {
         // A zoomed column hides the pane: what was asked for must show.
         if zoomedColumn != nil { setZoomed(nil) }
         rightPane.redisOpened = true
@@ -308,13 +308,13 @@ extension TerminalWindowController {
         updateRightPaneVisibility()
     }
 
-    func openRedisKey(_ session: DatabaseSession, _ db: Int, _ key: String) {
+    package func openRedisKey(_ session: DatabaseSession, _ db: Int, _ key: String) {
         redisSlot.key.show(key, db: db, session: session)
         redisSlot.show(.key)
         showRedisSlot()
     }
 
-    func openRedisServer(_ session: DatabaseSession) {
+    package func openRedisServer(_ session: DatabaseSession) {
         Task {
             if !session.isOpen { await session.open() }
             redisSlot.server.show(session)
@@ -323,7 +323,7 @@ extension TerminalWindowController {
         }
     }
 
-    func deleteRedisKey(_ session: DatabaseSession, _ db: Int, _ key: String) {
+    package func deleteRedisKey(_ session: DatabaseSession, _ db: Int, _ key: String) {
         confirmRedis("Delete “\(key)”?", "From db\(db) of \(session.connection.name). This can't be undone.", "Delete") { [weak self] in
             Task {
                 guard let driver = session.redis else { return }
@@ -339,7 +339,7 @@ extension TerminalWindowController {
         }
     }
 
-    func confirmRedis(_ title: String, _ detail: String, _ button: String, then: @escaping () -> Void) {
+    package func confirmRedis(_ title: String, _ detail: String, _ button: String, then: @escaping () -> Void) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title
@@ -357,7 +357,7 @@ extension TerminalWindowController {
 // MARK: Server and Users pages
 
 extension TerminalWindowController {
-    var databaseSlotActions: DatabaseSlotActions {
+    package var databaseSlotActions: DatabaseSlotActions {
         DatabaseSlotActions(
             confirm: { [weak self] confirmation, then in
                 guard let window = self?.window else { return }
@@ -371,7 +371,7 @@ extension TerminalWindowController {
 
     /// A connection's Server or Users page in the right slot, which it joins
     /// as every pane there does — read only while it shows.
-    func openDatabasePage(_ page: DatabaseSlotModel.Page, for connection: DatabaseConnection) {
+    package func openDatabasePage(_ page: DatabaseSlotModel.Page, for connection: DatabaseConnection) {
         let session = DatabaseModel.shared.session(connection)
         switch page {
         case .server: databaseSlot.server.show(session)
@@ -387,7 +387,7 @@ extension TerminalWindowController {
     }
 
     /// ⌘K: each connection's Server and Users pages, as far as its kind has them.
-    func databasePaletteItems() -> [PaletteItem] {
+    package func databasePaletteItems() -> [PaletteItem] {
         guard Settings.shared.databaseEnabled else { return [] }
         var items: [PaletteItem] = []
         for connection in DatabaseModel.shared.store.connections {
@@ -415,7 +415,7 @@ extension TerminalWindowController {
 
 extension TerminalWindowController {
     /// An MCP server in the right-hand pane, connected — as every pane there joins it.
-    func inspectMCP(_ server: MCPServerConfig) {
+    package func inspectMCP(_ server: MCPServerConfig) {
         apiWorkspace.mcp.open(server)
         if zoomedColumn != nil { setZoomed(nil) }
         rightPane.mcpOpened = true

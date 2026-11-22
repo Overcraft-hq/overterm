@@ -4,12 +4,12 @@ import TreeSitterKit
 /// Edits not yet handed to the parser, merged into one: the span they
 /// touched in the text as last parsed (`start..<oldEnd`) and in the text now
 /// (`start..<newEnd`). A burst of typing is one tree edit, not one per key.
-struct SyntaxEdit: Equatable, Sendable {
-    var start: Int
-    var oldEnd: Int
-    var newEnd: Int
+package struct SyntaxEdit: Equatable, Sendable {
+    package var start: Int
+    package var oldEnd: Int
+    package var newEnd: Int
 
-    init(location: Int, oldLength: Int, newLength: Int) {
+    package init(location: Int, oldLength: Int, newLength: Int) {
         start = location
         oldEnd = location + oldLength
         newEnd = location + newLength
@@ -17,7 +17,7 @@ struct SyntaxEdit: Equatable, Sendable {
 
     /// Adds an edit made to the text *after* this one (its numbers are in
     /// that text).
-    mutating func merge(location: Int, oldLength: Int, newLength: Int) {
+    package mutating func merge(location: Int, oldLength: Int, newLength: Int) {
         let editEnd = location + oldLength
         let unionStart = min(start, location)
         let unionEnd = max(newEnd, editEnd)
@@ -33,27 +33,27 @@ struct SyntaxEdit: Equatable, Sendable {
 /// each edit with the text it left, and asks for the colours of the lines on
 /// screen. UTF-16 throughout — tree-sitter reads the text as NSString holds
 /// it, so a byte offset is just twice an NSRange location.
-final class SyntaxDocument: @unchecked Sendable {
+package final class SyntaxDocument: @unchecked Sendable {
     /// One capture: a range and Helix's name for it ("keyword.control.return").
-    struct Span: Equatable, Sendable {
-        let range: NSRange
-        let capture: String
+    package struct Span: Equatable, Sendable {
+        package let range: NSRange
+        package let capture: String
     }
 
     /// A definition, for ⇧⌘O where no language server answers.
-    struct Symbol: Equatable, Sendable {
-        let name: String
-        let kind: String
-        let range: NSRange
+    package struct Symbol: Equatable, Sendable {
+        package let name: String
+        package let kind: String
+        package let range: NSRange
     }
 
     /// Past this (UTF-16 units) the file stays plain: parsing it on every
     /// edit would cost more than the colours are worth.
-    static let maxLength = 8_000_000
+    package static let maxLength = 8_000_000
     /// Injections inside injections (markdown → fence → its language) stop here.
     private static let maxDepth = 3
 
-    let language: EditorLanguage
+    package let language: EditorLanguage
     private let queue = DispatchQueue(label: "overterm.syntax", qos: .userInitiated)
     // Everything below belongs to `queue`.
     private let parser: OpaquePointer
@@ -62,7 +62,7 @@ final class SyntaxDocument: @unchecked Sendable {
     private var version = 0
     private var injectionParsers: [String: OpaquePointer] = [:]
 
-    init(language: EditorLanguage) {
+    package init(language: EditorLanguage) {
         self.language = language
         parser = ts_parser_new()
         ts_parser_set_language(parser, language.grammar)
@@ -75,7 +75,7 @@ final class SyntaxDocument: @unchecked Sendable {
     }
 
     /// The document's text, from scratch (opening a file, reloading it).
-    func reset(_ text: [UInt16], version: Int) {
+    package func reset(_ text: [UInt16], version: Int) {
         queue.async { [self] in
             if let tree { ts_tree_delete(tree) }
             tree = nil
@@ -87,7 +87,7 @@ final class SyntaxDocument: @unchecked Sendable {
 
     /// The text after `edit`, which the tree learns of first so only what
     /// changed is parsed again.
-    func update(_ text: [UInt16], edit: SyntaxEdit, version: Int) {
+    package func update(_ text: [UInt16], edit: SyntaxEdit, version: Int) {
         queue.async { [self] in
             let old = self.text
             self.text = text
@@ -122,7 +122,7 @@ final class SyntaxDocument: @unchecked Sendable {
     }
 
     /// Row and byte column of a UTF-16 offset, as tree-sitter keeps them.
-    static func point(_ offset: Int, in text: [UInt16]) -> TSPoint {
+    package static func point(_ offset: Int, in text: [UInt16]) -> TSPoint {
         let offset = min(offset, text.count)
         var row: UInt32 = 0
         var lineStart = 0
@@ -141,7 +141,7 @@ final class SyntaxDocument: @unchecked Sendable {
     /// order to paint them: outer before inner, and for one node the later
     /// pattern last — so it wins, as Helix's queries expect (25.07 onward).
     /// `done` runs on the main queue with the version the spans are for.
-    func highlights(in range: NSRange, done: @escaping @Sendable (_ version: Int, _ spans: [Span]) -> Void) {
+    package func highlights(in range: NSRange, done: @escaping @Sendable (_ version: Int, _ spans: [Span]) -> Void) {
         queue.async { [self] in
             var spans: [Span] = []
             if let tree { collect(tree, language, range, depth: 0, into: &spans) }
@@ -151,7 +151,7 @@ final class SyntaxDocument: @unchecked Sendable {
     }
 
     /// The same, synchronously — for tests.
-    func highlightsNow(in range: NSRange) -> [Span] {
+    package func highlightsNow(in range: NSRange) -> [Span] {
         queue.sync {
             var spans: [Span] = []
             if let tree { collect(tree, language, range, depth: 0, into: &spans) }
@@ -325,7 +325,7 @@ final class SyntaxDocument: @unchecked Sendable {
 
     /// Definitions, by the language's tags query (Helix's `@definition.*`
     /// around a `@name`), for the symbol picker.
-    func symbols(done: @escaping @Sendable ([Symbol]) -> Void) {
+    package func symbols(done: @escaping @Sendable ([Symbol]) -> Void) {
         queue.async { [self] in
             var symbols: [Symbol] = []
             if let tree, let query = language.tags {
@@ -356,5 +356,5 @@ final class SyntaxDocument: @unchecked Sendable {
     }
 
     /// Waits for every edit sent so far to be parsed — for tests.
-    func settle() { queue.sync {} }
+    package func settle() { queue.sync {} }
 }

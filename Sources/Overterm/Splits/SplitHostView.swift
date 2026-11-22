@@ -5,24 +5,24 @@ import AppKit
 /// can be grabbed a few points either side, and the panes without the
 /// keyboard dimmed so the focused one stands out.
 @MainActor
-final class SplitHostView: NSView {
-    static let dividerThickness: CGFloat = 1
+package final class SplitHostView: NSView {
+    package static let dividerThickness: CGFloat = 1
     /// The bar across the top of every pane (`PaneHeaderView`).
     /// Settings ▸ Appearance ▸ Density moves it (ChromeMetrics); 38 by default.
-    static var headerHeight: CGFloat { ChromeMetrics.paneHeaderHeight }
+    package static var headerHeight: CGFloat { ChromeMetrics.paneHeaderHeight }
     /// Presentation mode (⌃⌘P) hides every pane's header.
-    nonisolated(unsafe) static var presenting = false
+    package nonisolated(unsafe) static var presenting = false
     /// Settings ▸ Appearance ▸ Pane headers: "Only when a tab is split".
-    static var headersOnlyWhenSplit: Bool { Settings.shared.string("appearance.paneHeaders") == "whenSplit" }
+    package static var headersOnlyWhenSplit: Bool { Settings.shared.string("appearance.paneHeaders") == "whenSplit" }
     /// How far from the 1 pt line a divider can still be grabbed.
     private static let grab: CGFloat = 4
 
-    private(set) var tree: SplitTree<TerminalView>?
-    private(set) var focused: TerminalView?
+    package private(set) var tree: SplitTree<TerminalView>?
+    package private(set) var focused: TerminalView?
     /// Shown alone, filling the tab (toggle_split_zoom).
-    private(set) var zoomed: TerminalView?
+    package private(set) var zoomed: TerminalView?
     /// A divider was dragged: the split at `path` wants `ratio`.
-    var onRatioChange: (([Bool], Double) -> Void)?
+    package var onRatioChange: (([Bool], Double) -> Void)?
 
     /// Tab peek scales the whole host into a card with a layer transform:
     /// pixels move, no frame changes, so no surface is resized and nothing
@@ -30,7 +30,7 @@ final class SplitHostView: NSView {
     /// syncs the layer to the view's geometry — it had silently undone the
     /// scale on every host but the first — so the host owns it and puts it
     /// back after each layout.
-    var peekTransform = CATransform3DIdentity {
+    package var peekTransform = CATransform3DIdentity {
         didSet { layer?.transform = peekTransform }
     }
 
@@ -48,14 +48,14 @@ final class SplitHostView: NSView {
     /// Makes a pane's header. The host frames it and nothing more: what
     /// goes in it needs the tab, its group and the window's actions, none
     /// of which a view over TerminalViews should know about.
-    var makeHeader: ((TerminalView) -> NSView)?
+    package var makeHeader: ((TerminalView) -> NSView)?
     /// The same for the scroll map down a pane's right edge. A view of its
     /// own rather than part of the header: one covering the whole pane
     /// would sit between the terminal and the mouse.
-    var makeScrollMap: ((TerminalView) -> NSView)?
+    package var makeScrollMap: ((TerminalView) -> NSView)?
     /// And the ring around a failed command's output, which covers the
     /// grid and takes no clicks.
-    var makeBlockFrame: ((TerminalView) -> NSView)?
+    package var makeBlockFrame: ((TerminalView) -> NSView)?
 
     private var dividers: [SplitTree<TerminalView>.Divider] = []
     private var headers: [ObjectIdentifier: NSView] = [:]
@@ -67,16 +67,16 @@ final class SplitHostView: NSView {
     /// would be a second one, at a size nobody can read.
     private var previewing = false
     /// Over the panes without the keyboard; Settings can change it.
-    var dimColor: NSColor {
+    package var dimColor: NSColor {
         didSet { dims.values.forEach { $0.layer?.backgroundColor = dimColor.cgColor } }
     }
 
     /// Between the panes, where the terminal's background shows through.
-    var dividerColor: NSColor {
+    package var dividerColor: NSColor {
         didSet { layer?.backgroundColor = dividerColor.cgColor }
     }
 
-    init(dividerColor: NSColor, dimColor: NSColor) {
+    package init(dividerColor: NSColor, dimColor: NSColor) {
         self.dimColor = dimColor
         self.dividerColor = dividerColor
         super.init(frame: .zero)
@@ -84,14 +84,14 @@ final class SplitHostView: NSView {
         layer?.backgroundColor = dividerColor.cgColor
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    package required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    override var isFlipped: Bool { true }
+    package override var isFlipped: Bool { true }
     /// A divider is grabbed on the first click, in a background window too
     /// (as NSSplitView's are); without this the click only activated it.
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    package override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    func update(tree: SplitTree<TerminalView>, focused: TerminalView?, zoomed: TerminalView?) {
+    package func update(tree: SplitTree<TerminalView>, focused: TerminalView?, zoomed: TerminalView?) {
         self.tree = tree
         self.focused = focused
         self.zoomed = zoomed.flatMap { tree.contains($0) ? $0 : nil }
@@ -127,7 +127,7 @@ final class SplitHostView: NSView {
 
     /// The tab shown or hidden; hidden panes are occluded (libghostty stops
     /// rendering them).
-    func setVisible(_ visible: Bool) {
+    package func setVisible(_ visible: Bool) {
         self.visible = visible
         previewing = false
         isHidden = !visible
@@ -137,7 +137,7 @@ final class SplitHostView: NSView {
 
     /// Shown for tab peek without waking the renderer: the peek draws these
     /// panes itself, at its own cadence.
-    func setPreviewing(_ previewing: Bool) {
+    package func setPreviewing(_ previewing: Bool) {
         visible = previewing
         self.previewing = previewing
         isHidden = !previewing
@@ -155,7 +155,7 @@ final class SplitHostView: NSView {
         }
     }
 
-    override func layout() {
+    package override func layout() {
         super.layout()
         // The panes moved: the translucent window's ground follows them.
         defer { window?.groundChanged() }
@@ -186,7 +186,7 @@ final class SplitHostView: NSView {
 
     /// After layout, before display — AppKit writes the layer's geometry
     /// from the view's between the two, which is where the scale was lost.
-    override func viewWillDraw() {
+    package override func viewWillDraw() {
         super.viewWillDraw()
         restorePeekTransform()
     }
@@ -247,10 +247,10 @@ final class SplitHostView: NSView {
 
     /// How many panes are dimmed — for the E2E scenario, which cannot tell
     /// a dim from a header by class alone.
-    var dimmedPanes: Int { dims.values.count { !$0.isHidden } }
+    package var dimmedPanes: Int { dims.values.count { !$0.isHidden } }
 
     /// A pane's header, if it has been made.
-    func header(of pane: TerminalView) -> NSView? { headers[ObjectIdentifier(pane)] }
+    package func header(of pane: TerminalView) -> NSView? { headers[ObjectIdentifier(pane)] }
 
     private func dimView(for pane: TerminalView) -> NSView {
         if let dim = dims[ObjectIdentifier(pane)] { return dim }
@@ -273,13 +273,13 @@ final class SplitHostView: NSView {
         dividers.last { grabRect($0).contains(point) }
     }
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
+    package override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         if !isHidden, divider(at: local) != nil { return self }
         return super.hitTest(point)
     }
 
-    override func resetCursorRects() {
+    package override func resetCursorRects() {
         for divider in dividers {
             addCursorRect(grabRect(divider), cursor: divider.axis == .horizontal ? .resizeLeftRight : .resizeUpDown)
         }
@@ -287,7 +287,7 @@ final class SplitHostView: NSView {
 
     /// Tracks the drag itself, as NSSplitView does: the pointer soon
     /// leaves the grab zone, and the drag must stay with the divider.
-    override func mouseDown(with event: NSEvent) {
+    package override func mouseDown(with event: NSEvent) {
         let down = convert(event.locationInWindow, from: nil)
         guard let dragging = divider(at: down), let window else { return }
         // Where on the grab zone it was taken: the divider keeps that

@@ -4,39 +4,39 @@ import Foundation
 /// its body without the frontmatter, its properties in the order written,
 /// and every link it — and every note it embeds — has, already resolved.
 /// The script only draws; deciding what a link means is the index's. Pure.
-struct NoteRenderPayload: Equatable, Sendable {
-    struct Target: Equatable, Sendable {
-        var path: String
-        var kind: NoteItem.Kind
+package struct NoteRenderPayload: Equatable, Sendable {
+    package struct Target: Equatable, Sendable {
+        package var path: String
+        package var kind: NoteItem.Kind
     }
 
-    var path: String
-    var text: String
+    package var path: String
+    package var text: String
     /// Lines the frontmatter took, so a task's line in `text` is its line in the file.
-    var lineOffset: Int
+    package var lineOffset: Int
     /// Key, value as shown, and the items when it is a list.
-    var properties: [(String, String, [String]?)]
+    package var properties: [(String, String, [String]?)]
     /// By target as written (`Folder/Note`, `image.png`); a missing key is
     /// a link to a note not written yet.
-    var links: [String: Target]
+    package var links: [String: Target]
     /// Embedded notes' text, by `target` or `target#anchor` as written.
-    var embeds: [String: String]
+    package var embeds: [String: String]
     /// Embedded drawings' scenes, by target as written — drawn as pictures.
-    var drawings: [String: Drawing] = [:]
+    package var drawings: [String: Drawing] = [:]
 
-    struct Drawing: Equatable, Sendable {
-        var scene: String
-        var encoding: DrawingFile.Encoding
+    package struct Drawing: Equatable, Sendable {
+        package var scene: String
+        package var encoding: DrawingFile.Encoding
     }
 
-    static func == (a: Self, b: Self) -> Bool {
+    package static func == (a: Self, b: Self) -> Bool {
         a.path == b.path && a.text == b.text && a.lineOffset == b.lineOffset && a.links == b.links && a.embeds == b.embeds
             && a.drawings == b.drawings
             && a.properties.map { "\($0.0)\u{1}\($0.1)\u{1}\($0.2 ?? [])" } == b.properties.map { "\($0.0)\u{1}\($0.1)\u{1}\($0.2 ?? [])" }
     }
 
     /// Builds it; `read` gives an embedded note's text (nil when it can't).
-    static func make(path: String, text: String, index: NotesIndex, read: (String) -> String?) -> NoteRenderPayload {
+    package static func make(path: String, text: String, index: NotesIndex, read: (String) -> String?) -> NoteRenderPayload {
         let doc = NoteParser.parse(text)
         let ns = text as NSString
         var body = text
@@ -94,7 +94,7 @@ struct NoteRenderPayload: Equatable, Sendable {
     /// `text`'s wikilinks with the paths they resolve to from `source`, so
     /// they mean the same wherever the text is shown. What they read as is
     /// kept: an alias stays, a bare name becomes the alias.
-    static func absolute(_ text: String, from source: String, resolver: LinkResolver) -> String {
+    package static func absolute(_ text: String, from source: String, resolver: LinkResolver) -> String {
         let doc = NoteParser.parse(text)
         let ns = NSMutableString(string: text)
         for link in doc.links.reversed() where !link.isMarkdown {
@@ -118,14 +118,14 @@ struct NoteRenderPayload: Equatable, Sendable {
 
     /// Worth reading to see whether it is a drawing: one by its name, or a
     /// plain `.md` (the plugin can be set to name them so).
-    static func mayBeDrawing(_ path: String) -> Bool {
+    package static func mayBeDrawing(_ path: String) -> Bool {
         let url = URL(fileURLWithPath: path)
         return DrawingFile.isDrawing(url) || url.pathExtension.lowercased() == "md"
     }
 
     /// The frontmatter's keys in the order they're written (a dictionary
     /// has none), with their values as parsed.
-    static func properties(_ doc: NoteDocument) -> [(String, String, [String]?)] {
+    package static func properties(_ doc: NoteDocument) -> [(String, String, [String]?)] {
         guard let yaml = doc.frontmatter else { return [] }
         var keys: [String] = []
         for line in yaml.components(separatedBy: "\n") {
@@ -141,7 +141,7 @@ struct NoteRenderPayload: Equatable, Sendable {
     }
 
     /// As JSON for `OT.render`.
-    func json(vaultBase: String, base: String, breaks: Bool, dark: Bool, colors: [String: String]) -> String {
+    package func json(vaultBase: String, base: String, breaks: Bool, dark: Bool, colors: [String: String]) -> String {
         var links: [String: Any] = [:]
         for (key, target) in self.links { links[key] = ["path": target.path, "kind": target.kind.rawValue] }
         let object: [String: Any] = [
@@ -158,19 +158,19 @@ struct NoteRenderPayload: Equatable, Sendable {
 /// A part of a note, as an embed names it: `#Heading` (the heading and
 /// what is under it, to the next heading as high) or `#^block` (the line
 /// or paragraph that ends with it). Pure.
-enum NoteSections {
-    static func extract(_ text: String, anchor: String?) -> String {
+package enum NoteSections {
+    package static func extract(_ text: String, anchor: String?) -> String {
         guard let anchor, !anchor.isEmpty else { return stripFrontmatter(text) }
         if anchor.hasPrefix("^") { return block(text, id: String(anchor.dropFirst())) ?? "" }
         return section(text, heading: anchor) ?? ""
     }
 
-    static func stripFrontmatter(_ text: String) -> String {
+    package static func stripFrontmatter(_ text: String) -> String {
         guard let range = NoteParser.parse(text).frontmatterRange else { return text }
         return (text as NSString).substring(from: range.length)
     }
 
-    static func section(_ text: String, heading: String) -> String? {
+    package static func section(_ text: String, heading: String) -> String? {
         let doc = NoteParser.parse(text)
         // Obsidian names a nested heading `A#B`: the last part is the one.
         let wanted = (heading.split(separator: "#").last.map(String.init) ?? heading).trimmingCharacters(in: .whitespaces).lowercased()
@@ -181,7 +181,7 @@ enum NoteSections {
             .trimmingCharacters(in: .newlines)
     }
 
-    static func block(_ text: String, id: String) -> String? {
+    package static func block(_ text: String, id: String) -> String? {
         let lines = text.components(separatedBy: "\n")
         guard let index = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasSuffix("^" + id) }) else { return nil }
         let marker = " ^" + id
@@ -208,12 +208,12 @@ enum NoteSections {
 }
 
 /// Edits the reading view asks for, made in the text. Pure.
-enum NoteEdits {
+package enum NoteEdits {
     /// The task on `line` ticked or unticked; nil when there is none there.
     /// `[x]` goes back to `[ ]`, anything else (`[ ]`, `[/]`) to `[x]`.
     /// With `text`, the line is where it was: a task with those words
     /// there, else the nearest with them — never another one.
-    static func toggleTask(in text: String, line: Int, text words: String? = nil) -> (range: NSRange, replacement: String)? {
+    package static func toggleTask(in text: String, line: Int, text words: String? = nil) -> (range: NSRange, replacement: String)? {
         let tasks = NoteParser.parse(text).tasks
         let task: NoteDocument.Task?
         if let words {

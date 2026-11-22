@@ -12,10 +12,10 @@ import Foundation
 /// engine that goes away is retried at growing intervals, its runtime asked
 /// whether it is starting or stopped while someone is looking.
 @MainActor
-final class DockerModel: ObservableObject {
-    static let shared = DockerModel()
+package final class DockerModel: ObservableObject {
+    package static let shared = DockerModel()
 
-    enum Connection: Equatable, Sendable {
+    package enum Connection: Equatable, Sendable {
         /// Docker is off in Settings, or this run must not reach the user's.
         case off
         case connecting
@@ -24,65 +24,65 @@ final class DockerModel: ObservableObject {
         /// The engine didn't answer; what was said.
         case down(String)
 
-        var isRunning: Bool {
+        package var isRunning: Bool {
             if case .running = self { return true }
             return false
         }
     }
 
-    @Published private(set) var connection: Connection = .off
-    @Published private(set) var endpoint: DockerEndpoint?
+    @Published package private(set) var connection: Connection = .off
+    @Published package private(set) var endpoint: DockerEndpoint?
     /// Where a remote engine's published ports are: its host, by the name
     /// ~/.ssh/config gives it for `ssh://`. Nil for an engine on this Mac.
-    @Published private(set) var publishedHost: String?
-    @Published private(set) var runtime: DockerRuntime = .engine
+    @Published package private(set) var publishedHost: String?
+    @Published package private(set) var runtime: DockerRuntime = .engine
     /// Asked of the runtime while the engine is down and Docker is on screen.
-    @Published private(set) var runtimeStatus: DockerRuntime.Status = .unknown
-    @Published private(set) var info: EngineInfo?
+    @Published package private(set) var runtimeStatus: DockerRuntime.Status = .unknown
+    @Published package private(set) var info: EngineInfo?
     /// Every container, stopped ones too, by name.
-    @Published private(set) var containers: [ContainerSummary] = []
-    @Published private(set) var projects: [ComposeProject] = []
+    @Published package private(set) var containers: [ContainerSummary] = []
+    @Published package private(set) var projects: [ComposeProject] = []
     /// The containers in no compose project.
-    @Published private(set) var loose: [ContainerSummary] = []
+    @Published package private(set) var loose: [ContainerSummary] = []
     /// Testcontainers' runs (`Testcontainers`), taken out of `projects` and
     /// `loose` before those are grouped: a test's compose stack (Go's
     /// compose module labels it both ways) is its run's, not a checkout's.
-    @Published private(set) var testcontainers: [TestcontainersSession] = []
+    @Published package private(set) var testcontainers: [TestcontainersSession] = []
 
     /// What a section lists besides containers, read only while one shows
     /// it (`want`), then kept current by its events.
-    enum Resource: Hashable, Sendable { case images, volumes, networks }
-    @Published private(set) var images: [ImageSummary] = []
+    package enum Resource: Hashable, Sendable { case images, volumes, networks }
+    @Published package private(set) var images: [ImageSummary] = []
     /// From `/system/df`, which says each one's size and users.
-    @Published private(set) var volumes: [VolumeSummary] = []
-    @Published private(set) var networks: [NetworkSummary] = []
+    @Published package private(set) var volumes: [VolumeSummary] = []
+    @Published package private(set) var networks: [NetworkSummary] = []
     /// What the images, volumes, containers and build cache take.
-    @Published private(set) var diskUsage: DockerDiskUsage?
+    @Published package private(set) var diskUsage: DockerDiskUsage?
     private var wanted: [Resource: Int] = [:]
     private var loading: [Resource: Task<Void, Never>] = [:]
     /// Asked for again while a read was on its way: read once more after it.
     private var again: Set<Resource> = []
 
     /// Each listed event as it comes — what the attention marks read.
-    let events = PassthroughSubject<DockerEvent, Never>()
+    package let events = PassthroughSubject<DockerEvent, Never>()
 
     /// What its running containers use, while a page's Containers section
     /// shows.
-    lazy var usage = DockerUsageMonitor(docker: self)
+    package lazy var usage = DockerUsageMonitor(docker: self)
 
     /// Each image's platform, by its id, as its inspect last said: read
     /// only for what shows (`wantPlatform`) or an agent asks about
     /// (`readPlatforms`), once an id till the next image event.
-    @Published private(set) var platforms: [String: DockerPlatform] = [:]
+    @Published package private(set) var platforms: [String: DockerPlatform] = [:]
     /// Each container's, by its id, as its image's said when first read
     /// for it — a container's platform never changes, but in the
     /// containerd image store an id is the image's index, and a pull can
     /// add the engine's own platform to it. One that says its own
     /// (`ContainerSummary.ownPlatform`, API 1.48) isn't kept here.
-    @Published private(set) var containerPlatforms: [String: DockerPlatform] = [:]
+    @Published package private(set) var containerPlatforms: [String: DockerPlatform] = [:]
     /// One more at each burst of image events: what shows an image asks
     /// again (`platformKey`).
-    @Published private(set) var platformEpoch = 0
+    @Published package private(set) var platformEpoch = 0
     /// Asked since the last image event, misses too: not read again till
     /// the next.
     private var platformsAsked: Set<String> = []
@@ -98,7 +98,7 @@ final class DockerModel: ObservableObject {
     private var platformsReading: Task<Void, Never>?
     private var platformRefresh: Task<Void, Never>?
 
-    private(set) var engine: DockerEngine?
+    package private(set) var engine: DockerEngine?
     private let resolve: @MainActor () -> DockerEndpoint?
     private let retries: [Duration]
     private let poll: Duration
@@ -112,14 +112,14 @@ final class DockerModel: ObservableObject {
     private weak var sweptHelpers: DockerEngine?
     private var viewers = 0
     /// How many pages and panels are looking — for checks.
-    var viewerCount: Int { viewers }
+    package var viewerCount: Int { viewers }
     private var attempt = 0
 
     /// - Parameter endpoint: where to look, asked at each (re)connection —
     ///   AppEnvironment's, by default.
     /// - Parameter retries: the waits between attempts while the engine is
     ///   away, the last one repeated.
-    init(
+    package init(
         endpoint: @escaping @MainActor () -> DockerEndpoint? = {
             Settings.shared.dockerEnabled
                 ? AppEnvironment.dockerEndpoint(setting: Settings.shared.dockerEndpoint, context: Settings.shared.dockerContext) : nil
@@ -134,17 +134,17 @@ final class DockerModel: ObservableObject {
     // MARK: Connecting
 
     /// Whether it watches an engine (or waits to retry one).
-    var isWatching: Bool { watching != nil }
+    package var isWatching: Bool { watching != nil }
 
     /// Starts watching the engine, if it isn't already.
-    func start() {
+    package func start() {
         guard watching == nil else { return }
         watching = Task { [weak self] in await self?.watch() }
     }
 
     /// Stops it: nothing is read, the lists empty; a remote engine's ssh
     /// is closed.
-    func stop() {
+    package func stop() {
         watching?.cancel()
         watching = nil
         reloading?.cancel()
@@ -157,7 +157,7 @@ final class DockerModel: ObservableObject {
 
     /// Now rather than at the next retry: after "Start Docker Desktop",
     /// a context switched, the endpoint setting changed.
-    func reconnect() {
+    package func reconnect() {
         stop()
         attempt = 0
         start()
@@ -166,7 +166,7 @@ final class DockerModel: ObservableObject {
     /// A scenario's own engine (the fake one), in place of the user's.
     private var override: DockerEndpoint?
 
-    func use(_ endpoint: DockerEndpoint?) {
+    package func use(_ endpoint: DockerEndpoint?) {
         override = endpoint
         reconnect()
     }
@@ -273,7 +273,7 @@ final class DockerModel: ObservableObject {
     }
 
     /// A container's published ports, where they are reached from here.
-    func ports(of container: ContainerSummary) -> [PublishedPort] {
+    package func ports(of container: ContainerSummary) -> [PublishedPort] {
         PublishedPort.of(container.Ports ?? [], remoteHost: publishedHost)
     }
 
@@ -285,7 +285,7 @@ final class DockerModel: ObservableObject {
 
     /// What the bar says when the engine doesn't answer. `refusal` is what
     /// a remote host's ssh said of its engine's socket.
-    nonisolated static func reason(_ error: Error, endpoint: DockerEndpoint, runtime: DockerRuntime, refusal: String? = nil) -> String {
+    package nonisolated static func reason(_ error: Error, endpoint: DockerEndpoint, runtime: DockerRuntime, refusal: String? = nil) -> String {
         if case .unix(let path) = endpoint.address, !FileManager.default.fileExists(atPath: path) {
             return "\(runtime.name) isn't running — no socket at \(path)."
         }
@@ -323,7 +323,7 @@ final class DockerModel: ObservableObject {
     // MARK: Reading
 
     /// The containers again, now.
-    func reload() async {
+    package func reload() async {
         guard let engine else { return }
         guard let list = try? await engine.containers(all: true), self.engine === engine else { return }
         // What a run before this left, once an engine connects.
@@ -357,7 +357,7 @@ final class DockerModel: ObservableObject {
     }
 
     /// Something shows Docker: the slow poll runs until the last `hide`.
-    func show() {
+    package func show() {
         viewers += 1
         // Waiting out a quiet retry in the background: now someone looks.
         if viewers == 1, watching != nil, !connection.isRunning {
@@ -375,7 +375,7 @@ final class DockerModel: ObservableObject {
         }
     }
 
-    func hide() {
+    package func hide() {
         viewers = max(0, viewers - 1)
         guard viewers == 0 else { return }
         polling?.cancel()
@@ -385,16 +385,16 @@ final class DockerModel: ObservableObject {
     // MARK: Images, volumes, networks
 
     /// A section shows it: read now, and again as its events come.
-    func want(_ resource: Resource) {
+    package func want(_ resource: Resource) {
         wanted[resource, default: 0] += 1
         start()
         load(resource)
     }
 
     /// Whether a section reads it now (and so after each of its events).
-    func isWanted(_ resource: Resource) -> Bool { wanted[resource] != nil }
+    package func isWanted(_ resource: Resource) -> Bool { wanted[resource] != nil }
 
-    func unwant(_ resource: Resource) {
+    package func unwant(_ resource: Resource) {
         let count = (wanted[resource] ?? 0) - 1
         wanted[resource] = count > 0 ? count : nil
     }
@@ -407,7 +407,7 @@ final class DockerModel: ObservableObject {
 
     /// Read it. A read already on its way may have started before what
     /// changed: it is followed by one more, not by one each.
-    func load(_ resource: Resource) {
+    package func load(_ resource: Resource) {
         guard loading[resource] == nil else {
             again.insert(resource)
             return
@@ -440,11 +440,11 @@ final class DockerModel: ObservableObject {
     // MARK: Platforms
 
     /// What the engine runs on: `/info`'s, read once a connection.
-    var enginePlatform: DockerPlatform? { info.flatMap { DockerPlatform(engine: $0.Architecture, os: $0.OSType) } }
+    package var enginePlatform: DockerPlatform? { info.flatMap { DockerPlatform(engine: $0.Architecture, os: $0.OSType) } }
 
     /// What a container runs: what it says itself (API 1.48), what its
     /// image said when first read for it, else what its image says now.
-    func platform(of container: ContainerSummary) -> DockerPlatform? {
+    package func platform(of container: ContainerSummary) -> DockerPlatform? {
         container.ownPlatform ?? containerPlatforms[container.Id] ?? container.ImageID.flatMap { platforms[$0] }
     }
 
@@ -453,14 +453,14 @@ final class DockerModel: ObservableObject {
 
     /// What a view asking for an image's platform keys its task by: the
     /// epoch in it asks again after an image event.
-    func platformKey(_ imageID: String?) -> String { "\(imageID ?? "")#\(platformEpoch)" }
+    package func platformKey(_ imageID: String?) -> String { "\(imageID ?? "")#\(platformEpoch)" }
 
     /// A container's: the epoch's only until it is settled.
-    func platformKey(of container: ContainerSummary) -> String { settled(container) ? container.Id : platformKey(container.ImageID) }
+    package func platformKey(of container: ContainerSummary) -> String { settled(container) ? container.Id : platformKey(container.ImageID) }
 
     /// A row or a detail shows the container: its image's platform is
     /// read, unless it is settled.
-    func wantPlatform(of container: ContainerSummary) {
+    package func wantPlatform(of container: ContainerSummary) {
         guard !settled(container) else { return }
         wantPlatform(of: container.ImageID)
     }
@@ -468,7 +468,7 @@ final class DockerModel: ObservableObject {
     /// A row or a detail shows the image: its platform is read, with the
     /// others asked for meanwhile (a screen's rows appear together), unless
     /// it was since the last image event.
-    func wantPlatform(of imageID: String?) {
+    package func wantPlatform(of imageID: String?) {
         guard let id = imageID, !id.isEmpty, engine != nil, enginePlatform != nil, platformsAsked.insert(id).inserted else { return }
         platformsWaiting.insert(id)
         guard platformsReading == nil else { return }
@@ -522,7 +522,7 @@ final class DockerModel: ObservableObject {
     /// event — an agent asking waits for them, and for a view's read of
     /// them on its way. Misses aren't asked again till the next event.
     @discardableResult
-    func readPlatforms(of ids: [String]) async -> [String: DockerPlatform] {
+    package func readPlatforms(of ids: [String]) async -> [String: DockerPlatform] {
         let wanted = Set(ids.filter { !$0.isEmpty })
         guard engine != nil, enginePlatform != nil else { return [:] }
         for id in wanted where platformsAsked.insert(id).inserted { platformsWaiting.insert(id) }
@@ -538,7 +538,7 @@ final class DockerModel: ObservableObject {
     }
 
     /// What `containers` run, read where it isn't settled: an agent waits.
-    func readPlatforms(for containers: [ContainerSummary]) async {
+    package func readPlatforms(for containers: [ContainerSummary]) async {
         await readPlatforms(of: containers.filter { !settled($0) }.compactMap(\.ImageID))
     }
 
@@ -563,59 +563,59 @@ final class DockerModel: ObservableObject {
 
     /// An image that runs emulated here; nil when it runs natively or
     /// isn't known yet.
-    func emulation(ofImage id: String?) -> DockerEmulation? {
+    package func emulation(ofImage id: String?) -> DockerEmulation? {
         DockerEmulation(image: id.flatMap { platforms[$0] }, engine: enginePlatform)
     }
 
     /// A container that runs emulated: by what it runs (`platform(of:)`),
     /// not by what its image's index offers now.
-    func emulation(of container: ContainerSummary) -> DockerEmulation? { DockerEmulation(image: platform(of: container), engine: enginePlatform) }
+    package func emulation(of container: ContainerSummary) -> DockerEmulation? { DockerEmulation(image: platform(of: container), engine: enginePlatform) }
 
     /// What uses an image: containers made from it, stopped ones too.
-    func containers(using image: ImageSummary) -> [ContainerSummary] {
+    package func containers(using image: ImageSummary) -> [ContainerSummary] {
         containers.filter { $0.ImageID == image.Id }
     }
 
     /// What mounts a volume.
-    func containers(mounting volume: VolumeSummary) -> [ContainerSummary] { containers(mountingVolume: volume.Name) }
+    package func containers(mounting volume: VolumeSummary) -> [ContainerSummary] { containers(mountingVolume: volume.Name) }
 
-    func containers(mountingVolume name: String) -> [ContainerSummary] {
+    package func containers(mountingVolume name: String) -> [ContainerSummary] {
         containers.filter { ($0.Mounts ?? []).contains { $0.Name == name } }
     }
 
     /// What is on a network, as the list says (a network's own record says
     /// it only for running containers).
-    func containers(on network: NetworkSummary) -> [ContainerSummary] {
+    package func containers(on network: NetworkSummary) -> [ContainerSummary] {
         let members = Set((network.Containers ?? [:]).keys)
         return containers.filter { members.contains($0.Id) || $0.networkNames.contains(network.Name) }
     }
 
-    func container(_ idOrName: String) -> ContainerSummary? {
+    package func container(_ idOrName: String) -> ContainerSummary? {
         containers.first { $0.Id == idOrName || $0.name == idOrName } ?? containers.first { $0.Id.hasPrefix(idOrName) }
     }
 
     /// The projects a checkout holds — its compose stack.
-    func projects(in checkout: URL) -> [ComposeProject] {
+    package func projects(in checkout: URL) -> [ComposeProject] {
         ComposeProjects.projects(projects, in: FileTreeModel.realPath(checkout))
     }
 
     // MARK: Acting
 
     /// An action, then the list at once rather than at the event.
-    func perform(_ action: DockerEngine.ContainerAction, on id: String) async throws {
+    package func perform(_ action: DockerEngine.ContainerAction, on id: String) async throws {
         guard let engine else { throw DockerError.unreachable("Docker isn't running.") }
         try await engine.perform(action, on: id)
         await reload()
     }
 
-    func remove(_ id: String, force: Bool = false, volumes: Bool = false) async throws {
+    package func remove(_ id: String, force: Bool = false, volumes: Bool = false) async throws {
         guard let engine else { throw DockerError.unreachable("Docker isn't running.") }
         try await engine.remove(container: id, force: force, volumes: volumes)
         await reload()
     }
 
     /// Its new name, and the list saying it at once.
-    func rename(_ id: String, to name: String) async throws {
+    package func rename(_ id: String, to name: String) async throws {
         guard let engine else { throw DockerError.unreachable("Docker isn't running.") }
         try await engine.rename(container: id, to: name)
         await reload()

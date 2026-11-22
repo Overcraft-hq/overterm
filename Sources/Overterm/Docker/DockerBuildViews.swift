@@ -8,12 +8,12 @@ import SwiftUI
 /// reports it. The list is read by the page's poll, not on appearing; the
 /// detail's session is the page's (`updateBuildStream`), only looked up
 /// here: made or closed while a view draws, it would publish from there.
-struct DockerBuildsView: View {
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+package struct DockerBuildsView: View {
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 0) {
             if let error = page.buildsError {
                 VStack(spacing: 10) {
@@ -84,16 +84,16 @@ private struct DockerBuildRow: View {
 
 /// A build beside the list: how it went, where it was built from, its
 /// Dockerfile's warnings and where it failed, then its steps.
-struct DockerBuildDetailView: View {
+package struct DockerBuildDetailView: View {
     /// The clock ticks only while someone can see it, as Scout's does.
     @Environment(\.dockerShown) private var shown
-    let build: DockerBuildRecord
-    @ObservedObject var session: DockerBuildSession
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
+    package let build: DockerBuildRecord
+    @ObservedObject package var session: DockerBuildSession
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
@@ -221,11 +221,11 @@ struct DockerBuildDetailView: View {
 /// it follows the build (`automaticStep`); a step clicked is kept until
 /// Follow the Build. Nothing of them shows until the build args are known
 /// (`secretsKnown`): BuildKit expands an ARG into a RUN step's name.
-struct DockerBuildStepsView: View {
-    @ObservedObject var session: DockerBuildSession
-    @ObservedObject var theme: ChromeTheme
+package struct DockerBuildStepsView: View {
+    @ObservedObject package var session: DockerBuildSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         let steps = session.progress.steps
         if steps.isEmpty || !session.secretsKnown {
             empty(hasSteps: !steps.isEmpty).frame(maxWidth: .infinity, maxHeight: .infinity)

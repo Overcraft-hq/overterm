@@ -6,60 +6,60 @@ import Foundation
 /// and, for any kind, its owners, conditions, labels and annotations.
 /// References are links (`KubeLink`); a selector names the pods to list
 /// beside it (`pods`). Read from the object's JSON alone. Pure.
-struct KubeOverview: Equatable {
-    enum Tone: Equatable, Sendable {
+package struct KubeOverview: Equatable {
+    package enum Tone: Equatable, Sendable {
         case plain, good, waiting, bad, dim
     }
 
-    struct Item: Equatable, Identifiable {
-        var label: String
-        var value: String
-        var tone: Tone = .plain
-        var link: KubeLink? = nil
+    package struct Item: Equatable, Identifiable {
+        package var label: String
+        package var value: String
+        package var tone: Tone = .plain
+        package var link: KubeLink? = nil
         /// Code-like (an image, an IP, a selector): monospaced, selectable.
-        var mono = false
+        package var mono = false
         /// A second line under the value.
-        var detail: String? = nil
+        package var detail: String? = nil
         /// The second line is code-like (a container's image).
-        var detailMono = false
+        package var detailMono = false
         /// A pod's container's TCP ports: each a button that starts a forward.
-        var ports: [KubeForwardPortOption] = []
+        package var ports: [KubeForwardPortOption] = []
 
-        var id: String { label + "\u{0}" + value }
+        package var id: String { label + "\u{0}" + value }
     }
 
-    struct Section: Equatable, Identifiable {
-        var title: String
-        var items: [Item]
+    package struct Section: Equatable, Identifiable {
+        package var title: String
+        package var items: [Item]
 
-        var id: String { title }
+        package var id: String { title }
     }
 
     /// The first lines: what it is now.
-    var facts: [Item] = []
-    var sections: [Section] = []
+    package var facts: [Item] = []
+    package var sections: [Section] = []
     /// A workload's rollout, as `kubectl rollout status` reads it.
-    var rollout: KubeRollout?
+    package var rollout: KubeRollout?
     /// The pods its selector picks, in its namespace: a workload's, a
     /// Service's, a Job's. Nil for a kind that picks none.
-    var pods: (namespace: String, selector: String)?
+    package var pods: (namespace: String, selector: String)?
 
-    static func == (lhs: KubeOverview, rhs: KubeOverview) -> Bool {
+    package static func == (lhs: KubeOverview, rhs: KubeOverview) -> Bool {
         lhs.facts == rhs.facts && lhs.sections == rhs.sections && lhs.rollout == rhs.rollout && lhs.pods?.namespace == rhs.pods?.namespace
             && lhs.pods?.selector == rhs.pods?.selector
     }
 
     /// A section by its title.
-    func section(_ title: String) -> Section? { sections.first { $0.title == title } }
+    package func section(_ title: String) -> Section? { sections.first { $0.title == title } }
 
     /// A fact or a section's item by its label.
-    func item(_ label: String) -> Item? { (facts + sections.flatMap(\.items)).first { $0.label == label } }
+    package func item(_ label: String) -> Item? { (facts + sections.flatMap(\.items)).first { $0.label == label } }
 
     // MARK: Reading
 
     /// The Overview of `object` (a GET's JSON): tailored for the kinds that
     /// have one (by `kind` and group), the generic sections for all.
-    static func of(_ object: [String: Any], now: Date = Date()) -> KubeOverview {
+    package static func of(_ object: [String: Any], now: Date = Date()) -> KubeOverview {
         var overview = KubeOverview()
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         let kind = object["kind"] as? String ?? ""
@@ -124,13 +124,13 @@ struct KubeOverview: Equatable {
         map.keys.sorted().map { key in Item(label: key, value: clipped(string(map[key]), limit), mono: true) }
     }
 
-    static func clipped(_ text: String, _ limit: Int) -> String {
+    package static func clipped(_ text: String, _ limit: Int) -> String {
         text.count > limit ? String(text.prefix(limit)) + "… (\(text.count) characters; the YAML tab has it all)" : text
     }
 
     /// A condition: True is good for most types and bad for a node's
     /// pressure conditions (`MemoryPressure`, `DiskPressure`…).
-    static func conditionItems(_ value: Any?, kind: String, now: Date) -> [Item] {
+    package static func conditionItems(_ value: Any?, kind: String, now: Date) -> [Item] {
         (value as? [[String: Any]] ?? []).compactMap { condition -> Item? in
             guard let type = condition["type"] as? String else { return nil }
             let status = condition["status"] as? String ?? "Unknown"
@@ -150,7 +150,7 @@ struct KubeOverview: Equatable {
         }
     }
 
-    static func string(_ value: Any?) -> String {
+    package static func string(_ value: Any?) -> String {
         switch value {
         case nil, is NSNull: ""
         case let text as String: text
@@ -204,7 +204,7 @@ struct KubeOverview: Equatable {
     }
 
     /// One container: its image, its state now, its restarts, how it last ended.
-    static func container(name: String, spec: [String: Any], status: [String: Any]?) -> Item {
+    package static func container(name: String, spec: [String: Any], status: [String: Any]?) -> Item {
         let image = spec["image"] as? String ?? status?["image"] as? String ?? ""
         let ports = (spec["ports"] as? [[String: Any]] ?? []).compactMap { port -> KubeForwardPortOption? in
             guard (port["protocol"] as? String ?? "TCP") == "TCP", let number = int(port["containerPort"]) else { return nil }

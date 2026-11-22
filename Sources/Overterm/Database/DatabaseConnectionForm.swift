@@ -4,14 +4,14 @@ import SwiftUI
 /// New Connection… and Edit Connection…: what a connection is, by its kind,
 /// tried before it is saved. A password left empty while editing keeps the
 /// one in the keychain.
-struct DatabaseConnectionForm: View {
-    @State var connection: DatabaseConnection
-    let isNew: Bool
-    let store: DatabaseStore
-    let done: (DatabaseConnection?) -> Void
+package struct DatabaseConnectionForm: View {
+    @State package var connection: DatabaseConnection
+    package let isNew: Bool
+    package let store: DatabaseStore
+    package let done: (DatabaseConnection?) -> Void
     /// Filled in from elsewhere (a container's env): shown masked, kept
     /// only if the connection is saved — then in the keychain.
-    var suggestedPassword = ""
+    package var suggestedPassword = ""
 
     @State private var password = ""
     @State private var serviceAccount = ""
@@ -24,7 +24,7 @@ struct DatabaseConnectionForm: View {
     private var hasSavedKey: Bool { !isNew && store.secrets.value(.serviceAccount, for: connection.id) != nil }
     private var hasSavedSSH: Bool { !isNew && store.secrets.value(.ssh, for: connection.id) != nil }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(isNew ? "New Connection" : "Edit Connection").font(.system(size: ChromeMetrics.text(15), weight: .semibold))
                 .onAppear { if password.isEmpty { password = suggestedPassword } }
@@ -562,7 +562,7 @@ struct DatabaseConnectionForm: View {
 }
 
 /// A failure said in Overterm's words (DatabaseSession.explain).
-struct ExplainedError: LocalizedError {
-    let message: String
-    var errorDescription: String? { message }
+package struct ExplainedError: LocalizedError {
+    package let message: String
+    package var errorDescription: String? { message }
 }

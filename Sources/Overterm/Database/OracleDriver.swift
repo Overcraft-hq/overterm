@@ -14,23 +14,23 @@ import OracleNIO
 /// consoles do. A read-only connection runs every statement inside `SET
 /// TRANSACTION READ ONLY` and ends it after — the server's own refusal
 /// behind the text's (`OracleText.onlyReads`).
-actor OracleDriver: DatabaseDriver {
-    static let sidMarker = "sid"
+package actor OracleDriver: DatabaseDriver {
+    package static let sidMarker = "sid"
 
-    let config: DatabaseConnection
+    package let config: DatabaseConnection
     private let password: String?
-    private(set) var connection: OracleConnection?
+    package private(set) var connection: OracleConnection?
     private var nextID = 1
     /// This connection's own SID: its session is never cancelled from the
     /// Server page.
-    var ownSession: String?
+    package var ownSession: String?
     // One operation at a time: a Save is its statements then COMMIT, and a
     // statement between them — each commits itself — would commit half of it
     // (an actor gives way at every await).
     private var busy = false
     private var queue: [CheckedContinuation<Void, Never>] = []
 
-    func exclusive<T: Sendable>(_ work: () async throws -> T) async throws -> T {
+    package func exclusive<T: Sendable>(_ work: () async throws -> T) async throws -> T {
         if busy {
             await withCheckedContinuation { queue.append($0) }
         }
@@ -41,19 +41,19 @@ actor OracleDriver: DatabaseDriver {
         return try await work()
     }
 
-    init(_ connection: DatabaseConnection, password: String?) {
+    package init(_ connection: DatabaseConnection, password: String?) {
         config = connection
         self.password = password
     }
 
     /// What the Database field names: a service, or a SID — never guessed
     /// when empty (the listener alone knows what it serves).
-    var service: OracleServiceMethod {
+    package var service: OracleServiceMethod {
         let name = config.database.trimmingCharacters(in: .whitespaces)
         return config.location == Self.sidMarker ? .sid(name) : .serviceName(name)
     }
 
-    func connect() async throws {
+    package func connect() async throws {
         guard connection == nil else { return }
         guard !config.database.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw DatabaseError.failed("The service name, please — FREEPDB1, XEPDB1, ORCLPDB1, or your database's (Database field).")
@@ -77,7 +77,7 @@ actor OracleDriver: DatabaseDriver {
         }
     }
 
-    static func tls(_ mode: DatabaseSSLMode) throws -> OracleConnection.Configuration.TLS {
+    package static func tls(_ mode: DatabaseSSLMode) throws -> OracleConnection.Configuration.TLS {
         switch mode {
         case .disable, .prefer: return .disable
         case .require:
@@ -89,12 +89,12 @@ actor OracleDriver: DatabaseDriver {
         }
     }
 
-    func close() async {
+    package func close() async {
         try? await connection?.close()
         connection = nil
     }
 
-    func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+    package func execute(_ sql: String, limit: Int) async throws -> QueryResult {
         try await exclusive { try await executeAlone(sql, limit: limit) }
     }
 
@@ -246,7 +246,7 @@ actor OracleDriver: DatabaseDriver {
     }
 
     /// DBMS_SQL's type codes, as Oracle names them.
-    static func typeName(code: Int) -> String {
+    package static func typeName(code: Int) -> String {
         switch code {
         case 1: "VARCHAR2"
         case 2: "NUMBER"
@@ -296,7 +296,7 @@ actor OracleDriver: DatabaseDriver {
         return result
     }
 
-    static func columnType(_ row: [String?], from i: Int) -> String {
+    package static func columnType(_ row: [String?], from i: Int) -> String {
         OracleText.typeName(
             row[i] ?? "", length: row[i + 1].flatMap { Int($0) }, precision: row[i + 2].flatMap { Int($0) },
             scale: row[i + 3].flatMap { Int($0) }, charLength: row[i + 4].flatMap { Int($0) }, charUsed: row[i + 5])
@@ -306,7 +306,7 @@ actor OracleDriver: DatabaseDriver {
 
     /// The user's own schema first, then every other that isn't Oracle's
     /// own (`oracle_maintained`, 12c+; before it, every one).
-    func schemas() async throws -> [String] {
+    package func schemas() async throws -> [String] {
         let me = try await execute("SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM dual", limit: 1).rows.first?.first ?? nil
         let names: [String]
         do {
@@ -319,7 +319,7 @@ actor OracleDriver: DatabaseDriver {
         return [me] + names.filter { $0 != me }
     }
 
-    func tables(in schema: String) async throws -> [CatalogTable] {
+    package func tables(in schema: String) async throws -> [CatalogTable] {
         let owner = DatabaseDrivers.literal(schema)
         return try await execute(
             """
@@ -330,7 +330,7 @@ actor OracleDriver: DatabaseDriver {
         ).rows.map { CatalogTable(schema: schema, name: $0[0] ?? "", isView: $0[1] == "VIEW") }
     }
 
-    func columns(in schema: String) async throws -> [CatalogColumn] {
+    package func columns(in schema: String) async throws -> [CatalogColumn] {
         try await execute(
             """
             SELECT table_name, column_name, nullable, data_type, data_length, data_precision, data_scale, char_length, char_used
@@ -342,7 +342,7 @@ actor OracleDriver: DatabaseDriver {
     // MARK: Values
 
     /// A cell as text; nil is NULL.
-    static func text(_ cell: OracleCell) -> String? {
+    package static func text(_ cell: OracleCell) -> String? {
         guard let buffer = cell.bytes else { return nil }
         let bytes = Array(buffer.readableBytesView)
         let type = cell.dataType
@@ -386,7 +386,7 @@ actor OracleDriver: DatabaseDriver {
 
     /// A CLOB's bytes: UTF-16 (big-endian) from a database whose character
     /// set varies in width, as AL32UTF8 does; else the database's — UTF-8.
-    static func lobText(_ bytes: [UInt8]) -> String {
+    package static func lobText(_ bytes: [UInt8]) -> String {
         if bytes.count >= 2, bytes.count % 2 == 0, bytes.enumerated().contains(where: { $0.offset % 2 == 0 && $0.element == 0 }) {
             let units = stride(from: 0, to: bytes.count, by: 2).map { UInt16(bytes[$0]) << 8 | UInt16(bytes[$0 + 1]) }
             return String(decoding: units, as: UTF16.self)
@@ -395,7 +395,7 @@ actor OracleDriver: DatabaseDriver {
     }
 
     /// A type as Oracle names it.
-    static func typeName(_ type: OracleDataType) -> String {
+    package static func typeName(_ type: OracleDataType) -> String {
         switch type {
         case .varchar: "VARCHAR2"
         case .nVarchar: "NVARCHAR2"
@@ -431,7 +431,7 @@ actor OracleDriver: DatabaseDriver {
 
     /// A failure in plain words: nobody at the address, no such host, the
     /// listener not knowing the service, a refused login, TLS.
-    static func describe(_ error: Error, host: String, port: Int, service: String, connecting: Bool = false) -> String {
+    package static func describe(_ error: Error, host: String, port: Int, service: String, connecting: Bool = false) -> String {
         if let error = error as? DatabaseError { return error.localizedDescription }
         let place = "\(host):\(port)"
         if let sql = error as? OracleSQLError {
@@ -480,8 +480,8 @@ actor OracleDriver: DatabaseDriver {
 
 /// ORA- errors a person meets connecting, said in Overterm's words with
 /// Oracle's own beside them. Pure.
-enum OracleErrors {
-    static func explain(number: Int, message: String, place: String, service: String) -> String {
+package enum OracleErrors {
+    package static func explain(number: Int, message: String, place: String, service: String) -> String {
         switch number {
         case 1017: return "Oracle refused the user or password (\(message))."
         case 28000: return "The account is locked (\(message)) — a DBA unlocks it: ALTER USER … ACCOUNT UNLOCK."

@@ -4,7 +4,7 @@ import AppKit
 /// each asks in a sheet, then does it, and the tree and the editor follow.
 extension TerminalWindowController {
     /// Asks for a name and creates an empty file (then opens it) or a folder.
-    func createItem(in folder: URL, folder isFolder: Bool) {
+    package func createItem(in folder: URL, folder isFolder: Bool) {
         askForName(
             title: isFolder ? "New Folder" : "New File", detail: "In \(folder.lastPathComponent)", initial: "",
             action: "Create"
@@ -29,7 +29,7 @@ extension TerminalWindowController {
         }
     }
 
-    func renameItem(_ url: URL) {
+    package func renameItem(_ url: URL) {
         let name = url.lastPathComponent
         askForName(title: "Rename", detail: name, initial: name, action: "Rename") { [weak self] newName in
             guard let self, newName != name else { return nil }
@@ -55,7 +55,7 @@ extension TerminalWindowController {
 
     /// Asks, then moves it to the Trash (so it can come back). Its tabs in
     /// the editor close — said in the question when one has unsaved edits.
-    func trashItem(_ url: URL) {
+    package func trashItem(_ url: URL) {
         guard let window else { return }
         let isFolder = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
         let path = url.standardizedFileURL.path
@@ -88,7 +88,7 @@ extension TerminalWindowController {
     }
 
     /// Why `name` can't be used, or nil.
-    nonisolated static func nameProblem(_ name: String, at url: URL) -> String? {
+    package nonisolated static func nameProblem(_ name: String, at url: URL) -> String? {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return "A name, please." }
         if trimmed.hasPrefix("/") || trimmed.split(separator: "/").contains(where: { $0 == ".." || $0 == "." }) {
@@ -100,7 +100,7 @@ extension TerminalWindowController {
 
     /// A sheet with a name field. `submit` answers nil when done, or why not
     /// — the sheet stays up with that said, the field as typed.
-    func askForName(title: String, detail: String, initial: String, action: String, submit: @escaping (String) -> String?) {
+    package func askForName(title: String, detail: String, initial: String, action: String, submit: @escaping (String) -> String?) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title

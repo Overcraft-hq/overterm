@@ -7,16 +7,16 @@ import SwiftUI
 /// foldable card per changed file with its diff inline — folded to start
 /// with when many files changed, a list of them — and, under its header, why
 /// it changed.
-struct DiffPanelView: View {
-    @ObservedObject var model: DiffModel
-    @ObservedObject var theme: ChromeTheme
-    let onClose: () -> Void
+package struct DiffPanelView: View {
+    @ObservedObject package var model: DiffModel
+    @ObservedObject package var theme: ChromeTheme
+    package let onClose: () -> Void
     /// Undo an attachment: back to following the agent / shell.
-    let onDetach: () -> Void
+    package let onDetach: () -> Void
     /// Opens a changed file in the editor pane.
-    let onOpen: (URL) -> Void
+    package let onOpen: (URL) -> Void
     /// The scope shown in a review tab.
-    var onReview: (DiffModel.Scope) -> Void = { _ in }
+    package var onReview: (DiffModel.Scope) -> Void = { _ in }
     /// The file whose Discard is awaiting confirmation.
     @State private var discarding: ChangedFile?
     @State private var composing = false
@@ -27,7 +27,7 @@ struct DiffPanelView: View {
     private var editable: Bool { model.shownScope == .uncommitted }
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             header
             if let error = model.error {
@@ -256,14 +256,14 @@ struct DiffPanelView: View {
 /// latest edit, two lines and when; a click shows them in full, and what it
 /// said at the edits before. In Branch, the commits that touched the file.
 /// Nothing when there is nothing to say.
-struct WhyStrip: View {
-    let why: FileWhy
-    @ObservedObject var theme: ChromeTheme
-    let onToggle: () -> Void
+package struct WhyStrip: View {
+    package let why: FileWhy
+    @ObservedObject package var theme: ChromeTheme
+    package let onToggle: () -> Void
     /// Commits listed at most; the rest are counted.
     private static let maxCommits = 3
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(why.shownReasons.enumerated()), id: \.offset) { index, edit in
                 ReasonRow(edit: edit, open: why.open, more: index == 0 ? why.hiddenReasons : 0, theme: theme)

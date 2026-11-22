@@ -10,15 +10,15 @@ import Foundation
 /// object is read for them. A share is never a guess: a pod some of whose
 /// containers set no request (no limit) has no share of one, said so,
 /// rather than a share of what the others set. Pure.
-enum KubePodShares {
+package enum KubePodShares {
     /// The four columns, in k9s's order, part of the wide view (`w`).
-    enum Column: String, CaseIterable, Sendable {
+    package enum Column: String, CaseIterable, Sendable {
         case cpuRequest = "shares.cpu.request"
         case cpuLimit = "shares.cpu.limit"
         case memoryRequest = "shares.memory.request"
         case memoryLimit = "shares.memory.limit"
 
-        var title: String {
+        package var title: String {
             switch self {
             case .cpuRequest: "%CPU/R"
             case .cpuLimit: "%CPU/L"
@@ -27,10 +27,10 @@ enum KubePodShares {
             }
         }
 
-        var measure: KubeUsageCell.Measure { self == .cpuRequest || self == .cpuLimit ? .cpu : .memory }
-        var isLimit: Bool { self == .cpuLimit || self == .memoryLimit }
+        package var measure: KubeUsageCell.Measure { self == .cpuRequest || self == .cpuLimit ? .cpu : .memory }
+        package var isLimit: Bool { self == .cpuLimit || self == .memoryLimit }
 
-        var help: String {
+        package var help: String {
             let what = measure == .cpu ? "CPU" : "memory (working set)"
             let side = isLimit ? "limit" : "request"
             return "The pod's \(what) used, from metrics-server, as a share of its containers' \(side)s, from kube-state-metrics through Prometheus — "
@@ -42,18 +42,18 @@ enum KubePodShares {
     /// has, and their requests and limits added up — nil where not every
     /// one of them sets it (then the pod has no request, no limit, of it
     /// as a whole).
-    struct Spec: Equatable, Sendable {
-        var containers = 0
-        var cpuRequest: Double?
-        var cpuLimit: Double?
-        var memoryRequest: Double?
-        var memoryLimit: Double?
+    package struct Spec: Equatable, Sendable {
+        package var containers = 0
+        package var cpuRequest: Double?
+        package var cpuLimit: Double?
+        package var memoryRequest: Double?
+        package var memoryLimit: Double?
         /// Each container's own, where the pod's object was read (an agent's named pod).
-        var byContainer: [String: Spec] = [:]
+        package var byContainer: [String: Spec] = [:]
 
-        func containers(named name: String) -> Spec? { byContainer[name] }
+        package func containers(named name: String) -> Spec? { byContainer[name] }
 
-        func total(_ column: Column) -> Double? {
+        package func total(_ column: Column) -> Double? {
             switch column {
             case .cpuRequest: cpuRequest
             case .cpuLimit: cpuLimit
@@ -64,11 +64,11 @@ enum KubePodShares {
     }
 
     /// The label the one query's three arms are told apart by (`__` names are Prometheus's own).
-    static let label = "overterm_s"
+    package static let label = "overterm_s"
     /// Five series a pod at most: its containers' count, a request and a
     /// limit for CPU and for memory. The reader's cap is that many pods.
-    static let seriesPerPod = 5
-    static var maxPods: Int { KubePrometheusReader.maxSeries / seriesPerPod }
+    package static let seriesPerPod = 5
+    package static var maxPods: Int { KubePrometheusReader.maxSeries / seriesPerPod }
 
     /// The one instant query for `namespace`: kube-state-metrics' series
     /// taken `max by` what identifies them (two replicas scrape the same),
@@ -79,7 +79,7 @@ enum KubePodShares {
     /// one of them: it runs, so metrics-server's sample counts it. KSM
     /// 1.x's own names where that is what it is — it can't tell a sidecar,
     /// which `cell`'s `sampled` check then catches.
-    static func query(namespace: String, profile: KubePromProfile) -> String {
+    package static func query(namespace: String, profile: KubePromProfile) -> String {
         let job = profile.ksmMatcher
         let scope = (job.isEmpty ? "" : job + ",") + KubePromQL.matchers([("namespace", namespace)])
         let old = profile.ksmMajor == 1
@@ -108,7 +108,7 @@ enum KubePodShares {
 
     /// A pod's object decoded to its containers' requests and limits (and
     /// native sidecars'), everything else dropped: an agent's named pod.
-    static func spec(ofPod object: [String: Any]) -> Spec {
+    package static func spec(ofPod object: [String: Any]) -> Spec {
         let containers = KubePodCharts.containers(of: object)
         func sum(_ value: (KubePodCharts.Container) -> Double?) -> Double? {
             let values = containers.map(value)
@@ -127,7 +127,7 @@ enum KubePodShares {
     }
 
     /// The answer, by pod.
-    static func read(_ series: [KubeSeries]) -> [KubeRowID: Spec] {
+    package static func read(_ series: [KubeSeries]) -> [KubeRowID: Spec] {
         var out: [KubeRowID: Spec] = [:]
         for item in series {
             guard let pod = item.labels["pod"], let value = item.points.last?.value else { continue }
@@ -148,14 +148,14 @@ enum KubePodShares {
 
     /// Whether an answer was cut at the reader's cap: then some of the
     /// namespace's pods are missing from it, and none of it is shown as whole.
-    static func isCut(_ series: [KubeSeries]) -> Bool { series.count >= KubePrometheusReader.maxSeries }
+    package static func isCut(_ series: [KubeSeries]) -> Bool { series.count >= KubePrometheusReader.maxSeries }
 
     /// A pod's cell: its usage as a share of what its spec says, or a dash
     /// and why. `sampled`, how many containers metrics-server's sample
     /// has: more than the spec counts, and the usage covers a container
     /// the denominator doesn't (a native sidecar KSM before 2.10 can't
     /// tell) — no share then, rather than an overstated one.
-    static func cell(_ column: Column, used: KubeUsage, spec: Spec, sampled: Int? = nil) -> KubeUsageCell {
+    package static func cell(_ column: Column, used: KubeUsage, spec: Spec, sampled: Int? = nil) -> KubeUsageCell {
         let what = column.measure == .cpu ? "CPU" : "memory"
         if let sampled, sampled > spec.containers {
             return .dash(
@@ -174,9 +174,9 @@ enum KubePodShares {
     }
 
     /// How warm a cell is drawn: a limit's share from 80% (near it), from 100% (at or over it).
-    enum Level: Equatable, Sendable { case normal, near, over }
+    package enum Level: Equatable, Sendable { case normal, near, over }
 
-    static func level(_ column: Column, _ cell: KubeUsageCell) -> Level {
+    package static func level(_ column: Column, _ cell: KubeUsageCell) -> Level {
         guard column.isLimit, let share = cell.sort else { return .normal }
         if share >= 100 { return .over }
         return share >= 80 ? .near : .normal
@@ -186,25 +186,25 @@ enum KubePodShares {
 /// The Pods list's shares as kube-state-metrics answered them, a namespace
 /// at a time, for the scope shown: what each pod's containers request and
 /// are limited to, which namespaces answered, which failed and why.
-struct KubeShareReading: Equatable, Sendable {
-    var scope: KubeScope
-    var pods: [KubeRowID: KubePodShares.Spec] = [:]
+package struct KubeShareReading: Equatable, Sendable {
+    package var scope: KubeScope
+    package var pods: [KubeRowID: KubePodShares.Spec] = [:]
     /// The namespaces answered at least once.
-    var answered: Set<String> = []
+    package var answered: Set<String> = []
 
     /// The namespaces whose last answer is whole and current: answered, not cut, not failing since.
-    var whole: Set<String> { answered.subtracting(cut).subtracting(problems.keys) }
+    package var whole: Set<String> { answered.subtracting(cut).subtracting(problems.keys) }
     /// A namespace's last failure.
-    var problems: [String: String] = [:]
+    package var problems: [String: String] = [:]
     /// Namespaces whose answer the reader's cap cut.
-    var cut: Set<String> = []
+    package var cut: Set<String> = []
     /// Why none of it can be read here: agent mode, no kube-state-metrics,
     /// every namespace at once, the probe's failure.
-    var unavailable: String?
-    var read: Date?
+    package var unavailable: String?
+    package var read: Date?
 
     /// One namespace's answer, in place of what it said before.
-    mutating func take(_ series: [KubeSeries], namespace: String) {
+    package mutating func take(_ series: [KubeSeries], namespace: String) {
         pods = pods.filter { $0.key.namespace != namespace }
         let isCut = KubePodShares.isCut(series)
         if isCut { cut.insert(namespace) } else { cut.remove(namespace) }
@@ -214,7 +214,7 @@ struct KubeShareReading: Equatable, Sendable {
     }
 
     /// A pod's cell, its usage given (and how many containers it was sampled from).
-    func cell(_ column: KubePodShares.Column, _ id: KubeRowID, used: KubeUsage, sampled: Int? = nil) -> KubeUsageCell {
+    package func cell(_ column: KubePodShares.Column, _ id: KubeRowID, used: KubeUsage, sampled: Int? = nil) -> KubeUsageCell {
         if let unavailable { return .dash(unavailable) }
         let namespace = id.namespace ?? ""
         if cut.contains(namespace) { return .dash(KubeChartEmpty.sharesCut(namespace).sentence) }

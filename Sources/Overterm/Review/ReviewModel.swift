@@ -9,57 +9,57 @@ import Foundation
 /// whole patch at once (GitHub's own cut), so it needs nothing of the
 /// branch here.
 @MainActor
-final class ReviewModel: ObservableObject, Identifiable {
-    enum Phase: Equatable {
+package final class ReviewModel: ObservableObject, Identifiable {
+    package enum Phase: Equatable {
         case loading, loaded
         case failed(String)
     }
 
-    enum Layout: String {
+    package enum Layout: String {
         case split, unified
     }
 
     /// Lines of one file's diff shown at most: a review is for reading, so
     /// more than the changes pane's — still a bound for a generated file.
-    static let maxLines = 20_000
-    static let layoutKey = "reviewLayout"
+    package static let maxLines = 20_000
+    package static let layoutKey = "reviewLayout"
 
-    let id = UUID()
-    let root: URL
-    let source: ReviewSource
+    package let id = UUID()
+    package let root: URL
+    package let source: ReviewSource
     /// The roots it touches and their plans (Terraform, stage 2f).
-    let terraform = TerraformReviewModel()
+    package let terraform = TerraformReviewModel()
 
-    @Published private(set) var phase: Phase = .loading
+    @Published package private(set) var phase: Phase = .loading
     /// In the order the list shows them: by folder, then name.
-    @Published private(set) var files: [ChangedFile] = [] {
+    @Published package private(set) var files: [ChangedFile] = [] {
         didSet { listRows = ReviewListRow.rows(files) }
     }
     /// The list's rows: folders over their files, laid out once per change.
-    private(set) var listRows: [ReviewListRow] = []
-    @Published private(set) var diffs: [String: DiffModel.FileDiff] = [:]
+    package private(set) var listRows: [ReviewListRow] = []
+    @Published package private(set) var diffs: [String: DiffModel.FileDiff] = [:]
     /// Each file's diff side by side, laid out once.
-    private(set) var rows: [String: [SplitDiff.Row]] = [:]
+    package private(set) var rows: [String: [SplitDiff.Row]] = [:]
     /// A file's diff that couldn't be read, and why.
-    @Published private(set) var failures: [String: String] = [:]
-    @Published private(set) var selected: String?
+    @Published package private(set) var failures: [String: String] = [:]
+    @Published package private(set) var selected: String?
     /// Marked as read — this review's alone, as GitHub's "Viewed".
-    @Published private(set) var viewed: Set<String> = []
-    @Published var layout: Layout {
+    @Published package private(set) var viewed: Set<String> = []
+    @Published package var layout: Layout {
         didSet { defaults.set(layout.rawValue, forKey: Self.layoutKey) }
     }
     /// Side by side: how much of the width the old side takes — its
     /// divider dragged, kept for every review after.
-    @Published var splitFraction: CGFloat {
+    @Published package var splitFraction: CGFloat {
         didSet { defaults.set(Double(splitFraction), forKey: Self.splitKey) }
     }
-    static let splitKey = "reviewSplitFraction"
-    static let splitRange: ClosedRange<CGFloat> = 0.15...0.85
+    package static let splitKey = "reviewSplitFraction"
+    package static let splitRange: ClosedRange<CGFloat> = 0.15...0.85
     /// The pull request, for the header (title, author, branches, checks).
-    @Published private(set) var pullRequest: PullRequestDetail?
+    @Published package private(set) var pullRequest: PullRequestDetail?
     /// The change (`n`/`p`) to bring into view: its first line's id. The
     /// view scrolls when it changes.
-    @Published private(set) var scrollTarget: Int?
+    @Published package private(set) var scrollTarget: Int?
 
     /// Each file's patch, for a pull request: `gh pr diff` gives them all.
     private var patches: [String: String] = [:]
@@ -68,7 +68,7 @@ final class ReviewModel: ObservableObject, Identifiable {
     /// The commit `.commits` is compared with: `from`'s first parent.
     private var commitsBase: String?
 
-    init(root: URL, source: ReviewSource, defaults: UserDefaults = AppEnvironment.defaults) {
+    package init(root: URL, source: ReviewSource, defaults: UserDefaults = AppEnvironment.defaults) {
         self.root = root
         self.source = source
         self.defaults = defaults
@@ -77,20 +77,20 @@ final class ReviewModel: ObservableObject, Identifiable {
         splitFraction = fraction == 0 ? 0.5 : min(max(CGFloat(fraction), Self.splitRange.lowerBound), Self.splitRange.upperBound)
     }
 
-    var title: String {
+    package var title: String {
         if let pullRequest { return "#\(pullRequest.summary.number) \(pullRequest.summary.title)" }
         return source.title
     }
 
-    var added: Int { files.reduce(0) { $0 + ($1.added ?? 0) } }
-    var removed: Int { files.reduce(0) { $0 + ($1.removed ?? 0) } }
-    var selectedFile: ChangedFile? { files.first { $0.path == selected } }
+    package var added: Int { files.reduce(0) { $0 + ($1.added ?? 0) } }
+    package var removed: Int { files.reduce(0) { $0 + ($1.removed ?? 0) } }
+    package var selectedFile: ChangedFile? { files.first { $0.path == selected } }
 
     // MARK: Loading
 
     /// Reads the list again (the Reload button too): every diff is read
     /// afresh; what was picked and viewed stays where it still applies.
-    func load() async {
+    package func load() async {
         phase = .loading
         diffs = [:]
         rows = [:]
@@ -169,7 +169,7 @@ final class ReviewModel: ObservableObject, Identifiable {
     }
 
     /// By folder, then by name: a folder's files together, as the list groups them.
-    nonisolated static func ordered(_ files: [ChangedFile]) -> [ChangedFile] {
+    package nonisolated static func ordered(_ files: [ChangedFile]) -> [ChangedFile] {
         files.sorted {
             let a = ($0.path as NSString).deletingLastPathComponent
             let b = ($1.path as NSString).deletingLastPathComponent
@@ -227,7 +227,7 @@ final class ReviewModel: ObservableObject, Identifiable {
 
     // MARK: Reading it
 
-    func select(_ path: String) {
+    package func select(_ path: String) {
         guard files.contains(where: { $0.path == path }) else { return }
         selected = path
         scrollTarget = nil
@@ -245,7 +245,7 @@ final class ReviewModel: ObservableObject, Identifiable {
     }
 
     /// `j`/`k`: the next or previous file.
-    func selectFile(by step: Int) {
+    package func selectFile(by step: Int) {
         guard let selected else {
             if let first = files.first { select(first.path) }
             return
@@ -255,7 +255,7 @@ final class ReviewModel: ObservableObject, Identifiable {
 
     /// `v`: viewed, or not; marking one moves on to the next not viewed, as
     /// GitHub folds it away.
-    func toggleViewed(_ path: String? = nil) {
+    package func toggleViewed(_ path: String? = nil) {
         guard let path = path ?? selected else { return }
         if viewed.contains(path) {
             viewed.remove(path)
@@ -269,7 +269,7 @@ final class ReviewModel: ObservableObject, Identifiable {
 
     /// Where each change in the shown file starts: a run of added or removed
     /// lines, by its first line's id.
-    var changes: [Int] {
+    package var changes: [Int] {
         guard let selected, let diff = diffs[selected] else { return [] }
         var starts: [Int] = []
         var inChange = false
@@ -283,7 +283,7 @@ final class ReviewModel: ObservableObject, Identifiable {
 
     /// `n`/`p`: the next or previous change in the file; past the last, the
     /// next file's first.
-    func moveToChange(by step: Int) {
+    package func moveToChange(by step: Int) {
         let starts = changes
         let current = scrollTarget.flatMap { starts.firstIndex(of: $0) }
         let next = current.map { $0 + step } ?? (step > 0 ? 0 : starts.count - 1)

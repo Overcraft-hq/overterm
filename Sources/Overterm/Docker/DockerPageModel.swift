@@ -3,76 +3,76 @@ import Combine
 import Foundation
 
 /// What the Docker page and panel ask the window to do.
-struct DockerActions {
+package struct DockerActions {
     /// A command typed into a new terminal tab in `folder` (home when nil).
-    var run: (_ command: String, _ folder: URL?) -> Void
+    package var run: (_ command: String, _ folder: URL?) -> Void
     /// Asks — what, why, the button's word — then does it.
-    var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void
+    package var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void
     /// A published port, in the browser.
-    var open: (URL) -> Void
-    var copy: (String) -> Void
+    package var open: (URL) -> Void
+    package var copy: (String) -> Void
     /// Settings ▸ Docker.
-    var settings: () -> Void
+    package var settings: () -> Void
     /// The page (⌥⌘P), from the panel.
-    var openPage: () -> Void = {}
+    package var openPage: () -> Void = {}
     /// A container in the right-hand pane, from the panel.
-    var showContainer: (ContainerSummary) -> Void = { _ in }
+    package var showContainer: (ContainerSummary) -> Void = { _ in }
     /// A database container's connection, in the Database panel's form.
-    var openDatabase: (DockerDatabaseGuess.Guess) -> Void = { _ in }
+    package var openDatabase: (DockerDatabaseGuess.Guess) -> Void = { _ in }
     /// A container's or a volume's file, in the editor — saved back where
     /// it came from.
-    var openFile: (DockerFileSource, String) -> Void = { _, _ in }
+    package var openFile: (DockerFileSource, String) -> Void = { _, _ in }
     /// A container's or a volume's file, to the Mac.
-    var downloadFile: (DockerFileSource, String) -> Void = { _, _ in }
+    package var downloadFile: (DockerFileSource, String) -> Void = { _, _ in }
     /// A tab of the window, brought up.
-    var showTab: (UUID) -> Void = { _ in }
+    package var showTab: (UUID) -> Void = { _ in }
     /// A port's holder on the Activity page (6.12): Listening with the
     /// port selected — its process's row when a pid is known — at the
     /// holding tab's checkout when a tab holds it, else the Mac's; the
     /// port's protocol, its conflict's.
-    var showInActivity: (Int, String, pid_t?, UUID?) -> Void = { _, _, _, _ in }
+    package var showInActivity: (Int, String, pid_t?, UUID?) -> Void = { _, _, _, _ in }
     /// A file on the Mac, in the editor.
-    var edit: (URL) -> Void = { _ in }
+    package var edit: (URL) -> Void = { _ in }
     /// A copy made to be read, in the editor; removed when its tab closes.
-    var showCopy: (URL) -> Void = { _ in }
+    package var showCopy: (URL) -> Void = { _ in }
     /// Where to save something: a suggested name, then the place.
-    var pickSave: (String, @escaping (URL) -> Void) -> Void = { _, _ in }
+    package var pickSave: (String, @escaping (URL) -> Void) -> Void = { _, _ in }
     /// A file to read: then the file.
-    var pickOpen: (@escaping (URL) -> Void) -> Void = { _ in }
+    package var pickOpen: (@escaping (URL) -> Void) -> Void = { _ in }
     /// Files and folders of the Mac to copy in, several at once: what the
     /// panel says, then them (Copy Here…).
-    var pickFiles: (_ message: String, _ then: @escaping ([URL]) -> Void) -> Void = { _, _ in }
+    package var pickFiles: (_ message: String, _ then: @escaping ([URL]) -> Void) -> Void = { _, _ in }
     /// A name asked for: title, what it is for, the first guess, then it.
-    var askName: (String, String, String, @escaping (String) -> Void) -> Void = { _, _, _, _ in }
+    package var askName: (String, String, String, @escaping (String) -> Void) -> Void = { _, _, _, _ in }
     /// Asks — what, why, the buttons' words (Cancel is added) — then the
     /// index of the one chosen; nothing when cancelled.
-    var choose: (_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) -> Void = { _, _, _, _ in }
+    package var choose: (_ title: String, _ detail: String, _ buttons: [String], _ then: @escaping (Int) -> Void) -> Void = { _, _, _, _ in }
     /// An Up of a checkout's stack through the page (`DockerPageModel.up`):
     /// from the panel, a container's conflict.
-    var composeUp: (ComposeUpTarget, ComposeFreePorts) -> Void = { _, _ in }
+    package var composeUp: (ComposeUpTarget, ComposeFreePorts) -> Void = { _, _ in }
     /// Why Up on Free Ports can't help a project here, nil when it can
     /// (`DockerPageModel.freePortsUnavailable`): a conflict's button says it.
-    var freePortsUnavailable: (ComposeProject) -> String? = { _ in nil }
+    package var freePortsUnavailable: (ComposeProject) -> String? = { _ in nil }
     /// Said in an alert — what, then why: what the page would say, when
     /// the page isn't on screen.
-    var alert: (_ title: String, _ detail: String) -> Void = { _, _ in }
+    package var alert: (_ title: String, _ detail: String) -> Void = { _, _ in }
     /// The Ask Agent sheet, on why a container failed or on lines of a log.
-    var askAgent: (DockerAgentQuestion) -> Void = { _ in }
+    package var askAgent: (DockerAgentQuestion) -> Void = { _ in }
 }
 
 /// One block of the containers list: a compose project with its
 /// containers, a Testcontainers run with its, or the containers in none
 /// (both nil).
-struct DockerListGroup: Identifiable, Equatable {
-    var project: ComposeProject?
-    var containers: [ContainerSummary]
+package struct DockerListGroup: Identifiable, Equatable {
+    package var project: ComposeProject?
+    package var containers: [ContainerSummary]
     /// A project before it runs: its services' rows, since it has no
     /// containers.
-    var services: [ComposeService] = []
+    package var services: [ComposeService] = []
     /// A test run's block (`project` nil).
-    var session: TestcontainersSession? = nil
+    package var session: TestcontainersSession? = nil
 
-    var id: String {
+    package var id: String {
         if let session { return DockerPageModel.sessionTag(session.id) }
         return project.map { DockerPageModel.projectTag($0.name) } ?? DockerPageModel.looseTag
     }
@@ -80,14 +80,14 @@ struct DockerListGroup: Identifiable, Equatable {
 
 /// The containers list's order: by name (projects, then the rest), or the
 /// busiest first.
-enum DockerListSort: String, CaseIterable, Sendable {
+package enum DockerListSort: String, CaseIterable, Sendable {
     case name, cpu, memory
 
     /// The order after a click on `column`'s name in the header: by it,
     /// the busiest first; clicked again, or Name, back by name.
-    func clicked(_ column: DockerListSort) -> DockerListSort { column == self ? .name : column }
+    package func clicked(_ column: DockerListSort) -> DockerListSort { column == self ? .name : column }
 
-    func value(_ usage: DockerUsage) -> Double {
+    package func value(_ usage: DockerUsage) -> Double {
         switch self {
         case .name: 0
         case .cpu: usage.cpuPercent
@@ -100,13 +100,13 @@ enum DockerListSort: String, CaseIterable, Sendable {
 /// selected, which projects are folded. The containers are the app's
 /// (`DockerModel`).
 @MainActor
-final class DockerPageModel: ObservableObject {
-    enum Section: String, CaseIterable, Identifiable {
+package final class DockerPageModel: ObservableObject {
+    package enum Section: String, CaseIterable, Identifiable {
         case containers, images, volumes, networks, builds, models
 
-        var id: String { rawValue }
-        var title: String { rawValue.capitalized }
-        var symbol: String {
+        package var id: String { rawValue }
+        package var title: String { rawValue.capitalized }
+        package var symbol: String {
             switch self {
             case .containers: "shippingbox"
             case .images: "square.stack.3d.down.right"
@@ -118,7 +118,7 @@ final class DockerPageModel: ObservableObject {
         }
 
         /// What the model reads for it.
-        var resource: DockerModel.Resource? {
+        package var resource: DockerModel.Resource? {
             switch self {
             case .containers: nil
             case .images: .images
@@ -129,116 +129,116 @@ final class DockerPageModel: ObservableObject {
         }
     }
 
-    @Published var section: Section = .containers
-    @Published var filter = ""
+    @Published package var section: Section = .containers
+    @Published package var filter = ""
     /// Stopped containers hidden.
-    @Published var runningOnly = false
+    @Published package var runningOnly = false
     /// Container ids, `project:<name>` for a project's own row,
     /// `service:<project>/<name>` for a service of one before it runs, and
     /// `testcontainers:<session>` for a test run's row.
-    @Published var selection: Set<String> = []
+    @Published package var selection: Set<String> = []
     /// The blocks folded: a test run's is, the first time it shows
     /// (`folding`).
-    @Published var collapsed: Set<String> = []
+    @Published package var collapsed: Set<String> = []
     /// The test runs listed so far, by tag: one not seen before is folded.
     private var seenSessions: Set<String> = []
     private var foldingRuns: AnyCancellable?
     /// What the last action said when it failed, until dismissed.
-    @Published var error: String?
+    @Published package var error: String?
     /// Containers (and projects) with an action on its way.
-    @Published var busy: Set<String> = []
+    @Published package var busy: Set<String> = []
     /// `?`: the keys.
-    @Published var cheatSheet = false
+    @Published package var cheatSheet = false
     /// Bumped to put the keyboard in the filter field (`/`).
-    @Published var focusFilter = 0
+    @Published package var focusFilter = 0
     /// The other sections' selections: image ids, volume names, network ids.
-    @Published var imageSelection: Set<String> = []
-    @Published var volumeSelection: Set<String> = []
-    @Published var networkSelection: Set<String> = []
+    @Published package var imageSelection: Set<String> = []
+    @Published package var volumeSelection: Set<String> = []
+    @Published package var networkSelection: Set<String> = []
     /// Images being pulled, by name: their layers' progress.
-    @Published var pulls: [String: DockerPull] = [:]
+    @Published package var pulls: [String: DockerPull] = [:]
     /// Clean Up's sheet, and what it would remove.
-    @Published var cleaning = false
-    @Published var cleanChoice = DockerPrunePlan.Choice()
+    @Published package var cleaning = false
+    @Published package var cleanChoice = DockerPrunePlan.Choice()
     /// What Clean Up freed, said once — and what an export or an import
     /// did.
-    @Published var cleaned: String?
+    @Published package var cleaned: String?
     /// An export or import on its way: what it is.
-    @Published var transferring: String?
+    @Published package var transferring: String?
     /// Builds, as `buildx history` keeps them: read every few seconds
     /// while the section shows, so a build started anywhere is there while
     /// it runs (`watchBuilds`).
-    @Published var builds: [DockerBuildRecord] = []
-    @Published var buildSelection: Set<String> = []
-    @Published var buildsError: String?
+    @Published package var builds: [DockerBuildRecord] = []
+    @Published package var buildSelection: Set<String> = []
+    @Published package var buildsError: String?
     /// The detail's build, followed while it shows: one at a time, made
     /// and closed by `updateBuildStream` alone — never while a view draws.
-    @Published private(set) var buildSession: DockerBuildSession?
+    @Published package private(set) var buildSession: DockerBuildSession?
     /// A unit test's stub `docker` for builds.
-    var buildsCLIOverride: DockerCLI?
+    package var buildsCLIOverride: DockerCLI?
     /// A test's interval between reads of the list; nil is 3 s, 10 s over
     /// ssh, where each read is a connection.
-    var buildPoll: TimeInterval?
-    var buildWatch: Task<Void, Never>?
+    package var buildPoll: TimeInterval?
+    package var buildWatch: Task<Void, Never>?
     /// The section shows where someone can see it: the list is polled. A
     /// read that failed stops the poll; the next that doesn't starts it.
-    var buildsWatched = false
+    package var buildsWatched = false
     private var buildStreams: AnyCancellable?
     private var buildsWanting: AnyCancellable?
     /// The running builds selected for the user once, when nothing was:
     /// never again, so it doesn't fight one who moved away.
-    var autoSelected: Set<String> = []
-    var readingBuilds = false
+    package var autoSelected: Set<String> = []
+    package var readingBuilds = false
     /// The Run window, open on this.
-    @Published var runSpec: DockerRunSpec?
+    @Published package var runSpec: DockerRunSpec?
     /// The Settings sheet, open on this.
-    @Published var containerSettings: DockerContainerSettings?
+    @Published package var containerSettings: DockerContainerSettings?
     /// Docker Model Runner's: where it is, then what it has — nil while
     /// it isn't answering (`loadModels`).
-    @Published var modelsPlace: ModelRunner.Place?
-    @Published var models: ModelRunner.Contents?
-    @Published var modelsError: String?
-    @Published var modelSelection: Set<String> = []
+    @Published package var modelsPlace: ModelRunner.Place?
+    @Published package var models: ModelRunner.Contents?
+    @Published package var modelsError: String?
+    @Published package var modelSelection: Set<String> = []
     /// The agents as Docker's MCP Toolkit sees them, read each
     /// time the page shows; nil without the Toolkit.
-    @Published var mcpClients: [MCPToolkitClient]?
+    @Published package var mcpClients: [MCPToolkitClient]?
     /// Whether `docker scout` is there, for the images' menu.
-    lazy var hasScout = DockerCLI.hasPlugin("scout")
+    package lazy var hasScout = DockerCLI.hasPlugin("scout")
     /// What each project's files say, by its name (`ComposeFacts`): read
     /// when something on screen draws its verbs, again when its files
     /// change (`DockerPageModel+Compose`).
-    @Published var composeFacts: [String: ComposeFacts] = [:]
+    @Published package var composeFacts: [String: ComposeFacts] = [:]
     /// The reads on their way, by project name, with the files' stamp each
     /// was asked for.
-    var composeFactReads: [String: (stamp: ComposeFacts.Stamp, task: Task<ComposeFacts?, Never>)] = [:]
+    package var composeFactReads: [String: (stamp: ComposeFacts.Stamp, task: Task<ComposeFacts?, Never>)] = [:]
     /// Up With Profiles…, open on this.
-    @Published var profileChoice: ComposeProfileChoice?
+    @Published package var profileChoice: ComposeProfileChoice?
     /// The profiles last ticked for each project, this run only.
-    var lastProfiles: [String: Set<String>] = [:]
+    package var lastProfiles: [String: Set<String>] = [:]
     /// The checkouts whose stacks run on ports of their own.
-    let ports: ComposePortStore
+    package let ports: ComposePortStore
     /// What `docker compose version --short` said, once it has.
-    var composeVersion: String?
+    package var composeVersion: String?
     /// The containers list's order, this window's, this run's.
-    @Published var sort: DockerListSort = .name
+    @Published package var sort: DockerListSort = .name
     /// The monitor's values (`DockerModel.usage`), while this page's
     /// Containers section shows — empty otherwise, so a hidden page in
     /// another window draws nothing again for them.
-    @Published private(set) var usage: [String: DockerUsage] = [:]
+    @Published package private(set) var usage: [String: DockerUsage] = [:]
     private var wantsUsage = false
     private var usageFeed: AnyCancellable?
 
-    let docker: DockerModel
+    package let docker: DockerModel
     /// What the registries said of the images (Check for Updates): the
     /// app's, for the app's engine.
-    let updates: DockerImageUpdates
+    package let updates: DockerImageUpdates
     /// What Docker Scout found in the images the user scanned: the app's,
     /// for the app's engine.
-    let scans: DockerScoutScans
+    package let scans: DockerScoutScans
     /// An image's detail's tab, kept from one image to the next.
-    @Published var imageTab: DockerImageTab = .overview
+    @Published package var imageTab: DockerImageTab = .overview
     /// What its Vulnerabilities tab lists, kept from one image to the next.
-    @Published var scoutFilter = DockerScoutFilter()
+    @Published package var scoutFilter = DockerScoutFilter()
 
     private var streams: AnyCancellable?
     private var volumeStreams: AnyCancellable?
@@ -251,7 +251,7 @@ final class DockerPageModel: ObservableObject {
     /// `updates`, `scans`: the app's for the app's engine; another
     /// engine's (a test's) gets its own, which asks no registry and runs
     /// no Scout.
-    init(
+    package init(
         docker: DockerModel = .shared, ports: ComposePortStore = .shared, updates: DockerImageUpdates? = nil, scans: DockerScoutScans? = nil
     ) {
         self.docker = docker
@@ -315,7 +315,7 @@ final class DockerPageModel: ObservableObject {
 
     /// The folds after a list of runs: one not seen before folded, one gone
     /// forgotten, one the user unfolded left so; projects' untouched. Pure.
-    nonisolated static func folding(
+    package nonisolated static func folding(
         _ collapsed: Set<String>, seen: Set<String>, sessions: [TestcontainersSession]
     ) -> (collapsed: Set<String>, seen: Set<String>) {
         let tags = Set(sessions.map { sessionTag($0.id) })
@@ -352,7 +352,7 @@ final class DockerPageModel: ObservableObject {
     /// Its window closes: everything it reads stops now, not at the sinks'
     /// next turn of the run loop, which may find the page gone — and the
     /// monitor wanted for good.
-    func close() {
+    package func close() {
         visible = false
         want(nil)
         wantUsage(false)
@@ -363,12 +363,12 @@ final class DockerPageModel: ObservableObject {
     }
 
     /// What a container uses now, while it runs or is paused.
-    func usage(of container: ContainerSummary) -> DockerUsage? { container.state.hasStats ? usage[container.Id] : nil }
+    package func usage(of container: ContainerSummary) -> DockerUsage? { container.state.hasStats ? usage[container.Id] : nil }
 
     /// A block's: its containers' added up.
-    func usage(of group: DockerListGroup) -> DockerUsage? { DockerUsage.sum(group.containers.compactMap { usage(of: $0) }) }
+    package func usage(of group: DockerListGroup) -> DockerUsage? { DockerUsage.sum(group.containers.compactMap { usage(of: $0) }) }
 
-    func updateStreams() {
+    package func updateStreams() {
         if let project = detailedProject {
             projectSession(for: project.name).follow(shown: visible && showDetail && projectTab == .logs)
         } else {
@@ -385,36 +385,36 @@ final class DockerPageModel: ObservableObject {
 
     /// The one project the detail shows: the selection, if it is one (or
     /// a service of one before it runs).
-    var detailedProject: ComposeProject? {
+    package var detailedProject: ComposeProject? {
         guard selection.count == 1, let tag = selection.first, let name = Self.project(of: tag) ?? Self.service(of: tag)?.project else { return nil }
         return project(named: name)
     }
 
     /// The window's: the selected tab's checkout's compose project before
     /// it runs, which the panel shows too.
-    var checkoutCompose: ComposeFileModel?
+    package var checkoutCompose: ComposeFileModel?
 
     /// That project, listed among the others until one of its name exists —
     /// from this checkout or another folder: the list has one row a name —
     /// or one made from its files under another name.
-    var planned: ComposeProject? {
+    package var planned: ComposeProject? {
         guard let plan = checkoutCompose?.project, !docker.projects.contains(where: { ComposeProjects.replaces($0, plan) }) else { return nil }
         return plan
     }
 
     /// Nothing for the list to show: no container, and no project before it
     /// runs that it would list (Running only leaves that out).
-    var isEmpty: Bool { docker.containers.isEmpty && (planned == nil || runningOnly) }
+    package var isEmpty: Bool { docker.containers.isEmpty && (planned == nil || runningOnly) }
 
     /// A project by name: the labels' one, else the one before it runs.
-    func project(named name: String) -> ComposeProject? {
+    package func project(named name: String) -> ComposeProject? {
         docker.projects.first { $0.name == name } ?? planned.flatMap { $0.name == name ? $0 : nil }
     }
 
     /// The project detail's session: one at a time.
-    private(set) var projectSession: ProjectSession?
+    package private(set) var projectSession: ProjectSession?
 
-    func projectSession(for name: String) -> ProjectSession {
+    package func projectSession(for name: String) -> ProjectSession {
         if let projectSession, projectSession.name == name { return projectSession }
         projectSession?.close()
         let made = ProjectSession(name: name, docker: docker)
@@ -422,39 +422,39 @@ final class DockerPageModel: ObservableObject {
         return made
     }
 
-    nonisolated static let looseTag = "loose"
-    nonisolated static func projectTag(_ name: String) -> String { "project:" + name }
-    nonisolated static func project(of tag: String) -> String? { tag.hasPrefix("project:") ? String(tag.dropFirst("project:".count)) : nil }
+    package nonisolated static let looseTag = "loose"
+    package nonisolated static func projectTag(_ name: String) -> String { "project:" + name }
+    package nonisolated static func project(of tag: String) -> String? { tag.hasPrefix("project:") ? String(tag.dropFirst("project:".count)) : nil }
     /// A service row of a project before it runs.
-    nonisolated static func serviceTag(_ service: ComposeService) -> String { "service:" + service.id }
-    nonisolated static func service(of tag: String) -> (project: String, service: String)? {
+    package nonisolated static func serviceTag(_ service: ComposeService) -> String { "service:" + service.id }
+    package nonisolated static func service(of tag: String) -> (project: String, service: String)? {
         guard tag.hasPrefix("service:") else { return nil }
         let id = tag.dropFirst("service:".count)
         guard let slash = id.firstIndex(of: "/") else { return nil }
         return (String(id[..<slash]), String(id[id.index(after: slash)...]))
     }
     /// A Testcontainers run's row, by its session ("" for those in none).
-    nonisolated static func sessionTag(_ id: String) -> String { "testcontainers:" + id }
-    nonisolated static func session(of tag: String) -> String? {
+    package nonisolated static func sessionTag(_ id: String) -> String { "testcontainers:" + id }
+    package nonisolated static func session(of tag: String) -> String? {
         tag.hasPrefix("testcontainers:") ? String(tag.dropFirst("testcontainers:".count)) : nil
     }
 
     /// The window's, set when it makes the page.
-    var actions: DockerActions?
+    package var actions: DockerActions?
     /// The selected container's detail beside the list (Space).
-    @Published var showDetail = true
+    @Published package var showDetail = true
     /// Its tab, kept from one container to the next.
-    @Published var detailTab: ContainerTab = .overview
+    @Published package var detailTab: ContainerTab = .overview
     /// A project's detail's tab.
-    @Published var projectTab: ProjectDetailView.Tab = .logs
+    @Published package var projectTab: ProjectDetailView.Tab = .logs
     /// Whether the page is on screen (the window says): a hidden page's
     /// detail reads no logs and no stats.
-    @Published var visible = false
+    @Published package var visible = false
     /// Whether its window is on screen at all — not under another app's,
     /// minimized or hidden (its occlusion, which the window says). The
     /// list's CPU and memory heed it: read every few seconds, they aren't
     /// read for nobody.
-    @Published var windowVisible = true
+    @Published package var windowVisible = true
 
     /// The list as shown: projects first, by name, then the rest, then
     /// Testcontainers' runs, newest first; the filter applied; a block kept
@@ -462,7 +462,7 @@ final class DockerPageModel: ObservableObject {
     /// project before it runs, is among them until one of its name exists;
     /// nothing of it runs, so Running only leaves it out. By CPU or memory,
     /// the busiest first (`sorted`).
-    nonisolated static func groups(
+    package nonisolated static func groups(
         projects: [ComposeProject], planned: ComposeProject? = nil, loose: [ContainerSummary], sessions: [TestcontainersSession] = [],
         filter: DockerFilter, runningOnly: Bool, sort: DockerListSort = .name, usage: [String: DockerUsage] = [:]
     ) -> [DockerListGroup] {
@@ -493,7 +493,7 @@ final class DockerPageModel: ObservableObject {
     /// with nothing read (stopped, or not read yet) after them in the order
     /// they came; then the blocks by what theirs add up to — "Other
     /// containers" among them like any project.
-    nonisolated static func sorted(_ groups: [DockerListGroup], by sort: DockerListSort, usage: [String: DockerUsage]) -> [DockerListGroup] {
+    package nonisolated static func sorted(_ groups: [DockerListGroup], by sort: DockerListSort, usage: [String: DockerUsage]) -> [DockerListGroup] {
         func value(_ container: ContainerSummary) -> Double? { container.state.hasStats ? usage[container.Id].map(sort.value) : nil }
         let ordered = groups.map { group -> (group: DockerListGroup, total: Double) in
             var group = group
@@ -515,7 +515,7 @@ final class DockerPageModel: ObservableObject {
             .map { $0.element.group }
     }
 
-    var groups: [DockerListGroup] {
+    package var groups: [DockerListGroup] {
         Self.groups(
             projects: docker.projects, planned: planned, loose: docker.loose, sessions: docker.testcontainers, filter: DockerFilter(filter),
             runningOnly: runningOnly, sort: sort, usage: usage)
@@ -523,7 +523,7 @@ final class DockerPageModel: ObservableObject {
 
     /// The rows as the keyboard walks them: a project's row, then its
     /// containers unless folded.
-    var rows: [String] {
+    package var rows: [String] {
         groups.flatMap { group in
             [group.id] + (collapsed.contains(group.id) ? [] : group.containers.map(\.Id) + group.services.map(Self.serviceTag))
         }
@@ -532,7 +532,7 @@ final class DockerPageModel: ObservableObject {
     /// The containers the selection means: a project's row stands for all
     /// of its containers, a test run's for its own — not Ryuk, which still
     /// removes them when the run ends.
-    var selectedContainers: [ContainerSummary] {
+    package var selectedContainers: [ContainerSummary] {
         var seen = Set<String>()
         var result: [ContainerSummary] = []
         for tag in selection {
@@ -554,20 +554,20 @@ final class DockerPageModel: ObservableObject {
     }
 
     /// The one container the detail shows: the selection, if it is one.
-    var detailed: ContainerSummary? {
+    package var detailed: ContainerSummary? {
         guard selection.count == 1, let tag = selection.first, Self.project(of: tag) == nil, Self.service(of: tag) == nil, Self.session(of: tag) == nil
         else { return nil }
         return docker.container(tag)
     }
 
     /// The one test run the detail shows: the selection, if it is its row.
-    var detailedSession: TestcontainersSession? {
+    package var detailedSession: TestcontainersSession? {
         guard selection.count == 1, let tag = selection.first, let id = Self.session(of: tag) else { return nil }
         return docker.testcontainers.first { $0.id == id }
     }
 
     /// The project the selection is in, when it is all in one.
-    var selectedProject: ComposeProject? {
+    package var selectedProject: ComposeProject? {
         let names = Set(
             selection.compactMap { tag in Self.project(of: tag) ?? Self.service(of: tag)?.project ?? docker.container(tag)?.composeProject })
         guard names.count == 1, let name = names.first else { return nil }
@@ -575,17 +575,17 @@ final class DockerPageModel: ObservableObject {
     }
 
     /// The detail's session: one at a time, the last one closed.
-    private(set) var session: ContainerSession?
+    package private(set) var session: ContainerSession?
 
     /// A volume's detail's tab, kept from one volume to the next.
-    @Published var volumeTab: VolumeTab = .overview
+    @Published package var volumeTab: VolumeTab = .overview
     /// The selected volume's Files tab: one at a time, the last one closed.
     /// Made and followed by `updateVolumeFiles` alone — the view only
     /// reads it, so none is made that nothing shows.
-    @Published private(set) var volumeFiles: VolumeFilesSession?
+    @Published package private(set) var volumeFiles: VolumeFilesSession?
     /// Volumes being removed (Remove, Clean Up): their Files tab makes no
     /// helper meanwhile, which would hold them again.
-    var removingVolumes: Set<String> = []
+    package var removingVolumes: Set<String> = []
 
     private func volumeFiles(for name: String) -> VolumeFilesSession {
         if let volumeFiles, volumeFiles.volume == name { return volumeFiles }
@@ -598,7 +598,7 @@ final class DockerPageModel: ObservableObject {
     /// The session gone: its helper's removal, for a caller that must wait
     /// till the volume is free.
     @discardableResult
-    func closeVolumeFiles() -> Task<Void, Never>? {
+    package func closeVolumeFiles() -> Task<Void, Never>? {
         guard let volumeFiles else { return nil }
         self.volumeFiles = nil
         return volumeFiles.close()
@@ -609,7 +609,7 @@ final class DockerPageModel: ObservableObject {
     /// or another section, forgets it. A volume the list no longer has
     /// (pruned, removed in a terminal) shows no detail, so no helper:
     /// bound by its name, one would make the volume again.
-    func updateVolumeFiles() {
+    package func updateVolumeFiles() {
         guard section == .volumes, volumeSelection.count == 1, let name = volumeSelection.first else {
             closeVolumeFiles()
             return
@@ -625,7 +625,7 @@ final class DockerPageModel: ObservableObject {
     }
 
     /// Browse Files: the page on the volume's Files tab.
-    func browseFiles(of volume: VolumeSummary) {
+    package func browseFiles(of volume: VolumeSummary) {
         if !visible { actions?.openPage() }
         section = .volumes
         volumeSelection = [volume.Name]
@@ -634,7 +634,7 @@ final class DockerPageModel: ObservableObject {
     }
 
     /// The one build the detail shows: the selection, if it is one.
-    var detailedBuild: DockerBuildRecord? {
+    package var detailedBuild: DockerBuildRecord? {
         guard buildSelection.count == 1, let id = buildSelection.first else { return nil }
         return builds.first { $0.id == id }
     }
@@ -653,7 +653,7 @@ final class DockerPageModel: ObservableObject {
     /// The detailed build is followed while the page, its section and the
     /// detail all show — an error stands in for the detail when the list
     /// couldn't be read; another build, or none, closes the last.
-    func updateBuildStream() {
+    package func updateBuildStream() {
         guard let build = detailedBuild else {
             buildSession?.close()
             buildSession = nil
@@ -662,7 +662,7 @@ final class DockerPageModel: ObservableObject {
         makeBuildSession(for: build).follow(shown: visible && showDetail && section == .builds && buildsError == nil)
     }
 
-    func session(for id: String) -> ContainerSession {
+    package func session(for id: String) -> ContainerSession {
         if let session, session.id == id { return session }
         session?.close()
         let made = ContainerSession(id: id, docker: docker)
@@ -671,50 +671,50 @@ final class DockerPageModel: ObservableObject {
     }
 
     /// Bumped when the page comes up, to give the list the keyboard.
-    @Published var focusList = 0
+    @Published package var focusList = 0
 
-    func toggleFold(_ tag: String) {
+    package func toggleFold(_ tag: String) {
         if collapsed.contains(tag) { collapsed.remove(tag) } else { collapsed.insert(tag) }
     }
 
     // MARK: Acting
 
     /// Start the stopped ones, stop the running ones — what `s` does.
-    func startOrStop() {
+    package func startOrStop() {
         let containers = selectedContainers
         guard !containers.isEmpty else { return }
         let action: DockerEngine.ContainerAction = containers.contains { $0.state.isUp } ? .stop : .start
         act(action, on: containers)
     }
 
-    func restart() { act(.restart, on: selectedContainers) }
+    package func restart() { act(.restart, on: selectedContainers) }
 
     /// What is wrong with it (`DockerAttention.trouble`): its summary, and
     /// the inspect already read — given, or the detail's own. Nothing is
     /// read for it.
-    func trouble(of container: ContainerSummary, detail: ContainerDetail? = nil) -> DockerAttention.Trouble? {
+    package func trouble(of container: ContainerSummary, detail: ContainerDetail? = nil) -> DockerAttention.Trouble? {
         let known = [detail, session?.detail].first { $0?.Id == container.Id } ?? nil
         return DockerAttention.trouble(of: container, detail: known)
     }
 
     /// Ask an Agent Why…: the window reads it, then opens the sheet.
-    func askWhy(_ container: ContainerSummary) { actions?.askAgent(.failure(container)) }
+    package func askWhy(_ container: ContainerSummary) { actions?.askAgent(.failure(container)) }
 
     /// `a`, and ⌘L while the page shows: the first selected container that
     /// failed. False when none did.
-    func askWhySelected() -> Bool {
+    package func askWhySelected() -> Bool {
         guard section == .containers, let failed = selectedContainers.first(where: { trouble(of: $0) != nil }) else { return false }
         askWhy(failed)
         return true
     }
 
-    func pauseOrUnpause() {
+    package func pauseOrUnpause() {
         let containers = selectedContainers.filter { $0.state == .running || $0.state == .paused }
         guard !containers.isEmpty else { return }
         act(containers.allSatisfy { $0.state == .paused } ? .unpause : .pause, on: containers)
     }
 
-    func act(_ action: DockerEngine.ContainerAction, on containers: [ContainerSummary]) {
+    package func act(_ action: DockerEngine.ContainerAction, on containers: [ContainerSummary]) {
         for container in containers {
             busy.insert(container.Id)
             Task {
@@ -734,7 +734,7 @@ final class DockerPageModel: ObservableObject {
     /// `ResourceKey.press`). Whether it meant something; anything else goes
     /// on to the list.
     @discardableResult
-    func press(_ characters: String) -> Bool {
+    package func press(_ characters: String) -> Bool {
         guard let press = DockerKey.press(characters, sheetShowing: cheatSheet) else { return false }
         let key: DockerKey
         switch press {
@@ -879,7 +879,7 @@ final class DockerPageModel: ObservableObject {
     /// A project's verbs: `up` (its ports looked at first, `startUp`),
     /// `down` (asked first), `watch` and the logs in a terminal tab;
     /// `start`, `stop`, `restart` on its containers here.
-    func compose(_ verb: String, _ project: ComposeProject) {
+    package func compose(_ verb: String, _ project: ComposeProject) {
         let lasting = project.containers.filter { !$0.isOneOff }
         let folder = project.workingDir.map { URL(fileURLWithPath: $0) }
         let endpoint = docker.endpoint
@@ -923,7 +923,7 @@ final class DockerPageModel: ObservableObject {
         }
     }
 
-    func confirmRemove(_ containers: [ContainerSummary]) {
+    package func confirmRemove(_ containers: [ContainerSummary]) {
         guard !containers.isEmpty else { return }
         let running = containers.filter { $0.state.isUp }.count
         actions?.confirm(
@@ -934,7 +934,7 @@ final class DockerPageModel: ObservableObject {
 
     /// Removes them — running ones stopped first, as `docker rm -f`. The
     /// window asks before.
-    func remove(_ containers: [ContainerSummary]) {
+    package func remove(_ containers: [ContainerSummary]) {
         for container in containers {
             busy.insert(container.Id)
             Task {

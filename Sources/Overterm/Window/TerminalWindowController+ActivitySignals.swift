@@ -15,7 +15,7 @@ import AppKit
 extension TerminalWindowController {
     /// `verb` on the process `identity`. `stopFirstAnswered`: Force Quit
     /// chosen in "Stop it first?" — its own sheet follows, never a send.
-    func activityAct(_ verb: ActivityVerb, _ identity: ActivityProcessID, stopFirstAnswered: Bool = false) {
+    package func activityAct(_ verb: ActivityVerb, _ identity: ActivityProcessID, stopFirstAnswered: Bool = false) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             guard let subject = await self.activitySubject(identity) else {
@@ -27,7 +27,7 @@ extension TerminalWindowController {
 
     /// `k`: what the process's class asks (`ActivityPageModel.stopVerb`),
     /// decided on the process read again now — never on the list's read.
-    func activityStop(_ identity: ActivityProcessID) {
+    package func activityStop(_ identity: ActivityProcessID) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             guard let subject = await self.activitySubject(identity) else {
@@ -38,7 +38,7 @@ extension TerminalWindowController {
     }
 
     /// Send a Signal (`x`): which signal, then that signal's own question.
-    func activityChooseSignal(_ identity: ActivityProcessID) {
+    package func activityChooseSignal(_ identity: ActivityProcessID) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = "Send a signal to pid \(identity.pid)"
@@ -62,7 +62,7 @@ extension TerminalWindowController {
 
     /// `identity` read from a fresh census, as the policy sees it: its owners
     /// made off the main thread with the page's facts. Nil once it ended.
-    func activitySubject(_ identity: ActivityProcessID) async -> ActivityVerbSubject? {
+    package func activitySubject(_ identity: ActivityProcessID) async -> ActivityVerbSubject? {
         await activityRead { snapshot, owners, known in
             // What the main actor changed itself is laid over the census,
             // which may be a tick that started before that change.
@@ -73,7 +73,7 @@ extension TerminalWindowController {
     /// `read` over a fresh census and its owners, made off the main thread
     /// with the page's facts and what the main actor knows (`known`). Nil
     /// when there is no census, or `read` says nil.
-    func activityRead<T: Sendable>(
+    package func activityRead<T: Sendable>(
         _ read: @escaping @Sendable (ActivitySnapshot, ActivityAttribution, ActivityVerbSubject.Known) -> T?
     ) async -> T? {
         guard let snapshot = await ActivityMonitor.shared.census(within: 0) else { return nil }
@@ -97,7 +97,7 @@ extension TerminalWindowController {
     /// What the main actor knows of stopped processes: what Suspend Tab
     /// stopped, in every window; what Activity stopped and put in the
     /// background (`ActivityHeld`).
-    static func activityKnown() -> ActivityVerbSubject.Known {
+    package static func activityKnown() -> ActivityVerbSubject.Known {
         var suspended: Set<ActivityProcessID> = []
         for window in (NSApp as NSApplication?)?.windows ?? [] {
             guard let controller = window.windowController as? TerminalWindowController else { continue }
@@ -113,7 +113,7 @@ extension TerminalWindowController {
 
     /// The pane whose tag is `tag`, in whichever window, with its tab and
     /// that window's controller.
-    static func activityPane(tag: String?) -> (TerminalWindowController, Tab, TerminalView)? {
+    package static func activityPane(tag: String?) -> (TerminalWindowController, Tab, TerminalView)? {
         guard let tag else { return nil }
         for window in (NSApp as NSApplication?)?.windows ?? [] {
             guard let controller = window.windowController as? TerminalWindowController else { continue }
@@ -125,7 +125,7 @@ extension TerminalWindowController {
     }
 
     /// "Tab “web” · feature-x · Claude", or where it runs outside every tab.
-    func activityScope(_ subject: ActivityVerbSubject) -> String? {
+    package func activityScope(_ subject: ActivityVerbSubject) -> String? {
         if let tab = subject.tab, let (_, found) = Self.activityWindow(of: tab) {
             return ActivityPortFree.scope(tab: found.title, checkout: found.checkoutSource?.root.lastPathComponent, agent: subject.agent ?? found.agent)
         }
@@ -217,7 +217,7 @@ extension TerminalWindowController {
 
     /// What `rule` does to `subject` — read at the button — as the sheet
     /// asked it of `asked`; `after`, what is watched once it went.
-    func activityPerform(
+    package func activityPerform(
         _ verb: ActivityVerb, _ rule: ActivityRule, _ subject: ActivityVerbSubject, asked: ActivityVerbSubject, after: ActivityAfterSend = .stopWatch
     ) {
         let target = asked.signal
@@ -352,7 +352,7 @@ extension TerminalWindowController {
 /// step). `write`: the terraform write interrupted when it isn't the one
 /// freed (its provider plugin holds the port) — then no Force Quit is
 /// offered of the plugin, which SIGKILL would take from under the write.
-enum ActivityAfterSend {
+package enum ActivityAfterSend {
     case stopWatch
     case port(ActivityPortRow, freed: ActivityProcessID, write: String?)
 }

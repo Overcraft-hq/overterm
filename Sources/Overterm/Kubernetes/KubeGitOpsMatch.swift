@@ -28,9 +28,9 @@ import Foundation
 /// > tag > branch; `master` by default) — "tracks main; this branch is
 /// fix/orders" when they differ. Nothing here runs git; every ref that
 /// later reaches git goes through `KubeGitOpsGitArgs` first.
-enum KubeGitOpsMatch {
+package enum KubeGitOpsMatch {
     /// Why an object is said to deploy the checkout.
-    enum Why: Equatable, Hashable, Sendable {
+    package enum Why: Equatable, Hashable, Sendable {
         /// Its marks name it as the owner of these bound workloads.
         case owns([KubeWorkloadRef])
         /// No marks, but its images are these workloads'.
@@ -51,7 +51,7 @@ enum KubeGitOpsMatch {
         case probably(String)
 
         /// In grey under the row: "apps/web", "owns Deployment/shop-api".
-        var said: String {
+        package var said: String {
             switch self {
             case .owns(let workloads): "owns " + workloads.map(Self.workload).joined(separator: ", ")
             case .sameImage(let workloads): "probably deploys " + workloads.map(\.name).joined(separator: ", ") + " (same image)"
@@ -64,7 +64,7 @@ enum KubeGitOpsMatch {
         }
 
         /// The source of a multi-source Application that matched.
-        var source: Int? {
+        package var source: Int? {
             switch self {
             case .repoAndPath(_, let source), .repoOnly(_, let source): source
             default: nil
@@ -72,7 +72,7 @@ enum KubeGitOpsMatch {
         }
 
         /// A case (a) match: the repository is this checkout's.
-        var isRepository: Bool {
+        package var isRepository: Bool {
             switch self {
             case .repoAndPath, .repoOnly: true
             default: false
@@ -80,53 +80,53 @@ enum KubeGitOpsMatch {
         }
 
         /// `Deployment/shop-api`.
-        static func workload(_ ref: KubeWorkloadRef) -> String { "\(ref.kind.kind.kind)/\(ref.name)" }
+        package static func workload(_ ref: KubeWorkloadRef) -> String { "\(ref.kind.kind.kind)/\(ref.name)" }
     }
 
     /// One of the checkout's remotes: its name and the repository it names.
-    struct Remote: Equatable, Hashable, Sendable {
-        var name: String
-        var repo: GitRemoteURL
+    package struct Remote: Equatable, Hashable, Sendable {
+        package var name: String
+        package var repo: GitRemoteURL
     }
 
     /// The checkout's side: its remotes normalised, its branch, each
     /// remote's default branch (`refs/remotes/<remote>/HEAD`) — read
     /// locally, nothing fetched.
-    struct Checkout: Equatable, Sendable {
-        var root: URL
-        var remotes: [Remote]
-        var branch: String?
-        var defaults: [String: String] = [:]
+    package struct Checkout: Equatable, Sendable {
+        package var root: URL
+        package var remotes: [Remote]
+        package var branch: String?
+        package var defaults: [String: String] = [:]
         /// HEAD's commit, whole: what "has this branch reached the cluster" is keyed by (4.3).
-        var head: String?
+        package var head: String?
         /// The checkout's refs — remote-tracking branches, branches, tags —
         /// as one hash: a fetch that moves `origin/<tracked>` changes it, so
         /// the answers compared with that branch are asked again (4.3).
-        var refs: Int?
+        package var refs: Int?
 
         /// The remotes' repositories, what a source's URL is compared with.
-        var repos: Set<GitRemoteURL> { Set(remotes.map(\.repo)) }
+        package var repos: Set<GitRemoteURL> { Set(remotes.map(\.repo)) }
 
         /// Which remote names `repo`.
-        func remote(for repo: GitRemoteURL) -> Remote? { remotes.first { $0.repo == repo } }
+        package func remote(for repo: GitRemoteURL) -> Remote? { remotes.first { $0.repo == repo } }
 
         /// The cache's key: the remotes' normalised set, sorted.
-        var remotesKey: String { repos.map(\.key).sorted().joined(separator: ",") }
+        package var remotesKey: String { repos.map(\.key).sorted().joined(separator: ",") }
     }
 
     /// What a match says beyond its object: why, and the branch it tracks.
-    struct Found: Equatable, Sendable {
-        var key: KubeGitOpsObject.Key
-        var whys: [Why]
-        var tracks: String?
+    package struct Found: Equatable, Sendable {
+        package var key: KubeGitOpsObject.Key
+        package var whys: [Why]
+        package var tracks: String?
         /// The owner whose GET found nothing: no object, only what its marks said.
-        var owner: KubeGitOpsOwner?
+        package var owner: KubeGitOpsOwner?
     }
 
     /// What an owner's GET said: its object there, not there (404, or its
     /// kind not served), or unreadable (refused, failed) — which says
     /// nothing about the cluster, only that it couldn't be read.
-    enum OwnerRead: Equatable, Sendable {
+    package enum OwnerRead: Equatable, Sendable {
         case present
         case absent
         case unreadable
@@ -136,7 +136,7 @@ enum KubeGitOpsMatch {
 
     /// Each owner the bound workloads' marks name, with the workloads it
     /// owns, in a stable order; certain marks first.
-    static func owners(_ workloads: [(ref: KubeWorkloadRef, owners: [KubeGitOpsOwner])]) -> [(owner: KubeGitOpsOwner, workloads: [KubeWorkloadRef])] {
+    package static func owners(_ workloads: [(ref: KubeWorkloadRef, owners: [KubeGitOpsOwner])]) -> [(owner: KubeGitOpsOwner, workloads: [KubeWorkloadRef])] {
         var found: [KubeGitOpsOwner: [KubeWorkloadRef]] = [:]
         for workload in workloads {
             for owner in workload.owners where !(found[owner]?.contains(workload.ref) ?? false) { found[owner, default: []].append(workload.ref) }
@@ -149,19 +149,19 @@ enum KubeGitOpsMatch {
 
     /// The key an owner's object is read by: its own namespace when the
     /// marks say it, else its tool's (`argocd`, `flux-system`).
-    static func key(of owner: KubeGitOpsOwner) -> KubeGitOpsObject.Key {
+    package static func key(of owner: KubeGitOpsOwner) -> KubeGitOpsObject.Key {
         let namespace = owner.namespace ?? (owner.tool == .argoCD ? KubeGitOps.argoDefaultNamespace : KubeGitOpsControllers.fluxNamespace)
         return KubeGitOpsObject.Key(kind: owner.tool.kind, namespace: namespace, name: owner.name)
     }
 
     /// "managed by Argo CD Application acme-shop (not in kind-fake)".
-    static func notInCluster(_ owner: KubeGitOpsOwner, context: String) -> String {
+    package static func notInCluster(_ owner: KubeGitOpsOwner, context: String) -> String {
         "managed by \(owner.tool == .argoCD ? "Argo CD" : "Flux") \(owner.tool.kind) \(owner.namespace.map { "\($0)/" } ?? "")\(owner.name) (not in \(context))"
     }
 
     /// Whether an Application's managed resources name the workload, in
     /// the binding's namespace (`KubeGitOpsWire.Managed`).
-    static func manages(_ managed: [KubeGitOpsWire.ManagedEntry], _ workload: KubeWorkloadRef, namespace: String) -> Bool {
+    package static func manages(_ managed: [KubeGitOpsWire.ManagedEntry], _ workload: KubeWorkloadRef, namespace: String) -> Bool {
         let kind = workload.kind.kind
         return managed.contains { entry in
             entry.kind == kind.kind && entry.name == workload.name && (entry.namespace ?? "") == namespace && (entry.group ?? "") == kind.group
@@ -169,7 +169,7 @@ enum KubeGitOpsMatch {
     }
 
     /// No marks: the Applications whose images are a bound workload's.
-    static func sameImage(_ application: KubeGitOpsObject, workloads: [(ref: KubeWorkloadRef, images: [String])]) -> [KubeWorkloadRef] {
+    package static func sameImage(_ application: KubeGitOpsObject, workloads: [(ref: KubeWorkloadRef, images: [String])]) -> [KubeWorkloadRef] {
         guard application.role == .application, !application.images.isEmpty else { return [] }
         let images = Set(application.images)
         return workloads.filter { !$0.images.isEmpty && $0.images.contains(where: images.contains) }.map(\.ref)
@@ -180,7 +180,7 @@ enum KubeGitOpsMatch {
     /// How `object` takes from the checkout, if it does: the best of its
     /// sources (a path here before a repository alone). `objects`: every
     /// summary held — a Kustomization's GitRepository, a HelmRelease's chart.
-    static func source(_ object: KubeGitOpsObject, in checkout: Checkout, objects: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> Why? {
+    package static func source(_ object: KubeGitOpsObject, in checkout: Checkout, objects: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> Why? {
         let repos = checkout.repos
         guard !repos.isEmpty else { return nil }
         switch object.role {
@@ -221,7 +221,7 @@ enum KubeGitOpsMatch {
 
     /// Through a Flux source: a GitRepository's URL and the path; an
     /// OCIRepository's artifact origin (its path not checked).
-    static func fromSource(_ source: KubeGitOpsObject, path: String, in checkout: Checkout) -> Why? {
+    package static func fromSource(_ source: KubeGitOpsObject, path: String, in checkout: Checkout) -> Why? {
         switch source.role {
         case .source("GitRepository"):
             guard let repo = source.sources.first?.repo, checkout.repos.contains(repo) else { return nil }
@@ -235,7 +235,7 @@ enum KubeGitOpsMatch {
     }
 
     /// A path the cluster wrote, checked in the checkout.
-    static func path(_ path: String, in root: URL, source: Int?) -> Why {
+    package static func path(_ path: String, in root: URL, source: Int?) -> Why {
         switch KubeGitOpsPath.resolve(path, in: root) {
         case .inCheckout(let found): .repoAndPath(found, source: source)
         case let other: .repoOnly(KubeGitOpsPath.said(other), source: source)
@@ -243,11 +243,11 @@ enum KubeGitOpsMatch {
     }
 
     /// Whether a Flux source of this kind could name the checkout: a GitRepository's URL, an OCIRepository's origin.
-    static func sourceMatches(_ source: KubeGitOpsObject, in checkout: Checkout) -> Bool {
+    package static func sourceMatches(_ source: KubeGitOpsObject, in checkout: Checkout) -> Bool {
         fromSource(source, path: "", in: checkout) != nil
     }
 
-    static func key(_ reference: KubeGitOps.FluxSource) -> KubeGitOpsObject.Key {
+    package static func key(_ reference: KubeGitOps.FluxSource) -> KubeGitOpsObject.Key {
         KubeGitOpsObject.Key(kind: reference.kind, namespace: reference.namespace, name: reference.name)
     }
 
@@ -255,7 +255,7 @@ enum KubeGitOpsMatch {
 
     /// "tracks main", or "tracks main; this branch is fix/orders"; nil when
     /// nothing says. `objects`: the summaries, for a Flux object's source.
-    static func tracks(_ object: KubeGitOpsObject, why: Why?, in checkout: Checkout, objects: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> String? {
+    package static func tracks(_ object: KubeGitOpsObject, why: Why?, in checkout: Checkout, objects: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> String? {
         guard let tracked = tracked(object, why: why, in: checkout, objects: objects), !tracked.isEmpty else { return nil }
         let said = "tracks \(tracked)"
         guard let branch = checkout.branch, !branch.isEmpty, branch != tracked else { return said }
@@ -264,7 +264,7 @@ enum KubeGitOpsMatch {
 
     /// The ref it follows, as the cluster wrote it — `HEAD` read as the
     /// matched remote's default branch.
-    static func tracked(_ object: KubeGitOpsObject, why: Why?, in checkout: Checkout, objects: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> String? {
+    package static func tracked(_ object: KubeGitOpsObject, why: Why?, in checkout: Checkout, objects: [KubeGitOpsObject.Key: KubeGitOpsObject]) -> String? {
         switch object.role {
         case .application:
             let sources = object.sources
@@ -294,7 +294,7 @@ enum KubeGitOpsMatch {
     /// what it owns, and what its GET said (absent: said "not in this
     /// cluster" for a sure mark, dropped for Helm's label; unreadable:
     /// nothing said here — the problem line says it couldn't be read).
-    static func found(
+    package static func found(
         owned: [(owner: KubeGitOpsOwner, workloads: [KubeWorkloadRef], read: OwnerRead)], objects: [KubeGitOpsObject.Key: KubeGitOpsObject],
         workloads: [(ref: KubeWorkloadRef, images: [String])], checkout: Checkout, context: String
     ) -> [Found] {

@@ -7,30 +7,30 @@ import Foundation
 /// bytes. A change rewrites only the block it is in, the way Bruno's own
 /// writer lays a block out, so the diff in the checkout shows the edit and
 /// nothing else: the same file is opened by Bruno, `bru run` and agents.
-struct BruFile: Equatable, Sendable {
-    enum Segment: Equatable, Sendable {
+package struct BruFile: Equatable, Sendable {
+    package enum Segment: Equatable, Sendable {
         /// Text between blocks, as written — blank lines, mostly.
         case gap(String)
         case block(BruBlock)
     }
 
-    private(set) var segments: [Segment]
+    package private(set) var segments: [Segment]
     /// "\r\n" for a file written on Windows: a block rewritten here keeps
     /// the file's line ending rather than mixing two in one file.
-    private(set) var lineEnding = "\n"
+    package private(set) var lineEnding = "\n"
 
-    init(parsing text: String) {
+    package init(parsing text: String) {
         segments = Self.parse(text)
         if text.contains("\r\n") { lineEnding = "\r\n" }
     }
 
-    init() {
+    package init() {
         segments = []
     }
 
     /// The file's text: untouched blocks as they were read, changed ones
     /// as Bruno writes them.
-    var text: String {
+    package var text: String {
         segments.map {
             switch $0 {
             // By byte: to Swift "\r\n" is one Character, which contains("\r") misses.
@@ -40,34 +40,34 @@ struct BruFile: Equatable, Sendable {
         }.joined()
     }
 
-    var blocks: [BruBlock] {
+    package var blocks: [BruBlock] {
         segments.compactMap { if case .block(let block) = $0 { block } else { nil } }
     }
 
-    func block(_ name: String) -> BruBlock? { blocks.first { $0.name == name } }
+    package func block(_ name: String) -> BruBlock? { blocks.first { $0.name == name } }
 
-    func has(_ name: String) -> Bool { block(name) != nil }
+    package func has(_ name: String) -> Bool { block(name) != nil }
 
     // MARK: Reading
 
     /// A dictionary block's pairs, in their order; [] when the block is
     /// missing or isn't one.
-    func pairs(_ name: String) -> [BruPair] {
+    package func pairs(_ name: String) -> [BruPair] {
         if case .dictionary(let pairs) = block(name)?.content { return pairs }
         return []
     }
 
     /// The first enabled value of `key` in a dictionary block.
-    func value(_ key: String, in name: String) -> String? {
+    package func value(_ key: String, in name: String) -> String? {
         pairs(name).first { $0.key == key && $0.enabled }?.value
     }
 
-    func textBlock(_ name: String) -> String? {
+    package func textBlock(_ name: String) -> String? {
         if case .text(let text) = block(name)?.content { return text }
         return nil
     }
 
-    func list(_ name: String) -> [String] {
+    package func list(_ name: String) -> [String] {
         if case .list(let items) = block(name)?.content { return items }
         return []
     }
@@ -76,13 +76,13 @@ struct BruFile: Equatable, Sendable {
 
     /// Replaces a dictionary block's pairs; an empty list removes the block
     /// unless `keepEmpty` (a method block always stays).
-    mutating func setPairs(_ name: String, _ pairs: [BruPair], keepEmpty: Bool = false) {
+    package mutating func setPairs(_ name: String, _ pairs: [BruPair], keepEmpty: Bool = false) {
         if pairs.isEmpty && !keepEmpty { return remove(name) }
         set(BruBlock(name: name, content: .dictionary(pairs)))
     }
 
     /// Sets `key` in a dictionary block, where it was or at its end.
-    mutating func setValue(_ value: String, for key: String, in name: String) {
+    package mutating func setValue(_ value: String, for key: String, in name: String) {
         var pairs = self.pairs(name)
         if let index = pairs.firstIndex(where: { $0.key == key }) {
             guard pairs[index].value != value || !pairs[index].enabled else { return }
@@ -94,26 +94,26 @@ struct BruFile: Equatable, Sendable {
         setPairs(name, pairs, keepEmpty: true)
     }
 
-    mutating func removeValue(_ key: String, in name: String) {
+    package mutating func removeValue(_ key: String, in name: String) {
         let pairs = self.pairs(name)
         guard pairs.contains(where: { $0.key == key }) else { return }
         setPairs(name, pairs.filter { $0.key != key }, keepEmpty: true)
     }
 
     /// Replaces a text block (a body, a script, the docs); nil removes it.
-    mutating func setText(_ name: String, _ text: String?) {
+    package mutating func setText(_ name: String, _ text: String?) {
         guard let text else { return remove(name) }
         set(BruBlock(name: name, content: .text(text)))
     }
 
-    mutating func setList(_ name: String, _ items: [String]) {
+    package mutating func setList(_ name: String, _ items: [String]) {
         if items.isEmpty { return remove(name) }
         set(BruBlock(name: name, content: .list(items)))
     }
 
     /// The block named `old` is called `new` now, its content kept — a
     /// request's method changing, `get {` to `post {`.
-    mutating func rename(_ old: String, to new: String) {
+    package mutating func rename(_ old: String, to new: String) {
         guard old != new, let index = index(of: old), case .block(var block) = segments[index] else { return }
         remove(new)
         block.name = new
@@ -121,7 +121,7 @@ struct BruFile: Equatable, Sendable {
         segments[self.index(of: old) ?? index] = .block(block)
     }
 
-    mutating func remove(_ name: String) {
+    package mutating func remove(_ name: String) {
         guard let index = index(of: name) else { return }
         segments.remove(at: index)
         // The blank line that kept it apart from its neighbour goes with it:
@@ -163,12 +163,12 @@ struct BruFile: Equatable, Sendable {
     }
 
     /// Every block of a name — `body:grpc`, one a message — in the file's order.
-    func blocks(named name: String) -> [BruBlock] { blocks.filter { $0.name == name } }
+    package func blocks(named name: String) -> [BruBlock] { blocks.filter { $0.name == name } }
 
     /// Replaces every block of a name with these dictionaries, in order, where
     /// the first of them was (else where Bruno puts it); a block unchanged
     /// keeps its bytes.
-    mutating func setBlocks(_ name: String, _ dictionaries: [[BruPair]]) {
+    package mutating func setBlocks(_ name: String, _ dictionaries: [[BruPair]]) {
         let old = blocks(named: name)
         guard old.map(\.content) != dictionaries.map({ BruBlock.Content.dictionary($0) }) else { return }
         let first = index(of: name)
@@ -197,7 +197,7 @@ struct BruFile: Equatable, Sendable {
     }
 
     /// The order Bruno's writer emits blocks in; unknown names go last.
-    static let order: [String] = [
+    package static let order: [String] = [
         "meta", "get", "post", "put", "patch", "delete", "options", "head", "connect", "trace", "http", "graphql", "grpc", "ws",
         "params:query", "params:path", "headers", "metadata",
         "auth", "auth:awsv4", "auth:basic", "auth:bearer", "auth:digest", "auth:ntlm", "auth:oauth2", "auth:wsse", "auth:apikey",
@@ -215,7 +215,7 @@ struct BruFile: Equatable, Sendable {
 
     /// Blocks whose content is text, written indented by two spaces;
     /// every other `{ }` block holds `key: value` lines.
-    static func isTextBlock(_ name: String) -> Bool {
+    package static func isTextBlock(_ name: String) -> Bool {
         // gRPC's and WebSocket's messages are name and content pairs, not text.
         name.hasPrefix("body:") && !["body:form-urlencoded", "body:multipart-form", "body:file", "body:grpc", "body:ws"].contains(name)
             || name.hasPrefix("script:") || name == "tests" || name == "docs"
@@ -308,19 +308,19 @@ struct BruFile: Equatable, Sendable {
 }
 
 /// One block of a Bruno file.
-struct BruBlock: Equatable, Sendable {
-    enum Content: Equatable, Sendable {
+package struct BruBlock: Equatable, Sendable {
+    package enum Content: Equatable, Sendable {
         case dictionary([BruPair])
         case text(String)
         case list([String])
     }
 
-    var name: String
-    var content: Content
+    package var name: String
+    package var content: Content
     /// The block as it was read; nil once changed, when it is written anew.
-    fileprivate(set) var source: String?
+    package fileprivate(set) var source: String?
 
-    init(name: String, content: Content) {
+    package init(name: String, content: Content) {
         self.name = name
         self.content = content
     }
@@ -333,7 +333,7 @@ struct BruBlock: Equatable, Sendable {
 
     /// As Bruno's writer lays it out (jsonToBru): two spaces in, the
     /// closer at the start of its line.
-    var written: String {
+    package var written: String {
         switch content {
         case .dictionary(let pairs):
             return "\(name) {\n" + pairs.map { "  " + $0.written + "\n" }.joined() + "}\n"
@@ -348,24 +348,24 @@ struct BruBlock: Equatable, Sendable {
 }
 
 /// `key: value` in a dictionary block; `~key` is there but switched off.
-struct BruPair: Equatable, Hashable, Sendable {
-    var key: String
-    var value: String
-    var enabled = true
+package struct BruPair: Equatable, Hashable, Sendable {
+    package var key: String
+    package var value: String
+    package var enabled = true
     /// Written in triple quotes even on one line — as Bruno writes a gRPC
     /// message's content — and read so. How it is written, not what it is:
     /// left out of equality.
-    var multiline = false
+    package var multiline = false
 
-    static func == (a: BruPair, b: BruPair) -> Bool { a.key == b.key && a.value == b.value && a.enabled == b.enabled }
+    package static func == (a: BruPair, b: BruPair) -> Bool { a.key == b.key && a.value == b.value && a.enabled == b.enabled }
 
-    func hash(into hasher: inout Hasher) {
+    package func hash(into hasher: inout Hasher) {
         hasher.combine(key)
         hasher.combine(value)
         hasher.combine(enabled)
     }
 
-    init(key: String, value: String, enabled: Bool = true, multiline: Bool = false) {
+    package init(key: String, value: String, enabled: Bool = true, multiline: Bool = false) {
         self.key = key
         self.value = value
         self.enabled = enabled
@@ -373,7 +373,7 @@ struct BruPair: Equatable, Hashable, Sendable {
     }
 
     /// A line of a dictionary block, its indent already gone.
-    init?(line: String) {
+    package init?(line: String) {
         var rest = Substring(line)
         enabled = !rest.hasPrefix("~")
         if !enabled { rest = rest.dropFirst() }
@@ -391,7 +391,7 @@ struct BruPair: Equatable, Hashable, Sendable {
         value = rest.trimmingCharacters(in: .whitespaces)
     }
 
-    var written: String {
+    package var written: String {
         let needsQuotes = key.contains(":") || key.hasPrefix("~") || key.hasPrefix("\"") || key != key.trimmingCharacters(in: .whitespaces)
         let name = (enabled ? "" : "~") + (needsQuotes ? "\"\(key)\"" : key)
         guard value.contains("\n") || multiline else { return value.isEmpty ? "\(name): " : "\(name): \(value)" }

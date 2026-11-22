@@ -2,7 +2,7 @@ import AppKit
 import CryptoKit
 
 /// What pressing Apply came to: the scenario reads it.
-enum TerraformApplyOutcome {
+package enum TerraformApplyOutcome {
     case refused(String)
     case cancelled
     case started(TerraformApplyRun)
@@ -13,7 +13,7 @@ enum TerraformApplyOutcome {
 extension TerminalWindowController {
     /// Apply…, the plan's button and `⇧A`: the checks of 5.4, the sheet,
     /// then the detached apply in the plan's environment.
-    func applyTerraformPlan(_ run: TerraformPlanRun) {
+    package func applyTerraformPlan(_ run: TerraformPlanRun) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             if case .refused(let why) = await self.applyPlan(run) { self.presentTerraformRefusal(why) }
@@ -22,7 +22,7 @@ extension TerminalWindowController {
 
     /// The apply of `run`'s plan, every guard on the way (5.4): refused
     /// with why, cancelled at a sheet, or started.
-    func applyPlan(_ run: TerraformPlanRun) async -> TerraformApplyOutcome {
+    package func applyPlan(_ run: TerraformPlanRun) async -> TerraformApplyOutcome {
         let registry = TerraformRunRegistry.shared
         let writable = Settings.shared.terraformRoots[run.card.path]?.writable ?? true
         if let why = run.applyGreyed(registry, writable: writable) { return .refused(why) }
@@ -128,7 +128,7 @@ extension TerminalWindowController {
     /// 5.4's facts read now, off the main thread: the descriptor hashed, the
     /// binary and its version, the workspace, the environment built again,
     /// the lock file hashed.
-    nonisolated static func readNow(
+    package nonisolated static func readNow(
         _ given: TerraformApplyFacts, record: TerraformPlanRecord, card: TerraformRootCard, checkout: URL, pluginCache: String?, listed: [String]?,
         classing: TerraformPlanRun.Classing? = nil, inputs: (varFiles: [String], profile: String?, workspace: String, terragruntTree: Bool)? = nil
     ) async -> TerraformApplyFacts {
@@ -170,7 +170,7 @@ extension TerminalWindowController {
 
     /// An apply ended: its state written (every other plan of it stale at
     /// once, 3.6), its turn given back, the panel read again.
-    func terraformApplyEnded(_ apply: TerraformApplyRun) {
+    package func terraformApplyEnded(_ apply: TerraformApplyRun) {
         let registry = TerraformRunRegistry.shared
         if let identity = apply.identity { registry.stateWritten(identity, by: apply.worktree, operation: "applied", at: Date()) }
         registry.release(apply.key)
@@ -180,7 +180,7 @@ extension TerminalWindowController {
     }
 
     /// Stop (`.`): the first sends SIGINT; a second asks, then sends another.
-    func stopTerraformApply(_ apply: TerraformApplyRun) {
+    package func stopTerraformApply(_ apply: TerraformApplyRun) {
         if apply.stop() { return }
         guard apply.isGoing else { return }
         Task { @MainActor [weak self] in
@@ -204,7 +204,7 @@ extension TerminalWindowController {
 
     /// "Plan Destroy…": asked, then a destroy plan — nothing is destroyed
     /// until its apply, which asks for the root's name.
-    func planTerraformDestroy(_ card: TerraformRootCard, checkout: URL? = nil) {
+    package func planTerraformDestroy(_ card: TerraformRootCard, checkout: URL? = nil) {
         guard let checkout = checkout ?? terraformPanel.checkout else { return NSSound.beep() }
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -225,7 +225,7 @@ extension TerminalWindowController {
     }
 
     /// A row's "Plan Only This" (`-target`, partial) and "Plan Replacing This" (`-replace`).
-    func planTerraformAgain(_ run: TerraformPlanRun, mode: TerraformPlanMode) {
+    package func planTerraformAgain(_ run: TerraformPlanRun, mode: TerraformPlanMode) {
         guard mode.flags != nil else { return presentTerraformRefusal("That address can't be passed to terraform.") }
         planTerraformRoot(run.card, checkout: run.checkout, mode: mode)
     }
@@ -236,7 +236,7 @@ extension TerminalWindowController {
     /// panes (`panes`: only those, for a pane's close): Interrupt, Close
     /// Anyway, Cancel. True when it asked — the caller's close waits for
     /// `proceed`; false when nothing guarded runs there.
-    func terraformCloseGuard(tabs: [Tab], panes: [TerminalView]? = nil, path: TerraformCloseGuard.Path, proceed: @escaping () -> Void) -> Bool {
+    package func terraformCloseGuard(tabs: [Tab], panes: [TerminalView]? = nil, path: TerraformCloseGuard.Path, proceed: @escaping () -> Void) -> Bool {
         let running = terraformWrites(tabs: tabs, panes: panes, path: path)
         guard let question = TerraformCloseGuard.question(running, path: path), let window else { return false }
         let alert = Self.terraformCloseAlert(question)
@@ -252,7 +252,7 @@ extension TerminalWindowController {
         return true
     }
 
-    static func terraformCloseAlert(_ question: TerraformCloseGuard.Question) -> NSAlert {
+    package static func terraformCloseAlert(_ question: TerraformCloseGuard.Question) -> NSAlert {
         let alert = NSAlert()
         alert.messageText = question.title
         alert.informativeText = question.detail
@@ -268,7 +268,7 @@ extension TerminalWindowController {
     /// latest census first (microseconds); only one younger than that
     /// census lists the app's children here, so that the guard fails
     /// closed rather than miss a write.
-    func terraformWrites(tabs: [Tab], panes: [TerminalView]? = nil, path: TerraformCloseGuard.Path) -> [TerraformCloseGuard.Running] {
+    package func terraformWrites(tabs: [Tab], panes: [TerminalView]? = nil, path: TerraformCloseGuard.Path) -> [TerraformCloseGuard.Running] {
         let surfaces = SurfaceProcesses.shared
         if surfaces.hasWaiting, let snapshot = ActivityMonitor.shared.sampler.latest, surfaces.pair(snapshot) { ActivityMonitor.shared.contextChanged() }
         var walked: [(login: pid_t, place: String, checkout: URL?, tag: String?)] = []
@@ -288,7 +288,7 @@ extension TerminalWindowController {
     /// Now — `proceed`, the close Interrupt held back — or keeps them. What
     /// Interrupt didn't reach (`TerraformCloseGuard.notInterrupted`) is
     /// said, never waited on as if interrupted.
-    func interruptTerraform(_ running: [TerraformCloseGuard.Running], path: TerraformCloseGuard.Path, proceed: @escaping () -> Void) {
+    package func interruptTerraform(_ running: [TerraformCloseGuard.Running], path: TerraformCloseGuard.Path, proceed: @escaping () -> Void) {
         let answers = TerraformCloseGuard.interrupt(running)
         if let question = TerraformCloseGuard.notInterrupted(running, answers: answers) { terraformNotInterrupted(question) }
         let running = zip(running, answers).filter { TerraformCloseGuard.reached($0.1) }.map(\.0)
@@ -350,7 +350,7 @@ extension TerminalWindowController {
     /// The applies found alive in run folders — another launch's, or, for
     /// a scenario's crash, this one's — followed again in the slot.
     @discardableResult
-    func reattachTerraformApplies(_ found: [(folder: URL, marker: TerraformApplyMarker)]) -> [TerraformApplyRun] {
+    package func reattachTerraformApplies(_ found: [(folder: URL, marker: TerraformApplyMarker)]) -> [TerraformApplyRun] {
         let registry = TerraformRunRegistry.shared
         var made: [TerraformApplyRun] = []
         for (folder, marker) in found {
@@ -367,7 +367,7 @@ extension TerminalWindowController {
     }
 
     /// The run folders of this session's applies, followed already.
-    static var followedApplyFolders: Set<String> {
+    package static var followedApplyFolders: Set<String> {
         Set(TerraformRunRegistry.shared.applies.filter(\.isGoing).map { $0.folder.standardizedFileURL.path })
     }
 }

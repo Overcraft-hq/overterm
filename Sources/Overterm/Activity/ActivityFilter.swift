@@ -10,15 +10,15 @@ import Foundation
 /// Text matches only masked text, never the raw argv: typing a token a
 /// character at a time could otherwise confirm a secret in another
 /// process's arguments. Pure.
-typealias ActivityFilter = ResourceFilter<ActivityFilterKey>
+package typealias ActivityFilter = ResourceFilter<ActivityFilterKey>
 
 /// The filter's keys, and every name they go by.
-enum ActivityFilterKey: String, ResourceFilterKey {
+package enum ActivityFilterKey: String, ResourceFilterKey {
     case text, pid, ppid, pgid, user, name, cmd, tab, pane, checkout, branch, agent, role, port, cpu, mem, threads, age, energy, state, flag
     // Listening's own.
     case proto, family, scope, owner
 
-    static let names: [String: ActivityFilterKey] = [
+    package static let names: [String: ActivityFilterKey] = [
         "pid": .pid, "ppid": .ppid, "pgid": .pgid,
         "user": .user, "u": .user,
         "name": .name, "n": .name,
@@ -34,8 +34,8 @@ enum ActivityFilterKey: String, ResourceFilterKey {
 
 /// A filter value read as a number compared, with a unit (6.6): `>1g`,
 /// `<5m`, `>=12.5`. Its operators are `ResourceFilterComparison`'s.
-struct ActivityQuantity: Equatable, Sendable {
-    enum Unit: Sendable {
+package struct ActivityQuantity: Equatable, Sendable {
+    package enum Unit: Sendable {
         /// Plain: as it is.
         case plain
         /// Bytes; a bare number is MB (`mem:>500`), else k, m, g, t.
@@ -44,10 +44,10 @@ struct ActivityQuantity: Equatable, Sendable {
         case seconds
     }
 
-    var op: ResourceFilterComparison.Operator
-    var value: Double
+    package var op: ResourceFilterComparison.Operator
+    package var value: Double
 
-    init?(_ text: String, unit: Unit) {
+    package init?(_ text: String, unit: Unit) {
         let ops: [ResourceFilterComparison.Operator] = [.lessOrEqual, .greaterOrEqual, .less, .greater, .equal]
         let op = ops.first { text.hasPrefix($0.rawValue) } ?? .equal
         let rest = text.hasPrefix(op.rawValue) ? Substring(text.dropFirst(op.rawValue.count)) : Substring(text)
@@ -73,7 +73,7 @@ struct ActivityQuantity: Equatable, Sendable {
         self.value = number * scale
     }
 
-    func holds(for value: Double) -> Bool {
+    package func holds(for value: Double) -> Bool {
         switch op {
         case .less: value < self.value
         case .lessOrEqual: value <= self.value
@@ -86,12 +86,12 @@ struct ActivityQuantity: Equatable, Sendable {
 
 extension ResourceFilter where Key == ActivityFilterKey {
     /// Every term holds for a process row, `now` its age's clock.
-    func matches(_ row: ActivityProcessRow, now: Date) -> Bool {
+    package func matches(_ row: ActivityProcessRow, now: Date) -> Bool {
         matches(by: { term in term.alternatives.contains { term.matches(row, value: $0, now: now) } })
     }
 
     /// Every term holds for a listener's row.
-    func matches(_ row: ActivityPortRow) -> Bool {
+    package func matches(_ row: ActivityPortRow) -> Bool {
         matches(by: { term in term.alternatives.contains { term.matches(row, value: $0) } })
     }
 }
@@ -99,7 +99,7 @@ extension ResourceFilter where Key == ActivityFilterKey {
 extension ResourceFilter where Key == ActivityFilterKey {
     /// It asks for Listening's connections: `state:established` or
     /// `is:connected`, not negated (6.8).
-    var asksConnections: Bool {
+    package var asksConnections: Bool {
         terms.contains { term in
             !term.negated
                 && ((term.key == .state && term.alternatives.contains { $0 == "established" || $0 == "connected" })
@@ -110,7 +110,7 @@ extension ResourceFilter where Key == ActivityFilterKey {
 
 extension ResourceFilter.Term where Key == ActivityFilterKey {
     /// The value's `|`-separated choices, any of which may hold (htop 3.2).
-    var alternatives: [String] {
+    package var alternatives: [String] {
         let parts = value.split(separator: "|", omittingEmptySubsequences: true).map(String.init)
         return parts.isEmpty ? [value] : parts
     }
@@ -120,7 +120,7 @@ extension ResourceFilter.Term where Key == ActivityFilterKey {
         return quantity.holds(for: number)
     }
 
-    func matches(_ row: ActivityProcessRow, value: String, now: Date) -> Bool {
+    package func matches(_ row: ActivityProcessRow, value: String, now: Date) -> Bool {
         switch key {
         case .text:
             return [row.name, row.label ?? "", row.command ?? "", row.tabTitle ?? "", row.checkout ?? "", row.branch ?? ""]
@@ -198,7 +198,7 @@ extension ResourceFilter.Term where Key == ActivityFilterKey {
         }
     }
 
-    func matches(_ row: ActivityPortRow, value: String) -> Bool {
+    package func matches(_ row: ActivityPortRow, value: String) -> Bool {
         switch key {
         case .text:
             return [":\(row.port)", String(row.port), row.process, row.tabTitle ?? "", row.address, row.reach, row.ownerText, row.whereText, row.note ?? ""]

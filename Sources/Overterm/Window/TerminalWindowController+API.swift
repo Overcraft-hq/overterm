@@ -5,7 +5,7 @@ import Combine
 /// collections, and `.bru` requests in the editor, sent through the
 /// window's APIWorkspace.
 extension TerminalWindowController {
-    func wireAPI() {
+    package func wireAPI() {
         editor?.apiWorkspace = apiWorkspace
         BrowserBridge.shared.resolveAPI = { [weak self] tag in self?.agentAPI(forPane: tag) }
         apiWorkspace.askAgent = { [weak self] text, folder in self?.askAgentAboutAPI(text, folder: folder) }
@@ -39,13 +39,13 @@ extension TerminalWindowController {
 
     /// The panel reads the disk only while it is the one on screen and the
     /// sidebar is open (CLAUDE.md).
-    func updateAPIVisibility(panel: SidebarPanel? = nil) {
+    package func updateAPIVisibility(panel: SidebarPanel? = nil) {
         let shown = sidebarItem?.isCollapsed == false
         apiWorkspace.visible = shown && (panel ?? sidebarPanel.panel) == .api && Settings.shared.apiEnabled
     }
 
     /// View ▸ API Client: the sidebar, on the API panel.
-    @objc func showAPIClient(_ sender: Any?) {
+    @objc package func showAPIClient(_ sender: Any?) {
         guard Settings.shared.apiEnabled else { return }
         if sidebarItem?.isCollapsed == true { toggleFileTree(nil) }
         sidebarPanel.panel = .api
@@ -54,7 +54,7 @@ extension TerminalWindowController {
 
     /// The API client of the checkout an agent's pane is in: the panel's
     /// when it shows that checkout, else one of its own, read now.
-    func agentAPI(forPane tag: String) -> AgentAPI? {
+    package func agentAPI(forPane tag: String) -> AgentAPI? {
         guard let tab = store.tabs.first(where: { $0.terminals.contains { $0.processTag == tag } }),
             let root = tab.checkoutSource?.root
         else { return nil }
@@ -66,7 +66,7 @@ extension TerminalWindowController {
         return workspace
     }
 
-    func apiSettingsChanged() {
+    package func apiSettingsChanged() {
         BrowserBridge.shared.update()
         if !Settings.shared.apiEnabled, sidebarPanel.panel == .api { sidebarPanel.panel = .files }
         // The rail lists its icons from the setting: drawn again.
@@ -75,7 +75,7 @@ extension TerminalWindowController {
     }
 
     /// Runs requests and folders into the right-hand pane's Runner.
-    func runAPI(_ items: [APIItem], title: String) {
+    package func runAPI(_ items: [APIItem], title: String) {
         guard
             let collection = apiWorkspace.collection(containing: items.first?.url ?? URL(fileURLWithPath: "/"))
                 ?? apiWorkspace.collection
@@ -88,7 +88,7 @@ extension TerminalWindowController {
 
     /// The last run again, under Bruno's own CLI, in a new tab at the
     /// collection — for scripts that need npm packages.
-    func runAPIWithBru() {
+    package func runAPIWithBru() {
         let runner = apiWorkspace.runner
         guard let root = runner.collectionRoot, let collection = apiWorkspace.collections.first(where: { $0.root == root }) else { return }
         // The environment the Runner shows, not whatever is picked by now.
@@ -96,7 +96,7 @@ extension TerminalWindowController {
         newTab(in: root, running: command)
     }
 
-    func askForAPIName(title: String, initial: String, done: @escaping (String) -> Void) {
+    package func askForAPIName(title: String, initial: String, done: @escaping (String) -> Void) {
         askForName(title: title, detail: "", initial: initial, action: "OK") { name in
             guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return "A name, please." }
             done(name)
@@ -104,7 +104,7 @@ extension TerminalWindowController {
         }
     }
 
-    func editAPISecrets(_ environment: String, in collection: BrunoCollection) {
+    package func editAPISecrets(_ environment: String, in collection: BrunoCollection) {
         let workspace = apiWorkspace
         let file = workspace.environmentFile(environment, in: collection)
         let names = file?.secretNames ?? []
@@ -125,7 +125,7 @@ extension TerminalWindowController {
     }
 
     /// A request and its response to an agent, as the browser's ✦ hands a page.
-    func askAgentAboutAPI(_ text: String, folder: URL?) {
+    package func askAgentAboutAPI(_ text: String, folder: URL?) {
         let selected = store.selected
         let agents = store.tabs.filter { $0.agent != nil }
         let ordered = agents.filter { $0.id == selected?.id } + agents.filter { $0.id != selected?.id }
@@ -141,7 +141,7 @@ extension TerminalWindowController {
     /// Paths are matched with their links resolved, before the move: the
     /// panel's tree lists /private/var where the editor opened /var, and
     /// a folder linked into the checkout differs the same way.
-    func renameAPIItem(_ item: APIItem, to name: String) throws -> URL {
+    package func renameAPIItem(_ item: APIItem, to name: String) throws -> URL {
         let old = item.url.resolvingSymlinksInPath().path
         // Each tab's own spelling of what is being renamed, for filesMoved.
         var spellings: Set<URL> = []
@@ -164,7 +164,7 @@ extension TerminalWindowController {
         return target
     }
 
-    func informAPI(title: String, detail: String) {
+    package func informAPI(title: String, detail: String) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title
@@ -172,7 +172,7 @@ extension TerminalWindowController {
         alert.beginSheetModal(for: window)
     }
 
-    func reportAPIError(_ error: Error) {
+    package func reportAPIError(_ error: Error) {
         guard let window else { return }
         NSAlert(error: error).beginSheetModal(for: window)
     }

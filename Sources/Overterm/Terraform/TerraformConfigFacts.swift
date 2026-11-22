@@ -9,12 +9,12 @@ import Foundation
 /// (`terraform_remote_state`), its modules' sources, and the AWS account
 /// IDs any ARN in it names. Pure, over the texts it is given; only literal
 /// values are read, never an expression evaluated.
-struct TerraformConfigFacts: Equatable, Sendable {
+package struct TerraformConfigFacts: Equatable, Sendable {
     /// The backend's keys Overterm reads (4.11): the location keys and the
     /// production signals, nothing else. `password`, `access_key`,
     /// `secret_key`, `token`, `*_pem` are never decoded. Never
     /// `Secrets.isSecret` here: its match on `KEY` would hide the S3 `key`.
-    static let backendKeys: Set<String> = [
+    package static let backendKeys: Set<String> = [
         "bucket", "key", "prefix", "region", "profile", "role_arn", "organization", "address", "path", "workspace_dir", "workspace_key_prefix",
         "use_lockfile", "dynamodb_table", "storage_account_name", "container_name", "secret_suffix", "hostname", "namespace", "schema_name",
         "config_context",
@@ -25,13 +25,13 @@ struct TerraformConfigFacts: Equatable, Sendable {
     /// `https://ci:glpat-…@gitlab.example/…/state/prod?token=…` is kept as
     /// `https://gitlab.example/…/state/prod` (4.11: host and path; 5.6
     /// rule 11: a credential is never decoded). Nil drops the key.
-    static func kept(_ key: String, _ value: String) -> String? {
+    package static func kept(_ key: String, _ value: String) -> String? {
         guard key == "address" else { return value }
         return addressWithoutCredentials(value)
     }
 
     /// `scheme://host[:port]/path`, whatever userinfo, query or fragment it had.
-    static func addressWithoutCredentials(_ raw: String) -> String? {
+    package static func addressWithoutCredentials(_ raw: String) -> String? {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         var scheme = ""
@@ -49,53 +49,53 @@ struct TerraformConfigFacts: Equatable, Sendable {
         return kept.isEmpty ? nil : kept
     }
 
-    struct Backend: Equatable, Sendable {
+    package struct Backend: Equatable, Sendable {
         /// `s3`, `gcs`, `local`, `http`, `cloud` (a `cloud {}` block), `remote`…
-        var type: String
+        package var type: String
         /// The allow-listed keys with a literal value.
-        var settings: [String: String] = [:]
+        package var settings: [String: String] = [:]
         /// `cloud { workspaces { name = … } }`.
-        var workspaceName: String?
+        package var workspaceName: String?
         /// `workspaces { prefix = … }` (`remote`), or `tags` (`cloud`): the workspace is chosen.
-        var workspacePrefix: String?
-        var workspaceTags = false
+        package var workspacePrefix: String?
+        package var workspaceTags = false
     }
 
-    struct Provider: Equatable, Sendable {
+    package struct Provider: Equatable, Sendable {
         /// `aws`, `google`…, its block's label.
-        var name: String
+        package var name: String
         /// `profile`, `role_arn`, `project`, `subscription_id`, `config_context`, `host` when literal.
-        var settings: [String: String] = [:]
+        package var settings: [String: String] = [:]
     }
 
-    struct RemoteState: Equatable, Sendable {
-        var backend: String?
+    package struct RemoteState: Equatable, Sendable {
+        package var backend: String?
         /// A local one's `path`, when literal.
-        var path: String?
+        package var path: String?
     }
 
-    var backend: Backend?
-    var requiredVersion: String?
+    package var backend: Backend?
+    package var requiredVersion: String?
     /// `required_providers`' names and sources (`aws: hashicorp/aws`).
-    var requiredProviders: [String: String] = [:]
-    var providers: [Provider] = []
+    package var requiredProviders: [String: String] = [:]
+    package var providers: [Provider] = []
     /// `resource` types, and `data.T`, `ephemeral.T`, `action.T`, `list.T`.
-    var types: Set<String> = []
-    var hasProvisioner = false
-    var remoteStates: [RemoteState] = []
+    package var types: Set<String> = []
+    package var hasProvisioner = false
+    package var remoteStates: [RemoteState] = []
     /// Each `module` block's literal `source`.
-    var moduleSources: [String] = []
+    package var moduleSources: [String] = []
     /// A module source's literal `version`, when it has one (init's fetch list, 4.13).
-    var moduleVersions: [String: String] = [:]
+    package var moduleVersions: [String: String] = [:]
     /// AWS account IDs from `arn:aws:…::<12 digits>:` anywhere in the text.
-    var accountIDs: Set<String> = []
+    package var accountIDs: Set<String> = []
     /// Any top-level block at all.
-    var hasBlocks = false
+    package var hasBlocks = false
 
     /// The provider settings read; anything else in a provider block is not.
-    static let providerKeys: Set<String> = ["profile", "role_arn", "project", "subscription_id", "config_context", "host", "region"]
+    package static let providerKeys: Set<String> = ["profile", "role_arn", "project", "subscription_id", "config_context", "host", "region"]
 
-    static func read(_ texts: [String]) -> TerraformConfigFacts {
+    package static func read(_ texts: [String]) -> TerraformConfigFacts {
         var facts = TerraformConfigFacts()
         for text in texts { facts.add(text) }
         return facts
@@ -106,7 +106,7 @@ struct TerraformConfigFacts: Equatable, Sendable {
         pattern: #"([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*\{[^{}]*?source\s*=\s*"([^"]+)""#)
     private static let pathPattern = try! NSRegularExpression(pattern: #"\bpath\s*=\s*"([^"$%]*)""#)
 
-    mutating func add(_ text: String) {
+    package mutating func add(_ text: String) {
         let scanned = TerraformBlocks.scan(text)
         if !scanned.blocks.isEmpty { hasBlocks = true }
         for block in scanned.blocks {
@@ -205,7 +205,7 @@ struct TerraformConfigFacts: Equatable, Sendable {
     /// The providers the configuration names: `required_providers`' local
     /// names and the prefix of every type it declares (`aws_s3_bucket` →
     /// `aws`; `terraform_data` is the builtin `terraform`).
-    var providerNames: Set<String> {
+    package var providerNames: Set<String> {
         var names = Set(requiredProviders.keys).union(providers.map(\.name))
         for type in types {
             let bare = type.split(separator: ".").last.map(String.init) ?? type
@@ -216,13 +216,13 @@ struct TerraformConfigFacts: Equatable, Sendable {
 }
 
 /// `.terraform.lock.hcl`'s providers: `registry.terraform.io/hashicorp/random`. Pure.
-enum TerraformLockFile {
-    struct Provider: Equatable, Hashable, Sendable {
-        var host: String
-        var namespace: String
-        var type: String
+package enum TerraformLockFile {
+    package struct Provider: Equatable, Hashable, Sendable {
+        package var host: String
+        package var namespace: String
+        package var type: String
 
-        init?(_ address: String) {
+        package init?(_ address: String) {
             let parts = address.split(separator: "/").map(String.init)
             guard parts.count == 3 else { return nil }
             host = parts[0].lowercased()
@@ -232,7 +232,7 @@ enum TerraformLockFile {
     }
 
     /// Each provider's address and locked version, as the file says them.
-    static func versions(in text: String) -> [(address: String, version: String)] {
+    package static func versions(in text: String) -> [(address: String, version: String)] {
         guard let pattern = try? NSRegularExpression(pattern: #"provider\s+"([^"]{1,200})"\s*\{[^}]*?\bversion\s*=\s*"([^"]{1,60})""#) else { return [] }
         let string = text as NSString
         return pattern.matches(in: text, range: NSRange(location: 0, length: string.length)).prefix(500).map {
@@ -240,7 +240,7 @@ enum TerraformLockFile {
         }
     }
 
-    static func providers(in text: String) -> [Provider] {
+    package static func providers(in text: String) -> [Provider] {
         TerraformBlocks.scan(text).blocks.filter { $0.type == "provider" }.compactMap { $0.labels.first.flatMap(Provider.init) }
     }
 }
@@ -250,8 +250,8 @@ enum TerraformLockFile {
 /// included, in clear (spike 4) — so only the type and the allow-listed
 /// keys are decoded (`TerraformConfigFacts.backendKeys`); everything else
 /// is dropped unread. Pure.
-enum TerraformInitRecord {
-    static func backend(from data: Data) -> TerraformConfigFacts.Backend? {
+package enum TerraformInitRecord {
+    package static func backend(from data: Data) -> TerraformConfigFacts.Backend? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let backend = object["backend"] as? [String: Any], let type = backend["type"] as? String, !type.isEmpty
         else { return nil }
@@ -276,14 +276,14 @@ enum TerraformInitRecord {
 /// The folders `init` installed modules into, from
 /// `.terraform/modules/modules.json`: each module's `Dir`, relative to the
 /// root. Pure.
-enum TerraformModulesManifest {
-    static func directories(from data: Data) -> [String] {
+package enum TerraformModulesManifest {
+    package static func directories(from data: Data) -> [String] {
         entries(from: data).map(\.dir)
     }
 
     /// Each module call's key — `globex_worker`, a nested one's
     /// `globex_app.globex_worker` — and its folder, relative to the root.
-    static func entries(from data: Data) -> [(key: String, dir: String)] {
+    package static func entries(from data: Data) -> [(key: String, dir: String)] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let modules = object["Modules"] as? [[String: Any]]
         else { return [] }
         return modules.compactMap { module in
@@ -293,7 +293,7 @@ enum TerraformModulesManifest {
     }
 
     /// The address prefix of a module key: `module.a.module.b`.
-    static func addressPrefix(_ key: String) -> String {
+    package static func addressPrefix(_ key: String) -> String {
         key.split(separator: ".").map { "module.\($0)" }.joined(separator: ".")
     }
 }

@@ -3,9 +3,9 @@ import Foundation
 /// JSON-RPC as language servers speak it over stdio: each message a JSON
 /// body behind a `Content-Length` header. Pure — the process side is
 /// `LanguageServer`.
-enum JSONRPC {
+package enum JSONRPC {
     /// `body` behind its header, ready to write.
-    static func frame(_ body: Data) -> Data {
+    package static func frame(_ body: Data) -> Data {
         var data = Data("Content-Length: \(body.count)\r\n\r\n".utf8)
         data.append(body)
         return data
@@ -14,7 +14,7 @@ enum JSONRPC {
     /// Turns what a server writes, in whatever chunks the pipe hands over,
     /// back into whole message bodies. A read can end mid-header, mid-body,
     /// or carry several messages; all of that is kept until it completes.
-    struct FrameDecoder {
+    package struct FrameDecoder {
         private var buffer = Data()
         /// The body length of the header already read, while its body is
         /// still arriving — so a big body isn't searched for headers again
@@ -23,18 +23,18 @@ enum JSONRPC {
 
         /// A header this long without its blank line is not a header: the
         /// server printed something else to stdout. It is dropped.
-        static let maxHeaderBytes = 64 * 1024
+        package static let maxHeaderBytes = 64 * 1024
         /// A body claimed bigger than this is a corrupt header, not a message.
-        static let maxBodyBytes = 256 * 1024 * 1024
+        package static let maxBodyBytes = 256 * 1024 * 1024
 
         private static let separator = Data("\r\n\r\n".utf8)
 
-        init() {}
+        package init() {}
 
         /// Bytes received and not yet part of a whole message.
-        var pendingByteCount: Int { buffer.count }
+        package var pendingByteCount: Int { buffer.count }
 
-        mutating func feed(_ chunk: Data) -> [Data] {
+        package mutating func feed(_ chunk: Data) -> [Data] {
             buffer.append(chunk)
             var messages: [Data] = []
             while true {
@@ -60,7 +60,7 @@ enum JSONRPC {
 
         /// `Content-Length`'s value; the header name is case-insensitive, and
         /// anything else in the header (Content-Type, stray log lines) is ignored.
-        static func contentLength(in header: String) -> Int? {
+        package static func contentLength(in header: String) -> Int? {
             for line in header.split(whereSeparator: \.isNewline) {
                 let parts = line.split(separator: ":", maxSplits: 1)
                 guard parts.count == 2, parts[0].trimmingCharacters(in: .whitespaces).lowercased() == "content-length" else { continue }
@@ -73,7 +73,7 @@ enum JSONRPC {
 
 /// Any JSON value, for what goes out — request params, replies — without a
 /// struct per message. Sendable, unlike what JSONSerialization hands back.
-enum JSONValue: Sendable, Hashable, Codable {
+package enum JSONValue: Sendable, Hashable, Codable {
     case null
     case bool(Bool)
     case int(Int)
@@ -82,7 +82,7 @@ enum JSONValue: Sendable, Hashable, Codable {
     case array([JSONValue])
     case object([String: JSONValue])
 
-    init(from decoder: Decoder) throws {
+    package init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() {
             self = .null
@@ -101,7 +101,7 @@ enum JSONValue: Sendable, Hashable, Codable {
         }
     }
 
-    func encode(to encoder: Encoder) throws {
+    package func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self {
         case .null: try container.encodeNil()
@@ -116,7 +116,7 @@ enum JSONValue: Sendable, Hashable, Codable {
 
     /// What JSONSerialization produced, made Sendable — a server request's
     /// id, echoed back in the reply.
-    init(foundation value: Any) {
+    package init(foundation value: Any) {
         switch value {
         case let number as NSNumber:
             // NSNumber also boxes Bool; CFBoolean tells which it is.
@@ -134,7 +134,7 @@ enum JSONValue: Sendable, Hashable, Codable {
         }
     }
 
-    func encoded() throws -> Data {
+    package func encoded() throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
         return try encoder.encode(self)
@@ -144,12 +144,12 @@ enum JSONValue: Sendable, Hashable, Codable {
 extension JSONValue: ExpressibleByNilLiteral, ExpressibleByBooleanLiteral, ExpressibleByIntegerLiteral, ExpressibleByStringLiteral,
     ExpressibleByArrayLiteral, ExpressibleByDictionaryLiteral
 {
-    init(nilLiteral: ()) { self = .null }
-    init(booleanLiteral value: Bool) { self = .bool(value) }
-    init(integerLiteral value: Int) { self = .int(value) }
-    init(stringLiteral value: String) { self = .string(value) }
-    init(arrayLiteral elements: JSONValue...) { self = .array(elements) }
-    init(dictionaryLiteral elements: (String, JSONValue)...) {
+    package init(nilLiteral: ()) { self = .null }
+    package init(booleanLiteral value: Bool) { self = .bool(value) }
+    package init(integerLiteral value: Int) { self = .int(value) }
+    package init(stringLiteral value: String) { self = .string(value) }
+    package init(arrayLiteral elements: JSONValue...) { self = .array(elements) }
+    package init(dictionaryLiteral elements: (String, JSONValue)...) {
         self = .object(Dictionary(elements, uniquingKeysWith: { _, last in last }))
     }
 }

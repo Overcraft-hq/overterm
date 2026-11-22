@@ -5,19 +5,19 @@ import Foundation
 /// request: a canonical request, the string to sign, a key derived from the
 /// secret by date, region and service. Pure — the request in, its headers
 /// (or, presigned, its URL) out.
-struct S3Signer: Sendable {
-    var accessKey: String
-    var secretKey: String
-    var sessionToken: String?
-    var region: String
-    var service = "s3"
+package struct S3Signer: Sendable {
+    package var accessKey: String
+    package var secretKey: String
+    package var sessionToken: String?
+    package var region: String
+    package var service = "s3"
 
     /// The payload's hash when the body isn't hashed up front (a file streamed).
-    static let unsignedPayload = "UNSIGNED-PAYLOAD"
+    package static let unsignedPayload = "UNSIGNED-PAYLOAD"
 
     /// The headers that sign `request` — Authorization, x-amz-date,
     /// x-amz-content-sha256, and the token when there is one.
-    func sign(method: String, url: URL, headers: [String: String], payloadHash: String, date: Date) -> [String: String] {
+    package func sign(method: String, url: URL, headers: [String: String], payloadHash: String, date: Date) -> [String: String] {
         let (amzDate, day) = Self.stamps(date)
         var headers = headers
         headers["host"] = Self.hostHeader(url)
@@ -41,7 +41,7 @@ struct S3Signer: Sendable {
     }
 
     /// A URL anyone can GET until it expires (at most a week).
-    func presign(url: URL, expires: TimeInterval, date: Date) -> URL? {
+    package func presign(url: URL, expires: TimeInterval, date: Date) -> URL? {
         let (amzDate, day) = Self.stamps(date)
         let scope = "\(day)/\(region)/\(service)/aws4_request"
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
@@ -77,7 +77,7 @@ struct S3Signer: Sendable {
 
     // MARK: Canonical forms
 
-    static func stamps(_ date: Date) -> (String, String) {
+    package static func stamps(_ date: Date) -> (String, String) {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")
@@ -86,14 +86,14 @@ struct S3Signer: Sendable {
         return (stamp, String(stamp.prefix(8)))
     }
 
-    static func hostHeader(_ url: URL) -> String {
+    package static func hostHeader(_ url: URL) -> String {
         let host = url.host ?? ""
         guard let port = url.port, !((url.scheme == "https" && port == 443) || (url.scheme == "http" && port == 80)) else { return host }
         return "\(host):\(port)"
     }
 
     /// The path as sent, each segment encoded once (S3 doesn't double-encode).
-    static func canonicalPath(_ url: URL) -> String {
+    package static func canonicalPath(_ url: URL) -> String {
         let path = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? "/"
         guard !path.isEmpty else { return "/" }
         return path.split(separator: "/", omittingEmptySubsequences: false)
@@ -101,7 +101,7 @@ struct S3Signer: Sendable {
             .joined(separator: "/")
     }
 
-    static func canonicalQuery(_ url: URL) -> String {
+    package static func canonicalQuery(_ url: URL) -> String {
         guard let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedQuery, !query.isEmpty else { return "" }
         var pairs: [(name: String, value: String)] = []
         for pair in query.split(separator: "&") {
@@ -115,14 +115,14 @@ struct S3Signer: Sendable {
     }
 
     /// RFC 3986's unreserved characters, everything else %XX.
-    static func encode(_ text: String) -> String {
+    package static func encode(_ text: String) -> String {
         let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
         return text.addingPercentEncoding(withAllowedCharacters: unreserved) ?? text
     }
 
-    static func hex<D: Sequence>(_ digest: D) -> String where D.Element == UInt8 {
+    package static func hex<D: Sequence>(_ digest: D) -> String where D.Element == UInt8 {
         digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    static func sha256(_ data: Data) -> String { hex(SHA256.hash(data: data)) }
+    package static func sha256(_ data: Data) -> String { hex(SHA256.hash(data: data)) }
 }

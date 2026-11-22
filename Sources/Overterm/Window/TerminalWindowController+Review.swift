@@ -3,12 +3,12 @@ import AppKit
 /// Review tabs: a branch, some commits or a pull request, read as a
 /// reviewer reads them — a page over the window's body, as Settings is.
 extension TerminalWindowController {
-    var shownReview: ReviewModel? {
+    package var shownReview: ReviewModel? {
         guard let id = store.reviewShowing else { return nil }
         return store.reviews.first { $0.id == id }
     }
 
-    var reviewActions: ReviewActions {
+    package var reviewActions: ReviewActions {
         ReviewActions(
             openFile: { [weak self] review, file in self?.openReviewedFile(review, file) },
             openOnGitHub: { NSWorkspace.shared.open($0) }, terraform: terraformReviewActions)
@@ -16,7 +16,7 @@ extension TerminalWindowController {
 
     /// Opens a review tab — or the one already open for the same thing.
     @discardableResult
-    func openReview(_ source: ReviewSource, in root: URL) -> ReviewModel {
+    package func openReview(_ source: ReviewSource, in root: URL) -> ReviewModel {
         let resolved = root.resolvingSymlinksInPath().path
         if let open = store.reviews.first(where: { $0.source == source && $0.root.resolvingSymlinksInPath().path == resolved }) {
             showReview(open)
@@ -31,7 +31,7 @@ extension TerminalWindowController {
         return review
     }
 
-    func showReview(_ review: ReviewModel) {
+    package func showReview(_ review: ReviewModel) {
         guard let reviewView else { return }
         hideAgentOverview()
         if peek.isOpen { peek.close() }
@@ -45,7 +45,7 @@ extension TerminalWindowController {
     }
 
     /// Uncovers the selected terminal tab; the review tabs stay in the strip.
-    func hideReviewPage(focus: Bool = true) {
+    package func hideReviewPage(focus: Bool = true) {
         guard store.reviewShowing != nil else { return }
         store.reviewShowing = nil
         reviewView?.isHidden = true
@@ -53,7 +53,7 @@ extension TerminalWindowController {
     }
 
     /// Its ✕, or ⌘W while it shows.
-    func closeReview(_ review: ReviewModel) {
+    package func closeReview(_ review: ReviewModel) {
         if store.reviewShowing == review.id { hideReviewPage() }
         store.reviews.removeAll { $0.id == review.id }
     }
@@ -76,7 +76,7 @@ extension TerminalWindowController {
 
     /// View ▸ Review Branch (⇧⌘R), the changes pane's Review: the checkout's
     /// branch since it left its base, uncommitted changes and all.
-    @objc func reviewBranch(_ sender: Any?) {
+    @objc package func reviewBranch(_ sender: Any?) {
         guard let root = diff.root else { return NSSound.beep() }
         guard case .since(let mergeBase, let base) = diff.comparison else {
             // On the base branch (main), or before a first commit: what
@@ -89,7 +89,7 @@ extension TerminalWindowController {
 
     /// The changes pane's Uncommitted, and the palette's: staged, unstaged
     /// and untracked, against HEAD.
-    @objc func reviewUncommitted(_ sender: Any?) {
+    @objc package func reviewUncommitted(_ sender: Any?) {
         guard let root = diff.root else { return NSSound.beep() }
         guard !diff.files.isEmpty else { return alert("Nothing to review", "There are no uncommitted changes in this checkout.") }
         openReview(.uncommitted(branch: diff.branch), in: root)
@@ -97,7 +97,7 @@ extension TerminalWindowController {
 
     /// Overgit's commits: one, or a run of them — picked in either order,
     /// reviewed oldest first.
-    func reviewCommits(from: String, to: String) {
+    package func reviewCommits(from: String, to: String) {
         guard let root = overgit.root ?? diff.root else { return }
         guard from != to else {
             openReview(.commits(from: from, to: to), in: root)
@@ -112,7 +112,7 @@ extension TerminalWindowController {
     }
 
     /// Overgit's branches and Compare: what `head` has that `base` doesn't.
-    func reviewRange(base: String, head: String) {
+    package func reviewRange(base: String, head: String) {
         guard let root = overgit.root ?? diff.root else { return }
         let name: (String) -> String = { [diff] ref in ref == "HEAD" ? diff.branch ?? "HEAD" : ref }
         openReview(.range(base: name(base), head: name(head)), in: root)
@@ -120,13 +120,13 @@ extension TerminalWindowController {
 
     /// A branch against the base the changes pane compares with — or,
     /// with the checkout on that base itself, against the checkout's branch.
-    func reviewBranchRef(_ branch: String) {
+    package func reviewBranchRef(_ branch: String) {
         if case .since(_, let base) = diff.comparison { return reviewRange(base: base, head: branch) }
         reviewRange(base: "HEAD", head: branch)
     }
 
     /// The checkout's branch's pull request, as the strip's chip knows it.
-    func reviewCurrentPullRequest() {
+    package func reviewCurrentPullRequest() {
         guard let branch = diff.branch, let pr = worktrees.pullRequests[branch] else {
             return alert("No pull request", diff.branch.map { "\($0) has no pull request on GitHub." } ?? "This checkout isn’t on a branch.")
         }
@@ -134,7 +134,7 @@ extension TerminalWindowController {
     }
 
     /// A pull request, by its number.
-    func reviewPullRequest(_ number: Int) {
+    package func reviewPullRequest(_ number: Int) {
         guard let root = overgit.root ?? diff.root else { return NSSound.beep() }
         openReview(.pullRequest(number: number), in: root)
     }

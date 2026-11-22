@@ -9,16 +9,16 @@ import Foundation
 /// its own support directory (`AppEnvironment.terraformRunsBase`), so a
 /// scenario never touches the user's app's folder. At launch a sweep
 /// removes only the folders of this user whose process is gone.
-enum TerraformRunFolder {
-    static let prefix = "ot-tf-"
+package enum TerraformRunFolder {
+    package static let prefix = "ot-tf-"
 
-    static func name(uid: uid_t = getuid(), pid: pid_t = getpid()) -> String { "\(prefix)\(uid)-\(pid)" }
+    package static func name(uid: uid_t = getuid(), pid: pid_t = getpid()) -> String { "\(prefix)\(uid)-\(pid)" }
 
-    enum Failure: Error, Equatable, CustomStringConvertible {
+    package enum Failure: Error, Equatable, CustomStringConvertible {
         case unsafe(String)
         case create(Int32)
 
-        var description: String {
+        package var description: String {
             switch self {
             case .unsafe(let why): "the plan folder isn't safe: \(why)"
             case .create(let code): "the plan folder can't be made: \(String(cString: strerror(code)))"
@@ -28,7 +28,7 @@ enum TerraformRunFolder {
 
     /// Makes `url` a folder of this user's, 0700, or checks the one there
     /// is: a directory (never a link), owned by this user, mode 0700.
-    static func ensurePrivate(_ url: URL) throws {
+    package static func ensurePrivate(_ url: URL) throws {
         if mkdir(url.path, 0o700) != 0, errno != EEXIST { throw Failure.create(errno) }
         var info = stat()
         guard lstat(url.path, &info) == 0 else { throw Failure.create(errno) }
@@ -46,13 +46,13 @@ enum TerraformRunFolder {
     /// names this pid, one that is gone, instead of the app's — so the
     /// launch's sweep finds their applies as another launch's. Isolated
     /// runs only; nil otherwise.
-    static var crashedProcess: pid_t? {
+    package static var crashedProcess: pid_t? {
         get { AppEnvironment.guardsTerraform ? lock.withLock { _crashedProcess } : nil }
         set { lock.withLock { _crashedProcess = newValue } }
     }
 
     /// This process's folder under `base`.
-    static func processFolder(base: URL = AppEnvironment.terraformRunsBase) throws -> URL {
+    package static func processFolder(base: URL = AppEnvironment.terraformRunsBase) throws -> URL {
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let folder = base.appendingPathComponent(name(pid: crashedProcess ?? getpid()), isDirectory: true)
         try ensurePrivate(folder)
@@ -60,21 +60,21 @@ enum TerraformRunFolder {
     }
 
     /// A new run's folder, 0700, inside this process's.
-    static func makeRun(base: URL = AppEnvironment.terraformRunsBase) throws -> URL {
+    package static func makeRun(base: URL = AppEnvironment.terraformRunsBase) throws -> URL {
         let run = try processFolder(base: base).appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
         try ensurePrivate(run)
         return run
     }
 
     /// A run's folder gone, and whatever terraform left in it.
-    static func remove(_ run: URL) {
+    package static func remove(_ run: URL) {
         try? FileManager.default.removeItem(at: run)
     }
 
     /// Which of `names` (a base folder's) to sweep: this user's process
     /// folders whose process is gone — never this process's, never
     /// another user's, never anything that isn't one. Pure.
-    static func sweepable(_ names: [String], uid: uid_t, me: pid_t, alive: (pid_t) -> Bool) -> [String] {
+    package static func sweepable(_ names: [String], uid: uid_t, me: pid_t, alive: (pid_t) -> Bool) -> [String] {
         names.filter { name in
             guard name.hasPrefix(prefix) else { return false }
             let parts = name.dropFirst(prefix.count).split(separator: "-")
@@ -83,14 +83,14 @@ enum TerraformRunFolder {
         }
     }
 
-    static func isAlive(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
+    package static func isAlive(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
 
     /// At launch: the folders a crashed Overterm left — but never a run
     /// folder whose detached apply is still alive (4.7): those are kept,
     /// and returned, to be followed again. Blocking (a few stats): off
     /// the main thread.
     @discardableResult
-    static func sweep(base: URL = AppEnvironment.terraformRunsBase) -> [(folder: URL, marker: TerraformApplyMarker)] {
+    package static func sweep(base: URL = AppEnvironment.terraformRunsBase) -> [(folder: URL, marker: TerraformApplyMarker)] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: base.path)) ?? []
         var alive: [(URL, TerraformApplyMarker)] = []
         for name in sweepable(names, uid: getuid(), me: getpid(), alive: isAlive) {

@@ -7,36 +7,36 @@ import SwiftUI
 /// selects across lines and copies. New lines are appended rather than the
 /// whole text set again, and the view keeps to the bottom while it was
 /// there (`follow`).
-struct LogTextView: NSViewRepresentable {
+package struct LogTextView: NSViewRepresentable {
     /// How many lines there are, and the ones in a range, drawn — only the
     /// new ones are drawn as a log grows. `revision` changes when the text
     /// is something other than the old one with lines added (a filter, a
     /// cleared log).
-    let count: Int
-    let revision: Int
-    let render: (Range<Int>) -> [NSAttributedString]
-    var wrap = true
-    var follow = true
+    package let count: Int
+    package let revision: Int
+    package let render: (Range<Int>) -> [NSAttributedString]
+    package var wrap = true
+    package var follow = true
     /// Lines picked out of it, to an agent (⌘L, its right-click menu): a
     /// log's; nil for what isn't one (Inspect's JSON, a build's log).
-    var ask: ((String) -> Void)? = nil
+    package var ask: ((String) -> Void)? = nil
     /// The text view's accessibility identifier, which the scenarios find
     /// it by: Docker's page's are `docker.text`.
-    var identifier = "log.text"
+    package var identifier = "log.text"
     /// The newest line on top: new lines go in above, and the view keeps
     /// to the top while it was there.
-    var newestFirst = false
+    package var newestFirst = false
     /// Bumped when older lines went in before the others (`LogFeed.prepended`):
     /// the text is drawn again, the line read kept in its place.
-    var prepended = 0
+    package var prepended = 0
     /// Scrolled to the oldest line (the top; the bottom, newest first):
     /// older ones may be asked for. Nil: nothing older to ask for.
-    var onOldest: (() -> Void)? = nil
+    package var onOldest: (() -> Void)? = nil
 
-    func makeNSView(context: Context) -> NSScrollView { Self.makeScroll(identifier: identifier) }
+    package func makeNSView(context: Context) -> NSScrollView { Self.makeScroll(identifier: identifier) }
 
     /// The scroll view and its text view, as `makeNSView` makes them.
-    static func makeScroll(identifier: String) -> NSScrollView {
+    package static func makeScroll(identifier: String) -> NSScrollView {
         // The class method makes the subclass's text view.
         let scroll = LogLinesTextView.scrollableTextView()
         scroll.drawsBackground = false
@@ -55,9 +55,9 @@ struct LogTextView: NSViewRepresentable {
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) { context.coordinator.update(scroll, self) }
+    package func updateNSView(_ scroll: NSScrollView, context: Context) { context.coordinator.update(scroll, self) }
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    package func makeCoordinator() -> Coordinator { Coordinator() }
 
     /// What the view has drawn, and whether it keeps to its newest edge.
     ///
@@ -79,18 +79,18 @@ struct LogTextView: NSViewRepresentable {
     /// take the text off responsive scrolling. While one goes on, lines
     /// coming in never pull the view back; where it ends settles the follow.
     @MainActor
-    final class Coordinator {
-        var shown = 0
-        var revision = -1
-        var prepended = 0
-        var drawnNewestFirst = false
-        var newestFirst = false
-        var follow = true
+    package final class Coordinator {
+        package var shown = 0
+        package var revision = -1
+        package var prepended = 0
+        package var drawnNewestFirst = false
+        package var newestFirst = false
+        package var follow = true
         /// Kept to the newest edge (the bottom; the top, newest first).
-        private(set) var pinned = true
-        var onOldest: (() -> Void)?
+        package private(set) var pinned = true
+        package var onOldest: (() -> Void)?
         /// The text is being set or scrolled by the view: not a person's scroll.
-        var moving = false
+        package var moving = false
         private var wasAtOldest = false
         /// A person is scrolling: a live scroll, or a wheel's or a key's event being handled.
         private var live = false
@@ -100,7 +100,7 @@ struct LogTextView: NSViewRepresentable {
         nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
         private weak var scroll: NSScrollView?
 
-        func update(_ scroll: NSScrollView, _ view: LogTextView) {
+        package func update(_ scroll: NSScrollView, _ view: LogTextView) {
             (scroll.documentView as? LogLinesTextView)?.ask = view.ask
             (scroll.documentView as? LogLinesTextView)?.coordinator = self
             guard let text = scroll.documentView as? NSTextView, let storage = text.textStorage else { return }
@@ -186,7 +186,7 @@ struct LogTextView: NSViewRepresentable {
 
         /// What a person does to scroll it: followed again only at the
         /// newest edge, let go anywhere else.
-        func byPerson(_ body: () -> Void) {
+        package func byPerson(_ body: () -> Void) {
             person += 1
             body()
             person -= 1
@@ -201,7 +201,7 @@ struct LogTextView: NSViewRepresentable {
 
         /// The clip's bounds and frame, the text's frame, and a person's
         /// live scroll, watched — the follow, and the oldest edge.
-        func watch(_ scroll: NSScrollView) {
+        package func watch(_ scroll: NSScrollView) {
             guard observers.isEmpty else { return }
             self.scroll = scroll
             scroll.contentView.postsBoundsChangedNotifications = true
@@ -282,7 +282,7 @@ struct LogTextView: NSViewRepresentable {
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 
-    static func joined(_ lines: [NSAttributedString], reversed: Bool = false) -> NSAttributedString {
+    package static func joined(_ lines: [NSAttributedString], reversed: Bool = false) -> NSAttributedString {
         let out = NSMutableAttributedString()
         for (index, line) in (reversed ? lines.reversed() : lines).enumerated() {
             if index > 0 { out.append(NSAttributedString(string: "\n")) }
@@ -311,46 +311,46 @@ struct LogTextView: NSViewRepresentable {
 /// right-click menu. Without a selection, or a log, ⌘L goes on up the
 /// responder chain: the window then asks about what its page has selected
 /// (a container). Who asks scrubs the text (Docker's: `DockerSecrets`).
-final class LogLinesTextView: NSTextView {
-    var ask: ((String) -> Void)?
+package final class LogLinesTextView: NSTextView {
+    package var ask: ((String) -> Void)?
     /// Told of a person's scrolls by keys and presses (a selection dragged
     /// past the edge scrolls inside `mouseDown`'s tracking). The wheel and
     /// the trackpad are the scroll view's live-scroll notifications: an
     /// override of `scrollWheel` would take the text off responsive scrolling.
-    weak var coordinator: LogTextView.Coordinator?
+    package weak var coordinator: LogTextView.Coordinator?
 
-    override func mouseDown(with event: NSEvent) {
+    package override func mouseDown(with event: NSEvent) {
         guard let coordinator else { return super.mouseDown(with: event) }
         coordinator.byPerson { super.mouseDown(with: event) }
     }
 
-    override func keyDown(with event: NSEvent) {
+    package override func keyDown(with event: NSEvent) {
         guard let coordinator else { return super.keyDown(with: event) }
         coordinator.byPerson { super.keyDown(with: event) }
     }
 
-    @objc func askAboutSelection(_ sender: Any?) {
+    @objc package func askAboutSelection(_ sender: Any?) {
         let range = selectedRange()
         if let ask, range.length > 0 { return ask(Self.wholeLines(of: string, range)) }
         if nextResponder?.tryToPerform(#selector(askAboutSelection(_:)), with: sender) != true { NSSound.beep() }
     }
 
-    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+    package override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         menuItem.action == #selector(askAboutSelection(_:)) ? true : super.validateMenuItem(menuItem)
     }
 
-    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+    package override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
         item.action == #selector(askAboutSelection(_:)) ? true : super.validateUserInterfaceItem(item)
     }
 
     /// A selection widened to the whole lines it touches. Pure.
-    nonisolated static func wholeLines(of text: String, _ range: NSRange) -> String {
+    package nonisolated static func wholeLines(of text: String, _ range: NSRange) -> String {
         let string = text as NSString
         let clamped = NSIntersectionRange(range, NSRange(location: 0, length: string.length))
         return string.substring(with: string.lineRange(for: clamped)).trimmingCharacters(in: .newlines)
     }
 
-    override func menu(for event: NSEvent) -> NSMenu? {
+    package override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event)
         guard ask != nil, selectedRange().length > 0 else { return menu }
         // A copy: the text view's menu may be one it keeps.

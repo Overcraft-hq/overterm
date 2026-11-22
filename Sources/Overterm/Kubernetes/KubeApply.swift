@@ -7,32 +7,32 @@ import Foundation
 // is pure: the session (`KubeManifestSession`) does the requests.
 
 /// Why a manifest can't be diffed or applied as it stands.
-struct KubeManifestProblem: Error, Equatable, LocalizedError, CustomStringConvertible {
-    var message: String
-    var errorDescription: String? { message }
-    var description: String { message }
+package struct KubeManifestProblem: Error, Equatable, LocalizedError, CustomStringConvertible {
+    package var message: String
+    package var errorDescription: String? { message }
+    package var description: String { message }
 
-    init(_ message: String) { self.message = message }
+    package init(_ message: String) { self.message = message }
 }
 
 /// One object of a manifest, as its file says it.
-struct KubeManifestObject {
-    var object: [String: Any]
-    var apiVersion: String
-    var kind: String
-    var name: String
+package struct KubeManifestObject {
+    package var object: [String: Any]
+    package var apiVersion: String
+    package var kind: String
+    package var name: String
     /// `metadata.namespace`, when the file says one.
-    var namespace: String?
+    package var namespace: String?
 
     /// `apps` of `apps/v1`; the core group is "".
-    var group: String { Self.parts(apiVersion)?.group ?? "" }
-    var version: String { Self.parts(apiVersion)?.version ?? apiVersion }
+    package var group: String { Self.parts(apiVersion)?.group ?? "" }
+    package var version: String { Self.parts(apiVersion)?.version ?? apiVersion }
 
     /// `apps/v1` as its group and version, `v1` as the core group's: nil
     /// for anything else — an empty half (`apps/`, `/v1`), three parts.
     /// `split` alone drops an empty half, and the version read past it
     /// took the app down (`k8s_apply`, Diff with Cluster).
-    static func parts(_ apiVersion: String) -> (group: String, version: String)? {
+    package static func parts(_ apiVersion: String) -> (group: String, version: String)? {
         let pieces = apiVersion.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         switch pieces.count {
         case 1 where !pieces[0].isEmpty: return ("", pieces[0])
@@ -40,15 +40,15 @@ struct KubeManifestObject {
         default: return nil
         }
     }
-    var isSecret: Bool { group.isEmpty && kind == "Secret" }
+    package var isSecret: Bool { group.isEmpty && kind == "Secret" }
     /// `deployment shop/web`, `namespace payments`.
-    var spoken: String { "\(kind.lowercased()) \(namespace.map { "\($0)/" } ?? "")\(name)" }
+    package var spoken: String { "\(kind.lowercased()) \(namespace.map { "\($0)/" } ?? "")\(name)" }
 }
 
 /// A manifest's text read into its objects: YAML (several documents,
 /// `---` between them) or JSON, a `List`'s items each an object. Pure.
-enum KubeManifest {
-    static func parse(_ text: String) throws -> [KubeManifestObject] {
+package enum KubeManifest {
+    package static func parse(_ text: String) throws -> [KubeManifestObject] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw KubeManifestProblem("The manifest is empty: there is nothing to compare.") }
         let documents: [Any]
@@ -75,7 +75,7 @@ enum KubeManifest {
         return objects
     }
 
-    static func object(_ map: [String: Any], document: Int) throws -> KubeManifestObject {
+    package static func object(_ map: [String: Any], document: Int) throws -> KubeManifestObject {
         guard let apiVersion = map["apiVersion"] as? String, !apiVersion.isEmpty else {
             throw KubeManifestProblem("Document \(document) has no apiVersion.")
         }
@@ -96,19 +96,19 @@ enum KubeManifest {
 
     /// Whether a YAML file's text looks like a manifest: `apiVersion:` and
     /// `kind:` at the top level. Cheap — every YAML file opened is asked.
-    static func looksLikeManifest(_ text: String) -> Bool {
+    package static func looksLikeManifest(_ text: String) -> Bool {
         let head = text.prefix(64 * 1024)
         return head.range(of: #"(?m)^apiVersion:[ \t]*\S"#, options: .regularExpression) != nil
             && head.range(of: #"(?m)^kind:[ \t]*\S"#, options: .regularExpression) != nil
     }
 
     /// kustomize's own file names: the folder holding one is rendered.
-    static let kustomizationNames: Set<String> = ["kustomization.yaml", "kustomization.yml", "Kustomization"]
+    package static let kustomizationNames: Set<String> = ["kustomization.yaml", "kustomization.yml", "Kustomization"]
 
-    static func isKustomization(_ url: URL) -> Bool { kustomizationNames.contains(url.lastPathComponent) }
+    package static func isKustomization(_ url: URL) -> Bool { kustomizationNames.contains(url.lastPathComponent) }
 
     /// Whether a file may be a manifest at all, by its name.
-    static func isYAML(_ url: URL) -> Bool { ["yaml", "yml", "json"].contains(url.pathExtension.lowercased()) || isKustomization(url) }
+    package static func isYAML(_ url: URL) -> Bool { ["yaml", "yml", "json"].contains(url.pathExtension.lowercased()) || isKustomization(url) }
 }
 
 /// The requests a server-side apply is, as kubectl makes them (`kubectl
@@ -117,22 +117,22 @@ enum KubeManifest {
 /// application/apply-patch+yaml` and `fieldManager=overterm`, `dryRun=All`
 /// for the diff, `force=true` only when asked again after a conflict. The
 /// body is JSON, which is YAML. Pure.
-enum KubeApply {
-    static let contentType = "application/apply-patch+yaml"
+package enum KubeApply {
+    package static let contentType = "application/apply-patch+yaml"
 
     /// The kind an object is, as `discovery` serves it: its apiVersion's
     /// group and version, its Kind. Discovery holds each group's preferred
     /// version only: a manifest at another one the server serves
     /// (`autoscaling/v1`, a CRD's older version) is found once that
     /// version's list is added (`KubeManifestRun.served`).
-    static func kind(of object: KubeManifestObject, in discovery: KubeDiscovery) -> KubeResourceKind? {
+    package static func kind(of object: KubeManifestObject, in discovery: KubeDiscovery) -> KubeResourceKind? {
         discovery.kinds.first { $0.group == object.group && $0.version == object.version && $0.kind == object.kind }
     }
 
     /// Where the object goes: its kind as the context serves it, its
     /// namespace — the file's, else `fallback` (the page's, the context's
     /// own) — nil for a cluster-wide kind.
-    static func ref(_ object: KubeManifestObject, context: String, discovery: KubeDiscovery, namespace fallback: String?) throws -> KubeObjectRef {
+    package static func ref(_ object: KubeManifestObject, context: String, discovery: KubeDiscovery, namespace fallback: String?) throws -> KubeObjectRef {
         guard let kind = kind(of: object, in: discovery) else {
             let served = discovery.kinds.filter { $0.kind == object.kind && $0.group == object.group }.map(\.groupVersion)
             throw KubeManifestProblem(
@@ -151,7 +151,7 @@ enum KubeApply {
     /// goes to (none for a cluster-wide kind), without what the server keeps
     /// for itself (managedFields, status), with the resourceVersion it was
     /// opened at when given — a change since is a 409, not an overwrite.
-    static func body(_ object: [String: Any], ref: KubeObjectRef, resourceVersion: String?) -> [String: Any] {
+    package static func body(_ object: [String: Any], ref: KubeObjectRef, resourceVersion: String?) -> [String: Any] {
         var body = object
         var metadata = body["metadata"] as? [String: Any] ?? [:]
         metadata["managedFields"] = nil
@@ -162,7 +162,7 @@ enum KubeApply {
         return body
     }
 
-    static func request(_ body: [String: Any], ref: KubeObjectRef, dryRun: Bool, force: Bool = false) -> KubeWriteRequest {
+    package static func request(_ body: [String: Any], ref: KubeObjectRef, dryRun: Bool, force: Bool = false) -> KubeWriteRequest {
         var query: [(String, String?)] = [("fieldManager", KubeWrites.fieldManager)]
         if dryRun { query.append(("dryRun", "All")) }
         if force { query.append(("force", "true")) }
@@ -171,7 +171,7 @@ enum KubeApply {
 
     /// The kubectl it equals: `kubectl apply --server-side
     /// --field-manager=overterm -f FILE --context C [-n NS]`, quoted for zsh.
-    static func kubectl(file: String, context: String, namespace: String?, force: Bool = false) -> String {
+    package static func kubectl(file: String, context: String, namespace: String?, force: Bool = false) -> String {
         var words = ["kubectl", "apply", "--server-side", "--field-manager=\(KubeWrites.fieldManager)"]
         if force { words.append("--force-conflicts") }
         words += ["-f", KubectlLine.quoted(file), "--context", KubectlLine.quoted(context)]
@@ -180,7 +180,7 @@ enum KubeApply {
     }
 
     /// `kubectl kustomize DIR`: rendered here, from files alone.
-    static func kustomizeArguments(_ folder: String) -> [String] { ["kustomize", folder] }
+    package static func kustomizeArguments(_ folder: String) -> [String] { ["kustomize", folder] }
 }
 
 /// What the diff shows of each side, as `kubectl diff --server-side` shows
@@ -188,13 +188,13 @@ enum KubeApply {
 /// Secret's values masked `***`, `*** (before)`, `*** (after)` — and, as
 /// everywhere, an env value whose name looks secret masked the same way.
 /// Pure.
-enum KubeManifestDiff {
-    static let mask = KubeObjectStrip.mask
-    static let envMask = Secrets.mask("x")
+package enum KubeManifestDiff {
+    package static let mask = KubeObjectStrip.mask
+    package static let envMask = Secrets.mask("x")
 
     /// What neither side shows: what the server keeps for itself, and the
     /// last-applied annotation — the whole object again, a Secret's values with it.
-    static func stripped(_ object: [String: Any]) -> [String: Any] {
+    package static func stripped(_ object: [String: Any]) -> [String: Any] {
         var object = object
         object["status"] = nil
         if var metadata = object["metadata"] as? [String: Any] {
@@ -212,7 +212,7 @@ enum KubeManifestDiff {
     /// without what identifies this one version of it — its resourceVersion
     /// is kept by the session and sent with the apply, so a change since
     /// is a 409. Masked as the YAML tab masks it.
-    static func forEditing(_ object: [String: Any]) -> [String: Any] {
+    package static func forEditing(_ object: [String: Any]) -> [String: Any] {
         var object = stripped(object)
         if var metadata = object["metadata"] as? [String: Any] {
             for key in ["resourceVersion", "uid", "creationTimestamp", "generation", "selfLink"] { metadata[key] = nil }
@@ -224,7 +224,7 @@ enum KubeManifestDiff {
     /// Both sides masked together, so a value that changed says so without
     /// saying what it is: a Secret's `data` and `stringData`, and every
     /// env value whose name looks secret (a URL's password too).
-    static func masked(before: [String: Any]?, after: [String: Any]?) -> (before: [String: Any]?, after: [String: Any]?) {
+    package static func masked(before: [String: Any]?, after: [String: Any]?) -> (before: [String: Any]?, after: [String: Any]?) {
         let secret = [before, after].contains { $0.map(KubeObjectStrip.isSecret) == true }
         var a = before
         var b = after
@@ -241,7 +241,7 @@ enum KubeManifestDiff {
 
     /// Two maps' values masked key by key: the same value `mask` on both
     /// sides, a changed one `mask (before)` and `mask (after)`.
-    static func maskedValues(_ a: [String: Any]?, _ b: [String: Any]?, mask: String) -> ([String: Any]?, [String: Any]?) {
+    package static func maskedValues(_ a: [String: Any]?, _ b: [String: Any]?, mask: String) -> ([String: Any]?, [String: Any]?) {
         var x = a
         var y = b
         for key in Set((a ?? [:]).keys).union((b ?? [:]).keys) {
@@ -262,7 +262,7 @@ enum KubeManifestDiff {
     /// Walks both sides together: an `env` list's entries paired by name,
     /// a secret-looking one's value masked as `maskedValues` does; a URL's
     /// password masked on each side.
-    static func maskedEnv(_ a: Any?, _ b: Any?) -> (Any?, Any?) {
+    package static func maskedEnv(_ a: Any?, _ b: Any?) -> (Any?, Any?) {
         switch (a, b) {
         case (let x as [String: Any], let y as [String: Any]):
             var left = x
@@ -318,7 +318,7 @@ enum KubeManifestDiff {
     /// maps merged, anything else replaced, `null` removing — a Secret's
     /// `stringData` folded into `data` as the server folds it. Defaults
     /// and admission aren't applied: the diff is labelled so.
-    static func clientSide(live: [String: Any]?, manifest: [String: Any]) -> [String: Any] {
+    package static func clientSide(live: [String: Any]?, manifest: [String: Any]) -> [String: Any] {
         var merged = (merge(live ?? [:], manifest) as? [String: Any]) ?? manifest
         if KubeObjectStrip.isSecret(merged), let plain = merged["stringData"] as? [String: Any] {
             var data = merged["data"] as? [String: Any] ?? [:]
@@ -330,7 +330,7 @@ enum KubeManifestDiff {
     }
 
     /// RFC 7386's merge.
-    static func merge(_ target: Any, _ patch: Any) -> Any {
+    package static func merge(_ target: Any, _ patch: Any) -> Any {
         guard let patch = patch as? [String: Any] else { return patch }
         var result = target as? [String: Any] ?? [:]
         for (key, value) in patch {
@@ -340,14 +340,14 @@ enum KubeManifestDiff {
     }
 
     /// The two sides as YAML, masked and stripped — what is diffed.
-    static func sides(live: [String: Any]?, after: [String: Any]) -> (before: String, after: String) {
+    package static func sides(live: [String: Any]?, after: [String: Any]) -> (before: String, after: String) {
         let (a, b) = masked(before: live.map(stripped), after: stripped(after))
         return (a.map { KubeYAML.text($0) } ?? "", KubeYAML.text(b ?? [:]))
     }
 
     /// A unified diff of the two texts, three lines of context, with its
     /// headers — the changes pane's format — and how many lines each way.
-    static func unified(before: String, after: String, from: String, to: String, context: Int = 3) -> (text: String, added: Int, removed: Int) {
+    package static func unified(before: String, after: String, from: String, to: String, context: Int = 3) -> (text: String, added: Int, removed: Int) {
         let old = lines(before)
         let new = lines(after)
         let blocks = LineDiff.blocks(base: before, current: after)
@@ -388,7 +388,7 @@ enum KubeManifestDiff {
     }
 
     /// The text's lines, as `LineDiff` counts them: a last newline ends the last line.
-    static func lines(_ text: String) -> [String] {
+    package static func lines(_ text: String) -> [String] {
         var parts = text.components(separatedBy: "\n")
         if parts.last == "" { parts.removeLast() }
         return parts
@@ -398,15 +398,15 @@ enum KubeManifestDiff {
 /// Who else owns what a manifest changes (3.3): the live object's
 /// managedFields, read before anything is applied — "Argo CD manages
 /// this; your change will be reverted". Pure.
-enum KubeFieldOwners {
+package enum KubeFieldOwners {
     /// A tool that sets its fields back.
-    enum Tool: String, Equatable, Sendable {
+    package enum Tool: String, Equatable, Sendable {
         case helm, argoCD, fluxKustomize, fluxHelm
         /// Only Argo CD 2.x's default tracking label, `app.kubernetes.io/instance`,
         /// which Helm charts set too (`KubeGitOpsOwner`).
         case argoCDProbably
 
-        var title: String {
+        package var title: String {
             switch self {
             case .helm: "Helm"
             case .argoCD: "Argo CD"
@@ -417,7 +417,7 @@ enum KubeFieldOwners {
         }
 
         /// What happens to a change made under it.
-        var warning: String {
+        package var warning: String {
             switch self {
             case .helm: "Helm manages this: its next upgrade sets these fields back."
             case .argoCD: "Argo CD manages this; your change will be reverted."
@@ -429,7 +429,7 @@ enum KubeFieldOwners {
         }
 
         /// By its field manager's name.
-        static func of(manager: String) -> Tool? {
+        package static func of(manager: String) -> Tool? {
             switch manager {
             case "helm": .helm
             case "argocd-controller", "argocd-application-controller", "argocd-server": .argoCD
@@ -441,15 +441,15 @@ enum KubeFieldOwners {
     }
 
     /// One other manager owning fields the manifest changes.
-    struct Owner: Equatable, Sendable {
-        var manager: String
-        var operation: String
+    package struct Owner: Equatable, Sendable {
+        package var manager: String
+        package var operation: String
         /// `.spec.replicas`, `.spec.template.spec.containers`.
-        var fields: [String]
-        var tool: Tool? { Tool.of(manager: manager) }
+        package var fields: [String]
+        package var tool: Tool? { Tool.of(manager: manager) }
 
         /// `helm owns .spec.replicas (Apply)`.
-        var said: String { "\(manager) owns \(fields.joined(separator: ", ")) (\(operation))" }
+        package var said: String { "\(manager) owns \(fields.joined(separator: ", ")) (\(operation))" }
     }
 
     /// The paths whose value the apply's result (`after`: the dry run's
@@ -457,7 +457,7 @@ enum KubeFieldOwners {
     /// writes without them isn't "changed") has other than the live
     /// object's, at the depth a field is owned: maps walked into, anything
     /// else (a list, a scalar) one path.
-    static func changed(_ after: [String: Any], live: [String: Any]?) -> Set<String> {
+    package static func changed(_ after: [String: Any], live: [String: Any]?) -> Set<String> {
         var out = Set<String>()
         func walk(_ value: Any, _ old: Any?, _ path: String) {
             if let map = value as? [String: Any], !map.isEmpty {
@@ -484,7 +484,7 @@ enum KubeFieldOwners {
     /// A managedFields entry's `fieldsV1` as paths: `f:spec` → `.spec`; a
     /// list's items (`k:{…}`, `v:…`, `i:…`) owned as the list's own path;
     /// `.` — the node itself — as its path.
-    static func paths(_ fields: [String: Any], _ path: String = "") -> Set<String> {
+    package static func paths(_ fields: [String: Any], _ path: String = "") -> Set<String> {
         var out = Set<String>()
         for (key, inner) in fields {
             if key == "." {
@@ -500,12 +500,12 @@ enum KubeFieldOwners {
         return out
     }
 
-    static func overlaps(_ a: String, _ b: String) -> Bool { a == b || a.hasPrefix(b + ".") || b.hasPrefix(a + ".") }
+    package static func overlaps(_ a: String, _ b: String) -> Bool { a == b || a.hasPrefix(b + ".") || b.hasPrefix(a + ".") }
 
     /// The managers other than Overterm that own a field the apply
     /// changes — `after` against `live` —, as the live object's
     /// managedFields say it. A field owned by several is said for each.
-    static func others(after: [String: Any], live: [String: Any]?) -> [Owner] {
+    package static func others(after: [String: Any], live: [String: Any]?) -> [Owner] {
         guard let live, let entries = (live["metadata"] as? [String: Any])?["managedFields"] as? [[String: Any]] else { return [] }
         let changed = changed(after, live: live)
         guard !changed.isEmpty else { return [] }
@@ -529,7 +529,7 @@ enum KubeFieldOwners {
     /// The fields Overterm's own apply owns on the live object (its
     /// `overterm` managedFields entry): one of them left out of the next
     /// apply is removed from the object.
-    static func overterms(_ live: [String: Any]?) -> Set<String> {
+    package static func overterms(_ live: [String: Any]?) -> Set<String> {
         let entries = (live?["metadata"] as? [String: Any])?["managedFields"] as? [[String: Any]] ?? []
         var out = Set<String>()
         for entry in entries where entry["manager"] as? String == KubeWrites.fieldManager && (entry["operation"] as? String ?? "Apply") == "Apply" {
@@ -541,7 +541,7 @@ enum KubeFieldOwners {
     /// The tools whose marks the live object carries — Argo CD's tracking
     /// annotation or labels and Flux's labels (`KubeGitOpsOwner`), Helm's
     /// `managed-by` — even where no field of theirs is changed.
-    static func managedBy(_ live: [String: Any]?) -> [Tool] {
+    package static func managedBy(_ live: [String: Any]?) -> [Tool] {
         let metadata = live?["metadata"] as? [String: Any] ?? [:]
         let labels = metadata["labels"] as? [String: Any] ?? [:]
         let annotations = metadata["annotations"] as? [String: Any] ?? [:]
@@ -571,7 +571,7 @@ enum KubeFieldOwners {
     /// `argoMarks`: Argo CD's in place of its own — where its Applications
     /// aren't read, whether it reverts the change (selfHeal) can't be
     /// known: "may undo", never "will be reverted" (gitops.md 14.2.3).
-    static func warnings(_ owners: [Owner], managedBy: [Tool], argoMarks: String? = nil) -> [String] {
+    package static func warnings(_ owners: [Owner], managedBy: [Tool], argoMarks: String? = nil) -> [String] {
         var tools: [Tool] = []
         for tool in owners.compactMap(\.tool) + managedBy where !tools.contains(tool) { tools.append(tool) }
         // A field Argo CD's controller owns says it surely.
@@ -589,16 +589,16 @@ enum KubeFieldOwners {
 /// (`FieldManagerConflict` causes — forcing takes them from it), or the
 /// object changed since it was opened (the resourceVersion sent is old).
 /// Pure.
-enum KubeApplyConflict: Equatable, Sendable {
-    struct Field: Equatable, Sendable {
-        var manager: String
-        var field: String
+package enum KubeApplyConflict: Equatable, Sendable {
+    package struct Field: Equatable, Sendable {
+        package var manager: String
+        package var field: String
     }
 
     case fields([Field])
     case changed(String)
 
-    static func read(_ error: KubeAPIError) -> KubeApplyConflict? {
+    package static func read(_ error: KubeAPIError) -> KubeApplyConflict? {
         guard error.status == 409 else { return nil }
         var fields: [Field] = []
         for cause in error.causes where cause.reason == "FieldManagerConflict" {
@@ -616,12 +616,12 @@ enum KubeApplyConflict: Equatable, Sendable {
     }
 
     /// `conflict with "helm" using apps/v1` → helm.
-    static func manager(in text: String) -> String? {
+    package static func manager(in text: String) -> String? {
         guard let range = text.range(of: #"conflict with "([^"]+)""#, options: .regularExpression) else { return nil }
         return String(text[range].dropFirst("conflict with \"".count).dropLast())
     }
 
-    var managers: [String] {
+    package var managers: [String] {
         guard case .fields(let fields) = self else { return [] }
         var names: [String] = []
         for field in fields where !names.contains(field.manager) { names.append(field.manager) }
@@ -629,7 +629,7 @@ enum KubeApplyConflict: Equatable, Sendable {
     }
 
     /// `helm owns .spec.replicas; argocd-controller owns .spec.template…`
-    var said: String {
+    package var said: String {
         switch self {
         case .fields(let fields):
             return managers.map { manager in
@@ -642,14 +642,14 @@ enum KubeApplyConflict: Equatable, Sendable {
 
 /// Whether a manifest may be applied on a context (rules 1–4, decisions
 /// 11 and 30), and what is still masked in it. Pure.
-enum KubeApplyCheck {
+package enum KubeApplyCheck {
     /// Why Apply isn't offered; nil when it is. `force`: asked again after
     /// a conflict — never on production. A person's Apply goes wherever
     /// the context is writable, production too, the name typed (the
     /// owner's decision: nothing to turn on first); `agent`: an agent's
     /// `k8s_apply`, which on production also needs the context's
     /// `applyOnProduction` — agents' rules as they were.
-    static func refused(_ context: KubeContext, force: Bool = false, agent: Bool = false) -> String? {
+    package static func refused(_ context: KubeContext, force: Bool = false, agent: Bool = false) -> String? {
         guard context.isWritable else {
             return KubeWriteCheck.readOnly(context) + " Diff with Cluster still shows what would change."
         }
@@ -664,28 +664,28 @@ enum KubeApplyCheck {
 
     /// The rule as the page's writes have it: the name typed on production
     /// (rule 4), the owners warned of.
-    static func rule(_ context: KubeContext, force: Bool = false, warning: String? = nil) -> KubeWriteRule {
+    package static func rule(_ context: KubeContext, force: Bool = false, warning: String? = nil) -> KubeWriteRule {
         if let refused = refused(context, force: force) { return KubeWriteRule(refused: refused) }
         return KubeWriteRule(access: nil, typedName: context.isProduction, warning: warning)
     }
 
     /// What an apply needs: `patch` on the kind, `create` too for an
     /// object that isn't there yet (server-side apply makes it).
-    static func accesses(_ ref: KubeObjectRef, exists: Bool) -> [KubeAccess] {
+    package static func accesses(_ ref: KubeObjectRef, exists: Bool) -> [KubeAccess] {
         exists ? [KubeAccess(verb: "patch", resource: ref.kind.fullName)] : [KubeAccess(verb: "create", resource: ref.kind.fullName)]
     }
 
     /// What is refused before anything is read: a Secret's masked values
     /// (they can only be retyped). An env value's mask waits for the live
     /// object, which gives an untouched one its value back (`restoringEnv`).
-    static func maskedBeforeReading(_ object: KubeManifestObject) -> [String] {
+    package static func maskedBeforeReading(_ object: KubeManifestObject) -> [String] {
         object.isSecret ? masked(object) : []
     }
 
     /// Where a manifest still holds a mask (a Secret's `***`, an env
     /// value's `••••••`): such a manifest isn't applied — its values would
     /// become the masks. `.data.password`, `.spec.…env[DB_PASSWORD]`.
-    static func masked(_ object: KubeManifestObject) -> [String] {
+    package static func masked(_ object: KubeManifestObject) -> [String] {
         var out: [String] = []
         if object.isSecret {
             for key in ["data", "stringData"] {
@@ -724,7 +724,7 @@ enum KubeApplyCheck {
     /// Overterm's own apply owns on the live object (`KubeFieldOwners.overterms`),
     /// when it was read — a key of those left out of an apply is removed
     /// from the cluster, so it is never offered as the way out.
-    static func maskedSaid(_ paths: [String], of spoken: String, owned: Set<String>?) -> String {
+    package static func maskedSaid(_ paths: [String], of spoken: String, owned: Set<String>?) -> String {
         let head =
             "\(spoken) still holds masked values (\(paths.joined(separator: ", "))): Overterm never puts a value it masked into a file, so it can't apply them back. "
             + "Retype each value — Overterm's copy is never saved, so what you type stays in memory."
@@ -755,7 +755,7 @@ enum KubeApplyCheck {
     /// untouched, so the cluster keeps it. In memory only, never written to
     /// the copy; the diff masks it again. A Secret's values are never given
     /// back: they are retyped.
-    static func restoringEnv(_ object: [String: Any], live: [String: Any]?) -> [String: Any] {
+    package static func restoringEnv(_ object: [String: Any], live: [String: Any]?) -> [String: Any] {
         guard let live, !KubeObjectStrip.isSecret(object) else { return object }
         return restoredEnv(object, live) as? [String: Any] ?? object
     }
@@ -801,7 +801,7 @@ enum KubeApplyCheck {
     /// Masked values replaced by the live object's at the same place — for
     /// the diff only, never an apply: what is still masked is shown as
     /// unchanged. Values stay in memory, and are masked again in the diff.
-    static func unmasked(_ object: [String: Any], live: [String: Any]?) -> [String: Any] {
+    package static func unmasked(_ object: [String: Any], live: [String: Any]?) -> [String: Any] {
         guard let live else { return object }
         var object = object
         if KubeObjectStrip.isSecret(object) {
@@ -852,69 +852,69 @@ enum KubeApplyCheck {
 }
 
 /// One object's diff with the cluster, as the changes pane shows it.
-struct KubeManifestItem: Identifiable {
-    var ref: KubeObjectRef
+package struct KubeManifestItem: Identifiable {
+    package var ref: KubeObjectRef
     /// The live object stripped and masked as YAML; "" when it isn't there yet.
-    var before: String
-    var after: String
+    package var before: String
+    package var after: String
     /// The unified diff, "" when nothing changes.
-    var diff: String
-    var added: Int
-    var removed: Int
-    var isNew: Bool
-    var owners: [KubeFieldOwners.Owner]
-    var managedBy: [KubeFieldOwners.Tool]
+    package var diff: String
+    package var added: Int
+    package var removed: Int
+    package var isNew: Bool
+    package var owners: [KubeFieldOwners.Owner]
+    package var managedBy: [KubeFieldOwners.Tool]
     /// Masked values the manifest still holds: Apply refuses.
-    var masked: [String]
+    package var masked: [String]
     /// What an apply of it sends: the object the diff was made from, an
     /// untouched env mask given back its live value (`restoringEnv`) — in
     /// memory only. Applied with this item's ref, never another's.
-    var sent: [String: Any] = [:]
+    package var sent: [String: Any] = [:]
     /// The fields Overterm's own apply owns on the live object.
-    var overterms: Set<String> = []
+    package var overterms: Set<String> = []
     /// An Argo CD or Flux object's source, destination, prune or
     /// suspension changed against the live object (gitops.md, G0d).
-    var gitOps: [KubeGitOpsChange] = []
+    package var gitOps: [KubeGitOpsChange] = []
     /// What those changes do, said.
-    var gitOpsWarning: String?
+    package var gitOpsWarning: String?
     /// Argo CD tracks the live object where its Applications aren't read:
     /// it may undo the change, selfHeal being the Application's — said in
     /// place of "will be reverted" (gitops.md 14.2.3).
-    var argoMarks: String?
+    package var argoMarks: String?
 
-    var id: String { ref.description }
-    var unchanged: Bool { diff.isEmpty && !isNew }
+    package var id: String { ref.description }
+    package var unchanged: Bool { diff.isEmpty && !isNew }
     /// One of the four GitOps kinds whose apply is watched: an agent's is
     /// always name-typed by the person.
-    var isGitOps: Bool { KubeGitOpsApply.tool(ref.kind) != nil }
-    var warnings: [String] { [gitOpsWarning].compactMap { $0 } + KubeFieldOwners.warnings(owners, managedBy: managedBy, argoMarks: argoMarks) }
+    package var isGitOps: Bool { KubeGitOpsApply.tool(ref.kind) != nil }
+    package var warnings: [String] { [gitOpsWarning].compactMap { $0 } + KubeFieldOwners.warnings(owners, managedBy: managedBy, argoMarks: argoMarks) }
     /// `deployment shop/web`.
-    var spoken: String { KubeWriteOutcome.spoken(ref) }
+    package var spoken: String { KubeWriteOutcome.spoken(ref) }
 }
 
 /// A manifest's diff with one context.
-struct KubeManifestDiffResult {
+package struct KubeManifestDiffResult {
     /// How the "after" side was made.
-    enum Method: Equatable {
+    package enum Method: Equatable {
         /// `dryRun=All`: defaults and admission applied.
         case serverSide
         /// The file merged over the live object here, with why.
         case clientSide(String)
     }
 
-    var context: String
-    var production: Bool
-    var method: Method
-    var items: [KubeManifestItem]
+    package var context: String
+    package var production: Bool
+    package var method: Method
+    package var items: [KubeManifestItem]
     /// The text it was made from — the objects applied are this text's.
-    var text: String
+    package var text: String
     /// Rendered by `kubectl kustomize` from the files on disk.
-    var kustomized = false
+    package var kustomized = false
 
-    static let clientSideLabel = "client-side: defaults and admission not applied"
+    package static let clientSideLabel = "client-side: defaults and admission not applied"
 
     /// What the pane says it is.
-    var label: String {
+    package var label: String {
         let made =
             switch method {
             case .serverSide: "Server-side dry run (dryRun=All): what \(context) would make of it — its defaults and admission applied."
@@ -923,13 +923,13 @@ struct KubeManifestDiffResult {
         return made + (kustomized ? " Rendered by kubectl kustomize from the saved files." : "")
     }
 
-    var isServerSide: Bool { method == .serverSide }
-    var changes: Int { items.filter { !$0.unchanged }.count }
-    var added: Int { items.reduce(0) { $0 + $1.added } }
-    var removed: Int { items.reduce(0) { $0 + $1.removed } }
+    package var isServerSide: Bool { method == .serverSide }
+    package var changes: Int { items.filter { !$0.unchanged }.count }
+    package var added: Int { items.reduce(0) { $0 + $1.added } }
+    package var removed: Int { items.reduce(0) { $0 + $1.removed } }
     /// The owners' warnings of the objects that change: one the dry run
     /// leaves as it is warns of nothing.
-    var warnings: [String] {
+    package var warnings: [String] {
         var seen: [String] = []
         for warning in items.filter({ !$0.unchanged }).flatMap(\.warnings) where !seen.contains(warning) { seen.append(warning) }
         return seen
@@ -937,7 +937,7 @@ struct KubeManifestDiffResult {
 
     /// What the confirmation shows of it: per object its counts and its
     /// diff's lines, at most `limit` lines in all — masked as the pane is.
-    func summary(limit: Int = 60) -> String {
+    package func summary(limit: Int = 60) -> String {
         var lines: [String] = []
         for item in items {
             if item.unchanged {
@@ -958,8 +958,8 @@ struct KubeManifestDiffResult {
 /// — production in capitals —, the objects, the dry-run diff, the fields'
 /// other owners, the kubectl it equals, the name typed where rule 4 asks.
 /// Pure.
-enum KubeApplyConfirmation {
-    static func make(
+package enum KubeApplyConfirmation {
+    package static func make(
         _ result: KubeManifestDiffResult, context: KubeContext, kubectl: String, force: KubeApplyConflict? = nil, replacing: Bool = false, agent: Bool = false
     ) -> KubeWriteConfirmation {
         let changed = result.items.filter { !$0.unchanged }

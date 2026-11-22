@@ -7,8 +7,8 @@ import Foundation
 /// alone, or as a statement's first line, says the database (a bucket on
 /// 2.x) the rest runs in. `WRITE` followed by line protocol — on its line
 /// and the lines after, to a blank one — writes those points. Pure.
-enum InfluxText: KindConsoleText {
-    static func statements(in text: String) -> [NSRange] {
+package enum InfluxText: KindConsoleText {
+    package static func statements(in text: String) -> [NSRange] {
         let ns = text as NSString
         var ranges: [NSRange] = []
         for block in blocks(ns) {
@@ -100,7 +100,7 @@ enum InfluxText: KindConsoleText {
     }
 
     /// A `USE db` line leading a statement, and what follows it.
-    static func use(_ statement: String) -> (database: String, rest: String)? {
+    package static func use(_ statement: String) -> (database: String, rest: String)? {
         let trimmed = statement.trimmingCharacters(in: .whitespacesAndNewlines)
         let firstLine = trimmed.prefix { $0 != "\n" }
         let words = firstLine.split(separator: " ", maxSplits: 1).map(String.init)
@@ -116,25 +116,25 @@ enum InfluxText: KindConsoleText {
     }
 
     /// A statement's language: InfluxQL/SQL by its first keyword, else Flux.
-    static func isFlux(_ statement: String) -> Bool {
+    package static func isFlux(_ statement: String) -> Bool {
         let body = use(statement)?.rest ?? statement
         return !sqlVerbs.contains(SQLText.verb(of: body))
     }
 
-    static let sqlVerbs: Set<String> = [
+    package static let sqlVerbs: Set<String> = [
         "SELECT", "SHOW", "EXPLAIN", "WITH", "CREATE", "DROP", "DELETE", "ALTER", "GRANT", "REVOKE", "KILL", "SET", "INSERT", "UPDATE",
         "WRITE", "USE", "DESCRIBE",
     ]
 
     /// SELECT, SHOW…; WRITE; USE; else "Flux".
-    static func verb(of statement: String) -> String {
+    package static func verb(of statement: String) -> String {
         let body = use(statement).map { $0.rest.isEmpty ? statement : $0.rest } ?? statement
         let verb = SQLText.verb(of: body)
         return sqlVerbs.contains(verb) ? verb : "Flux"
     }
 
     /// The line protocol after `WRITE`, a point a line.
-    static func lineProtocol(_ statement: String) -> String? {
+    package static func lineProtocol(_ statement: String) -> String? {
         let trimmed = statement.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count > 5, trimmed.prefix(5).uppercased() == "WRITE", trimmed.dropFirst(5).first?.isWhitespace == true else { return nil }
         let lines = trimmed.dropFirst(5).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
@@ -147,7 +147,7 @@ enum InfluxText: KindConsoleText {
     private static let fluxWrites =
         #"(^|[^\w.])(to|wideTo)\s*\(|\b(experimental|influxdb)\.(to|wideTo)\s*\(|\bsql\.to\s*\(|\b(http|requests)\.(post|do|put|patch|delete)\s*\(|\b(slack|pagerduty|opsgenie|telegram|discord|teams|sensu|victorops|pushbullet|zenoss|servicenow|bigpanda|mqtt|alerta|hipchat|alerts|monitor)\.\w+\s*\("#
 
-    static func onlyReads(_ statement: String) -> Bool {
+    package static func onlyReads(_ statement: String) -> Bool {
         let body = use(statement).map { $0.rest } ?? statement
         if body.isEmpty { return true }  // `USE db` alone
         let verb = verb(of: body)
@@ -162,9 +162,9 @@ enum InfluxText: KindConsoleText {
         }
     }
 
-    static func agentReads(_ statement: String) -> Bool { onlyReads(statement) }
+    package static func agentReads(_ statement: String) -> Bool { onlyReads(statement) }
 
-    static func danger(of statement: String) -> String? {
+    package static func danger(of statement: String) -> String? {
         let body = use(statement)?.rest ?? statement
         let upper = SQLText.stripped(body).uppercased()
         let words = upper.split(whereSeparator: { $0.isWhitespace }).map(String.init)
@@ -184,7 +184,7 @@ enum InfluxText: KindConsoleText {
 
     /// The measurement: InfluxQL/SQL's FROM, Flux's `_measurement == "…"`
     /// (else its bucket), a WRITE's first point's.
-    static func subject(of statement: String) -> String? {
+    package static func subject(of statement: String) -> String? {
         let body = use(statement)?.rest ?? statement
         if let lines = lineProtocol(body) {
             let first = lines.prefix { $0 != "\n" }
@@ -250,10 +250,10 @@ enum InfluxText: KindConsoleText {
     // MARK: The panel's
 
     /// `"cpu"` in InfluxQL and SQL; Flux's strings are JSON's.
-    static func quote(_ name: String) -> String { "\"" + name.replacingOccurrences(of: "\"", with: "\\\"") + "\"" }
+    package static func quote(_ name: String) -> String { "\"" + name.replacingOccurrences(of: "\"", with: "\\\"") + "\"" }
 
     /// A measurement's latest points: Flux on 2.x, else InfluxQL/SQL (the same words).
-    static func browse(_ table: CatalogTable, connection: DatabaseConnection, limit: Int) -> String {
+    package static func browse(_ table: CatalogTable, connection: DatabaseConnection, limit: Int) -> String {
         if InfluxVersion(rawValue: connection.location) == .v2 {
             return """
                 from(bucket: \(HTTPDriverTransport.quoted(table.schema)))
@@ -268,10 +268,10 @@ enum InfluxText: KindConsoleText {
 
 /// Which InfluxDB: the connection's Location holds it (`1`, `2`, `3`), or
 /// it is empty and `/ping` says.
-enum InfluxVersion: String, CaseIterable, Identifiable, Sendable {
+package enum InfluxVersion: String, CaseIterable, Identifiable, Sendable {
     case v1 = "1", v2 = "2", v3 = "3"
-    var id: String { rawValue }
-    var title: String {
+    package var id: String { rawValue }
+    package var title: String {
         switch self {
         case .v1: "1.x — InfluxQL, a user and password"
         case .v2: "2.x — Flux, a token and an organization"
@@ -280,7 +280,7 @@ enum InfluxVersion: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// `X-Influxdb-Version`: `1.8.10`, `v2.7.11`, `2.7.11`, `3.0.1`…
-    static func from(header: String?) -> InfluxVersion? {
+    package static func from(header: String?) -> InfluxVersion? {
         guard let header else { return nil }
         let text = header.trimmingCharacters(in: .whitespaces).lowercased()
         let digits = text.drop { !$0.isNumber }
@@ -294,17 +294,17 @@ enum InfluxVersion: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// What InfluxDB answers, as rows. Pure.
-enum InfluxParse {
+package enum InfluxParse {
     /// One InfluxQL series: `{"name", "tags", "columns", "values"}`.
-    struct Series: Equatable {
-        var name: String
-        var tags: [String: String]
-        var columns: [String]
-        var values: [[String?]]
+    package struct Series: Equatable {
+        package var name: String
+        package var tags: [String: String]
+        package var columns: [String]
+        package var values: [[String?]]
     }
 
     /// `/query`'s JSON: each statement's series, or its error.
-    static func influxQL(_ data: Data) throws -> [[Series]] {
+    package static func influxQL(_ data: Data) throws -> [[Series]] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw DatabaseError.failed("InfluxDB's answer isn't JSON: " + String(decoding: data.prefix(300), as: UTF8.self))
         }
@@ -325,7 +325,7 @@ enum InfluxParse {
 
     /// Series as one table: the measurement's name when there are several,
     /// then their tags (by name), then their columns in the order they come.
-    static func rows(_ series: [Series], limit: Int) -> QueryResult {
+    package static func rows(_ series: [Series], limit: Int) -> QueryResult {
         var result = QueryResult()
         guard !series.isEmpty else { return result }
         let names = Set(series.map(\.name))
@@ -353,7 +353,7 @@ enum InfluxParse {
 
     /// RFC 4180: fields split on commas, quoted ones with `""` for a quote
     /// and line breaks inside; a record a line.
-    static func csv(_ text: String) -> [[String]] {
+    package static func csv(_ text: String) -> [[String]] {
         var records: [[String]] = []
         var record: [String] = []
         var field = ""
@@ -405,7 +405,7 @@ enum InfluxParse {
     /// rows, a header, its rows, a blank line between. One table out: every
     /// column any table has (the annotation column and `result` left out),
     /// a cell empty in a non-string column NULL. An `error` table is thrown.
-    static func flux(_ text: String, limit: Int) throws -> QueryResult {
+    package static func flux(_ text: String, limit: Int) throws -> QueryResult {
         var result = QueryResult()
         var columns: [String] = []
         var types: [String: String] = [:]
@@ -453,7 +453,7 @@ enum InfluxParse {
     }
 
     /// A plain CSV with a header (InfluxDB 3's): empty cells NULL.
-    static func plainCSV(_ text: String, limit: Int) -> QueryResult {
+    package static func plainCSV(_ text: String, limit: Int) -> QueryResult {
         var records = csv(text)
         var result = QueryResult()
         guard !records.isEmpty else { return result }
@@ -466,7 +466,7 @@ enum InfluxParse {
     }
 
     /// One column's values (a Flux `_value`, InfluxQL's `name`), in order.
-    static func column(_ name: String, of result: QueryResult) -> [String] {
+    package static func column(_ name: String, of result: QueryResult) -> [String] {
         guard let index = result.columns.firstIndex(of: name) else { return [] }
         return result.rows.compactMap { $0[index] }
     }

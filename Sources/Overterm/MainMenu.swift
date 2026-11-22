@@ -8,8 +8,8 @@ import AppKit
 /// starts with its default key; Keybindings then puts on the key the user
 /// chose (Settings ▸ Keyboard Shortcuts, keybindings.json).
 @MainActor
-enum MainMenu {
-    static func build() -> NSMenu {
+package enum MainMenu {
+    package static func build() -> NSMenu {
         let main = NSMenu()
 
         let appItem = NSMenuItem()

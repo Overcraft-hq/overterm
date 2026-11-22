@@ -4,16 +4,16 @@ import SwiftUI
 /// A GraphQL request's Schema tab: the server's types as its introspection
 /// says them — the roots first, each type's fields with their arguments and
 /// types, a filter over all of it — GraphiQL's docs, in the request.
-struct GraphQLSchemaView: View {
-    @ObservedObject var model: APIRequestModel
-    @ObservedObject var workspace: APIWorkspace
-    @ObservedObject var theme: ChromeTheme
+package struct GraphQLSchemaView: View {
+    @ObservedObject package var model: APIRequestModel
+    @ObservedObject package var workspace: APIWorkspace
+    @ObservedObject package var theme: ChromeTheme
     @State private var filter = ""
     @State private var open: Set<String> = []
 
     private var state: GraphQLSchemaState? { workspace.graphQLSchema(model.file, at: model.url) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)

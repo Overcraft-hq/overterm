@@ -14,8 +14,8 @@ import Foundation
 /// decoded, revealed or copied. Nothing here logs, writes or keeps a value
 /// anywhere else, and nothing printable of it carries one.
 @MainActor
-final class KubeSecretSession: ObservableObject {
-    enum State: Equatable {
+package final class KubeSecretSession: ObservableObject {
+    package enum State: Equatable {
         /// Nothing read: Show.
         case hidden
         /// Production: Show asked first.
@@ -26,7 +26,7 @@ final class KubeSecretSession: ObservableObject {
     }
 
     /// Why what was read went.
-    enum Drop: Equatable {
+    package enum Drop: Equatable {
         /// The detail moved on, or closed.
         case navigation
         /// The page hid (another page, the terminal, the window off screen).
@@ -36,7 +36,7 @@ final class KubeSecretSession: ObservableObject {
         /// Hide, pressed.
         case asked
 
-        func said(timeout: Duration) -> String? {
+        package func said(timeout: Duration) -> String? {
             switch self {
             case .navigation, .asked: nil
             case .pageHidden: "Hidden again when the page was hidden."
@@ -46,33 +46,33 @@ final class KubeSecretSession: ObservableObject {
         }
     }
 
-    nonisolated static let defaultTimeout: Duration = .seconds(120)
+    package nonisolated static let defaultTimeout: Duration = .seconds(120)
 
-    let ref: KubeObjectRef
-    let isProduction: Bool
+    package let ref: KubeObjectRef
+    package let isProduction: Bool
     /// What the list's row said, before Show: its Type and Data (how many keys).
-    let listedType: String?
-    let listedKeys: Int?
-    @Published private(set) var state: State = .hidden
+    package let listedType: String?
+    package let listedKeys: Int?
+    @Published package private(set) var state: State = .hidden
     /// The Secret's type, once read.
-    @Published private(set) var type: String?
-    @Published private(set) var entries: [KubeSecretEntry] = []
+    @Published package private(set) var type: String?
+    @Published package private(set) var entries: [KubeSecretEntry] = []
     /// The key whose value shows; one at most.
-    @Published private(set) var revealed: String?
+    @Published package private(set) var revealed: String?
     /// `tls.crt`'s, leaf first, on a TLS Secret.
-    @Published private(set) var certificates: [KubeCertificate] = []
+    @Published package private(set) var certificates: [KubeCertificate] = []
     /// Why the values went, while nothing shows.
-    @Published private(set) var dropped: Drop?
+    @Published package private(set) var dropped: Drop?
     /// How long the values stay after Show, a reveal or a copy.
-    var timeout: Duration = KubeSecretSession.defaultTimeout
+    package var timeout: Duration = KubeSecretSession.defaultTimeout
     /// How the time is waited out: a test's own clock stands in, so a
     /// reveal restarting it is checked without racing the scheduler.
-    var sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    package var sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
 
     /// The object as read, without its values: the detail's Overview and YAML.
-    var onRead: ((Data) -> Void)?
+    package var onRead: ((Data) -> Void)?
     /// Everything read is gone: the detail forgets the object too.
-    var onDrop: (() -> Void)?
+    package var onDrop: (() -> Void)?
 
     private let client: KubeClient?
     private let consent: KubeSecretConsent
@@ -80,7 +80,7 @@ final class KubeSecretSession: ObservableObject {
     private var fetching: Task<Void, Never>?
     private var expiry: Task<Void, Never>?
 
-    init(ref: KubeObjectRef, client: KubeClient?, consent: KubeSecretConsent, isProduction: Bool, listedType: String? = nil, listedKeys: Int? = nil) {
+    package init(ref: KubeObjectRef, client: KubeClient?, consent: KubeSecretConsent, isProduction: Bool, listedType: String? = nil, listedKeys: Int? = nil) {
         self.ref = ref
         self.client = client
         self.consent = consent
@@ -92,7 +92,7 @@ final class KubeSecretSession: ObservableObject {
     // MARK: Show
 
     /// Show: the one GET — on production, asked first the session's first time.
-    func show() {
+    package func show() {
         switch state {
         case .hidden, .failed: break
         default: return
@@ -105,13 +105,13 @@ final class KubeSecretSession: ObservableObject {
     }
 
     /// The production question answered yes: not asked again this session.
-    func confirm() {
+    package func confirm() {
         guard state == .confirming else { return }
         consent.grant(ref.context)
         fetch()
     }
 
-    func cancelConfirmation() {
+    package func cancelConfirmation() {
         guard state == .confirming else { return }
         state = .hidden
     }
@@ -153,7 +153,7 @@ final class KubeSecretSession: ObservableObject {
     /// `key`'s value shows, and only it: another revealed hides. A private
     /// key never shows.
     @discardableResult
-    func reveal(_ key: String) -> Bool {
+    package func reveal(_ key: String) -> Bool {
         guard state == .shown, let entry = entries.first(where: { $0.key == key }), !entry.isPrivateKey, values[key] != nil else { return false }
         revealed = key
         restartExpiry()
@@ -161,17 +161,17 @@ final class KubeSecretSession: ObservableObject {
     }
 
     /// The revealed value masked again.
-    func conceal() { revealed = nil }
+    package func conceal() { revealed = nil }
 
     /// The revealed value as it shows: text as it is, anything else as
     /// base64. Asked for while drawing, never kept.
-    var revealedText: String? {
+    package var revealedText: String? {
         guard let revealed, let entry = entries.first(where: { $0.key == revealed }) else { return nil }
         return text(of: entry)
     }
 
     /// One value, for Copy: asked for by the user, for this key alone.
-    func copyValue(_ key: String) -> String? {
+    package func copyValue(_ key: String) -> String? {
         guard state == .shown, let entry = entries.first(where: { $0.key == key }), !entry.isPrivateKey else { return nil }
         restartExpiry()
         return text(of: entry)
@@ -189,7 +189,7 @@ final class KubeSecretSession: ObservableObject {
     /// decoded copies are cleared first, but that is not a promise the
     /// memory held no value: the response, Foundation's strings and the
     /// text drawn were copies of their own, only released.
-    func drop(_ reason: Drop) {
+    package func drop(_ reason: Drop) {
         fetching?.cancel()
         fetching = nil
         expiry?.cancel()
@@ -212,10 +212,10 @@ final class KubeSecretSession: ObservableObject {
     }
 
     /// What the view says about the last drop, if anything.
-    var droppedNote: String? { dropped?.said(timeout: timeout) }
+    package var droppedNote: String? { dropped?.said(timeout: timeout) }
 
     /// Whether any value is held.
-    var holdsValues: Bool { !values.isEmpty }
+    package var holdsValues: Bool { !values.isEmpty }
 
     private func restartExpiry() {
         expiry?.cancel()
@@ -229,7 +229,7 @@ final class KubeSecretSession: ObservableObject {
     }
 
     /// `2 minutes`, `90 seconds`.
-    nonisolated static func said(_ duration: Duration) -> String {
+    package nonisolated static func said(_ duration: Duration) -> String {
         let seconds = Int(duration.components.seconds)
         if seconds >= 60, seconds % 60 == 0 { return "\(seconds / 60) minute\(seconds == 60 ? "" : "s")" }
         return "\(seconds) second\(seconds == 1 ? "" : "s")"

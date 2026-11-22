@@ -15,41 +15,41 @@ import Foundation
 /// production, saved as another — needs its name typed (`typedName`).
 /// Writes are on by default on every class, production too; `writable`
 /// set to no makes the context read-only (the owner's decision). Pure.
-struct KubeContextSettingsDraft: Equatable, Sendable {
-    let context: String
+package struct KubeContextSettingsDraft: Equatable, Sendable {
+    package let context: String
     /// The class its name gives, for "Unset: by name (…)".
-    let classByName: KubeContextClass
+    package let classByName: KubeContextClass
 
     /// Nil: its name decides.
-    var contextClass: KubeContextClass?
+    package var contextClass: KubeContextClass?
     /// Nil: writable, on every class.
-    var writable: Bool?
-    var metrics: KubeMetricsSource?
-    var prometheus: String
-    var nodeShell: Bool
-    var nodeShellImage: String
-    var defaultNamespace: String
-    var agentWrites: Bool
-    var applyOnProduction: Bool
+    package var writable: Bool?
+    package var metrics: KubeMetricsSource?
+    package var prometheus: String
+    package var nodeShell: Bool
+    package var nodeShellImage: String
+    package var defaultNamespace: String
+    package var agentWrites: Bool
+    package var applyOnProduction: Bool
     /// Why Save didn't write, until something is changed.
-    var problem: String?
+    package var problem: String?
     /// Save asked for the name, a production context being made less strict.
-    var confirmingLessStrict = false
+    package var confirmingLessStrict = false
     /// The name typed for it.
-    var typedName = ""
+    package var typedName = ""
     /// Its entry's class when the sheet opened.
-    let savedClass: KubeContextClass?
+    package let savedClass: KubeContextClass?
     /// What its fields said when the sheet opened (`fields`): one the sheet
     /// leaves as it was is the file's to keep, a value this build can't
     /// read included.
-    private(set) var opened: [String: SettingValue?] = [:]
+    package private(set) var opened: [String: SettingValue?] = [:]
 
-    static let contextsKey = "kubernetes.contexts"
-    static let agentWritesKey = "kubernetes.agentWrites"
+    package static let contextsKey = "kubernetes.contexts"
+    package static let agentWritesKey = "kubernetes.agentWrites"
 
     /// The draft of `context` as the settings hold it now: `contexts`,
     /// `kubernetes.contexts`'s value; `agentWrites`, the list's.
-    init(context: KubeContext, contexts: SettingValue?, agentWrites: [String]) {
+    package init(context: KubeContext, contexts: SettingValue?, agentWrites: [String]) {
         self.context = context.name
         classByName = KubeClassifier.classify(context: context.name, cluster: context.cluster, set: nil)
         let settings = KubeContextSettings(fields: contexts?.entries?[context.name] ?? [:])
@@ -68,7 +68,7 @@ struct KubeContextSettingsDraft: Equatable, Sendable {
 
     /// The entry's fields the sheet holds, as the draft says them now: nil
     /// takes the field out.
-    var fields: [String: SettingValue?] {
+    package var fields: [String: SettingValue?] {
         func text(_ value: String) -> SettingValue? {
             let trimmed = value.trimmingCharacters(in: .whitespaces)
             return trimmed.isEmpty ? nil : .string(trimmed)
@@ -87,11 +87,11 @@ struct KubeContextSettingsDraft: Equatable, Sendable {
     }
 
     /// The class it will have.
-    var resolvedClass: KubeContextClass { contextClass ?? classByName }
-    var isProduction: Bool { resolvedClass == .production }
+    package var resolvedClass: KubeContextClass { contextClass ?? classByName }
+    package var isProduction: Bool { resolvedClass == .production }
 
     /// What writable means for it, as the page will treat it.
-    var writableSaid: String {
+    package var writableSaid: String {
         let production = resolvedClass == .production
         guard writable ?? true else {
             return "Read-only: Overterm changes nothing here, and its socket refuses every write."
@@ -108,13 +108,13 @@ struct KubeContextSettingsDraft: Equatable, Sendable {
     /// `entry`'s class (the one opened, or as the file has it now) —
     /// something else: what Section 5 lets only an explicit act do, so it
     /// is asked in red with the name typed, as rule 4 asks it.
-    func lessStrict(entry: [String: SettingValue]?) -> Bool {
+    package func lessStrict(entry: [String: SettingValue]?) -> Bool {
         guard resolvedClass != .production else { return false }
         return classByName == .production || savedClass == .production || entry?["class"]?.string == KubeContextClass.production.rawValue
     }
 
     /// What making it less strict leads to, said before the name is typed.
-    var lessStrictSaid: String {
+    package var lessStrictSaid: String {
         let becomes = resolvedClass.title.lowercased()
         let writes =
             (writable ?? true)
@@ -126,7 +126,7 @@ struct KubeContextSettingsDraft: Equatable, Sendable {
     }
 
     /// Why the draft won't do, before anything is written; nil when it will.
-    var validation: String? {
+    package var validation: String? {
         let prometheus = prometheus.trimmingCharacters(in: .whitespaces)
         if !prometheus.isEmpty, KubePrometheusService(setting: prometheus) == nil {
             return "The Prometheus Service is namespace/service:port — \(prometheus) isn't."
@@ -143,7 +143,7 @@ struct KubeContextSettingsDraft: Equatable, Sendable {
     /// entry, as they were; an entry left empty taken out — and
     /// `kubernetes.agentWrites` naming it or not. A failure says why, and
     /// nothing is written.
-    func applied(contexts: SettingValue?, agentWrites: [String]) -> Result<(contexts: SettingValue, agentWrites: [String]), KubeCommands.Refused> {
+    package func applied(contexts: SettingValue?, agentWrites: [String]) -> Result<(contexts: SettingValue, agentWrites: [String]), KubeCommands.Refused> {
         if let validation { return .failure(KubeCommands.Refused(reason: validation)) }
         var entries = contexts?.entries ?? [:]
         var fields = entries[context] ?? [:]

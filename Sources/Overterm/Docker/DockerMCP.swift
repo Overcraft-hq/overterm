@@ -8,22 +8,22 @@ import AppKit
 /// the window first. Secrets stay out of every answer: env values that
 /// look like secrets are masked, and taken out of logs and exec output.
 @MainActor
-enum DockerMCP {
+package enum DockerMCP {
     /// Compose's up and down go to a terminal tab (the window sets this):
     /// the user sees them run.
     /// Runs a command in a terminal tab of the window in front; false when
     /// no window is open to run it in.
-    static var runInTab: ((String, URL?) -> Bool)?
+    package static var runInTab: ((String, URL?) -> Bool)?
     /// Set by tests and the E2E runner: answers instead of the alert.
-    static var askOverride: ((String) -> Bool)?
+    package static var askOverride: ((String) -> Bool)?
 
-    static let writes: Set<String> = ["docker_action", "docker_update", "docker_compose", "docker_exec"]
+    package static let writes: Set<String> = ["docker_action", "docker_update", "docker_compose", "docker_exec"]
 
     /// `updates`: what the user's last Check for Updates found — read,
     /// never asked again: a registry's answer spends the user's pulls.
     /// `scans`: what Docker Scout found in the images the user scanned —
     /// read, never started: a scan sends an image's packages away.
-    static func call(
+    package static func call(
         _ name: String, _ arguments: [String: Any], docker: DockerModel, updates: DockerImageUpdates = .shared, scans: DockerScoutScans = .shared
     ) async throws -> [String: Any] {
         func string(_ key: String) -> String? { (arguments[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
@@ -182,7 +182,7 @@ enum DockerMCP {
     /// tab, the rest named for the tab or the question. `service` narrows
     /// it to one of the project's; down takes the whole project. `files`:
     /// the store's (`ComposePortStore.files(for:)`). Pure.
-    static func composeCommand(
+    package static func composeCommand(
         _ project: ComposeProject, action: String, service: String?, endpoint: DockerEndpoint?, files: [String]? = nil
     ) throws -> String {
         let actions = ["up", "rebuild", "down", "restart", "stop", "start"]
@@ -222,7 +222,7 @@ enum DockerMCP {
     /// sheet checks it, then asked of the user with the `docker update` it
     /// is. `on-failure:N` tries N times at most; a count that isn't one is
     /// refused, never read as no limit.
-    static func update(_ target: ContainerSummary, _ arguments: [String: Any], docker: DockerModel, engine: DockerEngine) async throws -> [String: Any] {
+    package static func update(_ target: ContainerSummary, _ arguments: [String: Any], docker: DockerModel, engine: DockerEngine) async throws -> [String: Any] {
         func string(_ key: String) -> String? { (arguments[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         var settings = DockerContainerSettings(target, try await engine.container(target.Id), engine: docker.info)
         if let memory = string("memory") { settings.memory = memory }
@@ -243,7 +243,7 @@ enum DockerMCP {
             "\(target.name): \(settings.summary)." + compose + (warnings.isEmpty ? "" : " Docker says: " + warnings.joined(separator: " ")))
     }
 
-    static func allow(_ title: String, _ detail: String) async -> Bool {
+    package static func allow(_ title: String, _ detail: String) async -> Bool {
         let shown = displayed(detail)
         // Who asks: the calling pane's tab and agent (MCPAsker).
         let asker = await MCPAsker.current()
@@ -261,7 +261,7 @@ enum DockerMCP {
     /// of blank space said as such — so nothing that runs is out of sight.
     /// Pure, for any queue: Activity's text for agents is made off the
     /// main thread.
-    nonisolated static func displayed(_ text: String) -> String {
+    package nonisolated static func displayed(_ text: String) -> String {
         var out = ""
         var blank = ""
         func flushBlank() {
@@ -293,22 +293,22 @@ enum DockerMCP {
     /// What `docker_exec` answers: how it ended — or that it hadn't, and
     /// why the reading stopped — then its output, `scrub`bed and bounded:
     /// the output alone, so its first line stays whatever it wrote.
-    static func execText(_ result: DockerEngine.ExecResult, scrub: (String) -> String = { $0 }) -> String {
+    package static func execText(_ result: DockerEngine.ExecResult, scrub: (String) -> String = { $0 }) -> String {
         let head = (result.running ? "still running" : "exit \(result.exitCode)") + (result.cut.map { " — \($0)" } ?? "")
         return head + "\n" + bounded(scrub(result.stdout + (result.stderr.isEmpty ? "" : "\nstderr:\n" + result.stderr)))
     }
 
     /// How much of a `docker_exec` is read, and for how long.
-    static var execLimit = 1 << 20
-    static var execTimeout: Duration = .seconds(120)
+    package static var execLimit = 1 << 20
+    package static var execTimeout: Duration = .seconds(120)
 
-    static func bounded(_ text: String, max: Int = 60_000) -> String {
+    package static func bounded(_ text: String, max: Int = 60_000) -> String {
         text.count > max ? String(text.suffix(max)) + "\n… (the last \(max) characters)" : text
     }
 
     /// `emulation`: what runs translated here (an amd64 image on Apple
     /// silicon), said on its line.
-    static func describe(
+    package static func describe(
         _ containers: [ContainerSummary], remoteHost: String? = nil, emulation: (ContainerSummary) -> DockerEmulation? = { _ in nil }
     ) -> String {
         guard !containers.isEmpty else { return "No containers." }
@@ -325,7 +325,7 @@ enum DockerMCP {
 
     /// The test run a container of Testcontainers' is for, as its line
     /// says it; nil for one that isn't Testcontainers'.
-    static func testRun(of container: ContainerSummary) -> String? {
+    package static func testRun(of container: ContainerSummary) -> String? {
         guard let run = Testcontainers.groupID(of: container) else { return nil }
         if Testcontainers.isReaper(container) { return "Testcontainers' reaper (Ryuk)" }
         if !run.isEmpty { return "Testcontainers run \(run.prefix(8))" }
@@ -336,7 +336,7 @@ enum DockerMCP {
     /// Overterm put on ports of its own (`overrides`, by name), what moved
     /// and the command its Up runs: an agent's own `docker compose up`
     /// there would ask for the file's ports again.
-    static func describe(
+    package static func describe(
         _ projects: [ComposeProject], overrides: [String: ComposePortOverride] = [:], upCommand: (ComposeProject) -> String = { _ in "" }
     ) -> String {
         guard !projects.isEmpty else { return "No compose projects." }
@@ -364,7 +364,7 @@ enum DockerMCP {
     /// What Inspect says, as an agent needs it: secrets masked. `platform`:
     /// its image's, and `emulation` when this engine translates it — what
     /// runs it natively said with it.
-    static func describe(
+    package static func describe(
         _ container: ContainerSummary, _ detail: ContainerDetail, remoteHost: String? = nil, platform: DockerPlatform? = nil,
         emulation: DockerEmulation? = nil
     ) -> String {
@@ -409,7 +409,7 @@ enum DockerMCP {
     /// The last Check for Updates' answers, each with what it means, its
     /// age and who uses the image (`project/service`, else a container's
     /// name); only `project`'s services' when given.
-    static func describeUpdates(_ updates: DockerImageUpdates, docker: DockerModel, project: String? = nil, now: Date = Date()) -> String {
+    package static func describeUpdates(_ updates: DockerImageUpdates, docker: DockerModel, project: String? = nil, now: Date = Date()) -> String {
         var users: [String: [String]] = [:]
         for compose in docker.projects {
             for (service, reference) in updates.references(of: compose).sorted(by: { $0.key < $1.key }) {
@@ -455,7 +455,7 @@ enum DockerMCP {
     /// first, 300 at most and `max` characters at most — the end cut, not
     /// the head (`bounded` keeps a log's end) — or why there is none.
     /// Never a scan.
-    static func describeVulnerabilities(_ scan: DockerScoutScans.Scan?, image: String, now: Date = Date(), max: Int = 60_000) -> String {
+    package static func describeVulnerabilities(_ scan: DockerScoutScans.Scan?, image: String, now: Date = Date(), max: Int = 60_000) -> String {
         guard let scan else {
             return "\(image) hasn't been scanned. Docker Scout sends an image's packages to Docker's service, so only the user starts a scan: "
                 + "the Docker page ▸ Images ▸ the image ▸ Vulnerabilities ▸ Scan."
@@ -476,7 +476,7 @@ enum DockerMCP {
 
     /// Model Runner's models and where a program reaches them — read
     /// from the runner, never `docker model` (which would install one).
-    static func describeModels(_ docker: DockerModel, engine: DockerEngine) async throws -> String {
+    package static func describeModels(_ docker: DockerModel, engine: DockerEngine) async throws -> String {
         let place = ModelRunner.place(runtime: docker.runtime, remote: docker.publishedHost != nil, containers: docker.containers)
         switch place {
         case .remote: return "The engine is remote; its Model Runner isn't read from here."
@@ -501,7 +501,7 @@ enum DockerMCP {
 
     // MARK: Tools
 
-    static var tools: [[String: Any]] {
+    package static var tools: [[String: Any]] {
         var tools = [
             tool(
                 "docker_containers",
@@ -578,7 +578,7 @@ enum DockerMCP {
         return tools
     }
 
-    static let instructions =
+    package static let instructions =
         "Docker as the user runs it (Overterm's Docker page): docker_containers and docker_projects show what runs, docker_logs, docker_inspect and docker_stats say why a container failed — read them before guessing. docker_inspect says when a container runs emulated (an amd64 image on Apple silicon: slow). docker_models lists the local LLMs Docker Model Runner serves, with the base URL to use. docker_image_updates says which images are newer in their registries, as of the user's last Check for Updates — it never asks a registry. docker_vulnerabilities lists the CVEs Docker Scout found in an image the user scanned — it never starts a scan, which sends the image's packages to Docker's service."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {

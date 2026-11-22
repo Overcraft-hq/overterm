@@ -7,9 +7,9 @@ import Foundation
 /// their profile; an allocated GPU idle over the whole range said plainly
 /// (the costly case: held, paid for, unused). From the tab's one `gpu`
 /// query (`KubePromQL.gpus`), whatever its source. Pure.
-enum KubeGPUCharts {
+package enum KubeGPUCharts {
     /// Whose GPUs: what a series is named by besides its GPU.
-    enum Whose: Equatable, Sendable {
+    package enum Whose: Equatable, Sendable {
         /// A node's: each GPU, and the pods that held it.
         case node
         /// A pod's: each container's GPUs.
@@ -19,33 +19,33 @@ enum KubeGPUCharts {
     }
 
     /// Never busier than this over the range, held: idle.
-    static let idleAtMost = 0.05
+    package static let idleAtMost = 0.05
     /// At most this many GPUs drawn a chart (metrics.md 6.3's 12 series).
-    static let shownAtMost = 12
-    static let groupTitle = "GPUs (DCGM exporter)"
+    package static let shownAtMost = 12
+    package static let groupTitle = "GPUs (DCGM exporter)"
 
     /// One GPU (or MIG instance) as the answer says it.
-    struct GPU: Equatable, Sendable {
-        var key: String
-        var name: String
-        var model: String?
+    package struct GPU: Equatable, Sendable {
+        package var key: String
+        package var name: String
+        package var model: String?
         /// Who held it over the range: a node's pods, or the container or pod it is.
-        var holders: [String] = []
-        var utilisation: [KubeSeriesPoint] = []
-        var used: [KubeSeriesPoint] = []
+        package var holders: [String] = []
+        package var utilisation: [KubeSeriesPoint] = []
+        package var used: [KubeSeriesPoint] = []
         /// Its framebuffer's size: used + free at one sample, never peaked.
-        var size: [KubeSeriesPoint] = []
-        var power: [KubeSeriesPoint] = []
-        var temperature: [KubeSeriesPoint] = []
+        package var size: [KubeSeriesPoint] = []
+        package var power: [KubeSeriesPoint] = []
+        package var temperature: [KubeSeriesPoint] = []
 
         /// Held by someone: on a pod's or a workload's tab always, on a node's when a pod label said so.
-        var allocated: Bool { !holders.isEmpty }
+        package var allocated: Bool { !holders.isEmpty }
 
         /// Its total framebuffer at the last reading.
-        var total: Double? { size.last?.value }
+        package var total: Double? { size.last?.value }
 
         /// Held, read twice or more, and never above `idleAtMost`.
-        var idle: Bool {
+        package var idle: Bool {
             allocated && utilisation.count >= 2 && utilisation.allSatisfy { $0.value <= KubeGPUCharts.idleAtMost }
         }
     }
@@ -58,7 +58,7 @@ enum KubeGPUCharts {
     /// The answer's GPUs, in order (index, MIG instance, then holder):
     /// a GPU's utilisation the device's, or — a MIG instance's, or where
     /// profiling metrics are on — its graphics engine's activity.
-    static func gpus(_ reading: KubeTabReading, whose: Whose) -> [GPU] {
+    package static func gpus(_ reading: KubeTabReading, whose: Whose) -> [GPU] {
         guard let answer = reading.results["gpu"] else { return [] }
         let dcgm = reading.profile.dcgm ?? KubePromProfile.DCGM(podPrefix: "", namesPods: true, nodeLabel: nil, mig: false)
         var byKey: [String: GPU] = [:]
@@ -122,7 +122,7 @@ enum KubeGPUCharts {
 
     /// The charts — utilisation, memory, power, temperature — those the
     /// answer has; none where it wasn't asked.
-    static func charts(subject: String, reading: KubeTabReading, span: KubePromSpan, whose: Whose) -> [KubePodCharts.Chart] {
+    package static func charts(subject: String, reading: KubeTabReading, span: KubePromSpan, whose: Whose) -> [KubePodCharts.Chart] {
         let all = gpus(reading, whose: whose)
         guard !all.isEmpty else { return [] }
         // Past twelve, the busiest (the idle held ones are said in a note).
@@ -188,7 +188,7 @@ enum KubeGPUCharts {
 
     /// What is said under them: each allocated GPU idle over the whole
     /// range, MIG without profiling metrics, nothing answered, the GPUs past twelve.
-    static func notes(_ reading: KubeTabReading, span: KubePromSpan, whose: Whose, window: KubeChartWindow?) -> [String] {
+    package static func notes(_ reading: KubeTabReading, span: KubePromSpan, whose: Whose, window: KubeChartWindow?) -> [String] {
         guard let answer = reading.results["gpu"] else { return [] }
         guard !answer.isEmpty else { return [KubeChartEmpty.gpuNone.sentence] }
         let all = gpus(reading, whose: whose)
@@ -208,7 +208,7 @@ enum KubeGPUCharts {
     }
 
     /// A node's or a workload's group of them; nil where none was asked or answered.
-    static func group(subject: String, reading: KubeTabReading?, whose: Whose, window: KubeChartWindow?) -> (group: KubeObjectCharts.Group?, notes: [String]) {
+    package static func group(subject: String, reading: KubeTabReading?, whose: Whose, window: KubeChartWindow?) -> (group: KubeObjectCharts.Group?, notes: [String]) {
         guard let reading, let span = reading.span, reading.results["gpu"] != nil else { return (nil, []) }
         let charts = charts(subject: subject, reading: reading, span: span, whose: whose)
         let notes = notes(reading, span: span, whose: whose, window: window)
@@ -217,7 +217,7 @@ enum KubeGPUCharts {
 
     /// Live with metrics-server: the sampled charts, the GPUs' group added
     /// (inserted after the first, the object's own), what Prometheus refused said.
-    static func add(_ charts: KubeObjectCharts, subject: String, reading: KubeTabReading?, whose: Whose) -> KubeObjectCharts {
+    package static func add(_ charts: KubeObjectCharts, subject: String, reading: KubeTabReading?, whose: Whose) -> KubeObjectCharts {
         let made = group(subject: subject, reading: reading, whose: whose, window: nil)
         var out = charts
         if let group = made.group { out.groups.insert(group, at: min(1, out.groups.count)) }

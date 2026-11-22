@@ -4,28 +4,28 @@ import TreeSitterKit
 /// A language the editor parses: its tree-sitter grammar, the Helix queries
 /// that colour it (Frameworks/TreeSitterQueries, bundled into Resources), and
 /// how its files are recognised.
-final class EditorLanguage: @unchecked Sendable {
+package final class EditorLanguage: @unchecked Sendable {
     /// The grammar's name, as Scripts/build-treesitter.sh and the query
     /// directories have it: "typescript", "markdown_inline".
-    let id: String
+    package let id: String
     /// As a person would say it, for the header.
-    let name: String
-    let extensions: Set<String>
-    let fileNames: Set<String>
+    package let name: String
+    package let extensions: Set<String>
+    package let fileNames: Set<String>
     /// What a markdown fence's info string or an injection query may call
     /// it: "js", "sh", "markdown.inline".
-    let aliases: Set<String>
+    package let aliases: Set<String>
     /// ⌘/ — "// "; nil where a line comment doesn't exist (block-only).
-    let lineComment: String?
-    let blockComment: (open: String, close: String)?
-    let grammar: OpaquePointer
+    package let lineComment: String?
+    package let blockComment: (open: String, close: String)?
+    package let grammar: OpaquePointer
 
     // Compiled on first use, on whichever thread asks first; a query is
     // immutable once built, and TSQuery is safe to share across cursors.
     private let lock = NSLock()
     private var compiled: [String: SyntaxQuery?] = [:]
 
-    init(
+    package init(
         _ id: String, _ name: String, extensions: [String] = [], fileNames: [String] = [], aliases: [String] = [],
         lineComment: String? = "// ", blockComment: (String, String)? = nil, grammar: OpaquePointer
     ) {
@@ -39,10 +39,10 @@ final class EditorLanguage: @unchecked Sendable {
         self.grammar = grammar
     }
 
-    var highlights: SyntaxQuery? { query("highlights") }
-    var injections: SyntaxQuery? { query("injections") }
+    package var highlights: SyntaxQuery? { query("highlights") }
+    package var injections: SyntaxQuery? { query("injections") }
     /// Definitions for ⇧⌘O where no language server answers.
-    var tags: SyntaxQuery? { query("tags") }
+    package var tags: SyntaxQuery? { query("tags") }
 
     private func query(_ kind: String) -> SyntaxQuery? {
         lock.lock()
@@ -58,7 +58,7 @@ final class EditorLanguage: @unchecked Sendable {
 
     /// Contents/Resources/TreeSitterQueries in the app; the build's copy
     /// in Frameworks/ for `swift test` and `swift run`.
-    static let queriesDirectory: URL? = {
+    package static let queriesDirectory: URL? = {
         if let bundled = Bundle.main.resourceURL?.appendingPathComponent("TreeSitterQueries"),
             FileManager.default.fileExists(atPath: bundled.path)
         {
@@ -76,7 +76,7 @@ final class EditorLanguage: @unchecked Sendable {
     /// A query file with Helix's `; inherits: ecma,_typescript` lines
     /// replaced by those files, where the line is: what comes after it is
     /// later, and later patterns win (SyntaxDocument).
-    static func querySource(_ id: String, _ kind: String, depth: Int = 0) -> String? {
+    package static func querySource(_ id: String, _ kind: String, depth: Int = 0) -> String? {
         guard depth < 5, let dir = queriesDirectory,
             let text = try? String(contentsOf: dir.appendingPathComponent("\(id)/\(kind).scm"), encoding: .utf8)
         else { return nil }
@@ -97,7 +97,7 @@ final class EditorLanguage: @unchecked Sendable {
 
     // MARK: Which language
 
-    static func language(for url: URL) -> EditorLanguage? {
+    package static func language(for url: URL) -> EditorLanguage? {
         let name = url.lastPathComponent
         if let byName = all.first(where: { $0.fileNames.contains(name) }) { return byName }
         if name.hasPrefix("Dockerfile.") || name.hasSuffix(".Dockerfile") { return named("dockerfile") }
@@ -106,7 +106,7 @@ final class EditorLanguage: @unchecked Sendable {
     }
 
     /// An injection's or a fence's language: "ts", "Python", "markdown.inline".
-    static func named(_ name: String) -> EditorLanguage? {
+    package static func named(_ name: String) -> EditorLanguage? {
         let key = name.trimmingCharacters(in: .whitespaces).lowercased()
         guard !key.isEmpty else { return nil }
         return byAlias[key]
@@ -121,7 +121,7 @@ final class EditorLanguage: @unchecked Sendable {
         return map
     }()
 
-    static let all: [EditorLanguage] = [
+    package static let all: [EditorLanguage] = [
         EditorLanguage(
             "swift", "Swift", extensions: ["swift"], fileNames: [], aliases: [], blockComment: ("/*", "*/"),
             grammar: tree_sitter_swift()),

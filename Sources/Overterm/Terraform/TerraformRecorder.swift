@@ -15,41 +15,41 @@ import Foundation
 /// no `BASH_ENV`, no startup file, no function from the environment, and
 /// bash adds nothing to what terraform gets but `PWD`, `SHLVL` and `_`
 /// (`shellNames`, left out of `names`).
-struct TerraformRecorder: Sendable {
+package struct TerraformRecorder: Sendable {
     /// The variables whose values are recorded: the ones Overterm sets,
     /// none a credential (`TerraformGuards.isCredential`).
-    static let recordedValues = [
+    package static let recordedValues = [
         "CHECKPOINT_DISABLE", "TF_INPUT", "TF_IN_AUTOMATION", "TF_DATA_DIR", "TF_WORKSPACE", "TF_PLUGIN_CACHE_DIR", "TF_CLI_CONFIG_FILE", "HOME",
     ]
     /// What bash itself exports to what it runs.
-    static let shellNames: Set<String> = ["PWD", "OLDPWD", "SHLVL", "_"]
+    package static let shellNames: Set<String> = ["PWD", "OLDPWD", "SHLVL", "_"]
 
     /// One call, as the wrapper saw it.
-    struct Call: Equatable, Sendable {
-        var arguments: [String]
+    package struct Call: Equatable, Sendable {
+        package var arguments: [String]
         /// The folder it ran in, symlinks resolved.
-        var cwd: String
+        package var cwd: String
         /// The environment's names, sorted, bash's own left out.
-        var names: [String]
+        package var names: [String]
         /// `recordedValues`' values, those set.
-        var values: [String: String]
+        package var values: [String: String]
 
         /// The subcommand: the first argument that isn't a global option
         /// (`-chdir=…`, `-help`).
-        var subcommand: String? { arguments.first { !$0.hasPrefix("-") } }
+        package var subcommand: String? { arguments.first { !$0.hasPrefix("-") } }
     }
 
     /// The folder it lives in: `bin/terraform`, `records/`.
-    let folder: URL
+    package let folder: URL
     /// What it runs: an absolute path.
-    let target: String
+    package let target: String
 
-    var wrapper: URL { folder.appendingPathComponent("bin/terraform") }
-    var records: URL { folder.appendingPathComponent("records", isDirectory: true) }
+    package var wrapper: URL { folder.appendingPathComponent("bin/terraform") }
+    package var records: URL { folder.appendingPathComponent("records", isDirectory: true) }
 
     /// Writes the wrapper (0700) in `folder` (made 0700), in front of
     /// `target`.
-    static func make(in folder: URL, target: String) throws -> TerraformRecorder {
+    package static func make(in folder: URL, target: String) throws -> TerraformRecorder {
         guard target.hasPrefix("/") else { throw CocoaError(.fileNoSuchFile, userInfo: [NSFilePathErrorKey: target]) }
         let recorder = TerraformRecorder(folder: folder, target: target)
         let manager = FileManager.default
@@ -62,7 +62,7 @@ struct TerraformRecorder: Sendable {
     }
 
     /// The wrapper's text.
-    var script: String {
+    package var script: String {
         """
         #!/bin/bash -p
         # Overterm's recording wrapper (TerraformRecorder): records this call,
@@ -82,7 +82,7 @@ struct TerraformRecorder: Sendable {
 
     /// The calls recorded so far, oldest first. A call still being
     /// written is left out.
-    func calls() -> [Call] {
+    package func calls() -> [Call] {
         let manager = FileManager.default
         let names = (try? manager.contentsOfDirectory(atPath: records.path)) ?? []
         var found: [(date: Date, name: String, call: Call)] = []
@@ -109,7 +109,7 @@ struct TerraformRecorder: Sendable {
     }
 
     /// Forgets the calls recorded.
-    func reset() {
+    package func reset() {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: records.path)) ?? []
         for name in names where name.hasPrefix("call.") {
             try? FileManager.default.removeItem(at: records.appendingPathComponent(name))
@@ -120,7 +120,7 @@ struct TerraformRecorder: Sendable {
     /// `stderr` (kept in files beside it, so any text goes) and exits
     /// with `exitCode`, whatever it is asked. For a unit test that needs
     /// a process, not Terraform.
-    static func writeStandIn(at url: URL, stdout: String = "", stderr: String = "", exitCode: Int32 = 0) throws {
+    package static func writeStandIn(at url: URL, stdout: String = "", stderr: String = "", exitCode: Int32 = 0) throws {
         let manager = FileManager.default
         try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let out = url.path + ".stdout"
@@ -140,7 +140,7 @@ struct TerraformRecorder: Sendable {
     }
 
     /// A word in single quotes, as a shell reads it back.
-    static func quoted(_ word: String) -> String {
+    package static func quoted(_ word: String) -> String {
         "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 

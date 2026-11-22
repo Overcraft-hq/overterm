@@ -26,21 +26,21 @@ import Foundation
 /// Application's. Never a Secret, a ConfigMap, a list across the cluster,
 /// or a write.
 @MainActor
-final class KubeMarkedDetailSession: ObservableObject {
-    enum State: Equatable {
+package final class KubeMarkedDetailSession: ObservableObject {
+    package enum State: Equatable {
         case idle, loading, loaded
     }
 
-    nonisolated static let inFlight = 4
+    package nonisolated static let inFlight = 4
     /// What was read is shown again within this long.
-    nonisolated static let keptFor: TimeInterval = 30
+    package nonisolated static let keptFor: TimeInterval = 30
     /// The section's own read of a member, this young, stands.
-    nonisolated static let freshFor: TimeInterval = KubeMarkedRefetch.perObject
+    package nonisolated static let freshFor: TimeInterval = KubeMarkedRefetch.perObject
 
-    @Published private(set) var state: State = .idle
-    @Published private(set) var read = KubeMarkedAppDetail.Read()
+    @Published package private(set) var state: State = .idle
+    @Published package private(set) var read = KubeMarkedAppDetail.Read()
     /// Whose read it is.
-    private(set) var ref: KubeMarkedDetailRef?
+    package private(set) var ref: KubeMarkedDetailRef?
     private var members: [KubeMarkedMember.ID] = []
     private var task: Task<Void, Never>?
     private var generation = 0
@@ -48,17 +48,17 @@ final class KubeMarkedDetailSession: ObservableObject {
     /// or its members change — never read again on a timer.
     private var showing = false
 
-    var bounds = KubeMarkedAppDetail.Bounds()
-    var getBytes = 4 << 20
-    var listBytes = 8 << 20
-    var clock: () -> Date = { Date() }
+    package var bounds = KubeMarkedAppDetail.Bounds()
+    package var getBytes = 4 << 20
+    package var listBytes = 8 << 20
+    package var clock: () -> Date = { Date() }
     /// Each object it read: the section keeps it as its own settle's.
-    var settled: ((KubeMarkedMember.ID, KubeMarkedWorkloadWire, Date) -> Void)?
+    package var settled: ((KubeMarkedMember.ID, KubeMarkedWorkloadWire, Date) -> Void)?
 
     /// The detail of `ref` shows: read, unless it shows already, or what
     /// was read of the same members is younger than `keptFor` (`again`:
     /// Read Again, read anyway). `store`: what the section settled, by member.
-    func show(
+    package func show(
         _ ref: KubeMarkedDetailRef, app: KubeMarkedApp, discovery: KubeDiscovery?, client: KubeClient?, store: [KubeMarkedMember.ID: KubeMarkedSettled] = [:],
         again: Bool = false
     ) {
@@ -133,7 +133,7 @@ final class KubeMarkedDetailSession: ObservableObject {
 
     /// The detail closed, or the section left: what is being read stops;
     /// what was read stays, to be shown again within `keptFor`.
-    func hide() {
+    package func hide() {
         task?.cancel()
         task = nil
         generation += 1
@@ -142,7 +142,7 @@ final class KubeMarkedDetailSession: ObservableObject {
     }
 
     /// Another context, the page hidden: what was read goes too.
-    func drop() {
+    package func drop() {
         hide()
         ref = nil
         members = []
@@ -251,12 +251,12 @@ final class KubeMarkedDetailSession: ObservableObject {
     /// A list's request: its namespace's kind by the workload's own
     /// selector (a CronJob's Jobs by none: kept by their owner), rows with
     /// their metadata, at most its limit.
-    nonisolated static func path(_ list: KubeMarkedAppDetail.List, kind: KubeResourceKind) -> String {
+    package nonisolated static func path(_ list: KubeMarkedAppDetail.List, kind: KubeResourceKind) -> String {
         KubePath.query(kind.path(namespace: list.namespace), [("labelSelector", list.selector), ("limit", String(list.limit)), ("includeObject", "Metadata")])
     }
 
     /// One list's Table rows as children, decoded off the main thread (Ask Why's too).
-    nonisolated static func list(
+    package nonisolated static func list(
         _ path: String, list: KubeMarkedAppDetail.List, kind: KubeResourceKind, client: KubeClient, maxBytes: Int, now: Date
     ) async -> Result<(children: [KubeMarkedAppDetail.Child], more: Int?), Error> {
         do {
@@ -270,13 +270,13 @@ final class KubeMarkedDetailSession: ObservableObject {
     // MARK: For the tests
 
     /// The most GETs in flight at once, objects and lists, since made.
-    private(set) var mostInFlight = 0
+    package private(set) var mostInFlight = 0
     /// Objects' GETs and lists asked since made.
-    private(set) var getsAsked = 0
-    private(set) var listsAsked = 0
+    package private(set) var getsAsked = 0
+    package private(set) var listsAsked = 0
     /// The paths the last read asked for, objects' and lists', in order:
     /// what a scenario tells apart from the section's reads beside it.
-    private(set) var asked: [String] = []
+    package private(set) var asked: [String] = []
 }
 
 /// A GET of each of several marked objects (gitops.md 14.2.6): at most 4 at
@@ -287,14 +287,14 @@ final class KubeMarkedDetailSession: ObservableObject {
 /// counts the most it may read against it, so one starts only while the
 /// answers so far and those still out can't pass it; once none is out and
 /// the next can't start, those left are `skipped`. In the order answered.
-enum KubeMarkedFetch {
-    struct Answer: Sendable {
-        var id: KubeMarkedMember.ID
-        var result: Result<KubeMarkedWorkloadWire, Error>
-        var bytes: Int
+package enum KubeMarkedFetch {
+    package struct Answer: Sendable {
+        package var id: KubeMarkedMember.ID
+        package var result: Result<KubeMarkedWorkloadWire, Error>
+        package var bytes: Int
     }
 
-    static func objects(
+    package static func objects(
         _ wanted: [(id: KubeMarkedMember.ID, path: String)], client: KubeClient, maxBytes: Int, totalBytes: Int = .max, timeout: Duration
     ) async -> (answers: [Answer], skipped: [KubeMarkedMember.ID]) {
         guard !wanted.isEmpty else { return ([], []) }

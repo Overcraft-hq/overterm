@@ -11,7 +11,7 @@ import AppKit
 extension TerminalWindowController {
     /// `answer` and `confirmed` stand in for the sheets (the scenarios).
     @discardableResult
-    func overgit(_ command: OvergitCommand, answer: String? = nil, confirmed: Bool = false) async -> Bool {
+    package func overgit(_ command: OvergitCommand, answer: String? = nil, confirmed: Bool = false) async -> Bool {
         guard let root = overgit.root ?? diff.root, overgit.running == nil else { return false }
         let current = diff.branch
         func ask(_ title: String, _ detail: String, initial: String = "", button: String) async -> String? {

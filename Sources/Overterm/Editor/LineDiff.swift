@@ -1,13 +1,13 @@
 import Foundation
 
 /// A mark in the editor's git gutter.
-struct GutterHunk: Equatable, Sendable {
-    enum Kind: Equatable, Sendable { case added, modified, deleted }
-    let kind: Kind
+package struct GutterHunk: Equatable, Sendable {
+    package enum Kind: Equatable, Sendable { case added, modified, deleted }
+    package let kind: Kind
     /// 0-based lines of the current text. `deleted`: empty, at the line the
     /// removed ones stood before — the mark goes on its top edge (the
     /// bottom of the line above); it may be the line count, after the end.
-    let lines: Range<Int>
+    package let lines: Range<Int>
 }
 
 /// The editor's git gutter, as Zed and VS Code draw it: which lines of the
@@ -18,13 +18,13 @@ struct GutterHunk: Equatable, Sendable {
 /// much more (LineDiffTests times one). Lines are compared by a 64-bit hash
 /// of their bytes: two different lines colliding is not worth a second
 /// compare.
-enum LineDiff {
+package enum LineDiff {
     /// Past this many differences in a stretch, the stretch is marked
     /// modified whole rather than diffed: Myers is O((N+M)·D), and a file
     /// rewritten wholesale has nothing finer worth showing.
-    static let maxEditDistance = 5000
+    package static let maxEditDistance = 5000
 
-    static func hunks(base: String, current: String) -> [GutterHunk] {
+    package static func hunks(base: String, current: String) -> [GutterHunk] {
         let a = lineHashes(base)
         let b = lineHashes(current)
         var differ = Differ(a: a, b: b)
@@ -40,7 +40,7 @@ enum LineDiff {
     /// The changed stretches between `base` and `current`, by line, in
     /// order — what a unified diff is cut from (a Kubernetes manifest's
     /// diff with the cluster).
-    static func blocks(base: String, current: String) -> [Block] {
+    package static func blocks(base: String, current: String) -> [Block] {
         let a = lineHashes(base)
         let b = lineHashes(current)
         var differ = Differ(a: a, b: b)
@@ -50,7 +50,7 @@ enum LineDiff {
 
     /// FNV-1a of each line's bytes, its newline left out; a trailing newline
     /// ends the last line rather than starting an empty one.
-    static func lineHashes(_ text: String) -> [UInt64] {
+    package static func lineHashes(_ text: String) -> [UInt64] {
         var text = text
         return text.withUTF8 { bytes in
             var hashes: [UInt64] = []
@@ -73,8 +73,8 @@ enum LineDiff {
     }
 
     /// A changed stretch: lines aLow..<aHigh of the base became bLow..<bHigh.
-    struct Block: Equatable {
-        var aLow: Int, aHigh: Int, bLow: Int, bHigh: Int
+    package struct Block: Equatable {
+        package var aLow: Int, aHigh: Int, bLow: Int, bHigh: Int
     }
 
     private struct Differ {

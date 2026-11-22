@@ -1,15 +1,15 @@
 import Foundation
 
 /// An image on its way down: each layer's progress, summed. Pure.
-struct DockerPull: Equatable, Sendable {
-    var image: String
-    var layers: [String: DockerEngine.PullProgress] = [:]
+package struct DockerPull: Equatable, Sendable {
+    package var image: String
+    package var layers: [String: DockerEngine.PullProgress] = [:]
     /// What the engine said last (`Pulling from library/redis`, `Digest: …`).
-    var status = "Waiting"
-    var done = false
-    var error: String?
+    package var status = "Waiting"
+    package var done = false
+    package var error: String?
 
-    mutating func add(_ progress: DockerEngine.PullProgress) {
+    package mutating func add(_ progress: DockerEngine.PullProgress) {
         if let id = progress.id, progress.total != nil || layers[id] != nil || progress.status.hasPrefix("Pull") || progress.status.hasPrefix("Waiting") {
             layers[id] = progress
         }
@@ -17,7 +17,7 @@ struct DockerPull: Equatable, Sendable {
     }
 
     /// Bytes downloaded of the layers that said how many there are.
-    var downloaded: (current: Int, total: Int) {
+    package var downloaded: (current: Int, total: Int) {
         layers.values.filter { $0.status.hasPrefix("Downloading") || $0.status.hasPrefix("Download complete") || $0.status.hasPrefix("Pull complete") || $0.status.hasPrefix("Extracting") }
             .reduce((0, 0)) { sum, layer in
                 guard let total = layer.total else { return sum }
@@ -27,7 +27,7 @@ struct DockerPull: Equatable, Sendable {
     }
 
     /// `3 of 5 layers — 41 MB of 120 MB`.
-    var summary: String {
+    package var summary: String {
         if let error { return error }
         if done { return status.isEmpty ? "Pulled" : status }
         let finished = layers.values.filter { $0.status == "Pull complete" || $0.status == "Already exists" }.count
@@ -48,7 +48,7 @@ extension DockerPageModel {
 
     /// Its connection, guessed from its image, env and published port,
     /// in the Database panel's form — nothing saved until the form is.
-    func openInDatabase(_ container: ContainerSummary) {
+    package func openInDatabase(_ container: ContainerSummary) {
         let unknown = "\(container.name) isn't a database Overterm knows (PostgreSQL, MySQL, MariaDB, ClickHouse)."
         guard DockerDatabaseGuess.kind(of: container, reference: imageReference(of: container)) != nil || DockerClient.listsImageByID(container) else {
             error = unknown
@@ -75,7 +75,7 @@ extension DockerPageModel {
     /// An image listed by its ID is known once inspect names it. A failure
     /// is said on the page, and in an alert when the page isn't on screen
     /// (the panel's menu, the right-hand pane).
-    func openClient(_ container: ContainerSummary) {
+    package func openClient(_ container: ContainerSummary) {
         let known = clientKind(of: container)
         guard container.state == .running, known != nil || DockerClient.listsImageByID(container), let engine = docker.engine else { return }
         let endpoint = docker.endpoint
@@ -94,14 +94,14 @@ extension DockerPageModel {
 
     /// Its own client's kind, as far as what is read says
     /// (`DockerClient.kind`).
-    func clientKind(of container: ContainerSummary, detail: ContainerDetail? = nil) -> DockerClient.Kind? {
+    package func clientKind(of container: ContainerSummary, detail: ContainerDetail? = nil) -> DockerClient.Kind? {
         DockerClient.kind(of: container, reference: imageReference(of: container, detail: detail))
     }
 
     /// The name a container's image was made from, when the list says only
     /// its ID: inspect's, as read already for its detail — the page's, or
     /// `detail` (the panel's). Never read for this.
-    func imageReference(of container: ContainerSummary, detail: ContainerDetail? = nil) -> String? {
+    package func imageReference(of container: ContainerSummary, detail: ContainerDetail? = nil) -> String? {
         guard DockerClient.listsImageByID(container) else { return nil }
         for known in [detail, session?.detail] where known?.Id == container.Id { return known?.Config.Image }
         return nil
@@ -109,12 +109,12 @@ extension DockerPageModel {
 
     // MARK: Models
 
-    var selectedModels: [RunnerModel] { models?.models.filter { modelSelection.contains($0.id) } ?? [] }
+    package var selectedModels: [RunnerModel] { models?.models.filter { modelSelection.contains($0.id) } ?? [] }
 
     /// Model Runner's models, read when the section shows — from the
     /// runner's own API, never `docker model` (which installs a runner
     /// on an engine that has none).
-    func loadModels() {
+    package func loadModels() {
         guard let engine = docker.engine else { return }
         let place = ModelRunner.place(runtime: docker.runtime, remote: docker.publishedHost != nil, containers: docker.containers)
         modelsPlace = place
@@ -131,12 +131,12 @@ extension DockerPageModel {
     }
 
     /// A chat with it, in a terminal tab.
-    func runModel(_ model: RunnerModel) {
+    package func runModel(_ model: RunnerModel) {
         actions?.run(DockerCommands.prefix(for: docker.endpoint) + "docker model run " + DockerCommands.quote(model.reference), nil)
     }
 
     /// A model by name, pulled in a terminal tab where its layers show.
-    func pullModel() {
+    package func pullModel() {
         actions?.askName("Pull a Model", "From Docker Hub (ai/…) or Hugging Face (hf.co/…):", "ai/smollm2") { [weak self] name in
             guard let self, !name.isEmpty else { return }
             self.actions?.run(DockerCommands.prefix(for: self.docker.endpoint) + "docker model pull " + DockerCommands.quote(name), nil)
@@ -146,7 +146,7 @@ extension DockerPageModel {
     /// What starts the runner where it isn't answering: Docker Desktop's
     /// setting, the engine's container, or its install — in a terminal
     /// tab, but for a container that is only stopped.
-    func startModelRunner() {
+    package func startModelRunner() {
         switch modelsPlace {
         case .desktop: actions?.run("docker desktop enable model-runner", nil)
         case .stopped(let id, _):
@@ -159,7 +159,7 @@ extension DockerPageModel {
         }
     }
 
-    func confirmRemove(models: [RunnerModel]) {
+    package func confirmRemove(models: [RunnerModel]) {
         guard !models.isEmpty, let engine = docker.engine, let place = modelsPlace else { return }
         let names = models.map(\.name)
         actions?.confirm(
@@ -184,13 +184,13 @@ extension DockerPageModel {
 
     /// Docker Scout on an image, in a terminal tab: it signs in, sends the
     /// image's packages to Docker's service and prints as it goes.
-    func scout(_ verb: String, _ image: String) {
+    package func scout(_ verb: String, _ image: String) {
         actions?.run(DockerCommands.scout(verb, image: image, endpoint: docker.endpoint), nil)
     }
 
     /// Scan for Vulnerabilities, Scan: the image's Vulnerabilities tab, and
     /// Scout asked of it by its name — pressed, never by itself.
-    func scanVulnerabilities(_ image: ImageSummary, as given: String? = nil) {
+    package func scanVulnerabilities(_ image: ImageSummary, as given: String? = nil) {
         guard let name = given ?? image.tags.first else { return }
         imageSelection = [image.Id]
         showDetail = true
@@ -198,14 +198,14 @@ extension DockerPageModel {
         scans.scan(imageID: image.Id, name: name, endpoint: docker.endpoint, engine: docker.engine, platform: docker.platforms[image.Id])
     }
 
-    func cancelScan(_ image: ImageSummary) { scans.cancel(image.Id) }
+    package func cancelScan(_ image: ImageSummary) { scans.cancel(image.Id) }
 
     /// The image this engine has by `name` — any of its tags, as the CLI
     /// reads a name (`nginx:1.27` is `docker.io/library/nginx:1.27`) — or,
     /// pinned by `digest` (what the kubelet ran, or the name's own), only
     /// the one whose repository recorded that digest: a tag of the same
     /// name built or pulled at another time is another image. Pure.
-    nonisolated static func localImage(named name: String, digest: String?, in images: [ImageSummary]) -> ImageSummary? {
+    package nonisolated static func localImage(named name: String, digest: String?, in images: [ImageSummary]) -> ImageSummary? {
         let wanted = DockerImageReference(name)
         if let digest = digest ?? wanted?.digest {
             guard let repository = wanted?.repository else { return nil }
@@ -220,7 +220,7 @@ extension DockerPageModel {
     /// What Scan asks for and pulls: `repository@digest` when the digest
     /// is known — the image itself, not what its tag names now — else the
     /// name as given. Pure.
-    nonisolated static func pinnedName(_ name: String, digest: String?) -> String {
+    package nonisolated static func pinnedName(_ name: String, digest: String?) -> String {
         guard var reference = DockerImageReference(name), let digest = digest ?? reference.digest else { return name }
         reference.tag = nil
         reference.digest = digest
@@ -231,7 +231,7 @@ extension DockerPageModel {
     /// on the Images section, scanned — only now, when asked. An image the
     /// engine hasn't is asked first, then pulled (the engine's platform)
     /// and scanned once it is here: Scout scans the engine's own copy.
-    func scanImage(named name: String, digest: String? = nil, from origin: String) {
+    package func scanImage(named name: String, digest: String? = nil, from origin: String) {
         let name = name.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
         error = nil
@@ -272,7 +272,7 @@ extension DockerPageModel {
 
     /// `name` pulled — by its digest when known — then scanned once the
     /// engine lists it.
-    func pullThenScan(_ name: String, digest: String?) {
+    package func pullThenScan(_ name: String, digest: String?) {
         let pinned = Self.pinnedName(name, digest: digest)
         pull(pinned)
         guard pulls[pinned] != nil else {
@@ -300,11 +300,11 @@ extension DockerPageModel {
 
     /// `docker login` in a tab: the credentials are the CLI's, in its
     /// config.json, whichever engine.
-    func signInToDocker() { actions?.run("docker login", nil) }
+    package func signInToDocker() { actions?.run("docker login", nil) }
 
     // MARK: MCP Toolkit
 
-    func loadMCPToolkit() {
+    package func loadMCPToolkit() {
         Task {
             let clients = await DockerMCPToolkit.read(endpoint: docker.endpoint)
             if clients != mcpClients { mcpClients = clients }
@@ -313,21 +313,21 @@ extension DockerPageModel {
 
     /// Connects an agent to the Toolkit's gateway, or disconnects it — in
     /// a terminal tab: it rewrites that agent's own config.
-    func toggleMCP(_ client: MCPToolkitClient) {
+    package func toggleMCP(_ client: MCPToolkitClient) {
         actions?.run(DockerMCPToolkit.command(client, connect: !client.connected), nil)
     }
 
     // MARK: Builds
 
     /// The builds `buildx history` keeps, read again now.
-    func loadBuilds() {
+    package func loadBuilds() {
         Task { await readBuilds() }
     }
 
     /// `docker` for builds: a test's stub; in a test process or an
     /// isolated run only a scenario's stub (`DockerCLI.override`), never the
     /// user's Docker; else the CLI, told this page's engine.
-    var buildsCLI: DockerCLI? {
+    package var buildsCLI: DockerCLI? {
         if let buildsCLIOverride { return buildsCLIOverride }
         if AppEnvironment.isIsolated || NSClassFromString("XCTestCase") != nil {
             return DockerCLI.override.map { DockerCLI(executable: $0, endpoint: docker.endpoint) }
@@ -338,7 +338,7 @@ extension DockerPageModel {
     /// How often the list is read while the section shows: each read
     /// spawns the CLI, its plugin and a connection to BuildKit — over ssh,
     /// a connection of its own.
-    var buildInterval: TimeInterval {
+    package var buildInterval: TimeInterval {
         if let buildPoll { return buildPoll }
         if case .ssh = docker.endpoint?.address { return 10 }
         return 3
@@ -349,7 +349,7 @@ extension DockerPageModel {
     /// while it runs. A read that fails stops it until the section shows
     /// again, or a read that doesn't (Read Again, a build's end): an old
     /// buildx says so once, not every few seconds.
-    func watchBuilds(_ on: Bool) {
+    package func watchBuilds(_ on: Bool) {
         buildsWatched = on
         guard on != (buildWatch != nil) else { return }
         buildWatch?.cancel()
@@ -374,7 +374,7 @@ extension DockerPageModel {
     /// Reads the list; false when it couldn't. The list changes only when
     /// it did; a running build is selected when nothing is, once.
     @discardableResult
-    func readBuilds() async -> Bool {
+    package func readBuilds() async -> Bool {
         guard !readingBuilds else { return true }
         guard let cli = buildsCLI else {
             buildsError =
@@ -409,7 +409,7 @@ extension DockerPageModel {
 
     /// Asked first, as every removal is: a record is BuildKit's only account
     /// of how a build went. A running one's is BuildKit's until it ends.
-    func confirmRemove(builds: [DockerBuildRecord]) {
+    package func confirmRemove(builds: [DockerBuildRecord]) {
         let removable = builds.filter { !$0.running }
         guard !removable.isEmpty else { return }
         actions?.confirm(
@@ -422,7 +422,7 @@ extension DockerPageModel {
         }
     }
 
-    func removeBuild(_ build: DockerBuildRecord) {
+    package func removeBuild(_ build: DockerBuildRecord) {
         guard let cli = buildsCLI else { return }
         Task {
             do {
@@ -439,11 +439,11 @@ extension DockerPageModel {
 
     /// An image to make a helper from: it never runs, so any will do —
     /// a small one if there is one.
-    func helperImage() async -> String? { await docker.engine?.anyImage() }
+    package func helperImage() async -> String? { await docker.engine?.anyImage() }
 
     /// Long work on the page — an export, an import, a commit: `what` said
     /// while it runs, its answer once it is done, or why it failed.
-    func transfer(_ what: String, _ work: @escaping () async throws -> String) {
+    package func transfer(_ what: String, _ work: @escaping () async throws -> String) {
         transferring = what
         Task {
             do {
@@ -455,7 +455,7 @@ extension DockerPageModel {
         }
     }
 
-    func exportContainer(_ container: ContainerSummary, to file: URL) {
+    package func exportContainer(_ container: ContainerSummary, to file: URL) {
         transfer("Exporting \(container.name)") { [docker] in
             guard let engine = docker.engine else { throw DockerError.unreachable("Docker isn't running.") }
             let bytes = try await engine.export(container: container.Id, to: file)
@@ -463,7 +463,7 @@ extension DockerPageModel {
         }
     }
 
-    func saveImage(_ image: ImageSummary, to file: URL) {
+    package func saveImage(_ image: ImageSummary, to file: URL) {
         let name = image.tags.first ?? image.Id
         transfer("Saving \(name)") { [docker] in
             guard let engine = docker.engine else { throw DockerError.unreachable("Docker isn't running.") }
@@ -472,7 +472,7 @@ extension DockerPageModel {
         }
     }
 
-    func exportVolume(_ volume: VolumeSummary, to file: URL) {
+    package func exportVolume(_ volume: VolumeSummary, to file: URL) {
         transfer("Exporting \(volume.shortName)") { [weak self, docker] in
             guard let engine = docker.engine, let image = await self?.helperImage() else { throw DockerError.noHelperImage }
             let bytes = try await engine.export(volume: volume.Name, to: file, using: image)
@@ -480,7 +480,7 @@ extension DockerPageModel {
         }
     }
 
-    func importVolume(_ name: String, from file: URL) {
+    package func importVolume(_ name: String, from file: URL) {
         transfer("Importing into \(name)") { [weak self, docker] in
             guard let engine = docker.engine, let image = await self?.helperImage() else { throw DockerError.noHelperImage }
             try await engine.import(volume: name, from: file, using: image)
@@ -490,7 +490,7 @@ extension DockerPageModel {
     }
 
     /// A copy under another name: exported, then imported.
-    func cloneVolume(_ volume: VolumeSummary, as name: String) {
+    package func cloneVolume(_ volume: VolumeSummary, as name: String) {
         transfer("Cloning \(volume.shortName)") { [weak self, docker] in
             guard let engine = docker.engine, let image = await self?.helperImage() else { throw DockerError.noHelperImage }
             let file = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-clone-\(UUID().uuidString).tar")
@@ -505,7 +505,7 @@ extension DockerPageModel {
     // MARK: Files on the Mac
 
     /// The project's compose file in the editor.
-    func editComposeFile(_ project: ComposeProject) {
+    package func editComposeFile(_ project: ComposeProject) {
         if project.planned, let folder = project.workingDir {
             guard let file = ComposeProjects.composeFile(in: URL(fileURLWithPath: folder)) else {
                 error = "\(project.name)'s compose file isn't in \((folder as NSString).abbreviatingWithTildeInPath) any more."
@@ -527,7 +527,7 @@ extension DockerPageModel {
     /// tab closes. A copy is a file, and a secret never lands on disk: env
     /// files' contents aren't asked for, and what Compose filled in from
     /// the variables is masked (`ComposeConfig.masked`).
-    func showResolvedConfig(_ project: ComposeProject) {
+    package func showResolvedConfig(_ project: ComposeProject) {
         guard let cli = DockerCLI(endpoint: docker.endpoint) else {
             error = "docker isn't on this Mac, so Compose can't be asked."
             return
@@ -565,7 +565,7 @@ extension DockerPageModel {
 
     /// The engine's own settings in the editor: made `{}` when Docker
     /// Desktop has none yet; applied when it restarts.
-    func editEngineConfig() {
+    package func editEngineConfig() {
         guard let file = docker.runtime.configFile(context: docker.endpoint?.context) else {
             error = "\(docker.runtime.name) keeps its settings elsewhere."
             return
@@ -584,7 +584,7 @@ extension DockerPageModel {
     // MARK: Run
 
     /// The Run window's command, in a terminal tab where it pulls and starts.
-    func run(_ spec: DockerRunSpec) {
+    package func run(_ spec: DockerRunSpec) {
         runSpec = nil
         guard !spec.image.isEmpty else { return }
         actions?.run(spec.line(prefix: DockerCommands.prefix(for: docker.endpoint)), nil)
@@ -592,13 +592,13 @@ extension DockerPageModel {
 
     /// What would make `container` again, as a `docker run` (its image's
     /// own env and command left out).
-    func runSpec(like container: ContainerSummary) async -> DockerRunSpec? {
+    package func runSpec(like container: ContainerSummary) async -> DockerRunSpec? {
         guard let engine = docker.engine, let detail = try? await engine.container(container.Id) else { return nil }
         let image = (try? await engine.imageConfig(container.ImageID ?? container.Image)) ?? (env: [], command: [])
         return DockerRunSpec.from(container, detail, imageEnv: image.env, imageCommand: image.command)
     }
 
-    func copyRunCommand(_ container: ContainerSummary) {
+    package func copyRunCommand(_ container: ContainerSummary) {
         Task {
             guard let spec = await runSpec(like: container) else { return }
             actions?.copy(spec.line(prefix: DockerCommands.prefix(for: docker.endpoint)))
@@ -606,7 +606,7 @@ extension DockerPageModel {
     }
 
     /// The Run window, filled in as `container` was made — a new name.
-    func runAnother(like container: ContainerSummary) {
+    package func runAnother(like container: ContainerSummary) {
         Task {
             guard var spec = await runSpec(like: container) else { return }
             spec.name = ""
@@ -621,7 +621,7 @@ extension DockerPageModel {
     /// where the credential helper signs in, can. `platform`: that variant
     /// of it (an emulated image's native one), shown as `image (platform)`;
     /// an image without one says so.
-    func pull(_ name: String, platform: DockerPlatform? = nil) {
+    package func pull(_ name: String, platform: DockerPlatform? = nil) {
         let image = name.trimmingCharacters(in: .whitespaces)
         let key = platform.map { "\(image) (\($0.description))" } ?? image
         guard !image.isEmpty, let engine = docker.engine, pulls[key]?.done != false else { return }
@@ -640,7 +640,7 @@ extension DockerPageModel {
 
     /// What a pull's failure says: where credentials are, or that no such
     /// variant exists (the classic store's words, then containerd's).
-    nonisolated static func pullError(_ message: String, image: String, platform: DockerPlatform?) -> String {
+    package nonisolated static func pullError(_ message: String, image: String, platform: DockerPlatform?) -> String {
         if let platform, message.contains("no matching manifest") || message.contains("no match for platform") {
             return "\(image) has no \(platform.description) variant — build one for it, or use another image."
         }
@@ -649,14 +649,14 @@ extension DockerPageModel {
         return auth ? "\(message) — pull it in a terminal tab (\(command)), where your credentials are." : message
     }
 
-    func dismissPull(_ image: String) { pulls[image] = nil }
+    package func dismissPull(_ image: String) { pulls[image] = nil }
 
     // MARK: Updates
 
     /// Check for Updates on images: each of their tags' registries asked
     /// once (`DockerImageUpdates.check`). `report`: where what it says
     /// goes — the page's banners when nil, the panel's own line else.
-    func checkUpdates(images: [ImageSummary], report: ((String) -> Void)? = nil) {
+    package func checkUpdates(images: [ImageSummary], report: ((String) -> Void)? = nil) {
         guard !updates.running else { return }
         Task { await checkUpdates(references: images.flatMap(\.tags), report: report) }
     }
@@ -664,7 +664,7 @@ extension DockerPageModel {
     /// On a project: its services' images, as its containers name them —
     /// kept for when they no longer do. What its files build isn't the
     /// registry's: they are read first (a plan's say it themselves).
-    func checkUpdates(_ project: ComposeProject, report: ((String) -> Void)? = nil) {
+    package func checkUpdates(_ project: ComposeProject, report: ((String) -> Void)? = nil) {
         guard !updates.running else { return }
         Task {
             let built = project.planned ? nil : await loadComposeFacts(project)?.built.map(Set.init)
@@ -687,7 +687,7 @@ extension DockerPageModel {
     /// engine pulls without credentials: Docker Hub's through it, with its
     /// progress (`pull`); another registry's in a terminal tab, where the
     /// CLI signs in as it did for the check.
-    func pullUpdates(images: [ImageSummary]) {
+    package func pullUpdates(images: [ImageSummary]) {
         var seen = Set<String>()
         var elsewhere: [String] = []
         for tag in images.flatMap(\.tags) where updates.state(of: tag) == .available {
@@ -699,7 +699,7 @@ extension DockerPageModel {
 
     /// A project's: `docker compose pull <services>` in a tab in its
     /// folder, its files as the store says them. Up then recreates them.
-    func pullUpdates(_ project: ComposeProject) {
+    package func pullUpdates(_ project: ComposeProject) {
         let services = updates.summary(of: project).available.map(\.service)
         guard !services.isEmpty else { return }
         runCompose(project, "pull", services: services, in: project.workingDir.map { URL(fileURLWithPath: $0) })
@@ -708,7 +708,7 @@ extension DockerPageModel {
     /// Docker Hub's images for a term, through the engine — only when
     /// asked, and only a name Hub could have (`hubTerm`); none when it
     /// can't reach Hub.
-    func searchHub(_ typed: String) async -> [DockerEngine.SearchResult] {
+    package func searchHub(_ typed: String) async -> [DockerEngine.SearchResult] {
         guard let term = Self.hubTerm(typed) else { return [] }
         return (try? await docker.engine?.search(term)) ?? []
     }
@@ -718,7 +718,7 @@ extension DockerPageModel {
     /// account's host) — the engine sends that to the registry, and half
     /// typed (`123456789012.dkr`) it would go to Hub as a word — and
     /// nothing with a tag or digest, already chosen. Pure.
-    nonisolated static func hubTerm(_ typed: String) -> String? {
+    package nonisolated static func hubTerm(_ typed: String) -> String? {
         let term = typed.trimmingCharacters(in: .whitespaces).lowercased()
         guard term.count >= 2, !term.contains(":"), !term.contains("@"), !term.contains(" ") else { return nil }
         let first = String(term.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
@@ -726,7 +726,7 @@ extension DockerPageModel {
         return term
     }
 
-    func tag(_ image: ImageSummary, as name: String) {
+    package func tag(_ image: ImageSummary, as name: String) {
         let (repository, tag) = DockerEngine.split(name.trimmingCharacters(in: .whitespaces))
         Task {
             do {
@@ -741,7 +741,7 @@ extension DockerPageModel {
     /// Images, asked first. One a stopped container was made from is
     /// removed with force (the container stays, by its id); one a running
     /// container uses isn't offered.
-    func confirmRemove(images: [ImageSummary]) {
+    package func confirmRemove(images: [ImageSummary]) {
         let removable = images.filter { image in !docker.containers(using: image).contains { $0.state.isUp } }
         guard !removable.isEmpty else { return }
         let names = removable.map { $0.tags.first ?? $0.shortID }
@@ -768,7 +768,7 @@ extension DockerPageModel {
     // MARK: Volumes and networks
 
     /// Volumes no container mounts, asked first: their data goes with them.
-    func confirmRemove(volumes: [VolumeSummary]) {
+    package func confirmRemove(volumes: [VolumeSummary]) {
         let removable = volumes.filter { docker.containers(mounting: $0).isEmpty }
         guard !removable.isEmpty else { return }
         actions?.confirm(
@@ -799,7 +799,7 @@ extension DockerPageModel {
         }
     }
 
-    func confirmRemove(networks: [NetworkSummary]) {
+    package func confirmRemove(networks: [NetworkSummary]) {
         let removable = networks.filter { !$0.isBuiltIn && docker.containers(on: $0).isEmpty }
         guard !removable.isEmpty else { return }
         actions?.confirm(
@@ -824,20 +824,20 @@ extension DockerPageModel {
     // MARK: Clean Up
 
     /// What Clean Up would remove with the choices made.
-    var cleanPlan: DockerPrunePlan {
+    package var cleanPlan: DockerPrunePlan {
         DockerPrunePlan.make(
             cleanChoice, containers: docker.containers, images: docker.images, volumes: docker.volumes, networks: docker.networks,
             buildCache: docker.diskUsage?.BuildCache ?? [])
     }
 
     /// Everything Clean Up lists needs reading first.
-    func prepareCleanUp() {
+    package func prepareCleanUp() {
         for resource in [DockerModel.Resource.images, .volumes, .networks] { docker.load(resource) }
     }
 
     /// The engine's prunes, in the order that frees most: containers first,
     /// so their images and volumes are unused by the time those go.
-    func cleanUp() {
+    package func cleanUp() {
         guard let engine = docker.engine else { return }
         let choice = cleanChoice
         // A volume a helper holds is in use, and a prune leaves it.

@@ -4,7 +4,7 @@ import Foundation
 extension Notification.Name {
     /// A folder's `terraform validate` answered: its editors lay the
     /// diagnostics over their buffers. The object is the `TerraformFolder`.
-    static let terraformDiagnostics = Notification.Name("overterm.terraformDiagnostics")
+    package static let terraformDiagnostics = Notification.Name("overterm.terraformDiagnostics")
 }
 
 /// The editor's Terraform, stage 1a (analysis 4.14): a module folder's
@@ -14,8 +14,8 @@ extension Notification.Name {
 /// asks `fmt -check` of its checkout once, saving one validates its folder
 /// where terraform-ls isn't running, and the bar's buttons. No init, ever.
 @MainActor
-final class TerraformEditorModel: ObservableObject {
-    static let shared = TerraformEditorModel()
+package final class TerraformEditorModel: ObservableObject {
+    package static let shared = TerraformEditorModel()
 
     private var folders: [String: TerraformFolder] = [:]
     /// A checkout's `fmt -check`: true passes, false doesn't, absent while
@@ -25,7 +25,7 @@ final class TerraformEditorModel: ObservableObject {
 
     /// The folder `file` is in: its module, the root terraform runs in.
     /// Its checkout is found once, here, never on a redraw or a save.
-    func folder(for file: URL) -> TerraformFolder {
+    package func folder(for file: URL) -> TerraformFolder {
         let url = file.standardizedFileURL.deletingLastPathComponent()
         if let folder = folders[url.path] { return folder }
         let gitRoot = EditorViewController.gitRoot(of: file)
@@ -37,13 +37,13 @@ final class TerraformEditorModel: ObservableObject {
 
     /// The files whose formatting is terraform's: `fmt` reads them all as
     /// HCL. Not the lock file, which `init` writes, nor Terragrunt's.
-    nonisolated static func isFormattable(_ url: URL) -> Bool {
+    package nonisolated static func isFormattable(_ url: URL) -> Bool {
         let name = url.lastPathComponent.lowercased()
         return ["tf", "tfvars", "tofu"].contains(url.pathExtension.lowercased()) || name.hasSuffix(".tftest.hcl") || name.hasSuffix(".tfmock.hcl")
     }
 
     /// The files validate speaks of, and F12 and ⇧⌘O read.
-    nonisolated static func isTerraform(_ url: URL) -> Bool {
+    package nonisolated static func isTerraform(_ url: URL) -> Bool {
         isFormattable(url) && !url.lastPathComponent.lowercased().hasSuffix(".tfmock.hcl")
     }
 
@@ -56,14 +56,14 @@ final class TerraformEditorModel: ObservableObject {
     /// recursive check there would read the whole disk and bring up
     /// macOS's privacy prompts in Overterm's name — the rule the language
     /// servers' roots keep (`LSPWatchedFiles.watchable`).
-    struct FormatScope: Equatable, Sendable {
-        var folder: URL
-        var recursive: Bool
-        var arguments: [String] { recursive ? TerraformCommands.formatCheck : TerraformCommands.formatCheckFolder }
-        var key: String { (recursive ? "recursive\u{0}" : "folder\u{0}") + folder.path }
+    package struct FormatScope: Equatable, Sendable {
+        package var folder: URL
+        package var recursive: Bool
+        package var arguments: [String] { recursive ? TerraformCommands.formatCheck : TerraformCommands.formatCheckFolder }
+        package var key: String { (recursive ? "recursive\u{0}" : "folder\u{0}") + folder.path }
     }
 
-    nonisolated static func formatScope(of file: URL, gitRoot: URL?, home: String) -> FormatScope {
+    package nonisolated static func formatScope(of file: URL, gitRoot: URL?, home: String) -> FormatScope {
         if let top = gitRoot?.standardizedFileURL, LSPWatchedFiles.watchable(top.path, home: home) {
             return FormatScope(folder: top, recursive: true)
         }
@@ -73,7 +73,7 @@ final class TerraformEditorModel: ObservableObject {
     /// Asks `fmt -check` of `folder`'s scope: once a run when it opens,
     /// again (`again`) on a manual Format or Validate — a person who ran
     /// `terraform fmt -recursive` in a terminal sees the bar follow.
-    func checkFormat(for folder: TerraformFolder, again: Bool = false) {
+    package func checkFormat(for folder: TerraformFolder, again: Bool = false) {
         guard Settings.shared.terraformFormatOnSave else { return }
         let scope = folder.formatScope
         let key = scope.key
@@ -93,24 +93,24 @@ final class TerraformEditorModel: ObservableObject {
     }
 
     /// Whether saving `file` formats it first.
-    func formatsOnSave(_ file: URL) -> Bool {
+    package func formatsOnSave(_ file: URL) -> Bool {
         Settings.shared.terraformFormatOnSave && Self.isFormattable(file) && checkoutPassesFormat(folder(for: file)) == true
     }
 
     /// What `fmt -check` said of `folder`'s checkout, nil while unknown.
-    func checkoutPassesFormat(_ folder: TerraformFolder) -> Bool? { formatChecks[folder.formatScope.key] }
+    package func checkoutPassesFormat(_ folder: TerraformFolder) -> Bool? { formatChecks[folder.formatScope.key] }
 
     /// The same for `file`'s folder.
-    func checkoutPassesFormat(_ file: URL) -> Bool? { checkoutPassesFormat(folder(for: file)) }
+    package func checkoutPassesFormat(_ file: URL) -> Bool? { checkoutPassesFormat(folder(for: file)) }
 
-    enum FormatResult: Equatable {
+    package enum FormatResult: Equatable {
         case formatted(String)
         case failed(String)
         case noTerraform
     }
 
     /// `text` as `terraform fmt -` gives it back. Writes nothing.
-    func format(_ text: String, file: URL) async -> FormatResult {
+    package func format(_ text: String, file: URL) async -> FormatResult {
         let folder = file.standardizedFileURL.deletingLastPathComponent()
         switch await Self.run(TerraformCommands.formatStandardInput, purpose: .format, in: folder, input: Data(text.utf8)) {
         case .failure(.noTerraform): return .noTerraform
@@ -124,7 +124,7 @@ final class TerraformEditorModel: ObservableObject {
     }
 
     /// The first `Error: …` of terraform's text, and the line it names.
-    nonisolated static func firstError(_ stderr: String) -> String? {
+    package nonisolated static func firstError(_ stderr: String) -> String? {
         let lines = stderr.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
         guard let index = lines.firstIndex(where: { $0.hasPrefix("Error:") }) else {
             return lines.first { !$0.isEmpty }
@@ -140,12 +140,12 @@ final class TerraformEditorModel: ObservableObject {
 
     // MARK: Running
 
-    enum RunFailure: Error, Equatable, CustomStringConvertible {
+    package enum RunFailure: Error, Equatable, CustomStringConvertible {
         case noTerraform
         case environment(String)
         case run(String)
 
-        var description: String {
+        package var description: String {
             switch self {
             case .noTerraform: "No terraform found"
             case .environment(let why): why
@@ -158,7 +158,7 @@ final class TerraformEditorModel: ObservableObject {
     /// environment (`TerraformEnvironment`), off the main thread.
     /// `file`, `limit`, `timeout`: `TerraformRun.short`'s (an agent's
     /// saved plan by its descriptor, its JSON's bound).
-    nonisolated static func run(
+    package nonisolated static func run(
         _ arguments: [String], purpose: TerraformEnvironment.Purpose, in folder: URL, input: Data? = nil, file: Int32? = nil,
         limit: Int = TerraformRun.outputLimit, timeout: TimeInterval = TerraformRun.timeout, interruptible: Bool = true
     ) async -> Result<TerraformRun.Result, RunFailure> {
@@ -182,7 +182,7 @@ final class TerraformEditorModel: ObservableObject {
 
     /// The binary and the environment for a run in `root`. Blocking (the
     /// login shell, the scratch folder): a GCD thread's.
-    nonisolated static func prepare(purpose: TerraformEnvironment.Purpose, root: URL) -> Result<(URL, [String: String]), RunFailure> {
+    package nonisolated static func prepare(purpose: TerraformEnvironment.Purpose, root: URL) -> Result<(URL, [String: String]), RunFailure> {
         guard let binary = TerraformCLI.binary() else { return .failure(.noTerraform) }
         do {
             let base = try AppEnvironment.terraformBaseEnvironment()
@@ -197,8 +197,8 @@ final class TerraformEditorModel: ObservableObject {
 
 /// One module folder: its last validate, and what it found per file.
 @MainActor
-final class TerraformFolder: ObservableObject {
-    enum State: Equatable {
+package final class TerraformFolder: ObservableObject {
+    package enum State: Equatable {
         case idle
         case running
         case valid(warnings: Int)
@@ -209,7 +209,7 @@ final class TerraformFolder: ObservableObject {
         case noTerraform
         case failed(String)
 
-        var text: String {
+        package var text: String {
             switch self {
             case .idle: ""
             case .running: "Validating…"
@@ -224,18 +224,18 @@ final class TerraformFolder: ObservableObject {
         }
     }
 
-    let url: URL
+    package let url: URL
     /// Its git top, else the folder itself: the bar's title starts there.
-    let checkout: URL
+    package let checkout: URL
     /// Where `fmt -check` looks for it (`TerraformEditorModel.formatScope`).
-    let formatScope: TerraformEditorModel.FormatScope
-    @Published private(set) var state = State.idle
+    package let formatScope: TerraformEditorModel.FormatScope
+    @Published package private(set) var state = State.idle
     /// How the last Format went, when it didn't format.
-    @Published var formatNote: String?
+    @Published package var formatNote: String?
     /// The last validate's diagnostics, by file path.
-    private(set) var diagnostics: [String: [TerraformDiagnostic]] = [:]
+    package private(set) var diagnostics: [String: [TerraformDiagnostic]] = [:]
     /// Files the last validate spoke of: their marks are cleared on the next.
-    private(set) var files: Set<String> = []
+    package private(set) var files: Set<String> = []
     private var again = false
     /// The buffers showing its files, and each one's version when the
     /// running validate started: a result is laid only over a buffer that
@@ -243,28 +243,28 @@ final class TerraformFolder: ObservableObject {
     private let members = NSHashTable<EditorBuffer>.weakObjects()
     private var versionsAtStart: [ObjectIdentifier: Int] = [:]
 
-    init(url: URL, checkout: URL? = nil, formatScope: TerraformEditorModel.FormatScope? = nil) {
+    package init(url: URL, checkout: URL? = nil, formatScope: TerraformEditorModel.FormatScope? = nil) {
         self.url = url
         self.checkout = checkout ?? url
         self.formatScope = formatScope ?? TerraformEditorModel.FormatScope(folder: url, recursive: false)
     }
 
     /// A buffer showing one of its files.
-    func attach(_ buffer: EditorBuffer) { members.add(buffer) }
+    package func attach(_ buffer: EditorBuffer) { members.add(buffer) }
 
     /// Whether the last validate's result describes `buffer`'s text: not
     /// edited since that validate started, nothing unsaved — the file it
     /// read is the text on screen. Else its marks would land on the wrong
     /// lines; the save after the edit validates again.
-    func describes(_ buffer: EditorBuffer) -> Bool {
+    package func describes(_ buffer: EditorBuffer) -> Bool {
         versionsAtStart[ObjectIdentifier(buffer)] == buffer.version && !buffer.document.isDirty
     }
 
-    var isRunning: Bool { state == .running }
+    package var isRunning: Bool { state == .running }
 
     /// Validates the folder. On save (`manual` false) a folder that needs
     /// init isn't asked again; a run already going runs once more after.
-    func validate(manual: Bool) {
+    package func validate(manual: Bool) {
         if case .needsInit = state, !manual { return }
         guard state != .running else {
             again = true
@@ -311,10 +311,10 @@ final class TerraformFolder: ObservableObject {
     }
 
     /// Every diagnostic of the last validate, files in order: Ask Why's (5.10).
-    var allDiagnostics: [TerraformDiagnostic] { diagnostics.keys.sorted().flatMap { diagnostics[$0] ?? [] } }
+    package var allDiagnostics: [TerraformDiagnostic] { diagnostics.keys.sorted().flatMap { diagnostics[$0] ?? [] } }
 
     /// The last validate's diagnostics of `file`.
-    func diagnostics(for file: URL) -> [TerraformDiagnostic] {
+    package func diagnostics(for file: URL) -> [TerraformDiagnostic] {
         diagnostics[file.standardizedFileURL.path] ?? []
     }
 }

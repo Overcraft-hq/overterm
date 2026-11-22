@@ -3,11 +3,11 @@ import Foundation
 /// A marked object's kind, as the marks' reads know it (docs/design/
 /// kubernetes/gitops.md, 14.4.1): the kinds with a health rule here, and
 /// any other by its group and Kind. Pure.
-enum KubeMarkedKind: Hashable, Sendable, Comparable {
+package enum KubeMarkedKind: Hashable, Sendable, Comparable {
     case deployment, statefulSet, daemonSet, rollout, cronJob, job, service, ingress, persistentVolumeClaim, horizontalPodAutoscaler
     case other(group: String, kind: String)
 
-    init(group: String, kind: String) {
+    package init(group: String, kind: String) {
         switch (group, kind) {
         case ("apps", "Deployment"): self = .deployment
         case ("apps", "StatefulSet"): self = .statefulSet
@@ -23,9 +23,9 @@ enum KubeMarkedKind: Hashable, Sendable, Comparable {
         }
     }
 
-    init(_ kind: KubeResourceKind) { self.init(group: kind.group, kind: kind.kind) }
+    package init(_ kind: KubeResourceKind) { self.init(group: kind.group, kind: kind.kind) }
 
-    var group: String {
+    package var group: String {
         switch self {
         case .deployment, .statefulSet, .daemonSet: "apps"
         case .rollout: "argoproj.io"
@@ -37,7 +37,7 @@ enum KubeMarkedKind: Hashable, Sendable, Comparable {
         }
     }
 
-    var kind: String {
+    package var kind: String {
         switch self {
         case .deployment: "Deployment"
         case .statefulSet: "StatefulSet"
@@ -54,7 +54,7 @@ enum KubeMarkedKind: Hashable, Sendable, Comparable {
     }
 
     /// As a row's tags count it: `2 Deploy · 1 Svc`.
-    var short: String {
+    package var short: String {
         switch self {
         case .deployment: "Deploy"
         case .statefulSet: "STS"
@@ -72,7 +72,7 @@ enum KubeMarkedKind: Hashable, Sendable, Comparable {
 
     /// What runs an app's code: without one read, an app's health can't
     /// be said from its Service alone (14.5).
-    var isWorkload: Bool {
+    package var isWorkload: Bool {
         switch self {
         case .deployment, .statefulSet, .daemonSet, .rollout, .cronJob, .job: true
         default: false
@@ -85,7 +85,7 @@ enum KubeMarkedKind: Hashable, Sendable, Comparable {
     /// M1b settles. An HPA whose every target reads is Healthy from its row
     /// for good, a Job's row says what its conditions do: neither keeps
     /// its app "from rows".
-    var cellsMayHide: Bool {
+    package var cellsMayHide: Bool {
         switch self {
         case .deployment, .statefulSet, .daemonSet, .rollout: true
         default: false
@@ -108,7 +108,7 @@ enum KubeMarkedKind: Hashable, Sendable, Comparable {
         }
     }
 
-    static func < (a: KubeMarkedKind, b: KubeMarkedKind) -> Bool {
+    package static func < (a: KubeMarkedKind, b: KubeMarkedKind) -> Bool {
         a.order != b.order ? a.order < b.order : (a.group, a.kind) < (b.group, b.kind)
     }
 }
@@ -120,15 +120,15 @@ enum KubeMarkedKind: Hashable, Sendable, Comparable {
 /// Argo CD's rule), and the app's verdict — the worst member, up to three
 /// causes. Fixed English built from the facts; a condition's message only
 /// in `detail`, for the hover and the brief. Pure.
-enum KubeMarkedHealth {
+package enum KubeMarkedHealth {
     /// Argo CD's health, in its order (`healthOrder`): best to worst.
-    enum Status: Int, CaseIterable, Comparable, Sendable {
+    package enum Status: Int, CaseIterable, Comparable, Sendable {
         case healthy, suspended, progressing, missing, degraded, unknown
 
-        static func < (a: Status, b: Status) -> Bool { a.rawValue < b.rawValue }
+        package static func < (a: Status, b: Status) -> Bool { a.rawValue < b.rawValue }
 
         /// Argo CD's own word.
-        var word: String {
+        package var word: String {
             switch self {
             case .healthy: "Healthy"
             case .suspended: "Suspended"
@@ -141,7 +141,7 @@ enum KubeMarkedHealth {
 
         /// The section's state for it. Never Drift, Blocked or Stuck:
         /// those need the Application.
-        var state: KubeGitOpsState {
+        package var state: KubeGitOpsState {
             switch self {
             case .healthy: .ready
             case .suspended: .paused
@@ -165,38 +165,38 @@ enum KubeMarkedHealth {
     }
 
     /// One object's health.
-    struct Verdict: Equatable, Hashable, Sendable {
+    package struct Verdict: Equatable, Hashable, Sendable {
         /// nil: no rule for its kind (it neither helps nor hurts), or not
         /// read yet (`unread`).
-        var status: Status?
+        package var status: Status?
         /// Fixed English: "2/4 updated", "rollout paused".
-        var sentence: String
+        package var sentence: String
         /// Settled from cells alone, which can hide a paused Deployment, a
         /// stale generation or a stuck rollout whose old pods still serve.
-        var fromRow = false
+        package var fromRow = false
         /// Its rule needs the object, which hasn't been read (a CronJob, an
         /// HPA with an `<unknown>` target).
-        var unread = false
+        package var unread = false
         /// Its state was scaled to zero (for the Rollout that runs instead).
-        var scaledToZero = false
+        package var scaledToZero = false
         /// When its state began: a condition's `lastTransitionTime`, a
         /// CronJob's last scheduled run; else, while it isn't Healthy,
         /// when it was first read not ready here — a floor — or its row
         /// last changed. A date the Age column counts from as the page's
         /// clock moves, never a duration baked into `sentence`.
-        var since: Date?
+        package var since: Date?
         /// What `since` counts from, for the Age column's hover.
-        var sinceSaid: String?
+        package var sinceSaid: String?
         /// A condition's or a Rollout's message, scrubbed and cut: the
         /// hover's and the brief's only.
-        var detail: String?
+        package var detail: String?
     }
 
     /// What a state's `since` counts from.
-    static let sinceCondition = "since its condition changed"
-    static let sinceScheduled = "since its last scheduled run"
-    static let sinceFirstRead = "since it was first read not ready here — it may be longer"
-    static let sinceRowChanged = "since its row was first read here or last changed"
+    package static let sinceCondition = "since its condition changed"
+    package static let sinceScheduled = "since its last scheduled run"
+    package static let sinceFirstRead = "since it was first read not ready here — it may be longer"
+    package static let sinceRowChanged = "since its row was first read here or last changed"
 
     // MARK: From a row
 
@@ -205,7 +205,7 @@ enum KubeMarkedHealth {
     /// not ready — the `since` of a state that isn't Healthy, so the Age
     /// column says how long ("0/3 ready" for 2h, a floor), as the page's
     /// clock moves.
-    static func row(_ kind: KubeMarkedKind, _ row: KubeRow, columns: [KubeColumn], marks: KubeMarkWire?, notReadySince: Date? = nil, now: Date) -> Verdict? {
+    package static func row(_ kind: KubeMarkedKind, _ row: KubeRow, columns: [KubeColumn], marks: KubeMarkWire?, notReadySince: Date? = nil, now: Date) -> Verdict? {
         guard var verdict = cells(kind, row, columns: columns, marks: marks) else { return nil }
         if let status = verdict.status, status != .healthy, verdict.since == nil, let notReadySince {
             verdict.since = notReadySince
@@ -289,7 +289,7 @@ enum KubeMarkedHealth {
     // MARK: From the object
 
     /// An object's health by Argo CD's own rule; nil for a kind with none here.
-    static func object(_ wire: KubeMarkedWorkloadWire) -> Verdict? {
+    package static func object(_ wire: KubeMarkedWorkloadWire) -> Verdict? {
         let kind = KubeMarkedKind(group: wire.group, kind: wire.kind ?? "")
         if wire.metadata?.deletionTimestamp != nil { return Verdict(status: .progressing, sentence: "pending deletion") }
         let spec = wire.spec
@@ -402,7 +402,7 @@ enum KubeMarkedHealth {
     /// is Pending, so Progressing; Succeeded is Healthy, Failed (Evicted,
     /// OOMKilled…) Degraded; Running is Healthy when every container is
     /// ready, else Degraded once one has restarted, else Progressing.
-    static func pod(_ row: KubeRow, columns: [KubeColumn]) -> Verdict {
+    package static func pod(_ row: KubeRow, columns: [KubeColumn]) -> Verdict {
         func cell(_ name: String) -> String { row.cell(name, in: columns)?.text.trimmingCharacters(in: .whitespaces) ?? "" }
         let status = KubeMarkWire.text(cell("Status"), cap: 64) ?? ""
         let ready = fraction(cell("Ready"))
@@ -436,7 +436,7 @@ enum KubeMarkedHealth {
     /// A ReplicaSet's, from its Desired and Ready cells (Argo CD's rule
     /// reads its available replicas against its own): one scaled to 0 —
     /// an old one — is Healthy; fewer ready than desired, Progressing.
-    static func replicaSet(_ row: KubeRow, columns: [KubeColumn]) -> Verdict? {
+    package static func replicaSet(_ row: KubeRow, columns: [KubeColumn]) -> Verdict? {
         func number(_ name: String) -> Int? { row.cell(name, in: columns).flatMap { Int($0.text.trimmingCharacters(in: .whitespaces)) } }
         guard let desired = number("Desired") else { return nil }
         let ready = number("Ready") ?? 0
@@ -453,12 +453,12 @@ enum KubeMarkedHealth {
 
     /// What a Progressing Deployment whose updated replicas aren't all
     /// available may hide: the list reads no pods.
-    static let podsHint = "not every updated replica is available: its pods may be failing, which the detail shows"
+    package static let podsHint = "not every updated replica is available: its pods may be failing, which the detail shows"
 
     private static func date(_ text: String) -> Date? { try? Date(text, strategy: .iso8601) }
 
     /// `3/4` as counts; nil for anything else.
-    static func fraction(_ text: String?) -> (count: Int, of: Int)? {
+    package static func fraction(_ text: String?) -> (count: Int, of: Int)? {
         guard let text else { return nil }
         let parts = text.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count == 2, let count = Int(parts[0].trimmingCharacters(in: .whitespaces)), let of = Int(parts[1].trimmingCharacters(in: .whitespaces))
@@ -469,54 +469,54 @@ enum KubeMarkedHealth {
     // MARK: The app
 
     /// One member named as a cause.
-    struct Cause: Equatable, Sendable {
-        var member: KubeMarkedMember.ID
-        var status: Status
-        var sentence: String
-        var detail: String?
+    package struct Cause: Equatable, Sendable {
+        package var member: KubeMarkedMember.ID
+        package var status: Status
+        package var sentence: String
+        package var detail: String?
 
         /// "Deployment checkout-api".
-        var said: String { member.said }
+        package var said: String { member.said }
     }
 
     /// An app's health.
-    struct AppVerdict: Equatable, Sendable {
+    package struct AppVerdict: Equatable, Sendable {
         /// Argo CD's word for the app.
-        var status: Status
+        package var status: Status
         /// Where it ranks: an Unknown app with a Degraded member sorts with
         /// Failed (decision D-7), one with none known worse stays Unknown —
         /// never hidden with the Ready ones.
-        var state: KubeGitOpsState
+        package var state: KubeGitOpsState
         /// What the row says: the state's word, or "Unknown" when Unknown
         /// ranks with a worse member.
-        var word: String
+        package var word: String
         /// The worst cause's sentence and its object, then how many more.
-        var why: String
+        package var why: String
         /// At most three, worst first (Argo CD names up to three).
-        var causes: [Cause] = []
+        package var causes: [Cause] = []
         /// Causes past those three.
-        var more = 0
+        package var more = 0
         /// Some member's state is from its row alone, or not read yet.
-        var fromRows = false
+        package var fromRows = false
         /// When its state began: the worst cause's, or — Ready — Argo CD's
         /// last change, else the newest member's creation.
-        var since: Date?
+        package var since: Date?
         /// What `since` is, for the hover.
-        var sinceSaid: String?
+        package var sinceSaid: String?
         /// The hover's lines.
-        var notes: [String] = []
+        package var notes: [String] = []
     }
 
     /// The sentence a Deployment its Rollout scales to 0 is said with.
-    static let scaledByRollout = "scaled by its Rollout"
+    package static let scaledByRollout = "scaled by its Rollout"
 
-    static let noWorkload =
+    package static let noWorkload =
         "no Deployment, StatefulSet, DaemonSet, CronJob or Argo Rollout of it was read: its workload may be a kind not read here (a Job, a custom resource)"
 
     /// A member's health as its app counts it: a Deployment scaled to 0
     /// beside a Rollout (the one its `workloadRef` names, or any before a
     /// Rollout's object is read) said scaled by it.
-    static func member(_ member: KubeMarkedMember, in app: KubeMarkedApp) -> Verdict? {
+    package static func member(_ member: KubeMarkedMember, in app: KubeMarkedApp) -> Verdict? {
         guard member.id.kind == .deployment, member.health?.scaledToZero == true, app.members.contains(where: { $0.id.kind == .rollout }) else {
             return member.health
         }
@@ -534,7 +534,7 @@ enum KubeMarkedHealth {
     /// object or a workload is said from its cells alone — the members
     /// named —, never for an HPA or a Job its row settles for good; its
     /// state's `since` is its worst cause's, and what that counts from.
-    static func app(_ app: KubeMarkedApp) -> AppVerdict {
+    package static func app(_ app: KubeMarkedApp) -> AppVerdict {
         var counted: [(member: KubeMarkedMember, verdict: Verdict?)] = []
         var byRollout = Set<KubeMarkedMember.ID>()
         for member in app.members where !member.marks.ignoreHealthcheck {
@@ -600,7 +600,7 @@ enum KubeMarkedHealth {
 
     /// The members said from their rows alone, named — the first three,
     /// then how many more — and what their cells can hide.
-    static func fromRowNote(_ members: [KubeMarkedMember]) -> String {
+    package static func fromRowNote(_ members: [KubeMarkedMember]) -> String {
         let named = members.prefix(3).map(\.said)
         let more = members.count - named.count
         let who = KubeMarkedReading.joined(named + (more > 0 ? ["\(more) more"] : []))

@@ -10,9 +10,9 @@ import Foundation
 /// its values; its GET on production is asked first, once a context and
 /// session, as Show is (rule 9). Reads only.
 extension KubernetesPageModel {
-    static let compareTitle = "Compare with…"
+    package static let compareTitle = "Compare with…"
 
-    func compareVerb(for ref: KubeObjectRef) -> ResourceVerb {
+    package func compareVerb(for ref: KubeObjectRef) -> ResourceVerb {
         let others = model.contexts.contexts.contains { $0.name != ref.context }
         let why: String? =
             model.contexts.context(named: ref.context) == nil
@@ -22,27 +22,27 @@ extension KubernetesPageModel {
         }
     }
 
-    func compareVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+    package func compareVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
         guard picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
         return [compareVerb(for: ref)]
     }
 
     /// The picker of the other side: every other context in the object's
     /// namespace, then the context's other namespaces; one typed.
-    func openCompare(_ ref: KubeObjectRef) {
+    package func openCompare(_ ref: KubeObjectRef) {
         endCompare()
         compareRef = ref
         openPicker(.compare(context: ref.context, namespace: ref.namespace))
     }
 
-    func comparePicker(_ ref: KubeObjectRef) -> KubePicker {
+    package func comparePicker(_ ref: KubeObjectRef) -> KubePicker {
         KubePicker.compare(
             context: ref.context, namespace: ref.namespace, contexts: model.contexts, namespaces: ref.context == model.selectedName ? model.namespaces : [])
     }
 
     /// `ref` against the same kind and name in `other` (in `namespace`, or
     /// the object's own): read, diffed, shown in the changes pane.
-    func compare(_ ref: KubeObjectRef, with other: String, namespace: String?) {
+    package func compare(_ ref: KubeObjectRef, with other: String, namespace: String?) {
         endCompare()
         // The last write's outcome, done or failed, gives way to what was asked now.
         if let status = writeStatus, !status.isWorking { writeStatus = nil }
@@ -125,7 +125,7 @@ extension KubernetesPageModel {
     /// The comparison ended — the detail closed, another object, context or
     /// namespace, the page hidden: nothing read for it comes back, and
     /// nothing said of it stays.
-    func endCompare() {
+    package func endCompare() {
         comparing?.cancel()
         comparing = nil
         if compareStatus != nil { compareStatus = nil }
@@ -133,7 +133,7 @@ extension KubernetesPageModel {
 }
 
 /// How a comparison stands, for the object it compares.
-struct KubeCompareStatus: Equatable {
-    var ref: KubeObjectRef
-    var text: String
+package struct KubeCompareStatus: Equatable {
+    package var ref: KubeObjectRef
+    package var text: String
 }

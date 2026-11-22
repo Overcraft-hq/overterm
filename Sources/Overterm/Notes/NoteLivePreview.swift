@@ -2,18 +2,18 @@ import AppKit
 
 extension NSAttributedString.Key {
     /// Markup Live Preview hides: no glyph is drawn for it (EditorLineHeight).
-    static let noteHidden = NSAttributedString.Key("OvertermNoteHidden")
+    package static let noteHidden = NSAttributedString.Key("OvertermNoteHidden")
     /// What Live Preview draws over the text there (`NoteDecoration`).
-    static let noteDecoration = NSAttributedString.Key("OvertermNoteDecoration")
+    package static let noteDecoration = NSAttributedString.Key("OvertermNoteDecoration")
     /// A link's target as written, followed on a click (`md:` before a
     /// Markdown link's path).
-    static let noteLink = NSAttributedString.Key("OvertermNoteLink")
+    package static let noteLink = NSAttributedString.Key("OvertermNoteLink")
     /// A URL, opened on a click.
-    static let noteURL = NSAttributedString.Key("OvertermNoteURL")
+    package static let noteURL = NSAttributedString.Key("OvertermNoteURL")
 }
 
 /// What Live Preview draws in place of markup.
-enum NoteDecoration: Equatable {
+package enum NoteDecoration: Equatable {
     /// A task's box — over its `[ ]`, ticked or not.
     case checkbox(done: Bool)
     /// A list's `-`, as a dot.
@@ -31,35 +31,35 @@ enum NoteDecoration: Equatable {
 /// `# `, `- [ ] ` — hidden on every line but the ones being edited, where
 /// it shows as typed. Nothing is inserted: the text stays the file. Pure:
 /// text and lines in, attribute runs out.
-struct NoteLivePreview {
-    struct Fonts {
-        var body: NSFont
-        var mono: NSFont
+package struct NoteLivePreview {
+    package struct Fonts {
+        package var body: NSFont
+        package var mono: NSFont
 
-        func heading(_ level: Int) -> NSFont {
+        package func heading(_ level: Int) -> NSFont {
             let scale: [CGFloat] = [1.75, 1.45, 1.25, 1.12, 1.0, 1.0]
             return NSFont.systemFont(ofSize: (body.pointSize * scale[min(max(level, 1), 6) - 1]).rounded(), weight: .bold)
         }
     }
 
-    struct Colors {
-        var text: NSColor
-        var muted: NSColor
-        var accent: NSColor
-        var mark: NSColor
-        var code: NSColor
-        var heading: NSColor
+    package struct Colors {
+        package var text: NSColor
+        package var muted: NSColor
+        package var accent: NSColor
+        package var mark: NSColor
+        package var code: NSColor
+        package var heading: NSColor
     }
 
-    typealias Run = (range: NSRange, attributes: [NSAttributedString.Key: Any])
+    package typealias Run = (range: NSRange, attributes: [NSAttributedString.Key: Any])
 
-    let fonts: Fonts
-    let colors: Colors
+    package let fonts: Fonts
+    package let colors: Colors
 
     /// The runs for the lines in `range` (whole lines), the markup shown on
     /// the lines `editing` touches. The first run is the base over all of it.
     /// `blocks` are the note's (`blocks(in:)`), worked out once per edit.
-    func runs(in text: NSString, range: NSRange, editing: [NSRange], blocks: [Block]) -> [Run] {
+    package func runs(in text: NSString, range: NSRange, editing: [NSRange], blocks: [Block]) -> [Run] {
         var runs: [Run] = []
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byWordWrapping
@@ -82,13 +82,13 @@ struct NoteLivePreview {
 
     // MARK: Blocks: frontmatter and fenced code
 
-    struct Block: Equatable {
-        enum Kind { case frontmatter, code }
-        var kind: Kind
-        var range: NSRange
+    package struct Block: Equatable {
+        package enum Kind { case frontmatter, code }
+        package var kind: Kind
+        package var range: NSRange
     }
 
-    static func blocks(in text: NSString) -> [Block] {
+    package static func blocks(in text: NSString) -> [Block] {
         var blocks: [Block] = []
         if let front = NoteParser.parse(text.length > 20_000 ? text.substring(to: min(text.length, 20_000)) : text as String).frontmatterRange {
             blocks.append(Block(kind: .frontmatter, range: front))
@@ -284,7 +284,7 @@ struct NoteLivePreview {
     }
 
     /// A line's length without its newline.
-    static func contentLength(_ text: NSString, _ line: NSRange) -> Int {
+    package static func contentLength(_ text: NSString, _ line: NSRange) -> Int {
         var length = line.length
         while length > 0 {
             let c = text.character(at: line.location + length - 1)

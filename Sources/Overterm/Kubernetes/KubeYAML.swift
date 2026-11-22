@@ -5,10 +5,10 @@ import Foundation
 /// `metadata`, `spec`, `status`), sequences not indented under their key,
 /// a string quoted only where YAML would read it as something else, a
 /// string of several lines as a block. Pure.
-enum KubeYAML {
+package enum KubeYAML {
     /// The JSON object (as `JSONSerialization` reads it) as YAML text,
     /// ending in a newline.
-    static func text(_ value: Any) -> String {
+    package static func text(_ value: Any) -> String {
         var out = ""
         switch value {
         case let map as [String: Any] where !map.isEmpty: mapping(map, indent: 0, into: &out)
@@ -62,7 +62,7 @@ enum KubeYAML {
 
     /// One scalar: `null`, a bool, a number as JSON had it, a string —
     /// plain where it reads back as itself, a block where it has lines.
-    static func scalar(_ value: Any, indent: Int) -> String {
+    package static func scalar(_ value: Any, indent: Int) -> String {
         switch value {
         case is NSNull: return "null"
         case let map as [String: Any] where map.isEmpty: return "{}"
@@ -94,11 +94,11 @@ enum KubeYAML {
     /// Plain, or double-quoted with JSON's escapes when YAML would read it
     /// as something else: empty, a number, a bool or null in any of YAML's
     /// spellings, a leading indicator, `: ` or ` #` inside, edge spaces.
-    static func quotedIfNeeded(_ text: String) -> String {
+    package static func quotedIfNeeded(_ text: String) -> String {
         needsQuotes(text) ? quoted(text) : text
     }
 
-    static func needsQuotes(_ text: String) -> Bool {
+    package static func needsQuotes(_ text: String) -> Bool {
         guard let first = text.first, let last = text.last else { return true }
         if first == " " || last == " " || first == "\t" { return true }
         if "-?:,[]{}#&*!|>'\"%@`".contains(first) {
@@ -122,7 +122,7 @@ enum KubeYAML {
         return patterns.contains { text.range(of: $0, options: .regularExpression) != nil && text != "." && text != "_" }
     }
 
-    static func quoted(_ text: String) -> String {
+    package static func quoted(_ text: String) -> String {
         var out = "\""
         for scalar in text.unicodeScalars {
             switch scalar {
@@ -151,12 +151,12 @@ enum KubeYAML {
 /// and `data` and `stringData` are masked whatever the toggle. An env
 /// value whose name looks secret is masked on any kind, inside the
 /// last-applied annotation too. Pure.
-enum KubeObjectStrip {
-    static let lastApplied = "kubectl.kubernetes.io/last-applied-configuration"
-    static let mask = "***"
+package enum KubeObjectStrip {
+    package static let lastApplied = "kubectl.kubernetes.io/last-applied-configuration"
+    package static let mask = "***"
 
     /// The object as the YAML tab shows it.
-    static func shown(_ object: [String: Any], full: Bool) -> [String: Any] {
+    package static func shown(_ object: [String: Any], full: Bool) -> [String: Any] {
         var object = object
         let secret = isSecret(object)
         if var metadata = object["metadata"] as? [String: Any] {
@@ -184,7 +184,7 @@ enum KubeObjectStrip {
     /// a URL's password too — Docker's inspect does the same
     /// (`DockerSecrets`). A value from a Secret (`valueFrom.secretKeyRef`)
     /// is only a name there, and stays.
-    static func maskingEnv(_ value: Any) -> Any {
+    package static func maskingEnv(_ value: Any) -> Any {
         switch value {
         case var map as [String: Any]:
             for (key, inner) in map {
@@ -209,7 +209,7 @@ enum KubeObjectStrip {
     /// JSON — its env values masked as the object's own are, written again
     /// only when something was. One that isn't JSON is masked whole: what
     /// it says can't be read, so it can't be shown.
-    static func maskingLastApplied(_ value: Any?) -> String {
+    package static func maskingLastApplied(_ value: Any?) -> String {
         guard let text = value as? String, let data = text.data(using: .utf8),
             let parsed = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
         else { return mask }
@@ -223,13 +223,13 @@ enum KubeObjectStrip {
     }
 
     /// Whether `full` would show anything more.
-    static func hasHidden(_ object: [String: Any]) -> Bool {
+    package static func hasHidden(_ object: [String: Any]) -> Bool {
         guard let metadata = object["metadata"] as? [String: Any] else { return false }
         if metadata["managedFields"] != nil { return true }
         return !isSecret(object) && (metadata["annotations"] as? [String: Any])?[lastApplied] != nil
     }
 
-    static func isSecret(_ object: [String: Any]) -> Bool {
+    package static func isSecret(_ object: [String: Any]) -> Bool {
         object["kind"] as? String == "Secret" && (object["apiVersion"] as? String ?? "v1") == "v1"
     }
 }

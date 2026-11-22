@@ -18,62 +18,62 @@ import Foundation
 /// ConfigMaps that carry marks and are never to be read).
 extension FakeKubeAPI {
     /// What a spoke is made of.
-    struct SpokeOptions: Sendable {
+    package struct SpokeOptions: Sendable {
         /// The plain apps, beyond the named states below.
-        var apps = 40
-        var env = "prod"
-        var namespaces = (0..<10).map { "team-\($0)" }
+        package var apps = 40
+        package var env = "prod"
+        package var namespaces = (0..<10).map { "team-\($0)" }
         /// kubectl's last-applied copy on every workload, this many bytes.
-        var padding = 5_000
+        package var padding = 5_000
         /// Argo Rollouts served, with marked Rollouts that run a Deployment
         /// by `workloadRef`, its Deployment scaled to 0.
-        var rollouts = false
+        package var rollouts = false
         /// The named states (stuck, stalled, paused…).
-        var states = true
+        package var states = true
         /// The first this many plain apps carry another installation's id
         /// (`argocd.argoproj.io/installation-id: hub-b`) on every member:
         /// two Argo CDs marking objects here, never merged.
-        var otherInstallation = 0
+        package var otherInstallation = 0
         /// The last this many plain apps' Deployments not every replica
         /// available (`1/2`, by their rows and their objects): more to
         /// settle first than a minute's GETs.
-        var notReady = 0
+        package var notReady = 0
     }
 
     /// The second installation's id `otherInstallation` puts on its apps.
-    static let spokeInstallation = "hub-b"
+    package static let spokeInstallation = "hub-b"
 
     /// What `addSpoke` made, by what the tests look for.
-    struct Spoke: Sendable {
-        var apps: [String] = []
+    package struct Spoke: Sendable {
+        package var apps: [String] = []
         /// A single-replica rollout stuck behind its old pod: cells `1/1`.
-        var stuck = ""
+        package var stuck = ""
         /// A rollout past its progress deadline.
-        var stalled = ""
+        package var stalled = ""
         /// Paused, its cells `2/2`: only its object says so.
-        var paused = ""
+        package var paused = ""
         /// A StatefulSet `0/3`: Progressing, never Failed.
-        var statefulSet = ""
+        package var statefulSet = ""
         /// An HPA whose metrics can't be read: Degraded.
-        var hpa = ""
+        package var hpa = ""
         /// A Service and an Ingress only: Unknown, no workload read.
-        var serviceOnly = ""
+        package var serviceOnly = ""
         /// A LoadBalancer Service `<pending>`.
-        var loadBalancer = ""
+        package var loadBalancer = ""
         /// A CronJob whose last run failed.
-        var cronJob = ""
+        package var cronJob = ""
         /// A PVC Pending.
-        var claim = ""
+        package var claim = ""
         /// Its hook Job failed, which isn't its health.
-        var hooked = ""
+        package var hooked = ""
         /// Carried by `argocd.argoproj.io/instance` alone.
-        var labelOnly = ""
+        package var labelOnly = ""
         /// A Rollout's app: Healthy, its Deployment scaled by it.
-        var rollout = ""
+        package var rollout = ""
         /// A Degraded Rollout's app.
-        var rolloutDegraded = ""
+        package var rolloutDegraded = ""
         /// The plain apps' Deployments: (namespace, name).
-        var deployments: [(namespace: String, name: String)] = []
+        package var deployments: [(namespace: String, name: String)] = []
     }
 
     /// The spoke: no Argo CD, no Flux; marked workloads, Services, HPAs,
@@ -81,7 +81,7 @@ extension FakeKubeAPI {
     /// ReplicaSet and some HPAs and PDBs; garbled marks; Helm's
     /// instance labels; Secrets and ConfigMaps that carry marks.
     @discardableResult
-    func addSpoke(_ options: SpokeOptions = SpokeOptions(), now: Date = Date()) -> Spoke {
+    package func addSpoke(_ options: SpokeOptions = SpokeOptions(), now: Date = Date()) -> Spoke {
         for namespace in options.namespaces { addNamespace(namespace) }
         var spoke = Spoke()
         let env = options.env
@@ -248,7 +248,7 @@ extension FakeKubeAPI {
     }
 
     /// Argo CD's annotation-based tracking id for an object it deploys.
-    func marks(_ app: String, _ groupKind: String, _ namespace: String, _ name: String) -> [String: String] {
+    package func marks(_ app: String, _ groupKind: String, _ namespace: String, _ name: String) -> [String: String] {
         ["argocd.argoproj.io/tracking-id": "\(app):\(groupKind):\(namespace)/\(name)"]
     }
 
@@ -257,7 +257,7 @@ extension FakeKubeAPI {
     /// (nil: only the labels and annotations given). Its ReplicaSet carries
     /// its mark, copied — unless `replicaSet` is off (the survey's spoke:
     /// nothing there lists them).
-    func addMarkedDeployment(
+    package func addMarkedDeployment(
         _ name: String, namespace: String, app: String?, ready: Int = 2, desired: Int = 2, updated: Int? = nil, available: Int? = nil,
         labels: [String: String] = [:], annotations extra: [String: String] = [:], padding: Int, now: Date, status: [String: Any]? = nil,
         progressing: (status: String, reason: String) = ("True", "NewReplicaSetAvailable"), paused: Bool = false, generation: Int = 4,
@@ -304,14 +304,14 @@ extension FakeKubeAPI {
     }
 
     /// The `ownerReferences` entry for an object of the fake's.
-    func owner(_ apiVersion: String, _ kind: String, _ name: String, resource: String, namespace: String) -> [String: Any] {
+    package func owner(_ apiVersion: String, _ kind: String, _ name: String, resource: String, namespace: String) -> [String: Any] {
         ["apiVersion": apiVersion, "kind": kind, "name": name, "uid": uid(resource, name, namespace: namespace) ?? "", "controller": true, "blockOwnerDeletion": true]
     }
 
     /// A ReplicaSet its Deployment (or an Argo Rollout) made: labelled for
     /// its selector (`app`), owned in its rows' metadata too, carrying
     /// whatever annotations it copied.
-    func addOwnedReplicaSet(
+    package func addOwnedReplicaSet(
         _ name: String, of owner: (kind: String, name: String), apiVersion: String = "apps/v1", resource: String = "deployments.apps", namespace: String,
         desired: Int, ready: Int, annotations: [String: String] = [:], created: Date
     ) {
@@ -325,7 +325,7 @@ extension FakeKubeAPI {
     /// A pod its ReplicaSet (or StatefulSet) made, labelled for its
     /// workload's selector and owned in its rows' metadata; the sentinel in
     /// an annotation of its own, which nothing may keep.
-    func addOwnedPod(
+    package func addOwnedPod(
         _ name: String, of owner: String, ownerKind: String = "ReplicaSet", app: String, namespace: String, _ pod: FakeKubeAPI.Pod = FakeKubeAPI.Pod(), created: Date
     ) {
         addPod(name, namespace: namespace, pod, labels: ["app": app], annotations: ["acme.example/debug-token": Self.gitOpsSentinel], created: created)
@@ -333,7 +333,7 @@ extension FakeKubeAPI {
         setRowOwners("pods", name, namespace: namespace, [self.owner("apps/v1", ownerKind, owner, resource: resource, namespace: namespace)])
     }
 
-    func addMarkedStatefulSet(_ name: String, namespace: String, app: String, ready: Int, desired: Int, now: Date) {
+    package func addMarkedStatefulSet(_ name: String, namespace: String, app: String, ready: Int, desired: Int, now: Date) {
         add(
             "statefulsets.apps", name, namespace: namespace,
             values: ["Ready": .text("\(ready)/\(desired)"), "Containers": "db", "Images": "registry.acme.example/postgres:16.4"],
@@ -350,7 +350,7 @@ extension FakeKubeAPI {
             ])
     }
 
-    func addMarkedService(
+    package func addMarkedService(
         _ name: String, namespace: String, app: String, loadBalancer: String? = nil, installation: String? = nil, annotations extra: [String: String] = [:], now: Date
     ) {
         var annotations = marks(app, "/Service", namespace, name).merging(extra) { $1 }
@@ -361,7 +361,7 @@ extension FakeKubeAPI {
             annotations: annotations, created: now.addingTimeInterval(-86_400))
     }
 
-    func addMarkedHPA(_ name: String, namespace: String, app: String, failing: Bool = false, installation: String? = nil, now: Date) {
+    package func addMarkedHPA(_ name: String, namespace: String, app: String, failing: Bool = false, installation: String? = nil, now: Date) {
         let conditions: [[String: Any]] =
             failing
             ? [
@@ -385,13 +385,13 @@ extension FakeKubeAPI {
 
     /// An object carrying another's tracking id, as an operator or a
     /// controller copies it: nobody's member.
-    func addCopiedMark(_ resource: String, _ name: String, namespace: String, app: String, of deployment: String, now: Date) {
+    package func addCopiedMark(_ resource: String, _ name: String, namespace: String, app: String, of deployment: String, now: Date) {
         add(resource, name, namespace: namespace, annotations: marks(app, "apps/Deployment", namespace, deployment), created: now.addingTimeInterval(-86_400))
     }
 
     /// Argo Rollouts served: their CRD, its printer columns counts only (a
     /// Rollout's phase is in its object, never a cell).
-    func serveRollouts() {
+    package func serveRollouts() {
         addCRD(
             group: "argoproj.io", version: "v1alpha1", plural: "rollouts", kind: "Rollout", shortNames: ["ro"],
             columns: [
@@ -403,7 +403,7 @@ extension FakeKubeAPI {
     /// An Argo Rollout running its Deployment by `workloadRef`, the
     /// Deployment scaled to 0 by the Rollouts controller and carrying
     /// `labels` (a binding's selector).
-    func addMarkedRollout(_ name: String, namespace: String, app: String, phase: String, labels: [String: String] = [:], now: Date) {
+    package func addMarkedRollout(_ name: String, namespace: String, app: String, phase: String, labels: [String: String] = [:], now: Date) {
         add(
             "rollouts.argoproj.io", name, namespace: namespace, values: ["Desired": 3, "Current": 3, "Up-to-date": 3, "Available": phase == "Healthy" ? 3 : 1],
             annotations: marks(app, "argoproj.io/Rollout", namespace, name), created: now.addingTimeInterval(-86_400),
@@ -418,7 +418,7 @@ extension FakeKubeAPI {
     /// Readiness churn on Deployments, their generation unchanged: each
     /// round turns every one not ready, then ready again (`rounds` × 2 ×
     /// the Deployments' events).
-    func churnReadiness(_ deployments: [(namespace: String, name: String)], rounds: Int) {
+    package func churnReadiness(_ deployments: [(namespace: String, name: String)], rounds: Int) {
         for round in 0..<(rounds * 2) {
             let ready = round % 2 == 1
             for (namespace, name) in deployments {
@@ -433,7 +433,7 @@ extension FakeKubeAPI {
     }
 
     /// kubectl's client-side apply: the manifest again as a string, the sentinel in it.
-    static func lastApplied(_ name: String, padding: Int) -> String {
+    package static func lastApplied(_ name: String, padding: Int) -> String {
         let head = "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"name\":\"\(name)\"},\"env\":\"\(gitOpsSentinel)\",\"pad\":\""
         return head + String(repeating: "x", count: max(0, padding - head.count - 3)) + "\"}"
     }

@@ -13,14 +13,14 @@ import Foundation
 /// and `status.resources` past their counts and namespaces. A URL loses its
 /// userinfo as it is decoded. `KubeGitOpsWireTests` checks every struct's
 /// keys against a reviewed list. Pure.
-enum KubeGitOpsWire {
+package enum KubeGitOpsWire {
     /// What a struct here declares: its keys, for the reviewed list.
-    protocol Declared {
+    package protocol Declared {
         static var keys: [String] { get }
     }
 
     /// Every struct's declared keys, by name — what the test reviews.
-    static var declared: [String: [String]] {
+    package static var declared: [String: [String]] {
         let all: [(String, [String])] = [
             ("Object", Object.keys), ("List", List.keys), ("ListMetadata", ListMetadata.keys), ("Metadata", Metadata.keys), ("Labels", Labels.keys),
             ("Annotations", Annotations.keys), ("OwnerReference", OwnerReference.keys), ("ManagedField", ManagedField.keys),
@@ -41,71 +41,71 @@ enum KubeGitOpsWire {
 
     /// The most entries of `status.resources` and an inventory whose
     /// namespaces are kept (gitops.md, 2.4: 64).
-    static let namespacesKept = 64
+    package static let namespacesKept = 64
     /// `status.summary.images`, at most.
-    static let imagesKept = 20
+    package static let imagesKept = 20
 
     // MARK: The object
 
-    struct Object: Decodable, Sendable, Declared {
-        var apiVersion: String?
-        var kind: String?
-        var metadata: Metadata?
-        var spec: Spec?
-        var status: Status?
+    package struct Object: Decodable, Sendable, Declared {
+        package var apiVersion: String?
+        package var kind: String?
+        package var metadata: Metadata?
+        package var spec: Spec?
+        package var status: Status?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case apiVersion, kind, metadata, spec, status }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case apiVersion, kind, metadata, spec, status }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// A page of a list: its objects and where the next starts.
-    struct List: Decodable, Sendable, Declared {
-        var metadata: ListMetadata?
-        var items: [Object]?
+    package struct List: Decodable, Sendable, Declared {
+        package var metadata: ListMetadata?
+        package var items: [Object]?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case metadata, items }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case metadata, items }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct ListMetadata: Decodable, Sendable, Declared {
-        var `continue`: String?
-        var remainingItemCount: Int?
-        var resourceVersion: String?
+    package struct ListMetadata: Decodable, Sendable, Declared {
+        package var `continue`: String?
+        package var remainingItemCount: Int?
+        package var resourceVersion: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case `continue`, remainingItemCount, resourceVersion }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case `continue`, remainingItemCount, resourceVersion }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct Metadata: Decodable, Sendable, Declared {
-        var name: String?
-        var namespace: String?
-        var uid: String?
-        var resourceVersion: String?
-        var generation: Int?
-        var creationTimestamp: String?
-        var deletionTimestamp: String?
-        var labels: Labels?
-        var annotations: Annotations?
-        var ownerReferences: [OwnerReference]?
-        var managedFields: [ManagedField]?
+    package struct Metadata: Decodable, Sendable, Declared {
+        package var name: String?
+        package var namespace: String?
+        package var uid: String?
+        package var resourceVersion: String?
+        package var generation: Int?
+        package var creationTimestamp: String?
+        package var deletionTimestamp: String?
+        package var labels: Labels?
+        package var annotations: Annotations?
+        package var ownerReferences: [OwnerReference]?
+        package var managedFields: [ManagedField]?
 
-        enum CodingKeys: String, CodingKey, CaseIterable {
+        package enum CodingKeys: String, CodingKey, CaseIterable {
             case name, namespace, uid, resourceVersion, generation, creationTimestamp, deletionTimestamp, labels, annotations, ownerReferences
             case managedFields
         }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// The labels that name what deploys it (`KubeGitOpsOwner`), no other.
-    struct Labels: Decodable, Sendable, Declared {
-        var argoInstance: String?
-        var appInstance: String?
-        var kustomizeName: String?
-        var kustomizeNamespace: String?
-        var helmName: String?
-        var helmNamespace: String?
+    package struct Labels: Decodable, Sendable, Declared {
+        package var argoInstance: String?
+        package var appInstance: String?
+        package var kustomizeName: String?
+        package var kustomizeNamespace: String?
+        package var helmName: String?
+        package var helmNamespace: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable {
+        package enum CodingKeys: String, CodingKey, CaseIterable {
             case argoInstance = "argocd.argoproj.io/instance"
             case appInstance = "app.kubernetes.io/instance"
             case kustomizeName = "kustomize.toolkit.fluxcd.io/name"
@@ -113,9 +113,9 @@ enum KubeGitOpsWire {
             case helmName = "helm.toolkit.fluxcd.io/name"
             case helmNamespace = "helm.toolkit.fluxcd.io/namespace"
         }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        var marks: [String: String] {
+        package var marks: [String: String] {
             var marks: [String: String] = [:]
             marks[KubeGitOpsOwner.argoInstanceLabel] = argoInstance
             marks[KubeGitOpsOwner.appInstanceLabel] = appInstance
@@ -130,19 +130,19 @@ enum KubeGitOpsWire {
     /// The annotations a summary reads: the tracking id, Helm's release
     /// name (whether `app.kubernetes.io/instance` is Helm's), Argo CD's
     /// `manifest-generate-paths`. Never kubectl's last-applied copy.
-    struct Annotations: Decodable, Sendable, Declared {
-        var trackingID: String?
-        var helmRelease: String?
-        var manifestGeneratePaths: String?
+    package struct Annotations: Decodable, Sendable, Declared {
+        package var trackingID: String?
+        package var helmRelease: String?
+        package var manifestGeneratePaths: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable {
+        package enum CodingKeys: String, CodingKey, CaseIterable {
             case trackingID = "argocd.argoproj.io/tracking-id"
             case helmRelease = "meta.helm.sh/release-name"
             case manifestGeneratePaths = "argocd.argoproj.io/manifest-generate-paths"
         }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        var marks: [String: String] {
+        package var marks: [String: String] {
             var marks: [String: String] = [:]
             marks[KubeGitOpsOwner.trackingAnnotation] = trackingID
             marks[KubeGitOpsOwner.helmReleaseAnnotation] = helmRelease
@@ -150,36 +150,36 @@ enum KubeGitOpsWire {
         }
     }
 
-    struct OwnerReference: Decodable, Sendable, Declared {
-        var apiVersion: String?
-        var kind: String?
-        var name: String?
-        var controller: Bool?
+    package struct OwnerReference: Decodable, Sendable, Declared {
+        package var apiVersion: String?
+        package var kind: String?
+        package var name: String?
+        package var controller: Bool?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case apiVersion, kind, name, controller }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case apiVersion, kind, name, controller }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// One managedFields entry: when, who, and only whether it owns
     /// `spec` and `spec.suspend` — the rest of `fieldsV1` is looked at by
     /// key, never decoded.
-    struct ManagedField: Decodable, Sendable, Declared {
-        var manager: String?
-        var operation: String?
-        var time: String?
-        var fieldsV1: FieldsV1?
+    package struct ManagedField: Decodable, Sendable, Declared {
+        package var manager: String?
+        package var operation: String?
+        package var time: String?
+        package var fieldsV1: FieldsV1?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case manager, operation, time, fieldsV1 }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case manager, operation, time, fieldsV1 }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct FieldsV1: Decodable, Sendable, Declared {
-        var spec = false
-        var suspend = false
+    package struct FieldsV1: Decodable, Sendable, Declared {
+        package var spec = false
+        package var suspend = false
 
-        static var keys: [String] { ["f:spec", "f:suspend"] }
+        package static var keys: [String] { ["f:spec", "f:suspend"] }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: AnyKey.self)
             let key = AnyKey("f:spec")
             guard container.contains(key) else { return }
@@ -190,41 +190,41 @@ enum KubeGitOpsWire {
 
     // MARK: spec
 
-    struct Spec: Decodable, Sendable, Declared {
+    package struct Spec: Decodable, Sendable, Declared {
         // Argo CD
-        var source: ArgoSource?
-        var sources: [ArgoSource]?
-        var destination: Destination?
-        var project: String?
-        var syncPolicy: SyncPolicy?
-        var sourceHydrator: Hydrator?
+        package var source: ArgoSource?
+        package var sources: [ArgoSource]?
+        package var destination: Destination?
+        package var project: String?
+        package var syncPolicy: SyncPolicy?
+        package var sourceHydrator: Hydrator?
         // Flux
-        var suspend: Bool?
-        var interval: String?
-        var retryInterval: String?
-        var path: String?
-        var prune: Bool?
-        var targetNamespace: String?
-        var sourceRef: Reference?
-        var chartRef: Reference?
-        var chart: Chart?
+        package var suspend: Bool?
+        package var interval: String?
+        package var retryInterval: String?
+        package var path: String?
+        package var prune: Bool?
+        package var targetNamespace: String?
+        package var sourceRef: Reference?
+        package var chartRef: Reference?
+        package var chart: Chart?
         /// A HelmChart's `spec.chart`, a word: the chart's path in a GitRepository.
-        var chartName: String?
-        var dependsOn: [Reference]?
-        var kubeConfig: KubeConfig?
+        package var chartName: String?
+        package var dependsOn: [Reference]?
+        package var kubeConfig: KubeConfig?
         // Flux's sources
-        var url: String?
-        var ref: GitRef?
-        var endpoint: String?
+        package var url: String?
+        package var ref: GitRef?
+        package var endpoint: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable {
+        package enum CodingKeys: String, CodingKey, CaseIterable {
             case source, sources, destination, project, syncPolicy, sourceHydrator
             case suspend, interval, retryInterval, path, prune, targetNamespace, sourceRef, chartRef, chart, dependsOn, kubeConfig
             case url, ref, endpoint
         }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             source = try? c.decodeIfPresent(ArgoSource.self, forKey: .source)
             sources = try? c.decodeIfPresent([ArgoSource].self, forKey: .sources)
@@ -253,17 +253,17 @@ enum KubeGitOpsWire {
 
     /// One Argo CD source: where, never what it is rendered with (`helm`,
     /// `kustomize`, `directory`, `plugin` aren't declared).
-    struct ArgoSource: Decodable, Sendable, Declared {
-        var repoURL: String?
-        var path: String?
-        var chart: String?
-        var targetRevision: String?
-        var ref: String?
+    package struct ArgoSource: Decodable, Sendable, Declared {
+        package var repoURL: String?
+        package var path: String?
+        package var chart: String?
+        package var targetRevision: String?
+        package var ref: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case repoURL, path, chart, targetRevision, ref }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case repoURL, path, chart, targetRevision, ref }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             repoURL = (try? c.decodeIfPresent(String.self, forKey: .repoURL)).flatMap { $0.map(GitRemoteURL.withoutUserinfo) }
             path = try? c.decodeIfPresent(String.self, forKey: .path)
@@ -272,22 +272,22 @@ enum KubeGitOpsWire {
             ref = try? c.decodeIfPresent(String.self, forKey: .ref)
         }
 
-        var source: KubeGitOpsSource {
+        package var source: KubeGitOpsSource {
             KubeGitOpsSource(
                 repoURL: repoURL ?? "", path: path.nonEmpty, chart: chart.nonEmpty, targetRevision: targetRevision.nonEmpty, ref: ref.nonEmpty)
         }
     }
 
-    struct Destination: Decodable, Sendable, Declared {
-        var server: String?
-        var name: String?
-        var namespace: String?
+    package struct Destination: Decodable, Sendable, Declared {
+        package var server: String?
+        package var name: String?
+        package var namespace: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case server, name, namespace }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case server, name, namespace }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
         /// `server` without its userinfo, as every URL here (gitops.md, 5.2).
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             server = (try? c.decodeIfPresent(String.self, forKey: .server)).flatMap { $0.map(GitRemoteURL.withoutUserinfo) }
             name = try? c.decodeIfPresent(String.self, forKey: .name)
@@ -295,48 +295,48 @@ enum KubeGitOpsWire {
         }
     }
 
-    struct SyncPolicy: Decodable, Sendable, Declared {
-        var automated: Automated?
-        var retry: Retry?
+    package struct SyncPolicy: Decodable, Sendable, Declared {
+        package var automated: Automated?
+        package var retry: Retry?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case automated, retry }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case automated, retry }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// `automated` — `enabled` is Argo CD 3's (checked against its CRD, 8.5).
-    struct Automated: Decodable, Sendable, Declared {
-        var enabled: Bool?
-        var prune: Bool?
-        var selfHeal: Bool?
+    package struct Automated: Decodable, Sendable, Declared {
+        package var enabled: Bool?
+        package var prune: Bool?
+        package var selfHeal: Bool?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case enabled, prune, selfHeal }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case enabled, prune, selfHeal }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct Retry: Decodable, Sendable, Declared {
-        var limit: Int?
+    package struct Retry: Decodable, Sendable, Declared {
+        package var limit: Int?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case limit }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case limit }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// `sourceHydrator`, Argo CD 3's: its dry source is where the manifests come from.
-    struct Hydrator: Decodable, Sendable, Declared {
-        var drySource: DrySource?
+    package struct Hydrator: Decodable, Sendable, Declared {
+        package var drySource: DrySource?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case drySource }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case drySource }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct DrySource: Decodable, Sendable, Declared {
-        var repoURL: String?
-        var path: String?
-        var targetRevision: String?
+    package struct DrySource: Decodable, Sendable, Declared {
+        package var repoURL: String?
+        package var path: String?
+        package var targetRevision: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case repoURL, path, targetRevision }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case repoURL, path, targetRevision }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             repoURL = (try? c.decodeIfPresent(String.self, forKey: .repoURL)).flatMap { $0.map(GitRemoteURL.withoutUserinfo) }
             path = try? c.decodeIfPresent(String.self, forKey: .path)
@@ -345,104 +345,104 @@ enum KubeGitOpsWire {
     }
 
     /// A Flux reference: `sourceRef`, `chartRef`, a `dependsOn` entry.
-    struct Reference: Decodable, Sendable, Declared {
-        var apiVersion: String?
-        var kind: String?
-        var name: String?
-        var namespace: String?
+    package struct Reference: Decodable, Sendable, Declared {
+        package var apiVersion: String?
+        package var kind: String?
+        package var name: String?
+        package var namespace: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case apiVersion, kind, name, namespace }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case apiVersion, kind, name, namespace }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// A HelmRelease's chart template.
-    struct Chart: Decodable, Sendable, Declared {
-        var spec: ChartSpec?
+    package struct Chart: Decodable, Sendable, Declared {
+        package var spec: ChartSpec?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case spec }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case spec }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct ChartSpec: Decodable, Sendable, Declared {
-        var chart: String?
-        var version: String?
-        var sourceRef: Reference?
+    package struct ChartSpec: Decodable, Sendable, Declared {
+        package var chart: String?
+        package var version: String?
+        package var sourceRef: Reference?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case chart, version, sourceRef }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case chart, version, sourceRef }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// `spec.kubeConfig`: the Secret's or ConfigMap's name, nothing in it.
-    struct KubeConfig: Decodable, Sendable, Declared {
-        var secretRef: Named?
-        var configMapRef: Named?
+    package struct KubeConfig: Decodable, Sendable, Declared {
+        package var secretRef: Named?
+        package var configMapRef: Named?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case secretRef, configMapRef }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case secretRef, configMapRef }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
         /// `spec.kubeConfig.secretRef acme-edge`, as the tree says it.
-        var said: String {
+        package var said: String {
             if let name = secretRef?.name { return "spec.kubeConfig.secretRef \(name)" }
             if let name = configMapRef?.name { return "spec.kubeConfig.configMapRef \(name)" }
             return "spec.kubeConfig"
         }
     }
 
-    struct Named: Decodable, Sendable, Declared {
-        var name: String?
+    package struct Named: Decodable, Sendable, Declared {
+        package var name: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case name }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case name }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// A GitRepository's `spec.ref`.
-    struct GitRef: Decodable, Sendable, Declared {
-        var branch: String?
-        var tag: String?
-        var semver: String?
-        var name: String?
-        var commit: String?
+    package struct GitRef: Decodable, Sendable, Declared {
+        package var branch: String?
+        package var tag: String?
+        package var semver: String?
+        package var name: String?
+        package var commit: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case branch, tag, semver, name, commit }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case branch, tag, semver, name, commit }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
         /// What it tracks, by Flux's precedence: commit > name > semver > tag > branch.
-        var tracks: String? { commit.nonEmpty ?? name.nonEmpty ?? semver.nonEmpty ?? tag.nonEmpty ?? branch.nonEmpty }
+        package var tracks: String? { commit.nonEmpty ?? name.nonEmpty ?? semver.nonEmpty ?? tag.nonEmpty ?? branch.nonEmpty }
     }
 
     // MARK: status
 
-    struct Status: Decodable, Sendable, Declared {
+    package struct Status: Decodable, Sendable, Declared {
         // Argo CD
-        var sync: Sync?
-        var health: Health?
-        var operationState: OperationState?
+        package var sync: Sync?
+        package var health: Health?
+        package var operationState: OperationState?
         /// `history`: Argo CD's last entry, Flux's first (a HelmRelease's newest).
-        var historyFirst: HistoryEntry?
-        var historyLast: HistoryEntry?
-        var reconciledAt: String?
-        var resourceHealthSource: String?
-        var resources: ResourcesDigest?
-        var summary: Summary?
+        package var historyFirst: HistoryEntry?
+        package var historyLast: HistoryEntry?
+        package var reconciledAt: String?
+        package var resourceHealthSource: String?
+        package var resources: ResourcesDigest?
+        package var summary: Summary?
         // Both
-        var conditions: [Condition]?
-        var observedGeneration: Int?
+        package var conditions: [Condition]?
+        package var observedGeneration: Int?
         // Flux
-        var lastAppliedRevision: String?
-        var lastAttemptedRevision: String?
+        package var lastAppliedRevision: String?
+        package var lastAttemptedRevision: String?
         /// A HelmRelease's: the digest of the chart it last tried, from a `chartRef`'s OCIRepository.
-        var lastAttemptedRevisionDigest: String?
-        var inventory: Inventory?
-        var artifact: Artifact?
+        package var lastAttemptedRevisionDigest: String?
+        package var inventory: Inventory?
+        package var artifact: Artifact?
 
-        enum CodingKeys: String, CodingKey, CaseIterable {
+        package enum CodingKeys: String, CodingKey, CaseIterable {
             case sync, health, operationState, history, reconciledAt, resourceHealthSource, resources, summary
             case conditions, observedGeneration
             case lastAppliedRevision, lastAttemptedRevision, lastAttemptedRevisionDigest, inventory, artifact
         }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             sync = try? c.decodeIfPresent(Sync.self, forKey: .sync)
             health = try? c.decodeIfPresent(Health.self, forKey: .health)
@@ -480,86 +480,86 @@ enum KubeGitOpsWire {
     }
 
     /// `status.sync`: never `comparedTo` (the source's copy, values and all).
-    struct Sync: Decodable, Sendable, Declared {
-        var status: String?
-        var revision: String?
-        var revisions: [String]?
+    package struct Sync: Decodable, Sendable, Declared {
+        package var status: String?
+        package var revision: String?
+        package var revisions: [String]?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case status, revision, revisions }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case status, revision, revisions }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
         /// `revisions[]` when it has any, else its `revision` (KubeGitOpsSource's rule).
-        var said: [String] { Revisions.said(revision, revisions) }
+        package var said: [String] { Revisions.said(revision, revisions) }
     }
 
-    struct Health: Decodable, Sendable, Declared {
-        var status: String?
-        var message: String?
+    package struct Health: Decodable, Sendable, Declared {
+        package var status: String?
+        package var message: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case status, message }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case status, message }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct Condition: Decodable, Sendable, Declared {
-        var type: String?
-        var status: String?
-        var reason: String?
-        var message: String?
-        var lastTransitionTime: String?
+    package struct Condition: Decodable, Sendable, Declared {
+        package var type: String?
+        package var status: String?
+        package var reason: String?
+        package var message: String?
+        package var lastTransitionTime: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case type, status, reason, message, lastTransitionTime }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case type, status, reason, message, lastTransitionTime }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// `status.operationState`: never `operation.sync` (its source copy,
     /// its `manifests`) — who started it only.
-    struct OperationState: Decodable, Sendable, Declared {
-        var phase: String?
-        var message: String?
-        var startedAt: String?
-        var finishedAt: String?
-        var retryCount: Int?
-        var operation: Operation?
-        var syncResult: SyncResult?
+    package struct OperationState: Decodable, Sendable, Declared {
+        package var phase: String?
+        package var message: String?
+        package var startedAt: String?
+        package var finishedAt: String?
+        package var retryCount: Int?
+        package var operation: Operation?
+        package var syncResult: SyncResult?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case phase, message, startedAt, finishedAt, retryCount, operation, syncResult }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case phase, message, startedAt, finishedAt, retryCount, operation, syncResult }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct Operation: Decodable, Sendable, Declared {
-        var initiatedBy: InitiatedBy?
+    package struct Operation: Decodable, Sendable, Declared {
+        package var initiatedBy: InitiatedBy?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case initiatedBy }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case initiatedBy }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct InitiatedBy: Decodable, Sendable, Declared {
-        var username: String?
-        var automated: Bool?
+    package struct InitiatedBy: Decodable, Sendable, Declared {
+        package var username: String?
+        package var automated: Bool?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case username, automated }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case username, automated }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// The operation's result: its revision(s) and the first resource that
     /// failed — never its `source(s)` copy.
-    struct SyncResult: Decodable, Sendable, Declared {
-        var revision: String?
-        var revisions: [String]?
-        var resources: FailedResource?
+    package struct SyncResult: Decodable, Sendable, Declared {
+        package var revision: String?
+        package var revisions: [String]?
+        package var resources: FailedResource?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case revision, revisions, resources }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case revision, revisions, resources }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        var said: [String] { Revisions.said(revision, revisions) }
+        package var said: [String] { Revisions.said(revision, revisions) }
     }
 
     /// `syncResult.resources[]`: the first whose status is `SyncFailed`;
     /// the others skipped.
-    struct FailedResource: Decodable, Sendable {
-        var first: SyncResource?
+    package struct FailedResource: Decodable, Sendable {
+        package var first: SyncResource?
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             var list = try decoder.unkeyedContainer()
             while !list.isAtEnd {
                 if (try? list.decodeNil()) == true { continue }
@@ -572,46 +572,46 @@ enum KubeGitOpsWire {
         }
     }
 
-    struct SyncResource: Decodable, Sendable, Declared {
-        var kind: String?
-        var name: String?
-        var namespace: String?
-        var status: String?
-        var message: String?
+    package struct SyncResource: Decodable, Sendable, Declared {
+        package var kind: String?
+        package var name: String?
+        package var namespace: String?
+        package var status: String?
+        package var message: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case kind, name, namespace, status, message }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case kind, name, namespace, status, message }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// One `history` entry: Argo CD's revision(s) and when; a HelmRelease's
     /// chart version, status and when it was last deployed. Never its
     /// `source(s)`.
-    struct HistoryEntry: Decodable, Sendable, Declared {
-        var revision: String?
-        var revisions: [String]?
-        var deployedAt: String?
-        var chartName: String?
-        var chartVersion: String?
-        var status: String?
-        var lastDeployed: String?
+    package struct HistoryEntry: Decodable, Sendable, Declared {
+        package var revision: String?
+        package var revisions: [String]?
+        package var deployedAt: String?
+        package var chartName: String?
+        package var chartVersion: String?
+        package var status: String?
+        package var lastDeployed: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case revision, revisions, deployedAt, chartName, chartVersion, status, lastDeployed }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case revision, revisions, deployedAt, chartName, chartVersion, status, lastDeployed }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        var said: [String] { Revisions.said(revision, revisions) }
+        package var said: [String] { Revisions.said(revision, revisions) }
     }
 
     /// `status.resources`: the count, the namespaces (at most 64), how
     /// many need pruning. Each entry's sync and health aren't kept.
-    struct ResourcesDigest: Decodable, Sendable {
-        var count = 0
-        var namespaces: Set<String> = []
-        var pruneNeeded = 0
-        var outOfSync = 0
+    package struct ResourcesDigest: Decodable, Sendable {
+        package var count = 0
+        package var namespaces: Set<String> = []
+        package var pruneNeeded = 0
+        package var outOfSync = 0
 
-        init(count: Int = 0) { self.count = count }
+        package init(count: Int = 0) { self.count = count }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             var list = try decoder.unkeyedContainer()
             while !list.isAtEnd {
                 if (try? list.decodeNil()) == true { continue }
@@ -627,31 +627,31 @@ enum KubeGitOpsWire {
         }
     }
 
-    struct ResourceEntry: Decodable, Sendable, Declared {
-        var namespace: String?
-        var status: String?
-        var requiresPruning: Bool?
+    package struct ResourceEntry: Decodable, Sendable, Declared {
+        package var namespace: String?
+        package var status: String?
+        package var requiresPruning: Bool?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case namespace, status, requiresPruning }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case namespace, status, requiresPruning }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct Summary: Decodable, Sendable, Declared {
-        var images: [String]?
+    package struct Summary: Decodable, Sendable, Declared {
+        package var images: [String]?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case images }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case images }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// A Kustomization's inventory: its count and namespaces, from the ids.
-    struct Inventory: Decodable, Sendable, Declared {
-        var count = 0
-        var namespaces: Set<String> = []
+    package struct Inventory: Decodable, Sendable, Declared {
+        package var count = 0
+        package var namespaces: Set<String> = []
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case entries }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case entries }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             guard var list = try? c.nestedUnkeyedContainer(forKey: .entries) else { return }
             while !list.isAtEnd {
@@ -670,35 +670,35 @@ enum KubeGitOpsWire {
         }
     }
 
-    struct InventoryEntry: Decodable, Sendable, Declared {
-        var id: String?
+    package struct InventoryEntry: Decodable, Sendable, Declared {
+        package var id: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case id }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case id }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// A Source's artifact: what it fetched and when; of its metadata, only
     /// an OCI artifact's git origin.
-    struct Artifact: Decodable, Sendable, Declared {
-        var revision: String?
-        var lastUpdateTime: String?
-        var metadata: ArtifactMetadata?
+    package struct Artifact: Decodable, Sendable, Declared {
+        package var revision: String?
+        package var lastUpdateTime: String?
+        package var metadata: ArtifactMetadata?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case revision, lastUpdateTime, metadata }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case revision, lastUpdateTime, metadata }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct ArtifactMetadata: Decodable, Sendable, Declared {
-        var source: String?
-        var revision: String?
+    package struct ArtifactMetadata: Decodable, Sendable, Declared {
+        package var source: String?
+        package var revision: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable {
+        package enum CodingKeys: String, CodingKey, CaseIterable {
             case source = "org.opencontainers.image.source"
             case revision = "org.opencontainers.image.revision"
         }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             source = (try? c.decodeIfPresent(String.self, forKey: .source)).flatMap { $0.map(GitRemoteURL.withoutUserinfo) }
             revision = try? c.decodeIfPresent(String.self, forKey: .revision)
@@ -712,25 +712,25 @@ enum KubeGitOpsWire {
     /// revisions and when, never their `source(s)`), the resources out of
     /// sync or needing pruning and the operation's failed ones, at most 50
     /// each — counted past that, never decoded.
-    struct Detail: Decodable, Sendable, Declared {
-        var status: DetailStatus?
+    package struct Detail: Decodable, Sendable, Declared {
+        package var status: DetailStatus?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case status }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case status }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct DetailStatus: Decodable, Sendable, Declared {
+    package struct DetailStatus: Decodable, Sendable, Declared {
         /// Newest last, as Argo CD writes it: the last `historyKept`.
-        var history: [HistoryEntry] = []
-        var resources: [DetailResource] = []
+        package var history: [HistoryEntry] = []
+        package var resources: [DetailResource] = []
         /// Out of sync or needing pruning, past the `listKept` kept.
-        var resourcesPast = 0
-        var operationState: DetailOperationState?
+        package var resourcesPast = 0
+        package var operationState: DetailOperationState?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case history, resources, operationState }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case history, resources, operationState }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             if var list = try? c.nestedUnkeyedContainer(forKey: .history) {
                 while !list.isAtEnd {
@@ -758,23 +758,23 @@ enum KubeGitOpsWire {
         }
     }
 
-    struct DetailOperationState: Decodable, Sendable, Declared {
-        var syncResult: DetailSyncResult?
+    package struct DetailOperationState: Decodable, Sendable, Declared {
+        package var syncResult: DetailSyncResult?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case syncResult }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case syncResult }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// The operation's resources that failed: at most `listKept`, the rest
     /// counted; never its `source(s)` copy.
-    struct DetailSyncResult: Decodable, Sendable, Declared {
-        var failed: [SyncResource] = []
-        var failedPast = 0
+    package struct DetailSyncResult: Decodable, Sendable, Declared {
+        package var failed: [SyncResource] = []
+        package var failedPast = 0
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case resources }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case resources }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             guard var list = try? c.nestedUnkeyedContainer(forKey: .resources) else { return }
             while !list.isAtEnd {
@@ -791,18 +791,18 @@ enum KubeGitOpsWire {
 
     /// One `status.resources` entry, as the detail lists it: what it is,
     /// where, its sync and health status, whether it needs pruning.
-    struct DetailResource: Decodable, Sendable, Declared {
-        var group: String?
-        var version: String?
-        var kind: String?
-        var namespace: String?
-        var name: String?
-        var status: String?
-        var requiresPruning: Bool?
-        var health: Health?
+    package struct DetailResource: Decodable, Sendable, Declared {
+        package var group: String?
+        package var version: String?
+        package var kind: String?
+        package var namespace: String?
+        package var name: String?
+        package var status: String?
+        package var requiresPruning: Bool?
+        package var health: Health?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case group, version, kind, namespace, name, status, requiresPruning, health }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case group, version, kind, namespace, name, status, requiresPruning, health }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     // MARK: The rail's (G5)
@@ -811,20 +811,20 @@ enum KubeGitOpsWire {
     /// names a bound workload, where only Helm's own instance label said so
     /// (gitops.md 4.2): `status.resources[]`'s group, kind, namespace and
     /// name, at most `managedKept`; their sync, health and the rest never.
-    struct Managed: Decodable, Sendable, Declared {
-        var status: ManagedStatus?
+    package struct Managed: Decodable, Sendable, Declared {
+        package var status: ManagedStatus?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case status }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case status }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
-    struct ManagedStatus: Decodable, Sendable, Declared {
-        var resources: [ManagedEntry] = []
+    package struct ManagedStatus: Decodable, Sendable, Declared {
+        package var resources: [ManagedEntry] = []
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case resources }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case resources }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             guard var list = try? c.nestedUnkeyedContainer(forKey: .resources) else { return }
             while !list.isAtEnd {
@@ -838,44 +838,44 @@ enum KubeGitOpsWire {
         }
     }
 
-    struct ManagedEntry: Decodable, Sendable, Declared, Hashable {
-        var group: String?
-        var kind: String?
-        var namespace: String?
-        var name: String?
+    package struct ManagedEntry: Decodable, Sendable, Declared, Hashable {
+        package var group: String?
+        package var kind: String?
+        package var namespace: String?
+        package var name: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case group, kind, namespace, name }
-        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+        package enum CodingKeys: String, CodingKey, CaseIterable { case group, kind, namespace, name }
+        package static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
 
     /// The most of an Application's managed resources the rail looks at.
-    static let managedKept = 2000
+    package static let managedKept = 2000
 
-    static func managed(_ data: Data) throws -> Managed { try JSONDecoder().decode(Managed.self, from: data) }
+    package static func managed(_ data: Data) throws -> Managed { try JSONDecoder().decode(Managed.self, from: data) }
 
     /// The detail's history entries kept: the last 10.
-    static let historyKept = 10
+    package static let historyKept = 10
     /// The detail's resources (and failed ones) kept: 50.
-    static let listKept = 50
+    package static let listKept = 50
 
     // MARK: Helpers
 
     /// Whatever is there, unread.
-    struct Skip: Decodable, Sendable {
-        init(from decoder: Decoder) throws {}
+    package struct Skip: Decodable, Sendable {
+        package init(from decoder: Decoder) throws {}
     }
 
-    struct AnyKey: CodingKey {
-        var stringValue: String
-        var intValue: Int? { nil }
-        init(_ string: String) { stringValue = string }
-        init?(stringValue: String) { self.stringValue = stringValue }
-        init?(intValue: Int) { nil }
+    package struct AnyKey: CodingKey {
+        package var stringValue: String
+        package var intValue: Int? { nil }
+        package init(_ string: String) { stringValue = string }
+        package init?(stringValue: String) { self.stringValue = stringValue }
+        package init?(intValue: Int) { nil }
     }
 
-    enum Revisions {
+    package enum Revisions {
         /// `revisions[]` when it has any, else `revision`; nothing is `[]`.
-        static func said(_ revision: String?, _ revisions: [String]?) -> [String] {
+        package static func said(_ revision: String?, _ revisions: [String]?) -> [String] {
             if let revisions, !revisions.isEmpty { return revisions }
             if let revision, !revision.isEmpty { return [revision] }
             return []
@@ -885,25 +885,25 @@ enum KubeGitOpsWire {
     // MARK: Decoding
 
     /// One object, as a GET answers it.
-    static func object(_ data: Data) throws -> Object { try JSONDecoder().decode(Object.self, from: data) }
+    package static func object(_ data: Data) throws -> Object { try JSONDecoder().decode(Object.self, from: data) }
 
     /// A page of a list.
-    static func list(_ data: Data) throws -> List { try JSONDecoder().decode(List.self, from: data) }
+    package static func list(_ data: Data) throws -> List { try JSONDecoder().decode(List.self, from: data) }
 
     /// One GET's body as the detail reads it, parsed once: the summary's
     /// fields, and for an Application what only the detail shows. It
     /// declares no key of its own — both halves are the structs above.
-    struct DetailRead: Decodable, Sendable {
-        var object: Object
-        var detail: Detail?
+    package struct DetailRead: Decodable, Sendable {
+        package var object: Object
+        package var detail: Detail?
 
-        init(from decoder: Decoder) throws {
+        package init(from decoder: Decoder) throws {
             object = try Object(from: decoder)
             detail = object.kind == "Application" ? try? Detail(from: decoder) : nil
         }
     }
 
-    static func detailRead(_ data: Data) throws -> DetailRead { try JSONDecoder().decode(DetailRead.self, from: data) }
+    package static func detailRead(_ data: Data) throws -> DetailRead { try JSONDecoder().decode(DetailRead.self, from: data) }
 }
 
 extension Optional where Wrapped == String {

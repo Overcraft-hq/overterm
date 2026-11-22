@@ -3,8 +3,8 @@ import Foundation
 /// The vault's notes searched by what they say: every word of the query on
 /// a line, case and accents ignored — a few lines a note, the notes whose
 /// names match first. Reads the files; run off the main thread.
-enum NotesSearch {
-    nonisolated static func lines(
+package enum NotesSearch {
+    package nonisolated static func lines(
         _ query: String, in vault: NotesVault, paths: [String], perNote: Int = 2, limit: Int = 30
     ) -> [ContentMatch] {
         let words = query.split(whereSeparator: \.isWhitespace).map(String.init)

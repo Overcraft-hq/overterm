@@ -7,22 +7,22 @@ import Foundation
 /// `NSEvent`, so the tests can drive it without a trackpad. The view layer
 /// reads `NSTouch.normalizedPosition` (0 at the bottom, 1 at the top) and
 /// hands over the average.
-struct TabPeekGesture {
+package struct TabPeekGesture {
     /// Settings ▸ General. Three is the default; four is the way out when
     /// macOS claims three fingers for Mission Control or App Exposé.
-    enum Fingers: String, CaseIterable, Identifiable, Codable {
+    package enum Fingers: String, CaseIterable, Identifiable, Codable {
         case off, three, four
 
-        var id: String { rawValue }
+        package var id: String { rawValue }
         /// 0 when the gesture is switched off.
-        var count: Int {
+        package var count: Int {
             switch self {
             case .off: 0
             case .three: 3
             case .four: 4
             }
         }
-        var name: String {
+        package var name: String {
             switch self {
             case .off: "Off"
             case .three: "Three fingers"
@@ -31,7 +31,7 @@ struct TabPeekGesture {
         }
     }
 
-    enum Outcome: Equatable {
+    package enum Outcome: Equatable {
         case none
         /// Follow the fingers.
         case update(Double)
@@ -40,9 +40,9 @@ struct TabPeekGesture {
     }
 
     /// How far the fingers travel for one stage, in normalized units.
-    static let travel: CGFloat = 0.28
+    package static let travel: CGFloat = 0.28
     /// Below this the hand is only resting, not swiping.
-    static let threshold: CGFloat = 0.02
+    package static let threshold: CGFloat = 0.02
 
     private var origin: CGFloat?
     /// The progress the gesture started from, so a second swipe carries on
@@ -55,15 +55,15 @@ struct TabPeekGesture {
     /// loop is one direction: down opens the strip, down again the grid,
     /// down once more closes it.
     private var reversing = false
-    private(set) var progress: Double = 0
-    private(set) var isTracking = false
+    package private(set) var progress: Double = 0
+    package private(set) var isTracking = false
 
-    init(progress: Double = 0) {
+    package init(progress: Double = 0) {
         self.progress = progress
     }
 
     /// The fingers moved (or arrived). `count` is how many are down.
-    mutating func touched(count: Int, y: CGFloat, required: Int) -> Outcome {
+    package mutating func touched(count: Int, y: CGFloat, required: Int) -> Outcome {
         guard required > 0 else { return .none }
         guard count == required else {
             // A finger lifted or a fourth joined: the swipe is over.
@@ -83,7 +83,7 @@ struct TabPeekGesture {
     }
 
     /// The fingers left the trackpad.
-    mutating func ended() -> Outcome { isTracking ? end() : reset() }
+    package mutating func ended() -> Outcome { isTracking ? end() : reset() }
 
     private mutating func end() -> Outcome {
         let stage = Self.nearest(progress)
@@ -103,7 +103,7 @@ struct TabPeekGesture {
 
     /// A gesture that never started leaves the peek where the keyboard put
     /// it; this keeps the two in step.
-    mutating func settled(at stage: TabPeek.Stage) {
+    package mutating func settled(at stage: TabPeek.Stage) {
         origin = nil
         reversing = false
         isTracking = false
@@ -111,7 +111,7 @@ struct TabPeekGesture {
         progress = stage.progress
     }
 
-    static func nearest(_ progress: Double) -> TabPeek.Stage {
+    package static func nearest(_ progress: Double) -> TabPeek.Stage {
         TabPeek.Stage(rawValue: Int(progress.rounded())) ?? (progress > 1 ? .overview : .closed)
     }
 }

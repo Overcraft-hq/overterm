@@ -3,13 +3,13 @@ import Foundation
 /// `terraform state list`'s answer: one address a line (analysis 2.4,
 /// stage 2c). What the state view shows first — 0.16 s for 2,000 — while
 /// `show -json` reads the values. Pure.
-enum TerraformStateList {
+package enum TerraformStateList {
     /// The most addresses kept: a state of any size lists, the rest said.
-    static let maxAddresses = 20_000
+    package static let maxAddresses = 20_000
 
     /// The addresses, as Terraform printed them, scrubbed and with
     /// non-printables escaped; blank lines and anything that isn't one dropped.
-    static func parse(_ output: String) -> (addresses: [String], capped: Bool) {
+    package static func parse(_ output: String) -> (addresses: [String], capped: Bool) {
         var addresses: [String] = []
         var capped = false
         for line in output.split(whereSeparator: \.isNewline) {
@@ -26,7 +26,7 @@ enum TerraformStateList {
 
     /// A resource's module from its address (`module.acme.module.b.aws_x.y[0]`
     /// is `module.acme.module.b`), nil for the root module's.
-    static func module(of address: String) -> String? {
+    package static func module(of address: String) -> String? {
         var parts: [String] = []
         var rest = Substring(address)
         while rest.hasPrefix("module.") {
@@ -81,44 +81,44 @@ enum TerraformStateList {
 /// it is read; the raw data is not kept. There is no `state show -json`:
 /// one resource is read from this. `output -json` and `output NAME`, which
 /// print sensitive values, are never run. Pure.
-struct TerraformState: Equatable, Sendable {
-    struct Resource: Equatable, Sendable, Identifiable {
-        var address: String
+package struct TerraformState: Equatable, Sendable {
+    package struct Resource: Equatable, Sendable, Identifiable {
+        package var address: String
         /// Its module's address, nil for the root module's.
-        var module: String?
-        var mode: String
-        var type: String
-        var name: String
-        var index: String?
-        var provider: String
+        package var module: String?
+        package var mode: String
+        package var type: String
+        package var name: String
+        package var index: String?
+        package var provider: String
         /// Its attributes, masked: nil when the state has none.
-        var values: TerraformValue?
+        package var values: TerraformValue?
         /// `terraform taint`'d, or a create that failed half way: replaced by the next apply.
-        var tainted: Bool
+        package var tainted: Bool
         /// A deposed object's key (`create_before_destroy` left it).
-        var deposed: String?
-        var dependsOn: [String]
+        package var deposed: String?
+        package var dependsOn: [String]
 
-        var id: String { deposed.map { address + " (deposed \($0))" } ?? address }
-        var isData: Bool { mode == "data" }
+        package var id: String { deposed.map { address + " (deposed \($0))" } ?? address }
+        package var isData: Bool { mode == "data" }
     }
 
-    struct Output: Equatable, Sendable, Identifiable {
-        var name: String
+    package struct Output: Equatable, Sendable, Identifiable {
+        package var name: String
         /// Its type as HCL says it: `string`, `list(string)`, `object({…})`.
-        var type: String
-        var sensitive: Bool
+        package var type: String
+        package var sensitive: Bool
         /// Only when it isn't sensitive — never otherwise, not even its length.
-        var value: TerraformValue?
+        package var value: TerraformValue?
 
-        var id: String { name }
+        package var id: String { name }
     }
 
-    enum DecodeError: Error, Equatable, CustomStringConvertible {
+    package enum DecodeError: Error, Equatable, CustomStringConvertible {
         case notJSON
         case unknownFormat(String)
 
-        var description: String {
+        package var description: String {
             switch self {
             case .notJSON: "not a state's JSON"
             case .unknownFormat(let version): "a state format Overterm doesn't read (format_version \(version))"
@@ -126,37 +126,37 @@ struct TerraformState: Equatable, Sendable {
         }
     }
 
-    var formatVersion: String
-    var terraformVersion: String?
-    var resources: [Resource] = []
-    var outputs: [Output] = []
+    package var formatVersion: String
+    package var terraformVersion: String?
+    package var resources: [Resource] = []
+    package var outputs: [Output] = []
     /// More resources than `maxResources`: the rest left out, said.
-    var capped = false
+    package var capped = false
 
-    static let maxResources = 20_000
-    static let maxModuleDepth = 16
+    package static let maxResources = 20_000
+    package static let maxModuleDepth = 16
 
     /// The modules, in order: the root module's (nil) first, then by address.
-    var modules: [String?] {
+    package var modules: [String?] {
         let named = Set(resources.compactMap(\.module)).sorted()
         return (resources.contains { $0.module == nil } ? [nil] : []) + named.map { Optional($0) }
     }
 
-    func resource(_ address: String) -> Resource? { resources.first { $0.address == address && $0.deposed == nil } ?? resources.first { $0.address == address } }
+    package func resource(_ address: String) -> Resource? { resources.first { $0.address == address && $0.deposed == nil } ?? resources.first { $0.address == address } }
 
     // MARK: Decode
 
     /// `secretName`: the attribute names masked though unmarked —
     /// `TerraformSecretNames.isSecret` for the person's view, `forAgents`
     /// for what an agent reads (5.6 rule 4).
-    static func decode(_ data: Data, scrub: @escaping (String) -> String = TerraformPlan.scrub, secretName: (String) -> Bool = TerraformSecretNames.isSecret)
+    package static func decode(_ data: Data, scrub: @escaping (String) -> String = TerraformPlan.scrub, secretName: (String) -> Bool = TerraformSecretNames.isSecret)
         throws -> TerraformState
     {
         guard let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any] else { throw DecodeError.notJSON }
         return try decode(object, scrub: scrub, secretName: secretName)
     }
 
-    static func decode(_ object: [String: Any], scrub given: @escaping (String) -> String = TerraformPlan.scrub, secretName: (String) -> Bool = TerraformSecretNames.isSecret)
+    package static func decode(_ object: [String: Any], scrub given: @escaping (String) -> String = TerraformPlan.scrub, secretName: (String) -> Bool = TerraformSecretNames.isSecret)
         throws -> TerraformState
     {
         let format = object["format_version"] as? String ?? ""
@@ -229,7 +229,7 @@ struct TerraformState: Equatable, Sendable {
     /// The strings a state marks sensitive: a sensitive output's value,
     /// every attribute under a resource's `sensitive_values` mirror.
     /// Numbers by their text. Only what is hunted for; never kept.
-    static func sensitiveValues(in object: [String: Any]) -> Set<String> {
+    package static func sensitiveValues(in object: [String: Any]) -> Set<String> {
         var found: Set<String> = []
         func collect(_ raw: Any?, _ mirror: Any?, marked: Bool, depth: Int) {
             guard found.count < TerraformPlan.maxSecrets, depth < TerraformPlan.maxDepth, let raw, !(raw is NSNull) else { return }
@@ -279,7 +279,7 @@ struct TerraformState: Equatable, Sendable {
 
     /// A cty type as HCL writes it: `"string"`, `["list","string"]` →
     /// `list(string)`, `["object",{"a":"string"}]` → `object({a=string})`.
-    static func typeName(_ type: Any?, depth: Int = 0) -> String {
+    package static func typeName(_ type: Any?, depth: Int = 0) -> String {
         guard depth < 6 else { return "…" }
         switch type {
         case let name as String: return name
@@ -305,7 +305,7 @@ struct TerraformState: Equatable, Sendable {
     /// This state as an agent reads it (5.6 rule 4): every value masked
     /// by the broad names too (`Secrets.isSecret`), an output so named
     /// sensitive.
-    func forAgents() -> TerraformState {
+    package func forAgents() -> TerraformState {
         var state = self
         state.resources = resources.map { resource in
             var resource = resource
@@ -329,17 +329,17 @@ struct TerraformState: Equatable, Sendable {
 /// The state view's rows (analysis 2.4, 6.3): resources grouped by
 /// module, the root module's first, filtered by text over the address
 /// and type. Pure.
-enum TerraformStateRows {
-    struct Group: Equatable, Sendable, Identifiable {
+package enum TerraformStateRows {
+    package struct Group: Equatable, Sendable, Identifiable {
         /// The module's address; nil for the root module.
-        var module: String?
-        var addresses: [String]
-        var id: String { module ?? "" }
-        var title: String { module ?? "root module" }
+        package var module: String?
+        package var addresses: [String]
+        package var id: String { module ?? "" }
+        package var title: String { module ?? "root module" }
     }
 
     /// `addresses` (from `state list`, or the decoded state's) grouped by module.
-    static func groups(_ addresses: [String], filter: String = "") -> [Group] {
+    package static func groups(_ addresses: [String], filter: String = "") -> [Group] {
         let needle = filter.trimmingCharacters(in: .whitespaces).lowercased()
         var order: [String?] = []
         var byModule: [String: [String]] = [:]
@@ -362,7 +362,7 @@ enum TerraformStateRows {
     /// Groups already made, as `filter` leaves them: the addresses that
     /// contain it, ignoring case, a group left out once empty — no module
     /// walked again. No filter: the groups themselves.
-    static func filtered(_ groups: [Group], filter: String) -> [Group] {
+    package static func filtered(_ groups: [Group], filter: String) -> [Group] {
         let needle = filter.trimmingCharacters(in: .whitespaces)
         guard !needle.isEmpty else { return groups }
         return groups.compactMap { group in
@@ -373,7 +373,7 @@ enum TerraformStateRows {
 
     /// One resource's attributes as lines (`name = value`), sorted, each
     /// value one line, masked as the model has it.
-    static func attributes(_ resource: TerraformState.Resource, cut: Int = 200) -> [(name: String, value: String)] {
+    package static func attributes(_ resource: TerraformState.Resource, cut: Int = 200) -> [(name: String, value: String)] {
         guard case .object(let fields)? = resource.values else { return resource.values.map { [("value", $0.said(cut: cut))] } ?? [] }
         return fields.keys.sorted().map { key in (TerraformPlanText.escaped(key), fields[key]!.said(cut: cut)) }
     }
@@ -383,8 +383,8 @@ enum TerraformStateRows {
 /// `tf_outputs`, analysis 5.10): addresses by module, one resource's
 /// masked attributes, outputs with their type and — only when not
 /// sensitive — their value. Strings cut at 200 characters. Pure.
-enum TerraformStateText {
-    static func list(_ addresses: [String], capped: Bool, root: String, limit: Int = 2_000) -> String {
+package enum TerraformStateText {
+    package static func list(_ addresses: [String], capped: Bool, root: String, limit: Int = 2_000) -> String {
         var lines = ["State of \(TerraformPlanText.escaped(root)): \(addresses.count) resource\(addresses.count == 1 ? "" : "s")\(capped ? " (more left out)" : "")."]
         var budget = limit
         for group in TerraformStateRows.groups(addresses) {
@@ -403,7 +403,7 @@ enum TerraformStateText {
         return lines.joined(separator: "\n")
     }
 
-    static func resource(_ resource: TerraformState.Resource, root: String) -> String {
+    package static func resource(_ resource: TerraformState.Resource, root: String) -> String {
         var lines = ["\(TerraformPlanText.escaped(resource.address)) in \(TerraformPlanText.escaped(root)) (\(resource.isData ? "data source, " : "")\(resource.type), \(resource.provider))"]
         if resource.tainted { lines.append("Tainted: the next apply replaces it.") }
         if let deposed = resource.deposed { lines.append("Deposed object \(deposed): left by a create-before-destroy; the next apply deletes it.") }
@@ -416,7 +416,7 @@ enum TerraformStateText {
         return lines.joined(separator: "\n")
     }
 
-    static func outputs(_ outputs: [TerraformState.Output], root: String) -> String {
+    package static func outputs(_ outputs: [TerraformState.Output], root: String) -> String {
         guard !outputs.isEmpty else { return "\(TerraformPlanText.escaped(root)) has no outputs in its state." }
         var lines = ["Outputs of \(TerraformPlanText.escaped(root)) (\(outputs.count)):"]
         for output in outputs.prefix(500) {

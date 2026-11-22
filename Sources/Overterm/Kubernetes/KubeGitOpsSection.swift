@@ -4,60 +4,60 @@ import Foundation
 /// One row of the GitOps section (docs/design/kubernetes/gitops.md, 2.2):
 /// an Argo CD or Flux object, summarised or — not yet, or past the
 /// summaries' bound — as its live row's cells say it. Pure.
-struct KubeGitOpsRow: ResourceTableRow, Identifiable, Sendable {
+package struct KubeGitOpsRow: ResourceTableRow, Identifiable, Sendable {
     /// `<resource>/<namespace>/<name>`: the selection's tag.
-    var id: String
-    var key: KubeGitOpsObject.Key
+    package var id: String
+    package var key: KubeGitOpsObject.Key
     /// The kind's full name: `applications.argoproj.io`.
-    var resource: String
-    var ref: KubeRowID
-    var role: KubeGitOpsObject.Role
-    var tool: KubeGitOpsObject.Tool
-    var state: KubeGitOpsState
+    package var resource: String
+    package var ref: KubeRowID
+    package var role: KubeGitOpsObject.Role
+    package var tool: KubeGitOpsObject.Tool
+    package var state: KubeGitOpsState
     /// One line, at most 300 characters, scrubbed (5.3).
-    var why: String
-    var tags: [KubeGitOpsTag] = []
-    var into = ""
-    var revision = ""
-    var source = ""
+    package var why: String
+    package var tags: [KubeGitOpsTag] = []
+    package var into = ""
+    package var revision = ""
+    package var source = ""
     /// When its state began, read from the object; else when it was made.
-    var since: Date?
+    package var since: Date?
     /// Whether a summary stands behind it (else its cells alone, "…").
-    var summarised: Bool
+    package var summarised: Bool
     /// What the hover says: the why, the last error, the conditions — at most 4 KB, scrubbed.
-    var hover = ""
+    package var hover = ""
     /// What `G` groups it by and `repo:` matches (2.8), set as it is made.
-    var grouping = KubeGitOpsGroupKeys()
+    package var grouping = KubeGitOpsGroupKeys()
     /// An Argo CD app read from the marks on its objects (gitops.md
     /// 14.2.2): what its row says beyond the columns. Nil for an object.
-    var marked: Marked? = nil
+    package var marked: Marked? = nil
 
-    var height: CGFloat { 26 }
+    package var height: CGFloat { 26 }
 
     /// Whether it is an app read from marks, with no object of its own.
-    var isMarked: Bool { marked != nil }
+    package var isMarked: Bool { marked != nil }
 
-    static func id(resource: String, _ ref: KubeRowID) -> String { "\(resource)/\(ref.namespace ?? "")/\(ref.name)" }
+    package static func id(resource: String, _ ref: KubeRowID) -> String { "\(resource)/\(ref.namespace ?? "")/\(ref.name)" }
 
     /// A derived app's own (gitops.md 14.2.2): its key, Argo CD's word for
     /// it, whether any of it is said from its rows alone, its images, its
     /// installation, what its age is.
-    struct Marked: Equatable, Sendable {
-        var key: KubeTrackingID.AppKey
+    package struct Marked: Equatable, Sendable {
+        package var key: KubeTrackingID.AppKey
         /// What the State column says: Argo CD's word, "Unknown" when it
         /// ranks with a worse member (decision D-7).
-        var word: String
+        package var word: String
         /// Some member's state is from its row alone, or not read yet.
-        var fromRows: Bool
+        package var fromRows: Bool
         /// Every member's images, first seen first.
-        var images: [String]
+        package var images: [String]
         /// Its installation id; nil when its marks carry none.
-        var installation: String?
+        package var installation: String?
         /// What its age counts from, for the Age column's hover.
-        var sinceSaid: String?
+        package var sinceSaid: String?
         /// Grouped by `app.kubernetes.io/instance` alone (D-5): only
         /// probably Argo CD's — nothing said of where Argo CD runs.
-        var probable = false
+        package var probable = false
     }
 }
 
@@ -67,12 +67,12 @@ struct KubeGitOpsRow: ResourceTableRow, Identifiable, Sendable {
 /// Ready, the header's words, the empty scope's hint, the columns and the
 /// CLI lines `k` copies. The state of a row not yet summarised comes from
 /// its cells alone. Pure.
-enum KubeGitOpsSection {
+package enum KubeGitOpsSection {
     /// Above this many rows, Ready ones are hidden until their chip is pressed (decision 10).
-    static let hideReadyAbove = 50
+    package static let hideReadyAbove = 50
 
     /// The section's columns, in order (2.2's table).
-    static let columns: [ResourceColumn] = [
+    package static let columns: [ResourceColumn] = [
         ResourceColumn(id: "state", title: "State", width: 104, minWidth: 80),
         ResourceColumn(id: "kind", title: "Kind", width: 58, minWidth: 40),
         ResourceColumn(id: "name", title: "Name", width: 220, minWidth: 100),
@@ -86,18 +86,18 @@ enum KubeGitOpsSection {
     /// The rows that live in or deploy into the scope, and those that can't
     /// be placed (not summarised, off All Namespaces); beside Applications
     /// that are read, the apps read from marks that have none here.
-    struct Rows: Equatable, Sendable {
-        var shown: [KubeGitOpsRow] = []
-        var notPlaced: [KubeGitOpsRow] = []
+    package struct Rows: Equatable, Sendable {
+        package var shown: [KubeGitOpsRow] = []
+        package var notPlaced: [KubeGitOpsRow] = []
         /// Summaries anywhere (not only the scope's): where the empty scope's hint points.
-        var everywhere: [String: Int] = [:]
-        var everywhereTool: [String: KubeGitOpsObject.Tool] = [:]
+        package var everywhere: [String: Int] = [:]
+        package var everywhereTool: [String: KubeGitOpsObject.Tool] = [:]
         /// Beside Applications read (gitops.md 14.2.1): the marked apps
         /// with no Application here — among `shown` too — their chip's.
-        var beside: [KubeGitOpsRow] = []
+        package var beside: [KubeGitOpsRow] = []
         /// Beside Applications read in some namespaces only: marked apps
         /// whose Application's namespace wasn't read — counted, not listed.
-        var besideUnread = 0
+        package var besideUnread = 0
     }
 
     // MARK: Rows
@@ -107,7 +107,7 @@ enum KubeGitOpsSection {
     /// live row without a summary from its cells — shown on All
     /// Namespaces, else "not placed". In display order: state, then the
     /// oldest problem first.
-    static func rows(
+    package static func rows(
         summaries: [KubeGitOpsObject], live: [String: KubeRows], listed: Set<String>, scope: KubeScope, now: Date,
         unreadable: Set<KubeGitOpsObject.Key> = [], derived: KubeMarkedSection.Derived = KubeMarkedSection.Derived()
     ) -> Rows {
@@ -143,7 +143,7 @@ enum KubeGitOpsSection {
     }
 
     /// State in display order, then the oldest first, then by name.
-    static func ordered(_ a: KubeGitOpsRow, _ b: KubeGitOpsRow) -> Bool {
+    package static func ordered(_ a: KubeGitOpsRow, _ b: KubeGitOpsRow) -> Bool {
         if a.state != b.state { return a.state < b.state }
         let at = a.since ?? .distantFuture
         let bt = b.since ?? .distantFuture
@@ -153,7 +153,7 @@ enum KubeGitOpsSection {
     }
 
     /// A summary's row.
-    static func row(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers, unreadable: Bool = false) -> KubeGitOpsRow {
+    package static func row(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers, unreadable: Bool = false) -> KubeGitOpsRow {
         var why = object.why
         if unreadable { why = why.isEmpty ? "couldn't read why" : "\(why) · couldn't read it again" }
         return KubeGitOpsRow(
@@ -164,7 +164,7 @@ enum KubeGitOpsSection {
     }
 
     /// A live row with no summary: its state from its cells alone, "…" for why.
-    static func row(cells live: KubeRow, columns: [KubeColumn], resource: String, unreadable: Set<KubeGitOpsObject.Key> = []) -> KubeGitOpsRow? {
+    package static func row(cells live: KubeRow, columns: [KubeColumn], resource: String, unreadable: Set<KubeGitOpsObject.Key> = []) -> KubeGitOpsRow? {
         guard let (role, tool, kind) = role(resource) else { return nil }
         let key = KubeGitOpsObject.Key(kind: kind, namespace: live.id.namespace, name: live.id.name)
         let (state, said) = cellState(resource: resource, live, columns: columns)
@@ -190,7 +190,7 @@ enum KubeGitOpsSection {
     }
 
     /// The kinds the section shows, by full name: role, tool, Kind.
-    static func role(_ resource: String) -> (KubeGitOpsObject.Role, KubeGitOpsObject.Tool, String)? {
+    package static func role(_ resource: String) -> (KubeGitOpsObject.Role, KubeGitOpsObject.Tool, String)? {
         switch resource {
         case "applications.argoproj.io": (.application, .argo, "Application")
         case "applicationsets.argoproj.io": (.applicationSet, .argo, "ApplicationSet")
@@ -205,14 +205,14 @@ enum KubeGitOpsSection {
 
     /// A row's cells as a summary compares them: date columns left out —
     /// the server renders them relative, so they change on every event.
-    static func cellsKey(_ row: KubeRow, columns: [KubeColumn]) -> [String] {
+    package static func cellsKey(_ row: KubeRow, columns: [KubeColumn]) -> [String] {
         zip(columns, row.cells).compactMap { column, cell in column.type == "date" ? nil : cell.text }
     }
 
     /// Synced and Healthy (Argo CD), Ready True (Flux): a row whose events
     /// aren't refetched unless a cell changes. A row whose cells say
     /// neither (no columns) counts as healthy: only a cell change tells.
-    static func healthy(resource: String, _ row: KubeRow, columns: [KubeColumn]) -> Bool {
+    package static func healthy(resource: String, _ row: KubeRow, columns: [KubeColumn]) -> Bool {
         if resource == "applications.argoproj.io" {
             let sync = row.cell("Sync Status", in: columns)?.text ?? ""
             let health = row.cell("Health Status", in: columns)?.text ?? ""
@@ -226,7 +226,7 @@ enum KubeGitOpsSection {
     /// A state from the cells alone, said: Degraded Failed, Synced and
     /// Healthy Ready; Flux's Ready True, False or Unknown — never more
     /// than they say (an OutOfSync's auto-sync isn't in them).
-    static func cellState(resource: String, _ row: KubeRow, columns: [KubeColumn]) -> (KubeGitOpsState, String) {
+    package static func cellState(resource: String, _ row: KubeRow, columns: [KubeColumn]) -> (KubeGitOpsState, String) {
         if resource == "applications.argoproj.io" {
             let sync = row.cell("Sync Status", in: columns)?.text ?? ""
             let health = row.cell("Health Status", in: columns)?.text ?? ""
@@ -253,7 +253,7 @@ enum KubeGitOpsSection {
 
     /// `→ shop` for a destination field, `shop` or `shop +2` for what it
     /// manages, `⇢ server` for another cluster — said, never followed.
-    static func into(_ object: KubeGitOpsObject) -> String {
+    package static func into(_ object: KubeGitOpsObject) -> String {
         if let remote = object.remote { return "⇢ \(GitRemoteURL.withoutUserinfo(remote))" }
         if let namespace = object.destination?.namespace { return "→ \(namespace)" }
         let managed = object.managedNamespaces.sorted()
@@ -263,7 +263,7 @@ enum KubeGitOpsSection {
 
     /// Argo CD: `live → target` while OutOfSync, else what is live; Flux:
     /// what is applied (a HelmRelease's chart version), a source its artifact.
-    static func revision(_ object: KubeGitOpsObject) -> String {
+    package static func revision(_ object: KubeGitOpsObject) -> String {
         func said(_ revisions: [String]) -> String {
             let shown = revisions.filter { !$0.isEmpty }.map(KubeGitOpsRevision.shown)
             guard let first = shown.first else { return "" }
@@ -284,7 +284,7 @@ enum KubeGitOpsSection {
 
     /// Host-less `org/repo path @ref`, `chart@version`, or "3 sources"; a
     /// Flux object's through its source's summary.
-    static func source(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> String {
+    package static func source(_ object: KubeGitOpsObject, peers: KubeGitOpsLadder.Peers) -> String {
         func repository(_ url: String) -> String { GitRemoteURL(url)?.path ?? GitRemoteURL.withoutUserinfo(url) }
         switch object.role {
         case .application:
@@ -317,7 +317,7 @@ enum KubeGitOpsSection {
 
     /// The hover: the why, the last error, its conditions — every message
     /// already through 5.3, the whole at most 4 KB.
-    static func hover(_ object: KubeGitOpsObject) -> String {
+    package static func hover(_ object: KubeGitOpsObject) -> String {
         var lines = ["\(object.state.word): \(object.why)"]
         if let error = object.lastError, !error.isEmpty, !object.why.contains(error) { lines.append(error) }
         for condition in object.conditions {
@@ -332,7 +332,7 @@ enum KubeGitOpsSection {
     // MARK: Chips, filters
 
     /// The chips in display order, with how many rows each state has.
-    static func chips(_ rows: [KubeGitOpsRow]) -> [(state: KubeGitOpsState, count: Int)] {
+    package static func chips(_ rows: [KubeGitOpsRow]) -> [(state: KubeGitOpsState, count: Int)] {
         var counts: [KubeGitOpsState: Int] = [:]
         for row in rows { counts[row.state, default: 0] += 1 }
         return KubeGitOpsState.allCases.compactMap { state in counts[state].map { (state, $0) } }
@@ -341,14 +341,14 @@ enum KubeGitOpsSection {
     /// A chip's words: `2 failing`, `41 ready`; `878 ready (31 from rows
     /// only)` when apps read from marks are Ready by their rows' cells
     /// alone (gitops.md 14.2.2).
-    static func chipText(_ state: KubeGitOpsState, _ count: Int, fromRows: Int) -> String {
+    package static func chipText(_ state: KubeGitOpsState, _ count: Int, fromRows: Int) -> String {
         let text = chipText(state, count)
         guard fromRows > 0 else { return text }
         return "\(text) (\(fromRows) from rows only)"
     }
 
     /// A chip's words: `2 failing`, `41 ready`.
-    static func chipText(_ state: KubeGitOpsState, _ count: Int) -> String {
+    package static func chipText(_ state: KubeGitOpsState, _ count: Int) -> String {
         let word =
             switch state {
             case .failed: "failing"
@@ -369,7 +369,7 @@ enum KubeGitOpsSection {
     /// when their chip is on; the filter's words (`KubeGitOpsFilter`:
     /// `is:`, `kind:`, `tool:`, `repo:`, `image:`, then text over name,
     /// why and source).
-    static func visible(
+    package static func visible(
         _ rows: Rows, chip: KubeGitOpsState?, hideReady: Bool, tool: KubeGitOpsObject.Tool?, notPlaced: Bool, beside: Bool = false, text: String
     ) -> [KubeGitOpsRow] {
         let filter = KubeGitOpsFilter(text)
@@ -387,7 +387,7 @@ enum KubeGitOpsSection {
     // MARK: Words
 
     /// `Argo CD 2 kinds · Flux 6 kinds · summarised 3 min ago`.
-    static func header(argo: Int, flux: Int, summarisedAt: Date?, summarising: Bool, now: Date) -> String {
+    package static func header(argo: Int, flux: Int, summarisedAt: Date?, summarising: Bool, now: Date) -> String {
         var parts: [String] = []
         if argo > 0 { parts.append("Argo CD \(argo) kind\(argo == 1 ? "" : "s")") }
         if flux > 0 { parts.append("Flux \(flux) kind\(flux == 1 ? "" : "s")") }
@@ -402,7 +402,7 @@ enum KubeGitOpsSection {
 
     /// The empty scope: where the objects are, never the scope widened
     /// silently — "Show argocd" adds the namespace, as a chip would.
-    static func emptyHint(_ rows: Rows, scope: KubeScope) -> (text: String, namespace: String?) {
+    package static func emptyHint(_ rows: Rows, scope: KubeScope) -> (text: String, namespace: String?) {
         let place = scope.names?.joined(separator: ", ") ?? "the cluster"
         let lead = "No GitOps object lives in or deploys into \(place)."
         let elsewhere = rows.everywhere.filter { !scope.includes($0.key) && !$0.key.isEmpty }
@@ -416,7 +416,7 @@ enum KubeGitOpsSection {
     /// What `k` copies: flux's or argocd's own `get`, as Overterm always
     /// says it — the context named, the namespace too; nil for a kind
     /// neither CLI names (an ApplicationSet: kubectl's).
-    static func cliLine(_ row: KubeGitOpsRow, context: String) -> String? {
+    package static func cliLine(_ row: KubeGitOpsRow, context: String) -> String? {
         // An app read from marks: against the person's own Argo CD server.
         if row.isMarked { return KubeMarkedSection.cliLine(row) }
         let q = KubeCommands.quoted
@@ -435,28 +435,28 @@ enum KubeGitOpsSection {
 /// 60 s an object summarised in progress. Each object at most once every
 /// 15 s; at most 20 taken a flush — Failed, Blocked and Stuck first, the
 /// periodic ones last; the rest wait for the next. Pure.
-struct KubeGitOpsRefetch: Equatable, Sendable {
-    static let perObject: TimeInterval = 15
-    static let perFlush = 20
-    static let inProgressEvery: TimeInterval = 60
+package struct KubeGitOpsRefetch: Equatable, Sendable {
+    package static let perObject: TimeInterval = 15
+    package static let perFlush = 20
+    package static let inProgressEvery: TimeInterval = 60
 
-    enum Priority: Int, Comparable, Sendable {
+    package enum Priority: Int, Comparable, Sendable {
         case problem, other, periodic
 
-        static func < (lhs: Priority, rhs: Priority) -> Bool { lhs.rawValue < rhs.rawValue }
+        package static func < (lhs: Priority, rhs: Priority) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
-    private(set) var pending: [KubeGitOpsObject.Key: Priority] = [:]
-    private(set) var lastAsked: [KubeGitOpsObject.Key: Date] = [:]
+    package private(set) var pending: [KubeGitOpsObject.Key: Priority] = [:]
+    package private(set) var lastAsked: [KubeGitOpsObject.Key: Date] = [:]
 
-    var isEmpty: Bool { pending.isEmpty }
+    package var isEmpty: Bool { pending.isEmpty }
 
-    mutating func ask(_ key: KubeGitOpsObject.Key, _ priority: Priority) {
+    package mutating func ask(_ key: KubeGitOpsObject.Key, _ priority: Priority) {
         pending[key] = min(pending[key] ?? priority, priority)
     }
 
     /// Up to `limit` keys whose last GET is 15 s behind, problems first.
-    mutating func take(now: Date, limit: Int = perFlush) -> [KubeGitOpsObject.Key] {
+    package mutating func take(now: Date, limit: Int = perFlush) -> [KubeGitOpsObject.Key] {
         let due = pending.filter { key, _ in lastAsked[key].map { now.timeIntervalSince($0) >= Self.perObject } ?? true }
         let taken = due.sorted { $0.value != $1.value ? $0.value < $1.value : $0.key.description < $1.key.description }.prefix(limit).map(\.key)
         for key in taken {
@@ -466,13 +466,13 @@ struct KubeGitOpsRefetch: Equatable, Sendable {
         return taken
     }
 
-    mutating func forget() {
+    package mutating func forget() {
         pending = [:]
         lastAsked = [:]
     }
 
     /// Why a change of a live row asks for its object again; nil when it doesn't.
-    static func reason(
+    package static func reason(
         added: Bool, resource: String, row: KubeRow, columns: [KubeColumn], summary: KubeGitOpsObject?
     ) -> Priority? {
         let healthy = KubeGitOpsSection.healthy(resource: resource, row, columns: columns)
@@ -484,7 +484,7 @@ struct KubeGitOpsRefetch: Equatable, Sendable {
 
     /// Whether an object was summarised in progress (an operation running,
     /// reconciling, Stuck or Progressing) and is due its 60 s look.
-    static func inProgress(_ object: KubeGitOpsObject, now: Date) -> Bool {
+    package static func inProgress(_ object: KubeGitOpsObject, now: Date) -> Bool {
         guard now.timeIntervalSince(object.readAt) >= inProgressEvery else { return false }
         if object.state == .stuck || object.state == .progressing { return true }
         if object.operation?.phase == "Running" { return true }
@@ -495,23 +495,23 @@ struct KubeGitOpsRefetch: Equatable, Sendable {
 /// Argo CD's and Flux's controllers as R1c follows them (gitops.md 3.1,
 /// 2.3): a controller not ready tags its tool's rows "may be stale" and
 /// shows the banner; it never changes a row's state. Pure.
-enum KubeGitOpsControllers {
+package enum KubeGitOpsControllers {
     /// Flux's own namespace when nothing says otherwise.
-    static let fluxNamespace = "flux-system"
+    package static let fluxNamespace = "flux-system"
 
-    struct Controller: Equatable, Sendable {
-        var name: String
-        var namespace: String
-        var tool: KubeGitOpsObject.Tool
+    package struct Controller: Equatable, Sendable {
+        package var name: String
+        package var namespace: String
+        package var tool: KubeGitOpsObject.Tool
         /// `0/1`, as its Ready cell says.
-        var said: String
-        var ready: Bool
+        package var said: String
+        package var ready: Bool
     }
 
     /// Whether a workload in a controllers' namespace is one of the tool's
     /// controllers: Argo CD's application controller, repo server,
     /// ApplicationSet controller and server; any Flux `*-controller`.
-    static func isController(_ name: String, tool: KubeGitOpsObject.Tool) -> Bool {
+    package static func isController(_ name: String, tool: KubeGitOpsObject.Tool) -> Bool {
         switch tool {
         case .argo:
             ["application-controller", "repo-server", "applicationset-controller", "argocd-server"].contains { name.hasSuffix($0) || name == $0 }
@@ -520,7 +520,7 @@ enum KubeGitOpsControllers {
     }
 
     /// The controllers among a namespace's workloads' rows.
-    static func controllers(_ rows: KubeRows, kind: String, namespace: String, tool: KubeGitOpsObject.Tool) -> [Controller] {
+    package static func controllers(_ rows: KubeRows, kind: String, namespace: String, tool: KubeGitOpsObject.Tool) -> [Controller] {
         rows.sorted.compactMap { row in
             guard isController(row.id.name, tool: tool) else { return nil }
             let ready = KubeWorkloadState.ready(row, columns: rows.columns, kind: kind) ?? true
@@ -530,7 +530,7 @@ enum KubeGitOpsControllers {
     }
 
     /// `kustomize-controller 0/1 ready in flux-system — Flux's states below may be stale`.
-    static func banner(_ controllers: [Controller]) -> String? {
+    package static func banner(_ controllers: [Controller]) -> String? {
         let down = controllers.filter { !$0.ready }
         guard let first = down.first else { return nil }
         let names = down.map { "\($0.name)\($0.said.isEmpty ? "" : " \($0.said)")" }.joined(separator: ", ")
@@ -540,10 +540,10 @@ enum KubeGitOpsControllers {
     }
 
     /// The tools whose controllers aren't all ready.
-    static func stale(_ controllers: [Controller]) -> Set<KubeGitOpsObject.Tool> { Set(controllers.filter { !$0.ready }.map(\.tool)) }
+    package static func stale(_ controllers: [Controller]) -> Set<KubeGitOpsObject.Tool> { Set(controllers.filter { !$0.ready }.map(\.tool)) }
 
     /// Argo CD's namespace: the one most Applications live in, else `argocd`.
-    static func argoNamespace(applications: [String?]) -> String {
+    package static func argoNamespace(applications: [String?]) -> String {
         var counts: [String: Int] = [:]
         for namespace in applications.compactMap({ $0 }) { counts[namespace, default: 0] += 1 }
         return counts.max { $0.value != $1.value ? $0.value < $1.value : $0.key > $1.key }?.key ?? KubeGitOps.argoDefaultNamespace

@@ -11,22 +11,22 @@ import Foundation
 /// every place a value can hide.
 extension FakeKubeAPI {
     /// What must never come out of a summary, a row, a brief or an answer.
-    static let gitOpsSentinel = "s3cr3t-sentinel"
+    package static let gitOpsSentinel = "s3cr3t-sentinel"
 
     /// The fixtures' commits (fictional).
-    enum GitOpsCommit {
+    package enum GitOpsCommit {
         /// What is applied: Argo CD's live, Flux's artifact and applied.
-        static let applied = "a77b0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c"
+        package static let applied = "a77b0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c"
         /// What Flux tried and failed.
-        static let attempted = "c03f9aa1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7"
+        package static let attempted = "c03f9aa1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7"
         /// What Argo CD's git has now.
-        static let target = "77e1a02b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f"
+        package static let target = "77e1a02b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f"
         /// An older revision.
-        static let older = "5d0c1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d"
+        package static let older = "5d0c1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d"
     }
 
     /// The pinned CRDs' printer columns, by full name.
-    static let gitOpsColumns: [String: [Column]] = {
+    package static let gitOpsColumns: [String: [Column]] = {
         func c(_ name: String, _ type: String = "string", priority: Int = 0) -> Column { Column(name: name, type: type, priority: priority) }
         let flux = [c("Age", "date"), c("Ready"), c("Status")]
         return [
@@ -54,7 +54,7 @@ extension FakeKubeAPI {
 
     /// Argo CD: Applications and ApplicationSets, its server, repo server
     /// and application controller in `argocd`. No ConfigMap.
-    func serveArgoCD() {
+    package func serveArgoCD() {
         addNamespace("argocd")
         serveCRD("argoproj.io", "v1alpha1", "applications", "Application", shortNames: ["app", "apps"])
         serveCRD("argoproj.io", "v1alpha1", "applicationsets", "ApplicationSet", shortNames: ["appset", "appsets"])
@@ -64,7 +64,7 @@ extension FakeKubeAPI {
     }
 
     /// Flux: its kinds and its three controllers in `flux-system`.
-    func serveFlux() {
+    package func serveFlux() {
         addNamespace("flux-system")
         serveCRD("kustomize.toolkit.fluxcd.io", "v1", "kustomizations", "Kustomization", shortNames: ["ks"])
         serveCRD("helm.toolkit.fluxcd.io", "v2", "helmreleases", "HelmRelease", shortNames: ["hr"])
@@ -85,7 +85,7 @@ extension FakeKubeAPI {
     }
 
     /// A controller ready or not (`0/1`): its banner's cause.
-    func setControllerReady(_ name: String, _ ready: Bool) {
+    package func setControllerReady(_ name: String, _ ready: Bool) {
         let namespace = name.hasPrefix("argocd") ? "argocd" : "flux-system"
         let resource = name == "argocd-application-controller" ? "statefulsets.apps" : "deployments.apps"
         let count = ready ? 1 : 0
@@ -99,14 +99,14 @@ extension FakeKubeAPI {
     // MARK: Objects
 
     /// An Argo CD Application, its cells from its status.
-    func addApplication(_ name: String, namespace: String = "argocd", spec: [String: Any], status: [String: Any], metadata: [String: Any] = [:]) {
+    package func addApplication(_ name: String, namespace: String = "argocd", spec: [String: Any], status: [String: Any], metadata: [String: Any] = [:]) {
         var fields: [String: Any] = ["spec": spec, "status": status]
         if !metadata.isEmpty { fields["metadata"] = metadata }
         add("applications.argoproj.io", name, namespace: namespace, values: Self.argoCells(spec: spec, status: status), fields: fields)
     }
 
     /// A Flux object (any of its kinds), its cells from its Ready condition.
-    func addFlux(
+    package func addFlux(
         _ resource: String, _ name: String, namespace: String = "flux-system", spec: [String: Any], status: [String: Any],
         metadata: [String: Any] = [:], managedFields: [[String: Any]]? = nil
     ) {
@@ -119,7 +119,7 @@ extension FakeKubeAPI {
     }
 
     /// An Application's status changed, its cells with it: one MODIFIED.
-    func setArgoState(_ name: String, namespace: String = "argocd", _ change: @escaping (inout [String: Any]) -> Void) {
+    package func setArgoState(_ name: String, namespace: String = "argocd", _ change: @escaping (inout [String: Any]) -> Void) {
         let current = object("applications.argoproj.io", name, namespace: namespace) ?? [:]
         var status = current["status"] as? [String: Any] ?? [:]
         change(&status)
@@ -128,7 +128,7 @@ extension FakeKubeAPI {
     }
 
     /// A Flux object's Ready condition set, its cells with it: one MODIFIED.
-    func setFluxReady(_ resource: String, _ name: String, namespace: String = "flux-system", _ ready: String, reason: String, message: String) {
+    package func setFluxReady(_ resource: String, _ name: String, namespace: String = "flux-system", _ ready: String, reason: String, message: String) {
         let current = object(resource, name, namespace: namespace) ?? [:]
         var status = current["status"] as? [String: Any] ?? [:]
         var conditions = (status["conditions"] as? [[String: Any]] ?? []).filter { $0["type"] as? String != "Ready" }
@@ -139,14 +139,14 @@ extension FakeKubeAPI {
 
     /// A Flux object's status changed in place (its revisions, its
     /// artifact), its cells with it: one MODIFIED.
-    func setFluxStatus(_ resource: String, _ name: String, namespace: String = "flux-system", _ change: (inout [String: Any]) -> Void) {
+    package func setFluxStatus(_ resource: String, _ name: String, namespace: String = "flux-system", _ change: (inout [String: Any]) -> Void) {
         let current = object(resource, name, namespace: namespace) ?? [:]
         var status = current["status"] as? [String: Any] ?? [:]
         change(&status)
         modify(resource, name, namespace: namespace, values: Self.fluxCells(status: status)) { body in body["status"] = status }
     }
 
-    static func argoCells(spec: [String: Any], status: [String: Any]) -> [String: Value] {
+    package static func argoCells(spec: [String: Any], status: [String: Any]) -> [String: Value] {
         let sync = status["sync"] as? [String: Any]
         return [
             "Sync Status": .text(sync?["status"] as? String ?? ""), "Health Status": .text((status["health"] as? [String: Any])?["status"] as? String ?? ""),
@@ -154,19 +154,19 @@ extension FakeKubeAPI {
         ]
     }
 
-    static func fluxCells(status: [String: Any]) -> [String: Value] {
+    package static func fluxCells(status: [String: Any]) -> [String: Value] {
         let ready = (status["conditions"] as? [[String: Any]] ?? []).first { $0["type"] as? String == "Ready" }
         return ["Ready": .text(ready?["status"] as? String ?? "Unknown"), "Status": .text(ready?["message"] as? String ?? "")]
     }
 
-    static func condition(_ type: String, _ status: String, _ reason: String, _ message: String = "", since: Date) -> [String: Any] {
+    package static func condition(_ type: String, _ status: String, _ reason: String, _ message: String = "", since: Date) -> [String: Any] {
         ["type": type, "status": status, "reason": reason, "message": message, "lastTransitionTime": time(since)]
     }
 
     /// Every object of §8.3, Argo CD's and Flux's both served first: one
     /// for each rung of the ladder, the sentinel in every carrier, a URL's
     /// token in a source and a message.
-    func addGitOpsFixtures(now: Date = Date()) {
+    package func addGitOpsFixtures(now: Date = Date()) {
         serveArgoCD()
         serveFlux()
         for namespace in ["shop", "team-a"] { addNamespace(namespace) }
@@ -482,12 +482,12 @@ extension FakeKubeAPI {
 
     /// What `addGitOpsPerfApplications` made: the names, by index, and
     /// which were made in a problem state.
-    struct GitOpsPerfApps {
-        var names: [String]
+    package struct GitOpsPerfApps {
+        package var names: [String]
         /// Degraded at the start (every 50th).
-        var degraded: Set<Int>
+        package var degraded: Set<Int>
         /// OutOfSync with auto-sync off (every 25th from the 5th).
-        var drifting: Set<Int>
+        package var drifting: Set<Int>
     }
 
     /// G8's cluster (gitops.md 3.2, 8.4): `count` Argo CD Applications in
@@ -498,7 +498,7 @@ extension FakeKubeAPI {
     /// Degraded, every 25th from the 5th OutOfSync with auto-sync off; the
     /// rest Synced and Healthy. Argo CD served first. Fictional names.
     @discardableResult
-    func addGitOpsPerfApplications(_ count: Int, now: Date = Date()) -> GitOpsPerfApps {
+    package func addGitOpsPerfApplications(_ count: Int, now: Date = Date()) -> GitOpsPerfApps {
         serveArgoCD()
         let namespaces = (0..<10).map { "team-\($0)" }
         for namespace in namespaces { addNamespace(namespace) }
@@ -610,7 +610,7 @@ extension FakeKubeAPI {
     /// An Application's controller wrote its status again, its cells only
     /// as they say: `reconciledAt` moved (every Application's, every few
     /// minutes), and, `degrade`, its health Degraded. One MODIFIED.
-    func touchApplication(_ name: String, namespace: String = "argocd", degrade: Bool, at now: Date = Date()) {
+    package func touchApplication(_ name: String, namespace: String = "argocd", degrade: Bool, at now: Date = Date()) {
         setArgoState(name, namespace: namespace) { status in
             status["reconciledAt"] = Self.time(now)
             if degrade { status["health"] = ["status": "Degraded", "message": "Deployment \(name) exceeded its progress deadline"] }

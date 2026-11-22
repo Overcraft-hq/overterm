@@ -6,17 +6,17 @@ import SwiftUI
 /// the bar's counts and the time it has run; Stop (`.`). Then how it
 /// ended, from the exit code and an apply summary. One followed again
 /// after Overterm last quit says so.
-struct TerraformApplyView: View {
-    @ObservedObject var apply: TerraformApplyRun
-    @ObservedObject var pane: TerraformPlanPaneModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: TerraformPlanActions
+package struct TerraformApplyView: View {
+    @ObservedObject package var apply: TerraformApplyRun
+    @ObservedObject package var pane: TerraformPlanPaneModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: TerraformPlanActions
     @State private var now = Date()
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var red: Color { TerraformPanelView.production }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.4)

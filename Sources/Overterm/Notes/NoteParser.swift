@@ -4,78 +4,78 @@ import Foundation
 /// links and embeds, tags, headings, tasks and block ids — with where each
 /// is in the text (UTF-16, as the editor counts), so a link can be followed
 /// and a task ticked in place. Pure: text in, structure out.
-struct NoteDocument: Equatable, Sendable {
-    struct Link: Equatable, Hashable, Sendable {
+package struct NoteDocument: Equatable, Sendable {
+    package struct Link: Equatable, Hashable, Sendable {
         /// What it points at, as written: `Folder/Note`, `Note.md`, `image.png`.
-        var target: String
+        package var target: String
         /// `#Heading` or `#^block`, without the `#`.
-        var heading: String?
-        var block: String?
-        var alias: String?
+        package var heading: String?
+        package var block: String?
+        package var alias: String?
         /// `![[…]]` (or `![](…)`): shown in place, not linked to.
-        var isEmbed = false
+        package var isEmbed = false
         /// `[text](path.md)` rather than `[[…]]`.
-        var isMarkdown = false
-        var range: NSRange
+        package var isMarkdown = false
+        package var range: NSRange
         /// Its line (from 0), and that line's text — what a backlink shows,
         /// with no file read.
-        var line = 0
-        var context = ""
+        package var line = 0
+        package var context = ""
     }
 
-    struct Tag: Equatable, Hashable, Sendable {
+    package struct Tag: Equatable, Hashable, Sendable {
         /// Without `#`: `project/overterm`.
-        var name: String
-        var range: NSRange?
+        package var name: String
+        package var range: NSRange?
     }
 
-    struct Heading: Equatable, Hashable, Sendable {
-        var level: Int
-        var text: String
-        var line: Int
-        var range: NSRange
+    package struct Heading: Equatable, Hashable, Sendable {
+        package var level: Int
+        package var text: String
+        package var line: Int
+        package var range: NSRange
     }
 
-    struct Task: Equatable, Hashable, Sendable {
-        var text: String
+    package struct Task: Equatable, Hashable, Sendable {
+        package var text: String
         /// The character between the brackets: " ", "x", "/", "-"…
-        var status: Character
-        var line: Int
+        package var status: Character
+        package var line: Int
         /// The status character itself, to tick it in place.
-        var statusRange: NSRange
-        var isDone: Bool { status == "x" || status == "X" }
+        package var statusRange: NSRange
+        package var isDone: Bool { status == "x" || status == "X" }
     }
 
     /// The frontmatter as text, and parsed (JSON's shapes, through YAMLReader).
-    var frontmatter: String?
-    var frontmatterRange: NSRange?
-    var properties: [String: PropertyValue] = [:]
-    var links: [Link] = []
-    var tags: [Tag] = []
-    var headings: [Heading] = []
-    var tasks: [Task] = []
-    var blockIDs: [String] = []
-    var aliases: [String] = []
+    package var frontmatter: String?
+    package var frontmatterRange: NSRange?
+    package var properties: [String: PropertyValue] = [:]
+    package var links: [Link] = []
+    package var tags: [Tag] = []
+    package var headings: [Heading] = []
+    package var tasks: [Task] = []
+    package var blockIDs: [String] = []
+    package var aliases: [String] = []
 
     /// Every tag, frontmatter's and inline, once each.
-    var allTags: [String] {
+    package var allTags: [String] {
         var seen = Set<String>()
         return tags.map(\.name).filter { seen.insert($0.lowercased()).inserted }
     }
 
     /// The first heading, or nil: what a note may be titled by.
-    var title: String? { headings.first { $0.level == 1 }?.text }
+    package var title: String? { headings.first { $0.level == 1 }?.text }
 }
 
 /// A property's value, kept in the shapes YAML gives.
-enum PropertyValue: Equatable, Hashable, Sendable {
+package enum PropertyValue: Equatable, Hashable, Sendable {
     case text(String)
     case number(Double)
     case bool(Bool)
     case list([String])
     case null
 
-    init(_ any: Any) {
+    package init(_ any: Any) {
         switch any {
         case let string as String: self = .text(string)
         case let number as NSNumber where CFGetTypeID(number) == CFBooleanGetTypeID(): self = .bool(number.boolValue)
@@ -86,7 +86,7 @@ enum PropertyValue: Equatable, Hashable, Sendable {
         }
     }
 
-    var display: String {
+    package var display: String {
         switch self {
         case .text(let text): text
         case .number(let number): number == number.rounded() ? String(Int(number)) : String(number)
@@ -96,7 +96,7 @@ enum PropertyValue: Equatable, Hashable, Sendable {
         }
     }
 
-    var strings: [String] {
+    package var strings: [String] {
         switch self {
         case .list(let items): items
         case .text(let text): text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
@@ -105,8 +105,8 @@ enum PropertyValue: Equatable, Hashable, Sendable {
     }
 }
 
-enum NoteParser {
-    static func parse(_ text: String) -> NoteDocument {
+package enum NoteParser {
+    package static func parse(_ text: String) -> NoteDocument {
         var doc = NoteDocument()
         // A native NSString: a bridged Swift string pays for every UTF-16
         // offset, and a 2 MB note (agents' transcripts) took seconds.
@@ -245,7 +245,7 @@ enum NoteParser {
 
     /// Fenced blocks (``` or ~~~, to their closing fence or the end) and
     /// inline code spans.
-    static func codeRanges(in ns: NSString, from start: Int = 0) -> [NSRange] {
+    package static func codeRanges(in ns: NSString, from start: Int = 0) -> [NSRange] {
         var ranges: [NSRange] = []
         var location = start
         var fenceStart: Int?
@@ -273,7 +273,7 @@ enum NoteParser {
     }
 
     /// Whether `location` is in one of `ranges` — sorted, not overlapping.
-    static func contains(_ ranges: [NSRange], _ location: Int) -> Bool {
+    package static func contains(_ ranges: [NSRange], _ location: Int) -> Bool {
         var low = 0
         var high = ranges.count
         while low < high {
@@ -318,11 +318,11 @@ enum NoteParser {
 }
 
 /// Compiled patterns, shared across threads (the index parses off the main one).
-final class RegexCache: @unchecked Sendable {
+package final class RegexCache: @unchecked Sendable {
     private let lock = NSLock()
     private var compiled: [String: NSRegularExpression] = [:]
 
-    func regex(_ pattern: String, _ options: NSRegularExpression.Options) -> NSRegularExpression? {
+    package func regex(_ pattern: String, _ options: NSRegularExpression.Options) -> NSRegularExpression? {
         let key = "\(options.rawValue)|\(pattern)"
         return lock.withLock {
             if let regex = compiled[key] { return regex }

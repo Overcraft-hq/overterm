@@ -21,12 +21,12 @@ import Foundation
 ///    command typed into a new tab pinned to the context — in a scenario,
 ///    recorded instead (`kubernetesCommandRecorder`).
 extension KubernetesPageModel {
-    static let contextChanged = "The context changed while it was asked: nothing was run."
+    package static let contextChanged = "The context changed while it was asked: nothing was run."
 
     /// The object's tab writes — its detail's buttons and its right-click
     /// menu — each greyed with why: a read-only context, the access
     /// review's no (asked as they are shown).
-    func tabWriteVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
+    package func tabWriteVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         guard let context = model.contexts.context(named: ref.context) else { return [] }
         return KubeTabWrite.verbs.filter { KubeTabWrite.offered($0, on: ref.kind) }.map { verb in
             ResourceVerb(
@@ -37,19 +37,19 @@ extension KubernetesPageModel {
         }
     }
 
-    func tabWriteVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+    package func tabWriteVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
         guard picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
         return tabWriteVerbs(for: ref)
     }
 
     /// The namespace a tab write's command and tab name: the object's;
     /// for a node, the one shown, else the context's own.
-    func tabNamespace(for ref: KubeObjectRef, in context: KubeContext) -> String {
+    package func tabNamespace(for ref: KubeObjectRef, in context: KubeContext) -> String {
         ref.namespace ?? shownNamespace ?? context.namespace ?? "default"
     }
 
     /// Why `verb` can't be done on the object now; nil when it can.
-    func tabWriteUnavailable(_ verb: KubeProcessVerb, _ context: KubeContext, _ ref: KubeObjectRef) -> String? {
+    package func tabWriteUnavailable(_ verb: KubeProcessVerb, _ context: KubeContext, _ ref: KubeObjectRef) -> String? {
         if let refused = KubeProcessCheck.rule(verb, for: context).refused { return refused }
         for (access, namespace) in KubeTabWrite.accesses(verb, namespace: tabNamespace(for: ref, in: context), kind: ref.kind) {
             let place = namespace ?? ""
@@ -62,7 +62,7 @@ extension KubernetesPageModel {
 
     /// `E`: a debug container in the pod, or a shell on the node — the
     /// detail's object while it shows one, else the list's selected row.
-    func debugKey() -> Bool {
+    package func debugKey() -> Bool {
         guard let ref = writeTarget else { return false }
         if KubeTabWrite.offered(.debug, on: ref.kind) {
             runTabWrite(.debug, on: ref)
@@ -75,7 +75,7 @@ extension KubernetesPageModel {
     }
 
     /// `verb` on the object, by the one path every tab write takes.
-    func runTabWrite(_ verb: KubeProcessVerb, on ref: KubeObjectRef) {
+    package func runTabWrite(_ verb: KubeProcessVerb, on ref: KubeObjectRef) {
         guard writeChecking == nil else { return }
         writeStatus = nil
         guard let context = model.contexts.context(named: ref.context) else {
@@ -251,12 +251,12 @@ extension KubernetesPageModel {
     /// checked once more against the context as it is after the answer
     /// (still the cluster reviewed: the tab's kubectl reaches it by name),
     /// typed into a tab pinned to the context in `pin`.
-    func confirmTabWrite(_ write: KubeTabWrite, reviewed: KubeContext, pin: String) {
+    package func confirmTabWrite(_ write: KubeTabWrite, reviewed: KubeContext, pin: String) {
         confirmTabCommand(write, reviewed: reviewed, pin: pin)
     }
 
     /// `confirmTabWrite`'s path, for any write a tab runs (helm's too).
-    func confirmTabCommand(_ write: some KubeTabCommand, reviewed: KubeContext, pin: String) {
+    package func confirmTabCommand(_ write: some KubeTabCommand, reviewed: KubeContext, pin: String) {
         let name = reviewed.name
         guard let context = model.contexts.context(named: name) else {
             writeStatus = .failed("The context is gone: nothing was run.")

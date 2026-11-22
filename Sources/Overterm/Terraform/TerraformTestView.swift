@@ -4,14 +4,14 @@ import SwiftUI
 /// root, the files it ran and whether every provider was mocked; each
 /// run by file with its status, a failure's diagnostics under it with
 /// "Open at file:line"; the summary; the raw log under all of it.
-struct TerraformTestView: View {
-    @ObservedObject var run: TerraformTestRun
-    @ObservedObject var theme: ChromeTheme
-    let actions: TerraformPlanActions
+package struct TerraformTestView: View {
+    @ObservedObject package var run: TerraformTestRun
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: TerraformPlanActions
 
     private var red: Color { TerraformPanelView.production }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.4)
@@ -78,7 +78,7 @@ struct TerraformTestView: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
-    static func why(_ mocking: TerraformTestFiles.Mocking) -> String {
+    package static func why(_ mocking: TerraformTestFiles.Mocking) -> String {
         if case .real(let why) = mocking { return why }
         return ""
     }
@@ -191,16 +191,16 @@ struct TerraformTestView: View {
 /// A root card's drift and test lines (2.6, 2.9): its last drift check,
 /// its age always said, a stale one's count as then; its last test run.
 /// Each a button to it in the slot. Nothing when neither ran.
-struct TerraformRootChecksView: View {
-    let card: TerraformRootCard
-    let checkout: URL
-    @ObservedObject var registry: TerraformRunRegistry
-    @ObservedObject var tests: TerraformTestResults
-    @ObservedObject var theme: ChromeTheme
-    let showPlan: (TerraformPlanRun) -> Void
-    let showTest: (TerraformTestRun) -> Void
+package struct TerraformRootChecksView: View {
+    package let card: TerraformRootCard
+    package let checkout: URL
+    @ObservedObject package var registry: TerraformRunRegistry
+    @ObservedObject package var tests: TerraformTestResults
+    @ObservedObject package var theme: ChromeTheme
+    package let showPlan: (TerraformPlanRun) -> Void
+    package let showTest: (TerraformTestRun) -> Void
 
-    var body: some View {
+    package var body: some View {
         if let drift = registry.latest(checkout: checkout, root: card.path, drift: true) {
             TerraformDriftLineView(run: drift, registry: registry, theme: theme, show: showPlan)
                 .accessibilityIdentifier("terraform.panel.drift.\(card.path)")

@@ -22,21 +22,21 @@ import Foundation
 /// to 253 characters, Prometheus' notes quoted as data.
 extension KubeMCP {
     /// What an object is, as `kind` says it.
-    enum MetricsKind: String, CaseIterable, Sendable {
+    package enum MetricsKind: String, CaseIterable, Sendable {
         case pod, container, workload, namespace, node, pvc, hpa, cluster
 
-        var namespaced: Bool { [.pod, .container, .workload, .pvc, .hpa].contains(self) }
-        var named: Bool { self != .cluster && self != .namespace }
+        package var namespaced: Bool { [.pod, .container, .workload, .pvc, .hpa].contains(self) }
+        package var named: Bool { self != .cluster && self != .namespace }
     }
 
     /// What can be asked of it.
-    enum MetricsMeasure: String, CaseIterable, Sendable {
+    package enum MetricsMeasure: String, CaseIterable, Sendable {
         case cpu, memory, throttling, network, restarts, replicas, volume, fs
 
         /// The Metrics tab's query families it asks. Never a node's top
         /// pods (a series a pod on it, asked by the page only while their
         /// group shows): those only on `top_pods`.
-        var families: Set<KubeTabFamily> {
+        package var families: Set<KubeTabFamily> {
             switch self {
             case .cpu: [.cpu, .revisions]
             case .memory: [.memory, .oom]
@@ -50,7 +50,7 @@ extension KubeMCP {
         }
 
         /// A chart's measure by its identifier's last part; nil, none asked here.
-        static func of(chart id: String) -> MetricsMeasure? {
+        package static func of(chart id: String) -> MetricsMeasure? {
             let parts = id.split(separator: ".")
             if parts.contains("disk") { return .fs }
             switch parts.last.map(String.init) ?? "" {
@@ -68,21 +68,21 @@ extension KubeMCP {
     }
 
     /// One `k8s_metrics` question.
-    struct MetricsQuestion: Sendable {
-        var kind: MetricsKind
-        var namespace: String?
-        var name: String?
-        var container: String?
+    package struct MetricsQuestion: Sendable {
+        package var kind: MetricsKind
+        package var namespace: String?
+        package var name: String?
+        package var container: String?
         /// A workload's Kind: Deployment, StatefulSet, DaemonSet, ReplicaSet, Job.
-        var workloadKind = "Deployment"
-        var range: KubeMetricsRange = .hour
-        var measures: Set<MetricsMeasure>
-        var sizing = false
+        package var workloadKind = "Deployment"
+        package var range: KubeMetricsRange = .hour
+        package var measures: Set<MetricsMeasure>
+        package var sizing = false
         /// A node's pods ranked by CPU and memory too (`top_pods`): one series a pod on it.
-        var topPods = false
+        package var topPods = false
 
         /// What it is about: `container app of pod shop/api-1`.
-        var said: String {
+        package var said: String {
             let place = namespace.map { "\($0)/" } ?? ""
             switch kind {
             case .pod: return "pod \(place)\(name ?? "")"
@@ -97,21 +97,21 @@ extension KubeMCP {
         }
 
         /// The range as the answer says it.
-        var rangeSaid: String { range == .live ? "15m" : range.title }
+        package var rangeSaid: String { range == .live ? "15m" : range.title }
     }
 
-    static let metricsRanges: [String: KubeMetricsRange] = [
+    package static let metricsRanges: [String: KubeMetricsRange] = [
         "15m": .live, "live": .live, "1h": .hour, "6h": .sixHours, "24h": .day, "1d": .day, "7d": .week, "1w": .week,
     ]
 
-    static let workloadKinds: [String: String] = [
+    package static let workloadKinds: [String: String] = [
         "deployment": "Deployment", "deployments": "Deployment", "deploy": "Deployment", "statefulset": "StatefulSet", "statefulsets": "StatefulSet",
         "sts": "StatefulSet", "daemonset": "DaemonSet", "daemonsets": "DaemonSet", "ds": "DaemonSet", "replicaset": "ReplicaSet", "replicasets": "ReplicaSet",
         "rs": "ReplicaSet", "job": "Job", "jobs": "Job",
     ]
 
     /// What a call asks: its kind, object, range and measures — every name one path segment.
-    static func metricsQuestion(_ call: Call, _ target: Target) throws -> MetricsQuestion {
+    package static func metricsQuestion(_ call: Call, _ target: Target) throws -> MetricsQuestion {
         let wanted = (call.string("kind") ?? "pod").lowercased()
         var workloadKind = workloadKinds[(call.string("workload_kind") ?? "deployment").lowercased()]
         guard workloadKind != nil else {
@@ -181,7 +181,7 @@ extension KubeMCP {
     }
 
     /// What is asked when the call names no measure.
-    static func defaultMeasures(_ kind: MetricsKind) -> Set<MetricsMeasure> {
+    package static func defaultMeasures(_ kind: MetricsKind) -> Set<MetricsMeasure> {
         switch kind {
         case .pod, .container, .workload: [.cpu, .memory, .restarts]
         case .hpa: [.replicas]
@@ -192,7 +192,7 @@ extension KubeMCP {
 
     // MARK: The call
 
-    static func metrics(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
+    package static func metrics(_ call: Call, _ target: Target, kubernetes: KubernetesModel, now: Date) async throws -> String {
         let question = try metricsQuestion(call, target)
         let header = target.header(question.kind.namespaced || question.kind == .namespace ? .namespace(question.namespace ?? "") : nil, kind: question.kind.namespaced ? .pods : .namespaces)
         let lines = try await usage(question, target, kubernetes: kubernetes, now: now).lines
@@ -200,7 +200,7 @@ extension KubeMCP {
     }
 
     /// Where an answer's numbers came from.
-    enum MetricsSource: Sendable {
+    package enum MetricsSource: Sendable {
         case prometheus, sampled, now
         /// Nothing to say a number from (no metrics-server, a claim without Prometheus).
         case none
@@ -210,7 +210,7 @@ extension KubeMCP {
     /// each chart's figures, the notes; sizing's figures when asked.
     /// `known`: what Ask Why's brief read already (the object, its events,
     /// a Deployment's ReplicaSets) — not read again.
-    static func usage(
+    package static func usage(
         _ question: MetricsQuestion, _ target: Target, kubernetes: KubernetesModel, now: Date, known: KubeBriefReads? = nil
     ) async throws -> (lines: [String], source: MetricsSource) {
         let client = target.client
@@ -306,7 +306,7 @@ extension KubeMCP {
         return json
     }
 
-    static func workloadResource(_ kind: String) -> KubeResourceKind? {
+    package static func workloadResource(_ kind: String) -> KubeResourceKind? {
         switch kind {
         case "Deployment": .deployments
         case "StatefulSet": .statefulSets
@@ -380,11 +380,11 @@ extension KubeMCP {
 
     /// Charts as an object's tab draws them: where from and over what (the
     /// caption), the charts with what they are called, the notes beneath.
-    struct DrawnCharts {
-        var caption: String
-        var charts: [(label: String, data: KubeChartData, seriesToo: Bool)]
-        var notes: [String] = []
-        var problem: String?
+    package struct DrawnCharts {
+        package var caption: String
+        package var charts: [(label: String, data: KubeChartData, seriesToo: Bool)]
+        package var notes: [String] = []
+        package var problem: String?
     }
 
     /// The tab's (or the Overview's) queries asked for the call, drawn by
@@ -675,7 +675,7 @@ extension KubeMCP {
     /// How long Ask Why waits for its usage part before going without it
     /// (metrics.md 7: included when it is cheap) — a slow or paused
     /// Prometheus never holds the brief.
-    static var usageLimit: Duration = .seconds(8)
+    package static var usageLimit: Duration = .seconds(8)
 
     /// Ask Why's Usage part (metrics.md 7): a failing pod's failing
     /// container's CPU and memory over the last hour — or what was sampled
@@ -687,7 +687,7 @@ extension KubeMCP {
     /// what the brief read already (`reads`: the object, its events), its
     /// words through `Secrets`. Nil where there is no number to give, or
     /// none within `usageLimit` — the read cancelled.
-    static func usagePart(
+    package static func usagePart(
         for ref: KubeObjectRef, context known: KubeContext? = nil, reads: KubeBriefReads? = nil, kubernetes: KubernetesModel, now: Date = Date()
     ) async -> AskAgentModel.Part? {
         guard let context = known ?? kubernetes.contexts.context(named: ref.context) else { return nil }

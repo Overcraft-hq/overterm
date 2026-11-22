@@ -25,43 +25,43 @@ import Foundation
 /// checkout's tabs and offer Ask Why on the mark. Reads only: every
 /// request is a GET.
 @MainActor
-final class KubeAttentionWatches: ObservableObject {
-    static let shared = KubeAttentionWatches()
+package final class KubeAttentionWatches: ObservableObject {
+    package static let shared = KubeAttentionWatches()
 
     /// What a bound checkout's tab says of its watches.
-    enum State: Equatable, Sendable {
+    package enum State: Equatable, Sendable {
         case watching
         /// Why its failures won't mark it now.
         case notWatched(String)
 
-        var notWatched: String? { if case .notWatched(let why) = self { why } else { nil } }
+        package var notWatched: String? { if case .notWatched(let why) = self { why } else { nil } }
     }
 
     /// Marks raised or cleared for the checkouts (by key) bound to a scope.
-    struct Event: Equatable {
-        var checkouts: [String]
-        var change: KubeAttention.Change
+    package struct Event: Equatable {
+        package var checkouts: [String]
+        package var change: KubeAttention.Change
     }
 
-    typealias Scope = KubeAttentionBudget.Scope
+    package typealias Scope = KubeAttentionBudget.Scope
 
     /// Each open bound checkout's state, by its key (`KubeBindingStore.key`).
-    @Published private(set) var states: [String: State] = [:]
-    let events = PassthroughSubject<Event, Never>()
+    @Published package private(set) var states: [String: State] = [:]
+    package let events = PassthroughSubject<Event, Never>()
 
-    let store: KubeBindingStore
-    let kubernetes: KubernetesModel
-    var enabled: () -> Bool = { Settings.shared.kubernetesNotifyOnFailure }
-    var budget: () -> Int = { Settings.shared.kubernetesBackgroundWatches }
+    package let store: KubeBindingStore
+    package let kubernetes: KubernetesModel
+    package var enabled: () -> Bool = { Settings.shared.kubernetesNotifyOnFailure }
+    package var budget: () -> Int = { Settings.shared.kubernetesBackgroundWatches }
     /// The context's client: its proxy in a background slot (a test's connection instead).
-    var clientFor: ((KubeContext) -> KubeClient)?
+    package var clientFor: ((KubeContext) -> KubeClient)?
     /// The kubeconfig's contexts (read locally — no cluster is asked).
-    var contexts: (() async -> KubeContextList?)?
-    var now: () -> Date = { Date() }
+    package var contexts: (() async -> KubeContextList?)?
+    package var now: () -> Date = { Date() }
     /// Watch events are applied at most this often.
-    var flushInterval: Duration = .milliseconds(120)
+    package var flushInterval: Duration = .milliseconds(120)
     /// The waits before a watch that failed is tried again (the last repeated).
-    var retryDelays: [Duration] = [5, 10, 20, 30].map { .seconds($0) }
+    package var retryDelays: [Duration] = [5, 10, 20, 30].map { .seconds($0) }
 
     /// Each window's open checkouts, by key, with when each was last selected.
     private var windows: [ObjectIdentifier: [String: Date]] = [:]
@@ -72,7 +72,7 @@ final class KubeAttentionWatches: ObservableObject {
     private var bindingChanges: AnyCancellable?
     private var contextChanges: AnyCancellable?
 
-    init(store: KubeBindingStore = .shared, kubernetes: KubernetesModel = .shared) {
+    package init(store: KubeBindingStore = .shared, kubernetes: KubernetesModel = .shared) {
         self.store = store
         self.kubernetes = kubernetes
         bindingChanges = store.$bindings.dropFirst().sink { [weak self] _ in
@@ -88,7 +88,7 @@ final class KubeAttentionWatches: ObservableObject {
     }
 
     /// The watches whose context changed under them, started again.
-    func contextsChanged(_ list: KubeContextList) {
+    package func contextsChanged(_ list: KubeContextList) {
         for watch in watches.values {
             guard let context = watch.context else { continue }
             if let now = list.context(named: context.name), KubernetesModel.sameAccess(context, now), now.isWritable == context.isWritable { continue }
@@ -101,7 +101,7 @@ final class KubeAttentionWatches: ObservableObject {
 
     /// A window's tabs' checkouts (`KubeBindingStore.key`), and the one its
     /// selected tab is in — the most recently used.
-    func report(_ window: ObjectIdentifier, open: Set<String>, selected: String?) {
+    package func report(_ window: ObjectIdentifier, open: Set<String>, selected: String?) {
         let time = now()
         if let selected { lastUsed[selected] = time }
         var mine: [String: Date] = [:]
@@ -111,13 +111,13 @@ final class KubeAttentionWatches: ObservableObject {
         refresh()
     }
 
-    func forget(_ window: ObjectIdentifier) {
+    package func forget(_ window: ObjectIdentifier) {
         guard windows.removeValue(forKey: window) != nil else { return }
         refresh()
     }
 
     /// The checkouts with a tab open in any window, each with when it was last used.
-    var open: [String: Date] {
+    package var open: [String: Date] {
         var all: [String: Date] = [:]
         for window in windows.values {
             for (key, used) in window { all[key] = max(all[key] ?? .distantPast, lastUsed[key] ?? used) }
@@ -126,15 +126,15 @@ final class KubeAttentionWatches: ObservableObject {
     }
 
     /// The scopes followed now (tests, the scenario).
-    var watchedScopes: [Scope] { watches.keys.sorted() }
+    package var watchedScopes: [Scope] { watches.keys.sorted() }
 
     /// The state of the scope's watches (tests, the scenario).
-    func state(of scope: Scope) -> State? { watches[scope]?.state }
+    package func state(of scope: Scope) -> State? { watches[scope]?.state }
 
     // MARK: The plan
 
     /// Looked at again soon (one pass for a burst of changes).
-    func refresh() {
+    package func refresh() {
         guard !scheduled else { return }
         scheduled = true
         DispatchQueue.main.async { [weak self] in
@@ -145,7 +145,7 @@ final class KubeAttentionWatches: ObservableObject {
     }
 
     /// The scopes to follow, started and stopped, and every open bound checkout's state.
-    func refreshNow() {
+    package func refreshNow() {
         let open = self.open
         var bindings: [String: KubeBinding] = [:]
         if enabled(), !open.isEmpty {
@@ -239,7 +239,7 @@ final class KubeAttentionWatches: ObservableObject {
     }
 
     /// Every watch ended (Kubernetes off, the app quitting).
-    func stopAll() {
+    package func stopAll() {
         for watch in watches.values { retire(watch) }
         watches = [:]
         over = []
@@ -415,5 +415,5 @@ final class KubeAttentionWatches: ObservableObject {
 extension KubernetesModel {
     /// What Ask Why on a mark reads through: the context's proxy in a
     /// background slot — never the page's — or a test's connection. GETs only.
-    func attentionClient(for context: KubeContext) -> KubeClient { agentClient(for: context) }
+    package func attentionClient(for context: KubeContext) -> KubeClient { agentClient(for: context) }
 }

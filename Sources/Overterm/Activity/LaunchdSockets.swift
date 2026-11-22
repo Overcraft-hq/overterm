@@ -12,36 +12,36 @@ import Foundation
 /// `~/Library/LaunchAgents` — none in an isolated run but a test's own
 /// (9.9). Reading the plists is bounded (files, sizes, regular files only,
 /// never a link); matching is pure.
-enum LaunchdSockets {
+package enum LaunchdSockets {
     /// Whose job: the system's (a LaunchDaemon: a sudo `launchctl bootout
     /// system/…`), an agent every user loads (`/Library/LaunchAgents`: the
     /// plist the system's, the job loaded into each user's gui domain), or
     /// the user's own LaunchAgent (its gui domain, no sudo — `LaunchdJobs`).
-    enum Domain: Hashable, Sendable {
+    package enum Domain: Hashable, Sendable {
         case system
         case agents
         case user
     }
 
     /// A job's listening socket.
-    struct Job: Hashable, Sendable {
-        let label: String
-        let port: Int
+    package struct Job: Hashable, Sendable {
+        package let label: String
+        package let port: Int
         /// "tcp" or "udp".
-        let proto: String
-        let domain: Domain
+        package let proto: String
+        package let domain: Domain
         /// The user's own job naming the same socket as this one, when both
         /// do: neither is stopped from here (`match`).
-        var sharedWith: String?
+        package var sharedWith: String?
 
         /// Apple's own (`com.apple.…`): part of macOS.
-        var isApple: Bool { label.hasPrefix("com.apple.") }
+        package var isApple: Bool { label.hasPrefix("com.apple.") }
 
         /// "launchd holds :8021 for com.apple.ftp-proxy, part of macOS".
         /// The label comes from a plist anyone may write (~/Library/LaunchAgents),
         /// and a person copies the command from here: a command is given only
         /// for a label of launchd's plain characters (`ActivityPortHolder.launchdLabel`).
-        var sentence: String {
+        package var sentence: String {
             let held = "launchd holds :\(port) for \(Self.shown(label))"
             if let mine = sharedWith {
                 return held + " or your job \(Self.shown(mine)) — both name it, so neither is stopped from here"
@@ -66,19 +66,19 @@ enum LaunchdSockets {
 
         /// A label as the row shows it: every character visible, a line
         /// break or a tab too — the sentence is one line.
-        static func shown(_ label: String) -> String {
+        package static func shown(_ label: String) -> String {
             DockerMCP.displayed(label).replacingOccurrences(of: "\n", with: "\\u{A}").replacingOccurrences(of: "\t", with: "\\u{9}")
         }
     }
 
     /// A folder and whose its jobs are.
-    struct Folder: Hashable, Sendable {
-        let url: URL
-        let domain: Domain
+    package struct Folder: Hashable, Sendable {
+        package let url: URL
+        package let domain: Domain
     }
 
     /// The system's folders and the user's LaunchAgents.
-    static func defaultFolders(home: URL) -> [Folder] {
+    package static func defaultFolders(home: URL) -> [Folder] {
         [
             Folder(url: URL(fileURLWithPath: "/System/Library/LaunchDaemons", isDirectory: true), domain: .system),
             Folder(url: URL(fileURLWithPath: "/Library/LaunchDaemons", isDirectory: true), domain: .system),
@@ -91,7 +91,7 @@ enum LaunchdSockets {
 
     /// `/etc/services`' names: `name port/proto aliases… # comment`, a name
     /// and each alias to its port by protocol.
-    static func services(_ text: String) -> [String: [String: Int]] {
+    package static func services(_ text: String) -> [String: [String: Int]] {
         var found: [String: [String: Int]] = [:]
         for raw in text.split(separator: "\n") {
             let line = raw.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
@@ -111,7 +111,7 @@ enum LaunchdSockets {
     /// One plist's socket jobs: each listener's port and type; a unix
     /// socket's (`SockPathName`) and one whose service can't be named are
     /// left out.
-    static func jobs(from data: Data, domain: Domain, services: [String: [String: Int]]) -> [Job] {
+    package static func jobs(from data: Data, domain: Domain, services: [String: [String: Int]]) -> [Job] {
         guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
             let label = plist["Label"] as? String, !label.isEmpty, let sockets = plist["Sockets"] as? [String: Any]
         else { return [] }
@@ -147,7 +147,7 @@ enum LaunchdSockets {
     /// is anyone's to write, and may be stale: it names the socket only
     /// when no other job does; when both do, the other's is returned with
     /// the user's named beside it (`sharedWith`) — neither stopped.
-    static func job(port: Int, proto: String, in jobs: [Job]) -> Job? {
+    package static func job(port: Int, proto: String, in jobs: [Job]) -> Job? {
         let matching = jobs.filter { $0.port == port && $0.proto == proto }
         let mine = matching.first { $0.domain == .user }
         guard var theirs = matching.first(where: { $0.domain != .user }) else { return mine }
@@ -159,7 +159,7 @@ enum LaunchdSockets {
 
     /// Every job `folders` describe, `services` naming ports: at most 2,000
     /// plists a folder, each a regular file under 1 MB, sorted by name.
-    static func jobs(in folders: [Folder], services: [String: [String: Int]]) -> [Job] {
+    package static func jobs(in folders: [Folder], services: [String: [String: Int]]) -> [Job] {
         var found: [Job] = []
         for folder in folders {
             guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder.url.path) else { continue }
@@ -176,14 +176,14 @@ enum LaunchdSockets {
     nonisolated(unsafe) private static var standInFolders: [Folder]?
 
     /// A test's folders: the only ones an isolated run reads (9.9).
-    static var standIn: [Folder]? {
+    package static var standIn: [Folder]? {
         get { lock.withLock { standInFolders } }
         set { lock.withLock { standInFolders = newValue } }
     }
 
     /// `folders`' jobs, read again only when one of them changed — never
     /// from the main thread.
-    static func cachedJobs(in folders: [Folder]) -> [Job] {
+    package static func cachedJobs(in folders: [Folder]) -> [Job] {
         guard !folders.isEmpty else { return [] }
         let key = folders.map { folder -> String in
             let modified = (try? FileManager.default.attributesOfItem(atPath: folder.url.path))?[.modificationDate] as? Date

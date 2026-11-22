@@ -6,31 +6,31 @@ import Foundation
 /// certificate panels say. Read with a DER reader of its own, from the
 /// `CERTIFICATE` blocks only: a key that found its way into `tls.crt` is
 /// never decoded, and `tls.key` is never handed here at all. Pure.
-struct KubeCertificate: Equatable, Sendable {
+package struct KubeCertificate: Equatable, Sendable {
     /// `C=US, O=Acme, CN=web.acme.example`, in the certificate's order.
-    var subject: String
-    var commonName: String?
-    var issuer: String
+    package var subject: String
+    package var commonName: String?
+    package var issuer: String
     /// `DNS:web.acme.example`, `IP:10.0.0.12`, `email:…`, `URI:…`.
-    var alternativeNames: [String]
-    var notBefore: Date
-    var notAfter: Date
-    var isCA = false
+    package var alternativeNames: [String]
+    package var notBefore: Date
+    package var notAfter: Date
+    package var isCA = false
 
-    var isSelfSigned: Bool { subject == issuer }
+    package var isSelfSigned: Bool { subject == issuer }
 
     /// How it stands at a time: soon is within 30 days, as cert-manager
     /// renews a 90-day certificate (two thirds through).
-    enum Validity: Equatable, Sendable {
+    package enum Validity: Equatable, Sendable {
         case valid
         case expiringSoon(days: Int)
         case expired
         case notYetValid
     }
 
-    static let soon: TimeInterval = 30 * 86_400
+    package static let soon: TimeInterval = 30 * 86_400
 
-    func validity(at now: Date = Date()) -> Validity {
+    package func validity(at now: Date = Date()) -> Validity {
         if now < notBefore { return .notYetValid }
         if now >= notAfter { return .expired }
         let left = notAfter.timeIntervalSince(now)
@@ -39,7 +39,7 @@ struct KubeCertificate: Equatable, Sendable {
 
     /// Every certificate in a PEM text, in order; blocks of any other kind
     /// (a private key, parameters) are passed over unread.
-    static func certificates(inPEM text: String) -> [KubeCertificate] {
+    package static func certificates(inPEM text: String) -> [KubeCertificate] {
         let begin = "-----BEGIN CERTIFICATE-----"
         let end = "-----END CERTIFICATE-----"
         var out: [KubeCertificate] = []
@@ -55,7 +55,7 @@ struct KubeCertificate: Equatable, Sendable {
     }
 
     /// One DER certificate; nil when it isn't one.
-    static func parse(der: Data) -> KubeCertificate? {
+    package static func parse(der: Data) -> KubeCertificate? {
         let bytes = [UInt8](der)[...]
         guard let (outer, _) = DER.node(bytes), outer.tag == 0x30, let parts = DER.children(outer.content),
             let tbs = parts.first, tbs.tag == 0x30, var fields = DER.children(tbs.content)
@@ -167,14 +167,14 @@ struct KubeCertificate: Equatable, Sendable {
 
 /// Just enough of DER to read a certificate: single-byte tags, definite
 /// lengths. Every read is bounded by the bytes it was given. Pure.
-enum DER {
-    struct Node {
-        var tag: UInt8
-        var content: ArraySlice<UInt8>
+package enum DER {
+    package struct Node {
+        package var tag: UInt8
+        package var content: ArraySlice<UInt8>
     }
 
     /// The first node, and what follows it.
-    static func node(_ bytes: ArraySlice<UInt8>) -> (Node, rest: ArraySlice<UInt8>)? {
+    package static func node(_ bytes: ArraySlice<UInt8>) -> (Node, rest: ArraySlice<UInt8>)? {
         var index = bytes.startIndex
         guard index < bytes.endIndex else { return nil }
         let tag = bytes[index]
@@ -197,7 +197,7 @@ enum DER {
     }
 
     /// A constructed node's children; nil when they don't add up.
-    static func children(_ content: ArraySlice<UInt8>) -> [Node]? {
+    package static func children(_ content: ArraySlice<UInt8>) -> [Node]? {
         var out: [Node] = []
         var rest = content
         while !rest.isEmpty {
@@ -208,7 +208,7 @@ enum DER {
         return out
     }
 
-    static func oid(_ content: ArraySlice<UInt8>) -> String {
+    package static func oid(_ content: ArraySlice<UInt8>) -> String {
         guard let first = content.first else { return "" }
         var parts = [Int(first) / 40, Int(first) % 40]
         var value = 0
@@ -223,7 +223,7 @@ enum DER {
     }
 
     /// A directory string: UTF8, Printable, IA5, Teletex (as Latin-1), BMP.
-    static func string(_ node: Node) -> String? {
+    package static func string(_ node: Node) -> String? {
         switch node.tag {
         case 0x0C, 0x13, 0x16, 0x12, 0x1A: return String(decoding: node.content, as: UTF8.self)
         case 0x14: return String(bytes: node.content, encoding: .isoLatin1)

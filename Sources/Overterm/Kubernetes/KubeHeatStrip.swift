@@ -15,16 +15,16 @@ import SwiftUI
 /// sample, so metrics-server's lag never leaves its last cell blank.
 /// Colour is not its only cue: each cell's height is its share too, and
 /// the row's text says the share now.
-struct KubeHeatStrip: Equatable, Sendable {
-    static let cellCount = 60
-    static let cellSeconds: TimeInterval = 15
+package struct KubeHeatStrip: Equatable, Sendable {
+    package static let cellCount = 60
+    package static let cellSeconds: TimeInterval = 15
 
     /// How hot a cell is: under half of allocatable, under 80%, under all
     /// of it, and over (CPU can be, memory nearly).
-    enum Level: Int, CaseIterable, Sendable {
+    package enum Level: Int, CaseIterable, Sendable {
         case low, mid, high, over
 
-        init(_ percent: Double) {
+        package init(_ percent: Double) {
             switch percent {
             case ..<50: self = .low
             case ..<80: self = .mid
@@ -34,20 +34,20 @@ struct KubeHeatStrip: Equatable, Sendable {
         }
     }
 
-    var measure: KubeUsageCell.Measure
+    package var measure: KubeUsageCell.Measure
     /// The cells' shares in percent, oldest first; nil, nothing sampled there.
-    var percents: [Double?]
+    package var percents: [Double?]
     /// When the last cell ends: the newest sample's time.
-    var end: Date
+    package var end: Date
     /// How long a cell is: 15 s sampled; over Prometheus a sixtieth of the
     /// range picked (the Overview's nodes, X4).
-    var cell: TimeInterval = cellSeconds
+    package var cell: TimeInterval = cellSeconds
     /// From metrics-server's samples taken while shown, or Prometheus'.
-    var sampled = true
+    package var sampled = true
 
     /// The strip of `segments` (the ring's runs, oldest first) against
     /// `allocatable`; nil without an allocatable or a sample.
-    static func of(_ segments: [[KubeUsagePoint]], _ measure: KubeUsageCell.Measure, allocatable: Double?) -> KubeHeatStrip? {
+    package static func of(_ segments: [[KubeUsagePoint]], _ measure: KubeUsageCell.Measure, allocatable: Double?) -> KubeHeatStrip? {
         guard let allocatable, allocatable > 0, let end = segments.last(where: { !$0.isEmpty })?.last?.time else { return nil }
         func share(_ point: KubeUsagePoint) -> Double { (measure == .cpu ? point.usage.cpu : point.usage.memory) / allocatable * 100 }
         // The cell a time falls in: the last one ends at `end`.
@@ -68,13 +68,13 @@ struct KubeHeatStrip: Equatable, Sendable {
     }
 
     /// The cells with a sample.
-    var filled: Int { percents.lazy.compactMap { $0 }.count }
+    package var filled: Int { percents.lazy.compactMap { $0 }.count }
 
     /// The newest cell's share.
-    var now: Double? { percents.last ?? nil }
+    package var now: Double? { percents.last ?? nil }
 
     /// The largest share, and when its cell began.
-    var peak: (percent: Double, time: Date)? {
+    package var peak: (percent: Double, time: Date)? {
         var best: (Int, Double)?
         for (index, value) in percents.enumerated() {
             guard let value, value >= (best?.1 ?? -1) else { continue }
@@ -88,7 +88,7 @@ struct KubeHeatStrip: Equatable, Sendable {
     /// range as 60 cells, each the largest share among the points in it —
     /// a point stands for the step that ends at it. Nil without an
     /// allocatable. A cell without a point is empty, never zero.
-    static func of(
+    package static func of(
         _ points: [KubeSeriesPoint], _ measure: KubeUsageCell.Measure, allocatable: Double?, start: Date, end: Date
     ) -> KubeHeatStrip? {
         guard let allocatable, allocatable > 0, end > start else { return nil }
@@ -102,11 +102,11 @@ struct KubeHeatStrip: Equatable, Sendable {
     }
 
     /// When a cell begins.
-    func start(of index: Int) -> Date { end.addingTimeInterval(-Double(Self.cellCount - index) * cell) }
+    package func start(of index: Int) -> Date { end.addingTimeInterval(-Double(Self.cellCount - index) * cell) }
 
     /// What its help and VoiceOver say: "CPU, the last 15 min of
     /// allocatable: 22% now, peak 61% at 14:02 — sampled while shown".
-    func summary(timeZone: TimeZone = .current) -> String {
+    package func summary(timeZone: TimeZone = .current) -> String {
         let title = measure == .cpu ? "CPU" : "Memory"
         var parts: [String] = []
         if let now { parts.append("\(Int(now.rounded()))% now") }
@@ -119,7 +119,7 @@ struct KubeHeatStrip: Equatable, Sendable {
     }
 
     /// `15 s`, `15 min`, `6h`, `7 d`: a span as the summary says it.
-    static func spoken(_ seconds: TimeInterval) -> String {
+    package static func spoken(_ seconds: TimeInterval) -> String {
         let whole = Int(seconds.rounded())
         if whole < 60 { return "\(whole) s" }
         if whole < 3 * 3600 || whole % 3600 != 0 { return "\(whole / 60) min" }
@@ -128,7 +128,7 @@ struct KubeHeatStrip: Equatable, Sendable {
     }
 
     /// The dump's line: the filled cells, the levels' counts, the peak.
-    var dump: String {
+    package var dump: String {
         let levels = Level.allCases.map { level in "\(level)=\(percents.filter { $0.map { Level($0) == level } ?? false }.count)" }
         return "\(measure == .cpu ? "cpu" : "memory") filled=\(filled)/\(Self.cellCount) \(levels.joined(separator: " ")) peak=\(peak.map { "\(Int($0.percent.rounded()))%" } ?? "none")"
     }
@@ -140,27 +140,27 @@ struct KubeHeatStrip: Equatable, Sendable {
 /// the scenario and the layout dump read back. Two windows on the same
 /// context's Nodes list show the same identifiers.
 @MainActor
-final class KubeHeatStripRegistry {
-    static let shared = KubeHeatStripRegistry()
+package final class KubeHeatStripRegistry {
+    package static let shared = KubeHeatStripRegistry()
 
-    struct Shown {
-        var identifier: String
-        var strip: KubeHeatStrip
-        var window: ObjectIdentifier
+    package struct Shown {
+        package var identifier: String
+        package var strip: KubeHeatStrip
+        package var window: ObjectIdentifier
     }
 
     private var entries: [UUID: Shown] = [:]
     /// Strips drawn together in one view (X4's), by that view's token.
     private var groups: [UUID: [Shown]] = [:]
 
-    func show(_ strip: KubeHeatStrip, identifier: String, token: UUID, window: ObjectIdentifier) {
+    package func show(_ strip: KubeHeatStrip, identifier: String, token: UUID, window: ObjectIdentifier) {
         entries[token] = Shown(identifier: identifier, strip: strip, window: window)
     }
     /// A view's strips, all at once: those it showed before replaced.
-    func show(_ strips: [(identifier: String, strip: KubeHeatStrip)], token: UUID, window: ObjectIdentifier) {
+    package func show(_ strips: [(identifier: String, strip: KubeHeatStrip)], token: UUID, window: ObjectIdentifier) {
         groups[token] = strips.map { Shown(identifier: $0.identifier, strip: $0.strip, window: window) }
     }
-    func hide(_ token: UUID) {
+    package func hide(_ token: UUID) {
         entries[token] = nil
         groups[token] = nil
     }
@@ -168,13 +168,13 @@ final class KubeHeatStripRegistry {
     private var shown: [Shown] { Array(entries.values) + groups.values.flatMap { $0 } }
 
     /// The strip of that identifier on screen — in that window, or in any.
-    func strip(_ identifier: String, in window: ObjectIdentifier? = nil) -> KubeHeatStrip? {
+    package func strip(_ identifier: String, in window: ObjectIdentifier? = nil) -> KubeHeatStrip? {
         shown.first { $0.identifier == identifier && (window == nil || $0.window == window) }?.strip
     }
 
     /// The dump's lines of one window's strips, or of every window's: each
     /// strip's identifier, filled cells, levels, peak.
-    func lines(in window: ObjectIdentifier? = nil) -> [String] {
+    package func lines(in window: ObjectIdentifier? = nil) -> [String] {
         shown.filter { window == nil || $0.window == window }
             .sorted { $0.identifier < $1.identifier }
             .map { "heat \($0.identifier) \($0.strip.dump)" }
@@ -185,7 +185,7 @@ extension KubeChartPalette {
     /// A heat cell's colour by level: teal and blue for calm, orange near
     /// allocatable, red past it — the series palette's own, each reading
     /// on the card in both appearances.
-    static func heat(_ level: KubeHeatStrip.Level, dark: Bool) -> RGB {
+    package static func heat(_ level: KubeHeatStrip.Level, dark: Bool) -> RGB {
         switch level {
         case .low: RGB(dark ? 0x3DD6C3 : 0x0E8A7E)
         case .mid: RGB(dark ? 0x5AA3FF : 0x2167C9)
@@ -198,20 +198,20 @@ extension KubeChartPalette {
 /// A heat strip drawn in one Canvas pass: each sampled cell a bar as tall
 /// as its share (at least a sliver) in its level's colour, an unsampled one
 /// a faint tick at the foot — a gap, never a zero.
-struct KubeHeatStripView: View {
-    let strip: KubeHeatStrip
-    let identifier: String
-    let dark: Bool
-    let track: Color
+package struct KubeHeatStripView: View {
+    package let strip: KubeHeatStrip
+    package let identifier: String
+    package let dark: Bool
+    package let track: Color
     /// The window it is in, by its `ChromeTheme`.
-    let window: ObjectIdentifier
+    package let window: ObjectIdentifier
 
-    nonisolated static let width: CGFloat = 75
-    nonisolated static let height: CGFloat = 14
+    package nonisolated static let width: CGFloat = 75
+    package nonisolated static let height: CGFloat = 14
 
     @State private var token = UUID()
 
-    var body: some View {
+    package var body: some View {
         let colours = KubeHeatStrip.Level.allCases.map { KubeChartPalette.heat($0, dark: dark).color }
         let percents = strip.percents
         let track = track
@@ -235,7 +235,7 @@ struct KubeHeatStripView: View {
     }
 
     /// A strip's cells drawn in `rect` (X4 draws fifty rows' in one Canvas).
-    static func draw(_ percents: [Double?], in rect: CGRect, context: inout GraphicsContext, colours: [Color], track: Color) {
+    package static func draw(_ percents: [Double?], in rect: CGRect, context: inout GraphicsContext, colours: [Color], track: Color) {
         context.fill(Path(rect), with: .color(track.opacity(0.08)))
         for bar in bars(percents, in: rect) {
             context.fill(Path(bar.rect), with: .color(bar.level.map { colours[$0.rawValue] } ?? track.opacity(0.3)))
@@ -246,7 +246,7 @@ struct KubeHeatStripView: View {
     /// from the foot, as tall as its share (at least 2) in its level; an
     /// unsampled one a 1-point tick at the foot, no level. Pure: the Canvas
     /// and Activity's AppKit strip draw the same rects.
-    nonisolated static func bars(_ percents: [Double?], in rect: CGRect) -> [(rect: CGRect, level: KubeHeatStrip.Level?)] {
+    package nonisolated static func bars(_ percents: [Double?], in rect: CGRect) -> [(rect: CGRect, level: KubeHeatStrip.Level?)] {
         let cell = rect.width / CGFloat(max(1, percents.count))
         var bars: [(rect: CGRect, level: KubeHeatStrip.Level?)] = []
         bars.reserveCapacity(percents.count)

@@ -5,30 +5,30 @@ import SwiftUI
 /// yours): its colours in wells, the preview following, saved as a file in
 /// your themes folder — the file edited in place (`ThemeFile`), so whatever
 /// else the theme said stays.
-struct ThemeEditorView: View {
+package struct ThemeEditorView: View {
     /// What is edited, and whether saving makes a new theme or rewrites it.
-    struct Target: Identifiable {
-        let entry: ThemeCatalog.Entry
-        let duplicate: Bool
-        var id: String { entry.id + (duplicate ? "+" : "") }
+    package struct Target: Identifiable {
+        package let entry: ThemeCatalog.Entry
+        package let duplicate: Bool
+        package var id: String { entry.id + (duplicate ? "+" : "") }
     }
 
-    let target: Target
-    @ObservedObject var theme: ChromeTheme
+    package let target: Target
+    @ObservedObject package var theme: ChromeTheme
     /// Saved under this name; nil when cancelled.
-    let done: (String?) -> Void
+    package let done: (String?) -> Void
 
     @State private var name = ""
     @State private var colours: [String: Color] = [:]
     @State private var error: String?
 
     /// Each well: its key in the file and its label.
-    static let keys: [(key: String, label: String)] =
+    package static let keys: [(key: String, label: String)] =
         [("background", "Background"), ("foreground", "Text"), ("cursor-color", "Cursor"), ("selection-background", "Selection")]
         + ["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"].enumerated().map { ("palette \($0.offset)", $0.element) }
         + ["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"].enumerated().map { ("palette \($0.offset + 8)", "Bright \($0.element.lowercased())") }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(target.duplicate ? "New Theme from \(target.entry.theme.name)" : "Edit \(target.entry.theme.name)").font(.headline)
             if target.duplicate {
@@ -54,7 +54,7 @@ struct ThemeEditorView: View {
         .onAppear(perform: start)
     }
 
-    static let ansiNames = ["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"]
+    package static let ansiNames = ["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"]
 
     /// The sixteen as a grid: a column a colour, a row normal and bright.
     private var palette: some View {
@@ -113,7 +113,7 @@ struct ThemeEditorView: View {
         colours = start
     }
 
-    static func themeColor(_ colour: Color) -> ThemeColor? {
+    package static func themeColor(_ colour: Color) -> ThemeColor? {
         guard let rgb = NSColor(colour).usingColorSpace(.sRGB) else { return nil }
         func unit(_ value: CGFloat) -> Double { Double(min(max(value, 0), 1)) }
         return ThemeColor(red: unit(rgb.redComponent), green: unit(rgb.greenComponent), blue: unit(rgb.blueComponent))

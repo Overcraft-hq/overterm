@@ -4,9 +4,9 @@ import Combine
 /// Notes: the sidebar's panel over the vault (NotesModel, the app's one),
 /// its notes opened in the editor.
 extension TerminalWindowController {
-    var notes: NotesModel { NotesModel.shared }
+    package var notes: NotesModel { NotesModel.shared }
 
-    func wireNotes() {
+    package func wireNotes() {
         sidebarPanel.$panel
             // @Published fires before the value lands.
             .sink { [weak self] panel in
@@ -40,7 +40,7 @@ extension TerminalWindowController {
     }
 
     /// The panel reads the vault only while some window shows it (CLAUDE.md).
-    func updateNotesVisibility(panel: SidebarPanel? = nil) {
+    package func updateNotesVisibility(panel: SidebarPanel? = nil) {
         let shown = sidebarItem?.isCollapsed == false && window?.isVisible != false
         notes.setVisible(shown && (panel ?? sidebarPanel.panel) == .notes && Settings.shared.notesEnabled, for: self)
     }
@@ -54,7 +54,7 @@ extension TerminalWindowController {
     }
 
     /// View ▸ Notes: the sidebar, on the notes.
-    @objc func showNotes(_ sender: Any?) {
+    @objc package func showNotes(_ sender: Any?) {
         guard Settings.shared.notesEnabled else { return }
         if sidebarItem?.isCollapsed == true { toggleFileTree(nil) }
         sidebarPanel.panel = .notes
@@ -62,7 +62,7 @@ extension TerminalWindowController {
     }
 
     /// Today's note in the editor — made from the daily template the first time.
-    @objc func openDailyNote(_ sender: Any?) {
+    @objc package func openDailyNote(_ sender: Any?) {
         guard Settings.shared.notesEnabled else { return }
         do {
             openNote(try notes.dailyNote())
@@ -71,11 +71,11 @@ extension TerminalWindowController {
         }
     }
 
-    @objc func newNote(_ sender: Any?) {
+    @objc package func newNote(_ sender: Any?) {
         newNote(in: nil)
     }
 
-    func newNote(in folder: URL?) {
+    package func newNote(in folder: URL?) {
         guard Settings.shared.notesEnabled else { return }
         do {
             openNote(try notes.newNote(in: folder, beside: notes.current))
@@ -84,7 +84,7 @@ extension TerminalWindowController {
         }
     }
 
-    func newDrawing(in folder: URL?) {
+    package func newDrawing(in folder: URL?) {
         guard Settings.shared.notesEnabled else { return }
         do {
             openNote(try notes.newDrawing(in: folder))
@@ -93,7 +93,7 @@ extension TerminalWindowController {
         }
     }
 
-    func newNotesFolder(in folder: URL?) {
+    package func newNotesFolder(in folder: URL?) {
         do {
             let url = try notes.newFolder(in: folder)
             renameNote(url)
@@ -102,14 +102,14 @@ extension TerminalWindowController {
         }
     }
 
-    func openNote(_ url: URL, line: Int? = nil) {
+    package func openNote(_ url: URL, line: Int? = nil) {
         notes.expandFolders(of: url)
         openInEditor(url, line: line.map { $0 + 1 })
     }
 
     /// Every open tab on a note, in every window: the vault is the app's, so
     /// an edit to a note is made where it is open, whichever window that is.
-    func openNoteBuffers(_ url: URL) -> [(EditorViewController, EditorBuffer)] {
+    package func openNoteBuffers(_ url: URL) -> [(EditorViewController, EditorBuffer)] {
         let key = url.standardizedFileURL.resolvingSymlinksInPath()
         return NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }.flatMap { controller in
             (controller.editor?.buffers ?? []).compactMap { buffer in
@@ -121,7 +121,7 @@ extension TerminalWindowController {
     /// A task ticked from the Tasks pane: in the note's buffer when it is
     /// open (an edit like any), else in the file. The line is the index's,
     /// which may be older than the text: the task is found by its words.
-    func toggleNoteTask(_ url: URL, line: Int, text task: String? = nil) {
+    package func toggleNoteTask(_ url: URL, line: Int, text task: String? = nil) {
         if let (editor, buffer) = openNoteBuffers(url).first {
             let text = buffer.storage.string
             guard let edit = NoteEdits.toggleTask(in: text, line: line, text: task) else { return NSSound.beep() }
@@ -140,7 +140,7 @@ extension TerminalWindowController {
     }
 
     /// Another folder as the vault, picked in Finder's panel.
-    func chooseNotesVault() {
+    package func chooseNotesVault() {
         guard let window else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -155,7 +155,7 @@ extension TerminalWindowController {
         }
     }
 
-    func notesSettingsChanged() {
+    package func notesSettingsChanged() {
         // Agents' notes tools come and go with the setting.
         BrowserBridge.shared.update()
         if !Settings.shared.notesEnabled, sidebarPanel.panel == .notes { sidebarPanel.panel = .files }
@@ -165,7 +165,7 @@ extension TerminalWindowController {
         updateNotesVisibility()
     }
 
-    var notesActions: NotesActions {
+    package var notesActions: NotesActions {
         NotesActions(
             open: { [weak self] in self?.openNote($0) },
             newNote: { [weak self] in self?.newNote(in: $0) },
@@ -184,7 +184,7 @@ extension TerminalWindowController {
 
     /// The notes' graph in the right-hand pane (which takes the slot, as
     /// every pane there does).
-    @objc func showNotesGraph(_ sender: Any?) {
+    @objc package func showNotesGraph(_ sender: Any?) {
         guard Settings.shared.notesEnabled else { return }
         rightPane.graphOpened = true
         rightPane.mode = .graph
@@ -195,7 +195,7 @@ extension TerminalWindowController {
     // MARK: Agents and branches
 
     /// ⌘L for a note: the editor's selection in it, or all of it, to an agent.
-    func askAgentAboutNote() {
+    package func askAgentAboutNote() {
         guard let editor, let buffer = editor.active, buffer.isNote, let url = buffer.url else { return }
         let selection = editor.textView.selectedRange()
         let text =
@@ -208,7 +208,7 @@ extension TerminalWindowController {
     }
 
     /// The note for the selected tab's branch, made the first time.
-    func openBranchNote() {
+    package func openBranchNote() {
         guard Settings.shared.notesEnabled, let root = store.selected?.checkoutSource?.root else { return NSSound.beep() }
         Task { [weak self] in
             let branch = (try? await Git.run(["rev-parse", "--abbrev-ref", "HEAD"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -238,7 +238,7 @@ extension TerminalWindowController {
     /// note is open in any window (an edit like any), else in the file,
     /// fetched from iCloud first if it must be. The note isn't opened: the
     /// terminal keeps the keyboard.
-    func appendToTodaysNote(_ text: String, command: String?, folder: String?) {
+    package func appendToTodaysNote(_ text: String, command: String?, folder: String?) {
         guard Settings.shared.notesEnabled else { return }
         let url: URL
         do {
@@ -267,7 +267,7 @@ extension TerminalWindowController {
 
     /// Asks for a new name — a note's without `.md` — and renames it, the
     /// links to it written again (`moveNote`).
-    func renameNote(_ url: URL) {
+    package func renameNote(_ url: URL) {
         let isNote = url.pathExtension.lowercased() == "md"
         let shown = isNote ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
         askForName(title: "Rename", detail: shown, initial: shown, action: "Rename") { [weak self] name in
@@ -285,7 +285,7 @@ extension TerminalWindowController {
     /// A drop in the Notes panel: each note, file or folder into `folder`
     /// (NoteMove), the links to it written again — not onto a name there is
     /// already, nor out of the vault.
-    func moveNotes(_ urls: [URL], into folder: URL) {
+    package func moveNotes(_ urls: [URL], into folder: URL) {
         let root = notes.vault.root
         for url in urls {
             guard let target = NoteMove.target(of: url, into: folder, vault: root) else { continue }
@@ -305,7 +305,7 @@ extension TerminalWindowController {
     /// read, fetched from iCloud if they must be, and written off the main
     /// thread; a note open with unsaved edits — in any window — gets the
     /// change in its buffer, still unsaved, and tabs everywhere follow.
-    func moveNote(_ url: URL, to target: URL) {
+    package func moveNote(_ url: URL, to target: URL) {
         let notes = self.notes
         notes.whenLoaded { [weak self] in
             guard let self else { return }
@@ -380,7 +380,7 @@ extension TerminalWindowController {
         return outcome
     }
 
-    func reportNotesError(_ error: Error) {
+    package func reportNotesError(_ error: Error) {
         guard let window else { return }
         NSAlert(error: error).beginSheetModal(for: window)
     }

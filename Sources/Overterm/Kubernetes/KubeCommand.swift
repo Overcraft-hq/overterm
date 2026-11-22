@@ -3,9 +3,9 @@ import Foundation
 /// The names a kind goes by in the `:` command bar: kubectl's (discovery's
 /// plural, singular, short names, Kind, `plural.group`) and k9s's own
 /// aliases on top. Pure.
-enum KubeKinds {
+package enum KubeKinds {
     /// k9s's aliases that discovery doesn't give, by the full name they mean.
-    static let aliases: [String: String] = [
+    package static let aliases: [String: String] = [
         "dp": "deployments.apps", "sec": "secrets", "jo": "jobs.batch", "np": "networkpolicies.networking.k8s.io",
         "cr": "clusterroles.rbac.authorization.k8s.io", "crb": "clusterrolebindings.rbac.authorization.k8s.io",
         "rb": "rolebindings.rbac.authorization.k8s.io", "ro": "roles.rbac.authorization.k8s.io",
@@ -16,7 +16,7 @@ enum KubeKinds {
     /// kinds that are one Kind, the one the page offers (`catalog`): `ev`
     /// is events.k8s.io's Events, as the Cluster section shows them, not
     /// the core group's.
-    static func resolve(_ name: String, in discovery: KubeDiscovery, catalog: KubeKindCatalog? = nil) -> KubeResourceKind? {
+    package static func resolve(_ name: String, in discovery: KubeDiscovery, catalog: KubeKindCatalog? = nil) -> KubeResourceKind? {
         let wanted = name.trimmingCharacters(in: .whitespaces).lowercased()
         guard !wanted.isEmpty else { return nil }
         guard let found = aliases[wanted].flatMap(discovery.kind) ?? discovery.kind(wanted) else { return nil }
@@ -25,7 +25,7 @@ enum KubeKinds {
     }
 
     /// Every name it goes by, lowercased: plural first.
-    static func names(of kind: KubeResourceKind) -> [String] {
+    package static func names(of kind: KubeResourceKind) -> [String] {
         var names = [kind.resource, kind.singular] + kind.shortNames + [kind.kind.lowercased(), kind.fullName]
         names += aliases.filter { $0.value == kind.fullName }.map(\.key).sorted()
         var seen: Set<String> = []
@@ -40,20 +40,20 @@ enum KubeKinds {
 /// filter starts at a word that starts with `/` and runs up to the next
 /// `@context` or `label=value` word — its own words (`status:running`,
 /// `label:app=web`) have a `:` — so what follows it is still read. Pure.
-struct KubeCommand: Equatable, Sendable {
+package struct KubeCommand: Equatable, Sendable {
     /// The first word, lowercased: a kind's name, `ctx` or `ns`.
-    var target: String
+    package var target: String
     /// A namespace, or nil.
-    var namespace: String?
-    var allNamespaces = false
+    package var namespace: String?
+    package var allNamespaces = false
     /// `app=web,tier=fe`: a word with `=`.
-    var labels: String?
+    package var labels: String?
     /// `@fake-dev`.
-    var context: String?
+    package var context: String?
     /// After `/`.
-    var filter: String?
+    package var filter: String?
 
-    enum Action: Equatable, Sendable {
+    package enum Action: Equatable, Sendable {
         case kind(String)
         case context(String?)
         case namespace(String?)
@@ -61,7 +61,7 @@ struct KubeCommand: Equatable, Sendable {
         case gitops(KubeGitOpsObject.Tool?)
     }
 
-    var action: Action {
+    package var action: Action {
         switch target {
         case "ctx", "context", "contexts": .context(namespace ?? context)
         case "ns": .namespace(allNamespaces ? "*" : namespace)
@@ -72,7 +72,7 @@ struct KubeCommand: Equatable, Sendable {
         }
     }
 
-    static func parse(_ text: String) -> KubeCommand? {
+    package static func parse(_ text: String) -> KubeCommand? {
         var line = text.trimmingCharacters(in: .whitespaces)
         if line.hasPrefix(":") { line.removeFirst() }
         let words = line.split(whereSeparator: \.isWhitespace).map(String.init)
@@ -112,36 +112,36 @@ struct KubeCommand: Equatable, Sendable {
 
     /// `app=web,tier=fe`, `env!=prod`: a selector's word. A filter's
     /// `label:app=web` is the filter's.
-    static func isLabels(_ word: String) -> Bool { word.contains("=") && !word.contains(":") && !word.hasPrefix("/") }
+    package static func isLabels(_ word: String) -> Bool { word.contains("=") && !word.contains(":") && !word.hasPrefix("/") }
 }
 
 /// The `:` bar over the page: what is typed, and what it completes to —
 /// a kind's names while the first word is typed, then a namespace, or a
 /// context after `@`. ↑↓ move, Tab completes, ↩ completes and runs, Esc
 /// closes. Pure.
-struct KubeCommandBar: Equatable {
-    struct Completion: Equatable, Identifiable, Sendable {
+package struct KubeCommandBar: Equatable {
+    package struct Completion: Equatable, Identifiable, Sendable {
         /// What the word becomes.
-        var text: String
-        var detail: String
-        var id: String { text }
+        package var text: String
+        package var detail: String
+        package var id: String { text }
     }
 
     /// The kinds offered, the namespaces listed, the contexts.
-    let kinds: [KubeResourceKind]
-    let namespaces: [String]
-    let contexts: [String]
-    var text = "" {
+    package let kinds: [KubeResourceKind]
+    package let namespaces: [String]
+    package let contexts: [String]
+    package var text = "" {
         didSet {
             index = 0
             problem = nil
         }
     }
-    var index = 0
+    package var index = 0
     /// Why the last ↩ ran nothing.
-    var problem: String?
+    package var problem: String?
 
-    init(kinds: [KubeResourceKind], namespaces: [String], contexts: [String]) {
+    package init(kinds: [KubeResourceKind], namespaces: [String], contexts: [String]) {
         self.kinds = kinds
         self.namespaces = namespaces
         self.contexts = contexts
@@ -149,7 +149,7 @@ struct KubeCommandBar: Equatable {
 
     /// The word being typed and where it starts; nil after a space, and
     /// in the filter — but an `@context` after it still completes.
-    var currentWord: (word: String, start: String.Index, first: Bool)? {
+    package var currentWord: (word: String, start: String.Index, first: Bool)? {
         guard let last = text.last, !last.isWhitespace else {
             return text.isEmpty ? ("", text.startIndex, true) : nil
         }
@@ -161,7 +161,7 @@ struct KubeCommandBar: Equatable {
     }
 
     /// What the word being typed may become, best first.
-    var results: [Completion] {
+    package var results: [Completion] {
         guard let (word, _, first) = currentWord else { return [] }
         let typed = word.lowercased()
         if first { return Array(kindCompletions(typed).prefix(8)) }
@@ -205,25 +205,25 @@ struct KubeCommandBar: Equatable {
         return ranked.sorted { $0.1 != $1.1 ? $0.1 < $1.1 : $0.2 < $1.2 }.map(\.0).filter { seen.insert($0.text).inserted }
     }
 
-    var selected: Completion? {
+    package var selected: Completion? {
         let results = results
         return results.indices.contains(index) ? results[index] : nil
     }
 
-    mutating func move(_ offset: Int) {
+    package mutating func move(_ offset: Int) {
         let count = results.count
         guard count > 0 else { return }
         index = ((index + offset) % count + count) % count
     }
 
     /// Tab: the word being typed becomes the highlighted completion.
-    mutating func complete() {
+    package mutating func complete() {
         guard let completion = selected, let (_, start, _) = currentWord else { return }
         text = String(text[..<start]) + completion.text
     }
 
     /// ↩: the word completed when it isn't already a whole name, then read.
-    mutating func command() -> KubeCommand? {
+    package mutating func command() -> KubeCommand? {
         if let (word, _, first) = currentWord, !word.isEmpty, let completion = selected, completion.text.lowercased() != word.lowercased() {
             let whole = first ? kinds.contains { KubeKinds.names(of: $0).contains(word.lowercased()) } || ["ctx", "ns", "gitops", "argo", "argocd", "flux"].contains(word.lowercased()) : false
             if !whole { complete() }

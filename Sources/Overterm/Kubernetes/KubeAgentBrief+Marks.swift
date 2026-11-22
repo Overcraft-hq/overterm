@@ -9,31 +9,31 @@ import Foundation
 /// message scrubbed and cut to 300 characters as it was decoded), the
 /// not-ready workloads' pods as their rows say them, the causes' events.
 /// Nothing in it is a value, an env, a template or a field set.
-struct KubeMarkedBriefFacts: Sendable {
-    var ranked: KubeMarkedRanked
+package struct KubeMarkedBriefFacts: Sendable {
+    package var ranked: KubeMarkedRanked
     /// Why it is read from marks: the mode's line, or where the rail
     /// placed its Application.
-    var lead: String?
+    package var lead: String?
     /// Where the Application is: what only it knows is there
     /// (`KubeMarkedAppDetail.whereTheApplicationIs`).
-    var whereApplication: String
+    package var whereApplication: String
     /// Whose health it is when it isn't the app's: "health of the 2
     /// objects bound here" (the rail's).
-    var scope: String?
-    var context: KubeBriefContext
+    package var scope: String?
+    package var context: KubeBriefContext
     /// Each object read for the brief: its conditions, its counts.
-    var objects: [KubeMarkedMember.ID: KubeMarkedWorkloadWire] = [:]
+    package var objects: [KubeMarkedMember.ID: KubeMarkedWorkloadWire] = [:]
     /// The not-ready workloads' pods, from their rows.
-    var pods: [KubeMarkedMember.ID: [KubeMarkedAppDetail.Child]] = [:]
+    package var pods: [KubeMarkedMember.ID: [KubeMarkedAppDetail.Child]] = [:]
     /// The causes' events.
-    var events: [KubeMarkedMember.ID: [KubeEvent]] = [:]
+    package var events: [KubeMarkedMember.ID: [KubeEvent]] = [:]
     /// What couldn't be read, said.
-    var notes: [String] = []
+    package var notes: [String] = []
 }
 
 extension KubeAgentBrief {
     /// A not-ready workload's pods said, at most.
-    static let markedPods = 10
+    package static let markedPods = 10
 
     /// The brief on an app read from marks that isn't Ready (Progressing
     /// included: under Argo CD's rules a crash-looping Deployment after a
@@ -46,7 +46,7 @@ extension KubeAgentBrief {
     /// not-ready workloads' pods and the causes' events a chip each. Every
     /// word through `Secrets` (`KubeAgentBriefing.scrubber`), the app's and
     /// its objects' names kept out of what is taken out. Pure.
-    static func markedApp(_ facts: KubeMarkedBriefFacts, now: Date = Date()) -> KubeAgentBrief {
+    package static func markedApp(_ facts: KubeMarkedBriefFacts, now: Date = Date()) -> KubeAgentBrief {
         let app = facts.ranked.app
         let health = facts.ranked.health
         let probable = app.mark == .appInstance
@@ -105,7 +105,7 @@ extension KubeAgentBrief {
 
     /// The brief's first lines: the app and where it is, why it is read
     /// from marks, and what only its Application knows — where that is.
-    static func markedLead(_ ranked: KubeMarkedRanked, lead: String?, whereApplication: String, context: KubeBriefContext) -> String {
+    package static func markedLead(_ ranked: KubeMarkedRanked, lead: String?, whereApplication: String, context: KubeBriefContext) -> String {
         let app = ranked.app
         let probable = app.mark == .appInstance
         var lines: [String] = []
@@ -125,7 +125,7 @@ extension KubeAgentBrief {
 
     /// Each object as its app counts it, then its hooks — a namespace in
     /// front of each name.
-    static func markedObjects(_ app: KubeMarkedApp) -> [String] {
+    package static func markedObjects(_ app: KubeMarkedApp) -> [String] {
         var lines = ["Its objects (\(app.countsSaid)):"]
         for member in app.members {
             var line = "- \(member.id.kind.kind) \(member.id.namespace.map { "\($0)/" } ?? "")\(member.id.name): "
@@ -206,7 +206,7 @@ extension KubeAgentBrief {
     /// What the brief names anyway, kept out of what scrubbing takes out:
     /// the app, its namespaces, its objects, their pods, its images'
     /// repositories.
-    static func markedNames(_ facts: KubeMarkedBriefFacts) -> Set<String> {
+    package static func markedNames(_ facts: KubeMarkedBriefFacts) -> Set<String> {
         let app = facts.ranked.app
         var names: Set<String> = [app.key.instance, app.appName, app.said, facts.context.name]
         if let namespace = app.appNamespace { names.insert(namespace) }
@@ -227,17 +227,17 @@ extension KubeAgentBrief {
 
 extension KubeAgentBriefing {
     /// At most this many of an app's objects read for its brief, its causes first.
-    static let markedObjects = 6
+    package static let markedObjects = 6
     /// At most this many not-ready workloads' pods listed and causes' events read.
-    static let markedWorkloads = 3
+    package static let markedWorkloads = 3
     /// A not-ready workload's pods: at most this many rows, 8 MB.
-    static let markedPodRows = 50
-    static let markedListBytes = 8 << 20
+    package static let markedPodRows = 50
+    package static let markedListBytes = 8 << 20
     /// An object's GET, at most.
-    static let markedGetBytes = 4 << 20
+    package static let markedGetBytes = 4 << 20
 
     /// Why Ask Why isn't offered on an app read from marks: it is Ready.
-    static func markedNotAsked(_ ranked: KubeMarkedRanked) -> String? {
+    package static func markedNotAsked(_ ranked: KubeMarkedRanked) -> String? {
         guard ranked.health.state == .ready else { return nil }
         let name = ranked.app.mark == .appInstance ? "App \(ranked.app.said)" : "Argo CD app \(ranked.app.said)"
         return "\(name) is Ready (\(ranked.health.why)): Ask Why is for one that isn't."
@@ -246,7 +246,7 @@ extension KubeAgentBriefing {
     /// The kinds an object of is read by a GET when what the context
     /// serves couldn't be read: the built-in workloads' — never "not
     /// served" said of a kind without a discovery to say so.
-    static let markedBuiltInKinds: [KubeResourceKind] = [.deployments, .statefulSets, .daemonSets, .jobs, .cronJobs]
+    package static let markedBuiltInKinds: [KubeResourceKind] = [.deployments, .statefulSets, .daemonSets, .jobs, .cronJobs]
 
     /// The brief on an app read from marks that isn't Ready — asked by a
     /// person (`a`, the detail's button, the rail's): one failing
@@ -263,7 +263,7 @@ extension KubeAgentBriefing {
     /// built-in workloads' kinds. Only GETs, each within `readTimeout`;
     /// never a Secret, a ConfigMap, a pod's or a template's values; a read
     /// that fails is said, the brief going on without it.
-    static func markedApp(
+    package static func markedApp(
         _ asked: KubeMarkedRanked, lead: String?, whereApplication: String, scope: String? = nil, known: [KubeMarkedMember.ID: KubeMarkedSettled] = [:],
         client: KubeClient, context: KubeBriefContext, discovery discovered: KubeDiscovery?, now: Date = Date()
     ) async throws -> KubeAgentBrief {
@@ -402,7 +402,7 @@ extension KubeAgentBriefing {
     /// always sent says it is one of the app's objects, why the app is
     /// read from marks, what only its Application knows and where — and a
     /// chip with the app's objects as it counts them. Scrubbed as the rest.
-    static func withMarkedApp(
+    package static func withMarkedApp(
         _ brief: KubeAgentBrief, _ ranked: KubeMarkedRanked, lead: String?, whereApplication: String, scope: String?, context: KubeBriefContext
     ) -> KubeAgentBrief {
         var brief = brief

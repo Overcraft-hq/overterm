@@ -35,106 +35,106 @@ import NIOPosix
 /// It records every request (method, path, query, Accept), so a test or
 /// the scenario can show that no write method and no subresource reached
 /// it. It has no exec, attach or port-forward: those are 404, recorded.
-final class FakeKubeAPI: @unchecked Sendable {
-    struct Pod: Equatable, Sendable {
+package final class FakeKubeAPI: @unchecked Sendable {
+    package struct Pod: Equatable, Sendable {
         /// kubectl's Status column: `Running`, `CrashLoopBackOff`, `Init:0/1`…
-        var status = "Running"
-        var phase = "Running"
-        var ready = 1
-        var containers = 1
-        var restarts = 0
+        package var status = "Running"
+        package var phase = "Running"
+        package var ready = 1
+        package var containers = 1
+        package var restarts = 0
         /// When the last restart was, as the row says it ("2m").
-        var lastRestart: String?
-        var ip = "10.0.0.10"
-        var node = "fake-node-1"
-        var image = "nginx:1.27"
+        package var lastRestart: String?
+        package var ip = "10.0.0.10"
+        package var node = "fake-node-1"
+        package var image = "nginx:1.27"
         /// Its init containers' names (each terminated, Completed) and
         /// ephemeral ones' (running).
-        var initContainers: [String] = []
-        var ephemeralContainers: [String] = []
+        package var initContainers: [String] = []
+        package var ephemeralContainers: [String] = []
         /// The first container ended (`Completed`, `Error`): its state
         /// `terminated` with `exitCode`.
-        var terminatedReason: String?
-        var exitCode = 0
+        package var terminatedReason: String?
+        package var exitCode = 0
         /// The first container's env, as plain values.
-        var env: [String: String] = [:]
+        package var env: [String: String] = [:]
         /// The first container's env taken from Secrets: name → the Secret and its key.
-        var secretEnv: [String: SecretKeyRef] = [:]
+        package var secretEnv: [String: SecretKeyRef] = [:]
         /// The first container's declared ports (TCP).
-        var ports: [ContainerPort] = []
+        package var ports: [ContainerPort] = []
         /// Its `Ready` condition, when one is reported (nil: none, readiness
         /// read off its containers): a readiness probe failing turns it False.
-        var readyCondition: Bool?
+        package var readyCondition: Bool?
         /// Each container's resources by name (`requests`/`limits` → `cpu`/`memory` → a quantity), as its spec says
         /// them; the `resize` subresource changes them.
-        var resources: [String: [String: [String: String]]] = [:]
+        package var resources: [String: [String: [String: String]]] = [:]
         /// With restarts, how the first container last ended (`lastState.terminated`): its reason, exit code and when.
-        var lastReason = "Error"
-        var lastExitCode = 1
-        var lastFinished: Date?
+        package var lastReason = "Error"
+        package var lastExitCode = 1
+        package var lastFinished: Date?
 
         /// Its containers' names: `app`, then `sidecar-1`…
-        var containerNames: [String] { (0..<containers).map { $0 == 0 ? "app" : "sidecar-\($0)" } }
+        package var containerNames: [String] { (0..<containers).map { $0 == 0 ? "app" : "sidecar-\($0)" } }
     }
 
     /// An env value a container takes from a Secret's key (`valueFrom.secretKeyRef`).
-    struct SecretKeyRef: Equatable, Sendable {
-        var name: String
-        var key: String
+    package struct SecretKeyRef: Equatable, Sendable {
+        package var name: String
+        package var key: String
     }
 
     /// A port a container declares: `containerPort`, and its name.
-    struct ContainerPort: Equatable, Sendable {
-        var name: String?
-        var port: Int
+    package struct ContainerPort: Equatable, Sendable {
+        package var name: String?
+        package var port: Int
 
-        init(_ port: Int, name: String? = nil) {
+        package init(_ port: Int, name: String? = nil) {
             self.port = port
             self.name = name
         }
     }
 
     /// One line of a container's log, as the kubelet keeps it.
-    struct LogEntry: Sendable {
-        var time: Date
-        var text: String
+    package struct LogEntry: Sendable {
+        package var time: Date
+        package var text: String
 
         /// RFC 3339 with nine digits of fraction, as the kubelet writes it.
-        var stamp: String { FakeKubeAPI.nanoStamp(time) }
+        package var stamp: String { FakeKubeAPI.nanoStamp(time) }
     }
 
-    struct Object: Sendable {
+    package struct Object: Sendable {
         /// The kind's full name: `pods`, `namespaces`, `deployments.apps`.
-        var resource: String
-        var namespace: String?
-        var name: String
-        var uid: String
-        var resourceVersion: Int
-        var created: Date
-        var labels: [String: String] = [:]
-        var pod: Pod?
+        package var resource: String
+        package var namespace: String?
+        package var name: String
+        package var uid: String
+        package var resourceVersion: Int
+        package var created: Date
+        package var labels: [String: String] = [:]
+        package var pod: Pod?
         /// Cells by column name, for a kind other than pods: what the
         /// Table shows besides Name and the ages.
-        var values: [String: Value] = [:]
-        var annotations: [String: String] = [:]
+        package var values: [String: Value] = [:]
+        package var annotations: [String: String] = [:]
         /// A Secret's or a ConfigMap's keys and values (a Secret's are
         /// base64 in the object, as the server sends them). Only a plain GET
         /// of the object carries them; its Table row says how many.
-        var data: [String: String] = [:]
+        package var data: [String: String] = [:]
         /// The rest of the object as a plain GET answers it — `spec`,
         /// `status`, an Event's `involvedObject` — as JSON; its `metadata`
         /// is merged into the metadata (`ownerReferences`, `generation`).
-        var body: Data? = nil
+        package var body: Data? = nil
         /// `metadata.managedFields` as JSON (`setManagedFields`, a server-side
         /// apply's); nil: one kubectl-client-side-apply entry, as before.
-        var managedFields: Data? = nil
+        package var managedFields: Data? = nil
         /// `metadata.ownerReferences` its Metadata rows carry too, as a
         /// server's PartialObjectMetadata does (`setRowOwners`); nil, none —
         /// as before, for the tests whose owners only a GET shows.
-        var rowOwners: Data? = nil
+        package var rowOwners: Data? = nil
         /// `metadata.generation`, from the body's metadata: its rows carry it
         /// too, as a server's PartialObjectMetadata does.
-        var generation: Int? = nil
+        package var generation: Int? = nil
     }
 
     /// A self-signed certificate for a fake TLS Secret's `tls.crt`: public
@@ -143,7 +143,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// `web.acme.example`, `*.shop.acme.example`, 10.0.0.12 and
     /// ops@acme.example, good from 2026-11-04 03:59:47 to 2036-11-01
     /// 03:59:47 UTC, a CA (P-256).
-    static let testCertificatePEM = """
+    package static let testCertificatePEM = """
         -----BEGIN CERTIFICATE-----
         MIICGTCCAb+gAwIBAgIUJhdJjT3JRkmt3Ptvm5KGC5ktqgYwCgYIKoZIzj0EAwIw
         PDELMAkGA1UEBhMCVVMxEjAQBgNVBAoMCUFjbWUgRmFrZTEZMBcGA1UEAwwQd2Vi
@@ -162,14 +162,14 @@ final class FakeKubeAPI: @unchecked Sendable {
         """
 
     /// One cell's value as the server types it.
-    enum Value: Equatable, Sendable, ExpressibleByStringLiteral, ExpressibleByIntegerLiteral {
+    package enum Value: Equatable, Sendable, ExpressibleByStringLiteral, ExpressibleByIntegerLiteral {
         case text(String)
         case integer(Int)
 
-        init(stringLiteral value: String) { self = .text(value) }
-        init(integerLiteral value: Int) { self = .integer(value) }
+        package init(stringLiteral value: String) { self = .text(value) }
+        package init(integerLiteral value: Int) { self = .integer(value) }
 
-        var json: Any {
+        package var json: Any {
             switch self {
             case .text(let text): text
             case .integer(let value): value
@@ -179,39 +179,39 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// One of a kind's Table columns: `kubectl get`'s, or a CRD's
     /// `additionalPrinterColumns`.
-    struct Column: Equatable, Sendable {
-        var name: String
-        var type = "string"
-        var format = ""
-        var priority = 0
-        var description = ""
+    package struct Column: Equatable, Sendable {
+        package var name: String
+        package var type = "string"
+        package var format = ""
+        package var priority = 0
+        package var description = ""
     }
 
-    struct Request: Equatable, Sendable, CustomStringConvertible {
-        var method: String
-        var path: String
-        var query: [String: String]
-        var accept: String
+    package struct Request: Equatable, Sendable, CustomStringConvertible {
+        package var method: String
+        package var path: String
+        package var query: [String: String]
+        package var accept: String
         /// A write's body, and how it says it is encoded.
-        var body = Data()
-        var contentType = ""
+        package var body = Data()
+        package var contentType = ""
 
-        var description: String { "\(method) \(path)" }
+        package var description: String { "\(method) \(path)" }
 
         /// The body read back, for the tests.
-        var json: Any? { try? JSONSerialization.jsonObject(with: body) }
+        package var json: Any? { try? JSONSerialization.jsonObject(with: body) }
         /// An access review (SelfSubjectAccessReview): a POST, but no write.
-        var isAccessReview: Bool { path == FakeKubeAPI.accessReviewPath }
+        package var isAccessReview: Bool { path == FakeKubeAPI.accessReviewPath }
         /// A subresource: `pods/p/exec`, `services/s:80/proxy`, `pods/p/log`.
-        var isSubresource: Bool { FakeKubeAPI.route(path)?.subresource != nil }
+        package var isSubresource: Bool { FakeKubeAPI.route(path)?.subresource != nil }
         /// A pod's log: the one subresource Overterm reads (a GET).
-        var isLog: Bool { FakeKubeAPI.route(path).map { $0.resource == "pods" && $0.subresource == "log" } ?? false }
+        package var isLog: Bool { FakeKubeAPI.route(path).map { $0.resource == "pods" && $0.subresource == "log" } ?? false }
         /// A watch's request.
-        var isWatch: Bool { query["watch"] == "1" || query["watch"] == "true" }
+        package var isWatch: Bool { query["watch"] == "1" || query["watch"] == "true" }
         /// A Prometheus query through a Service's proxy (`…/proxy/api/v1/query`, `query_range`).
-        var isPrometheusQuery: Bool { path.contains("/proxy/api/v1/query") }
+        package var isPrometheusQuery: Bool { path.contains("/proxy/api/v1/query") }
         /// Discovery: `/api`, `/apis`, a group's or a version's list of kinds, `/version`, OpenAPI.
-        var isDiscovery: Bool {
+        package var isDiscovery: Bool {
             let parts = path.split(separator: "/")
             if parts.first == "api" { return parts.count <= 2 }
             if parts.first == "apis" { return parts.count <= 3 }
@@ -220,27 +220,27 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// A kind it serves, as discovery says it.
-    struct Kind: Sendable {
-        var group: String
-        var version: String
-        var resource: String
-        var kind: String
-        var namespaced: Bool
-        var shortNames: [String] = []
-        var categories: [String] = []
-        var subresources: [String] = []
-        var verbs = ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
+    package struct Kind: Sendable {
+        package var group: String
+        package var version: String
+        package var resource: String
+        package var kind: String
+        package var namespaced: Bool
+        package var shortNames: [String] = []
+        package var categories: [String] = []
+        package var subresources: [String] = []
+        package var verbs = ["create", "delete", "deletecollection", "get", "list", "patch", "update", "watch"]
         /// A CRD's printer columns; nil: the built-in kind's own.
-        var columns: [Column]? = nil
+        package var columns: [Column]? = nil
         /// A CRD's kind: it takes no strategic merge patch, as the server's don't.
-        var custom = false
+        package var custom = false
 
-        var groupVersion: String { group.isEmpty ? version : "\(group)/\(version)" }
-        var fullName: String { group.isEmpty ? resource : "\(resource).\(group)" }
+        package var groupVersion: String { group.isEmpty ? version : "\(group)/\(version)" }
+        package var fullName: String { group.isEmpty ? resource : "\(resource).\(group)" }
     }
 
     /// The kinds every fake serves; `addCRD` adds more to one.
-    static let builtinKinds: [Kind] = [
+    package static let builtinKinds: [Kind] = [
         Kind(group: "", version: "v1", resource: "namespaces", kind: "Namespace", namespaced: false, shortNames: ["ns"], subresources: ["finalize", "status"]),
         Kind(
             group: "", version: "v1", resource: "pods", kind: "Pod", namespaced: true, shortNames: ["po"], categories: ["all"],
@@ -279,7 +279,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         Kind(group: "metrics.k8s.io", version: "v1beta1", resource: "nodes", kind: "NodeMetrics", namespaced: false, verbs: ["get", "list"]),
     ]
 
-    let socket: String?
+    package let socket: String?
     private let lock = NSLock()
     /// What it serves now: the built-in kinds and the CRDs added.
     private var kinds = FakeKubeAPI.builtinKinds
@@ -353,7 +353,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// as a real API server's does (gitops.md 3.2: the largest cost of a
     /// list across the cluster). Off, the rows are lean, as every other
     /// scenario has them.
-    var tableManagedFields: Bool {
+    package var tableManagedFields: Bool {
         get { locked { settings.tableManagedFields } }
         set { locked { settings.tableManagedFields = newValue } }
     }
@@ -361,11 +361,11 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// Bytes answered for a resource (its full name: `applications.argoproj.io`)
     /// since `forgetBytes`: lists, GETs and every watch event — what the
     /// client received, as the perf scenarios record it.
-    func bytesSent(_ resource: String) -> Int { locked { sent[resource] ?? 0 } }
+    package func bytesSent(_ resource: String) -> Int { locked { sent[resource] ?? 0 } }
     /// Bytes answered for a resource by lists and GETs alone, by whether
     /// they asked for a Table (`table`) or whole objects.
-    func bytesSent(_ resource: String, table: Bool) -> Int { locked { sentWhole[resource + (table ? "#table" : "#objects")] ?? 0 } }
-    func forgetBytes() {
+    package func bytesSent(_ resource: String, table: Bool) -> Int { locked { sentWhole[resource + (table ? "#table" : "#objects")] ?? 0 } }
+    package func forgetBytes() {
         locked {
             sent = [:]
             sentWhole = [:]
@@ -383,14 +383,14 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// Whether it serves `/openapi/v3` (an old server's 404 when not).
-    var servesOpenAPI: Bool {
+    package var servesOpenAPI: Bool {
         get { locked { settings.servesOpenAPI } }
         set { locked { settings.servesOpenAPI = newValue } }
     }
 
     /// Bytes of whitespace before each `/openapi/v3/…` document: an
     /// aggregated server's oversized one, for the read's bound.
-    var openAPIPadding: Int {
+    package var openAPIPadding: Int {
         get { locked { settings.openAPIPadding } }
         set { locked { settings.openAPIPadding = newValue } }
     }
@@ -398,70 +398,70 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// What the access review refuses, as `KubeAccess` says it: `delete
     /// pods`, `patch deployments.apps/scale`, `create pods/eviction`.
     /// Everything else is allowed.
-    var deniedAccess: Set<String> {
+    package var deniedAccess: Set<String> {
         get { locked { settings.deniedAccess } }
         set { locked { settings.deniedAccess = newValue } }
     }
 
     /// A PodDisruptionBudget that allows no eviction now: every eviction is
     /// a 429 saying so, this its cause.
-    var evictionBlock: String? {
+    package var evictionBlock: String? {
         get { locked { settings.evictionBlock } }
         set { locked { settings.evictionBlock = newValue } }
     }
 
     /// The next write (not an access review) is answered with this Status:
     /// a 403 RBAC changed meanwhile, a 409, a 422.
-    func failNextWrite(_ status: Int, reason: String, message: String) {
+    package func failNextWrite(_ status: Int, reason: String, message: String) {
         locked { settings.nextWriteFailure = (status, reason, message) }
     }
 
     /// What `/version` says: a minor of 34 serves streaming lists.
-    var minor: String {
+    package var minor: String {
         get { locked { settings.minor } }
         set { locked { settings.minor = newValue } }
     }
     /// Whether discovery answers aggregated when asked; off, only the legacy walk.
-    var aggregatedDiscovery: Bool {
+    package var aggregatedDiscovery: Bool {
         get { locked { settings.aggregatedDiscovery } }
         set { locked { settings.aggregatedDiscovery = newValue } }
     }
     /// Whether a watch takes `sendInitialEvents` (the WatchList gate);
     /// off, it is refused with a 422, as such a server refuses it.
-    var streamingLists: Bool {
+    package var streamingLists: Bool {
         get { locked { settings.streamingLists } }
         set { locked { settings.streamingLists = newValue } }
     }
     /// A watch from a compacted version is answered 410 rather than sent an
     /// in-stream ERROR event: both happen.
-    var goneAsAnswer: Bool {
+    package var goneAsAnswer: Bool {
         get { locked { settings.goneAsAnswer } }
         set { locked { settings.goneAsAnswer = newValue } }
     }
     /// Group versions that are down, as an aggregated API that is: their
     /// legacy resource list answers 503, aggregated discovery marks them
     /// `Stale` with no resources.
-    var failingGroups: Set<String> {
+    package var failingGroups: Set<String> {
         get { locked { settings.failingGroups } }
         set { locked { settings.failingGroups = newValue } }
     }
     /// A streaming list sends a plain bookmark among its initial events,
     /// before the one marked as their end.
-    var interimBookmarks: Bool {
+    package var interimBookmarks: Bool {
         get { locked { settings.interimBookmarks } }
         set { locked { settings.interimBookmarks = newValue } }
     }
     /// Whether a streaming list asked for as a Table ends as one should:
     /// off, its end's bookmark carries no `k8s.io/initial-events-end` — a
     /// server that doesn't combine the two (the spike's open question).
-    var streamingTables: Bool {
+    package var streamingTables: Bool {
         get { locked { settings.streamingTables } }
         set { locked { settings.streamingTables = newValue } }
     }
     /// Whether a Table bookmark that is a stream's first Table carries the
     /// columns, as kind's 1.37 does: off, an empty streaming list ends
     /// without them (a server that leaves them out).
-    var bookmarkColumns: Bool {
+    package var bookmarkColumns: Bool {
         get { locked { settings.bookmarkColumns } }
         set { locked { settings.bookmarkColumns = newValue } }
     }
@@ -469,7 +469,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// nodes, `get` and `list`, as metrics-server serves them). Off, a
     /// cluster without one — EKS's by default: neither discovery names it
     /// nor its paths answer but 404.
-    var metricsServer: Bool {
+    package var metricsServer: Bool {
         get { locked { kinds.contains { $0.group == "metrics.k8s.io" } } }
         set {
             locked {
@@ -484,7 +484,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// stamped as it is served, so the stamp advances as metrics-server's
     /// does (metrics.md 8).
     /// `labels`: the pod's, as metrics-server copies them (a revision's hash, the selector's).
-    func setPodMetrics(
+    package func setPodMetrics(
         _ pod: String, namespace: String, _ containers: [(name: String, cpu: String, memory: String)], at time: Date? = nil, labels: [String: String] = [:]
     ) {
         var fields: [String: Any] = [
@@ -495,7 +495,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// A node's sample, stamped as a pod's is.
-    func setNodeMetrics(_ node: String, cpu: String, memory: String, at time: Date? = nil) {
+    package func setNodeMetrics(_ node: String, cpu: String, memory: String, at time: Date? = nil) {
         var fields: [String: Any] = ["window": "15s", "usage": ["cpu": cpu, "memory": memory]]
         if let time { fields["timestamp"] = Self.time(time) }
         add("nodes.metrics.k8s.io", node, fields: fields)
@@ -506,20 +506,20 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// proxy would reach it; every other proxy path (another Service's,
     /// another path of this one's) is a 403, as the metrics proxy's flags
     /// would answer. The Service itself is the test's to add (`add`).
-    func servePrometheus(namespace: String, service: String, port: String) {
+    package func servePrometheus(namespace: String, service: String, port: String) {
         locked { prometheus = (namespace, service, port) }
     }
 
     /// The fake Prometheus answers its queries with this plain text and
     /// status instead — a process in the cluster, saying what it likes; nil, its queries again.
-    func failPrometheus(_ status: Int?, _ text: String = "") {
+    package func failPrometheus(_ status: Int?, _ text: String = "") {
         locked { prometheusFailure = status.map { ($0, text) } }
     }
 
     /// The apiserver answers the Service's proxy itself with a Status of
     /// `status` — a 403 (`get services/proxy` refused), a 429 or 503 with
     /// its `Retry-After` — nil, Prometheus answers again.
-    func refusePrometheusProxy(_ status: Int?, retryAfter: Int? = nil) {
+    package func refusePrometheusProxy(_ status: Int?, retryAfter: Int? = nil) {
         locked { prometheusRefusal = status.map { ($0, retryAfter) } }
     }
 
@@ -528,7 +528,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// value, `== n`, `* on(…) group_left()`, `or`, `and on(…)`,
     /// `label_replace`) adds up. A range answers it rising to the value
     /// over the range.
-    func setPrometheusSeries(_ metric: String, labels: [String: String] = [:], value: Double) {
+    package func setPrometheusSeries(_ metric: String, labels: [String: String] = [:], value: Double) {
         locked {
             prometheusSeries.removeAll { $0.metric == metric && $0.labels == labels }
             prometheusSeries.append((metric, labels, value))
@@ -536,7 +536,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// The series of `metric` whose labels include `labels` removed.
-    func clearPrometheusSeries(_ metric: String, matching labels: [String: String] = [:]) {
+    package func clearPrometheusSeries(_ metric: String, matching labels: [String: String] = [:]) {
         locked { prometheusSeries.removeAll { item in item.metric == metric && labels.allSatisfy { item.labels[$0.key] == $0.value } } }
     }
 
@@ -545,7 +545,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// evaluated (metrics.md §8); without lines, `FakePromQL` evaluates it
     /// and the warnings are added; with a failure, that is the answer. The
     /// fixture set last for a fragment wins.
-    func setPrometheusMatrix(
+    package func setPrometheusMatrix(
         _ fragment: String, _ lines: [FakePromFixture.Line]? = nil, warnings: [String] = [], failure: FakePromFixture.Failure? = nil
     ) {
         locked {
@@ -555,12 +555,12 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// The fixture set for `fragment` removed.
-    func clearPrometheusMatrix(_ fragment: String) {
+    package func clearPrometheusMatrix(_ fragment: String) {
         locked { prometheusFixtures.removeAll { $0.fragment == fragment } }
     }
 
     /// Lists answer without a resourceVersion, as metrics.k8s.io's do.
-    var unversionedLists: Bool {
+    package var unversionedLists: Bool {
         get { locked { settings.unversionedLists } }
         set { locked { settings.unversionedLists = newValue } }
     }
@@ -568,28 +568,28 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// request for one is a 403, as RBAC refuses it — a context limited to
     /// its namespace can't list the others. `pods@cluster`: refused only across the
     /// cluster; `pods@locked`: only in that namespace.
-    var forbidden: Set<String> {
+    package var forbidden: Set<String> {
         get { locked { settings.forbidden } }
         set { locked { settings.forbidden = newValue } }
     }
 
     /// Resources whose every list or GET the server fails: a 500, as an
     /// overloaded server or a broken etcd answers. `pods@payments`: in that namespace only.
-    var failingResources: Set<String> {
+    package var failingResources: Set<String> {
         get { locked { settings.failingResources } }
         set { locked { settings.failingResources = newValue } }
     }
 
     /// A followed log is answered with what it has and ended at once, as a
     /// proxy or server that closes every follow as it opens.
-    var endFollowsAtOnce: Bool {
+    package var endFollowsAtOnce: Bool {
         get { locked { settings.endFollowsAtOnce } }
         set { locked { settings.endFollowsAtOnce = newValue } }
     }
 
     /// Resources whose lists ignore the Accept's Table, as a proxy that
     /// doesn't negotiate one: the whole objects, a Secret's data with them.
-    var ignoresTables: Set<String> {
+    package var ignoresTables: Set<String> {
         get { locked { settings.ignoresTables } }
         set { locked { settings.ignoresTables = newValue } }
     }
@@ -614,7 +614,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// `socket` nil: TCP only (`listenTCP`).
-    init(socket: String?) {
+    package init(socket: String?) {
         self.socket = socket
     }
 
@@ -638,7 +638,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             }
     }
 
-    func start() throws {
+    package func start() throws {
         guard let socket else { return }
         try? FileManager.default.removeItem(atPath: socket)
         let bound = try bootstrap().bind(unixDomainSocketPath: socket).wait()
@@ -647,13 +647,13 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// The same answers on 127.0.0.1, at a port of the system's: what a
     /// kubeconfig's `server: http://127.0.0.1:<port>` reaches.
-    func listenTCP() throws -> Int {
+    package func listenTCP() throws -> Int {
         let bound = try bootstrap().bind(host: "127.0.0.1", port: 0).wait()
         locked { channels.append(bound) }
         return bound.localAddress?.port ?? 0
     }
 
-    func stop() {
+    package func stop() {
         let (open, listening) = locked {
             defer {
                 watchers = [:]
@@ -668,20 +668,20 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     // MARK: What it was asked
 
-    var requests: [Request] { locked { asked } }
+    package var requests: [Request] { locked { asked } }
     /// Anything but a GET.
-    var writes: [Request] { requests.filter { $0.method != "GET" } }
+    package var writes: [Request] { requests.filter { $0.method != "GET" } }
     /// Requests that reached a subresource.
-    var subresourceRequests: [Request] { requests.filter(\.isSubresource) }
+    package var subresourceRequests: [Request] { requests.filter(\.isSubresource) }
     /// Watches open now.
-    var openWatches: Int { locked { watchers.count } }
+    package var openWatches: Int { locked { watchers.count } }
     /// The kinds watched now, by full name, one entry a watch.
-    var watched: [String] { locked { watchers.values.map(\.resource).sorted() } }
+    package var watched: [String] { locked { watchers.values.map(\.resource).sorted() } }
     /// Every request since `forgetRequests` with when it came: what a
     /// rate is counted from (the most GETs in any minute), never a moment
     /// sampled.
-    var timedRequests: [(request: Request, at: Date)] { locked { zip(asked, askedAt).map { ($0, $1) } } }
-    func forgetRequests() {
+    package var timedRequests: [(request: Request, at: Date)] { locked { zip(asked, askedAt).map { ($0, $1) } } }
+    package func forgetRequests() {
         locked {
             asked = []
             askedAt = []
@@ -691,15 +691,15 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     // MARK: State, as a test sets it
 
-    var resourceVersion: Int { locked { current } }
+    package var resourceVersion: Int { locked { current } }
 
-    func addNamespace(_ name: String, labels: [String: String] = [:]) {
+    package func addNamespace(_ name: String, labels: [String: String] = [:]) {
         change("ADDED") {
             Object(resource: "namespaces", namespace: nil, name: name, uid: UUID().uuidString.lowercased(), resourceVersion: 0, created: Date(), labels: labels)
         }
     }
 
-    func addPod(
+    package func addPod(
         _ name: String, namespace: String, _ pod: Pod = Pod(), labels: [String: String] = [:], annotations: [String: String] = [:], created: Date = Date()
     ) {
         change("ADDED") {
@@ -710,7 +710,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// A pod changes, as if by itself: a MODIFIED event.
-    func updatePod(_ name: String, namespace: String, _ update: (inout Pod) -> Void) {
+    package func updatePod(_ name: String, namespace: String, _ update: (inout Pod) -> Void) {
         let key = Self.key("pods", namespace, name)
         change("MODIFIED") {
             guard var object = objects[key], var pod = object.pod else { return nil }
@@ -720,7 +720,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         }
     }
 
-    func deletePod(_ name: String, namespace: String) {
+    package func deletePod(_ name: String, namespace: String) {
         let key = Self.key("pods", namespace, name)
         change("DELETED") { objects[key] }
         // Its logs' follows end, as the kubelet ends them.
@@ -736,7 +736,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// A line in a container's log (the pod's first, unless named) — in
     /// its last terminated instance's, `previous` — written at `at`, and
     /// to every follow of it open now.
-    func appendLog(_ pod: String, namespace: String, container: String? = nil, _ text: String, at time: Date = Date(), previous: Bool = false) {
+    package func appendLog(_ pod: String, namespace: String, container: String? = nil, _ text: String, at time: Date = Date(), previous: Bool = false) {
         let followers = locked { () -> [(Channel, Bool)] in
             let name = container ?? objects[Self.key("pods", namespace, pod)]?.pod?.containerNames.first ?? "app"
             let key = Self.logKey(namespace, pod, name, previous: previous)
@@ -748,24 +748,24 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// Several lines, a second apart and ending now (or `until`).
-    func setLog(_ pod: String, namespace: String, container: String? = nil, _ lines: [String], previous: Bool = false, until end: Date = Date()) {
+    package func setLog(_ pod: String, namespace: String, container: String? = nil, _ lines: [String], previous: Bool = false, until end: Date = Date()) {
         for (index, line) in lines.enumerated() {
             appendLog(pod, namespace: namespace, container: container, line, at: end.addingTimeInterval(Double(index - lines.count + 1)), previous: previous)
         }
     }
 
     /// Follows of a log open now.
-    var openLogStreams: Int { locked { logFollowers.count } }
+    package var openLogStreams: Int { locked { logFollowers.count } }
 
     /// Whose they are: `namespace/pod/container`, sorted.
-    var openLogFollows: [String] {
+    package var openLogFollows: [String] {
         locked { logFollowers.values.map { $0.key.split(separator: "|").prefix(3).joined(separator: "/") }.sorted() }
     }
 
     /// Every follow dropped mid-stream — its connection closed, no end
     /// chunk: a network blip, the proxy restarting. How many there were.
     @discardableResult
-    func dropLogStreams() -> Int {
+    package func dropLogStreams() -> Int {
         let open = locked {
             defer { logFollowers = [:] }
             return logFollowers.values.map(\.channel)
@@ -775,7 +775,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// A pod's follows ended as the server ends them (its timeout, the pod gone).
-    func endLogStreams(of pod: String? = nil, namespace: String? = nil) {
+    package func endLogStreams(of pod: String? = nil, namespace: String? = nil) {
         let ending = locked { () -> [Channel] in
             let prefix = pod.map { "\(namespace ?? "")|\($0)|" }
             let picked = logFollowers.filter { prefix == nil || $0.value.key.hasPrefix(prefix!) }
@@ -785,13 +785,13 @@ final class FakeKubeAPI: @unchecked Sendable {
         ending.forEach(Self.end)
     }
 
-    func pod(_ name: String, namespace: String) -> Pod? { locked { objects[Self.key("pods", namespace, name)]?.pod } }
+    package func pod(_ name: String, namespace: String) -> Pod? { locked { objects[Self.key("pods", namespace, name)]?.pod } }
 
     /// An object of any kind served (`deployments.apps`, `secrets`,
     /// `widgets.example.com`), its cells by column name; a namespaced
     /// kind's in `namespace`. `fields`: the rest of it, as a GET answers
     /// it (`spec`, `status`, `metadata.ownerReferences`…).
-    func add(
+    package func add(
         _ resource: String, _ name: String, namespace: String? = nil, values: [String: Value] = [:], labels: [String: String] = [:],
         annotations: [String: String] = [:], data: [String: String] = [:], created: Date = Date(), fields: [String: Any] = [:]
     ) {
@@ -806,7 +806,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// An object's own fields (`spec`, `status`, `metadata.ownerReferences`)
     /// set — a pod's too, over what its `Pod` makes: a MODIFIED event.
     /// The owners an object's Metadata rows carry (its GET's are `setFields`').
-    func setRowOwners(_ resource: String, _ name: String, namespace: String? = nil, _ owners: [[String: Any]]) {
+    package func setRowOwners(_ resource: String, _ name: String, namespace: String? = nil, _ owners: [[String: Any]]) {
         let key = Self.key(resource, namespace, name)
         let encoded = try? JSONSerialization.data(withJSONObject: owners)
         change("MODIFIED") {
@@ -816,7 +816,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         }
     }
 
-    func setFields(_ resource: String, _ name: String, namespace: String? = nil, _ fields: [String: Any]) {
+    package func setFields(_ resource: String, _ name: String, namespace: String? = nil, _ fields: [String: Any]) {
         let key = Self.key(resource, namespace, name)
         let body = Self.encode(fields)
         change("MODIFIED") {
@@ -830,7 +830,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// An object's fields and cells changed together — one MODIFIED, as a
     /// controller's status write is: `fields` gets the body as it is now
     /// (`spec`, `status`, `metadata`'s own) to change in place.
-    func modify(_ resource: String, _ name: String, namespace: String? = nil, values: [String: Value] = [:], _ fields: (inout [String: Any]) -> Void) {
+    package func modify(_ resource: String, _ name: String, namespace: String? = nil, values: [String: Value] = [:], _ fields: (inout [String: Any]) -> Void) {
         let key = Self.key(resource, namespace, name)
         change("MODIFIED") {
             guard var object = objects[key] else { return nil }
@@ -846,7 +846,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// An object's managedFields, as a GET answers them: who owns which
     /// fields (`manager`, `operation`, `fieldsV1`) — a server-side apply's
     /// conflicts come from them. A MODIFIED event.
-    func setManagedFields(_ resource: String, _ name: String, namespace: String? = nil, _ entries: [[String: Any]]) {
+    package func setManagedFields(_ resource: String, _ name: String, namespace: String? = nil, _ entries: [[String: Any]]) {
         let key = Self.key(resource, namespace, name)
         let data = Self.encode(entries)
         change("MODIFIED") {
@@ -857,14 +857,14 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// The object whole, as a GET answers it now (a test's look).
-    func object(_ resource: String, _ name: String, namespace: String? = nil) -> [String: Any]? {
+    package func object(_ resource: String, _ name: String, namespace: String? = nil) -> [String: Any]? {
         let (object, kind) = locked { (objects[Self.key(resource, namespace, name)], kinds.first { $0.fullName == resource }) }
         guard let object, let kind else { return nil }
         return Self.full(object, kind)
     }
 
     /// An object's uid, as its metadata says it.
-    func uid(_ resource: String, _ name: String, namespace: String? = nil) -> String? {
+    package func uid(_ resource: String, _ name: String, namespace: String? = nil) -> String? {
         locked { objects[Self.key(resource, namespace, name)]?.uid }
     }
 
@@ -872,7 +872,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// kubelet or a controller records one: its `involvedObject` with the
     /// object's Kind and uid, in the object's namespace (a cluster-scoped
     /// one's in `default`), last seen `last`.
-    func addEvent(
+    package func addEvent(
         about resource: String, _ objectName: String, namespace: String? = nil, type: String = "Normal", reason: String, message: String, count: Int = 1,
         last: Date = Date(), component: String = "kubelet"
     ) {
@@ -895,7 +895,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// An object's cells change: a MODIFIED event.
-    func update(_ resource: String, _ name: String, namespace: String? = nil, values: [String: Value]) {
+    package func update(_ resource: String, _ name: String, namespace: String? = nil, values: [String: Value]) {
         let key = Self.key(resource, namespace, name)
         change("MODIFIED") {
             guard var object = objects[key] else { return nil }
@@ -904,7 +904,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         }
     }
 
-    func delete(_ resource: String, _ name: String, namespace: String? = nil) {
+    package func delete(_ resource: String, _ name: String, namespace: String? = nil) {
         let key = Self.key(resource, namespace, name)
         change("DELETED") { objects[key] }
     }
@@ -916,7 +916,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// (`KubeHelm.encode`; the API base64s it again) — or with `configMap`,
     /// the same in a ConfigMap. `config` is the user's values, `values` the
     /// chart's defaults.
-    func addHelmRelease(
+    package func addHelmRelease(
         _ name: String, namespace: String, revision: Int = 1, status: String = "deployed", chart: String = "web", version: String = "1.0.0",
         appVersion: String = "1.27", description: String = "Install complete", config: [String: Any] = [:], values: [String: Any] = [:],
         manifest: String = "", notes: String = "", configMap: Bool = false, modified: Date = Date()
@@ -951,7 +951,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// StatefulSet's or DaemonSet's ControllerRevision (`revision`, the
     /// template in `data`) — owned by the workload (`owner`, its resource),
     /// labelled `labels`, its one container `image` with `env`.
-    func addRevision(
+    package func addRevision(
         of owner: String, _ ownerResource: String = "deployments.apps", namespace: String, name: String, revision: Int, image: String,
         env: [String: String] = [:], restartedAt: String? = nil, history: [Int] = [], labels: [String: String], replicas: Int = 1, created: Date = Date(),
         controllerRevision: Bool = false
@@ -986,7 +986,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// The names of the objects of a kind it holds.
-    func names(_ resource: String) -> [String] { locked { objects.values.filter { $0.resource == resource }.map(\.name).sorted() } }
+    package func names(_ resource: String) -> [String] { locked { objects.values.filter { $0.resource == resource }.map(\.name).sorted() } }
 
     /// A CustomResourceDefinition: its kind served from now on — in
     /// discovery and in paths — and the CRD itself an object, ADDED to the
@@ -995,7 +995,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// `schema`: its `spec`'s OpenAPI schema, as `/openapi/v3` says it (nil: anything);
     /// `first`: its group listed before every other group in discovery (as a
     /// server orders groups by priority, not by when they came).
-    func addCRD(
+    package func addCRD(
         group: String, version: String, plural: String, kind: String, namespaced: Bool = true, shortNames: [String] = [], columns: [Column] = [],
         schema: [String: Any]? = nil, first: Bool = false
     ) {
@@ -1012,7 +1012,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// A kind served at another version too (a CRD's older one,
     /// `autoscaling/v1`): its own path and resource list, the objects the
     /// same; discovery's preferred version stays the first one served.
-    func serve(_ fullName: String, alsoAt version: String) {
+    package func serve(_ fullName: String, alsoAt version: String) {
         locked {
             guard var kind = kinds.first(where: { $0.fullName == fullName }), !kinds.contains(where: { $0.fullName == fullName && $0.version == version })
             else { return }
@@ -1024,7 +1024,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// A CRD deleted: its kind no longer served (a request for it is 404),
     /// its objects gone with it and its watches ended, the CRD DELETED to
     /// the watches of CRDs.
-    func removeCRD(_ name: String) {
+    package func removeCRD(_ name: String) {
         let ended = locked { () -> [Channel] in
             kinds.removeAll { $0.fullName == name }
             crdSchemas[name] = nil
@@ -1039,14 +1039,14 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// A built-in kind not served, as a smaller cluster's (before discovery
     /// is read: a section with nothing in it).
-    func unserve(_ fullName: String) { locked { kinds.removeAll { $0.fullName == fullName } } }
+    package func unserve(_ fullName: String) { locked { kinds.removeAll { $0.fullName == fullName } } }
 
     /// The kinds it serves now.
-    var servedKinds: [Kind] { locked { kinds } }
+    package var servedKinds: [Kind] { locked { kinds } }
 
     /// A served CRD's printer columns, as a newer version of it declares
     /// them: the next list and watch draw them.
-    func setColumns(_ fullName: String, _ columns: [Column]) {
+    package func setColumns(_ fullName: String, _ columns: [Column]) {
         locked {
             for index in kinds.indices where kinds[index].fullName == fullName { kinds[index].columns = columns }
         }
@@ -1078,7 +1078,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// A BOOKMARK at the current version, to every watch that allows them.
-    func bookmark() {
+    package func bookmark() {
         let sends = locked { () -> [(Channel, Data)] in
             watchers.filter(\.value.bookmarks).map { id, watcher in (watcher.channel, bookmarkLine(current, table: watcher.table, initialEnd: false, for: id)) }
         }
@@ -1087,11 +1087,11 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// Every event up to now is gone, as etcd's compaction leaves it: a
     /// watch from a version before now is 410 (from now still works).
-    func compact() { locked { compacted = current } }
+    package func compact() { locked { compacted = current } }
 
     /// Every open watch is told its version is too old (an in-stream 410)
     /// and ended.
-    func expireWatches() {
+    package func expireWatches() {
         let open = locked { () -> [Channel] in
             defer { watchers = [:] }
             return watchers.values.map(\.channel)
@@ -1103,7 +1103,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// Every open watch ends, as the server's timeout ends one.
-    func endWatches() {
+    package func endWatches() {
         let open = locked { () -> [Channel] in
             defer { watchers = [:] }
             return watchers.values.map(\.channel)
@@ -1112,32 +1112,32 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// The `continue` tokens given so far expire (about 5 minutes on a server).
-    func expireContinueTokens() { locked { generation += 1 } }
+    package func expireContinueTokens() { locked { generation += 1 } }
 
     /// Every answer from now on is the proxy's own 500 in plain text — an
     /// exec plugin that failed — until `nil`.
-    func failCredentials(_ text: String? = "getting credentials: exec: executable aws failed with exit code 255") {
+    package func failCredentials(_ text: String? = "getting credentials: exec: executable aws failed with exit code 255") {
         locked { credentialFailure = text }
     }
 
     /// Every answer to `path` (a whole one, not a watch's or a log's) held
     /// `milliseconds` after it is asked — recorded when it arrives, as any
     /// request; nil answers it at once again.
-    func answerSlowly(_ path: String, milliseconds: Int?) { locked { slowPaths[path] = milliseconds } }
+    package func answerSlowly(_ path: String, milliseconds: Int?) { locked { slowPaths[path] = milliseconds } }
     /// Every answer to a GET of one object by name of these resources
     /// (`deployments`, `cronjobs`… — never a list, a watch or a
     /// subresource) held `milliseconds`, as `answerSlowly` holds a path: a
     /// server slower than its readers; nil answers them at once again.
-    func answerObjectsSlowly(_ resources: Set<String>, milliseconds: Int?) {
+    package func answerObjectsSlowly(_ resources: Set<String>, milliseconds: Int?) {
         locked { slowObjects = milliseconds.map { (resources, $0) } }
     }
     /// Answers held now.
-    var heldAnswers: Int { locked { heldNow } }
+    package var heldAnswers: Int { locked { heldNow } }
     /// The most answers held at once since the last `forgetRequests` — what
     /// a poll of `heldAnswers` could miss between two looks.
-    var mostHeldAnswers: Int { locked { heldPeak } }
+    package var mostHeldAnswers: Int { locked { heldPeak } }
     /// The paths of held answers whose client closed before they went.
-    var droppedAnswers: [String] { locked { dropped } }
+    package var droppedAnswers: [String] { locked { dropped } }
 
     fileprivate func slowness(_ path: String) -> Int? {
         locked {
@@ -1157,7 +1157,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// The next `count` requests are 429, `Retry-After` said.
-    func throttle(_ count: Int, retryAfter: Int = 0) {
+    package func throttle(_ count: Int, retryAfter: Int = 0) {
         locked {
             throttled = count
             throttleAfter = retryAfter
@@ -1166,25 +1166,25 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// The next `count` watch requests are answered `status` (a JSON
     /// Status; a 429's `Retry-After` said), lists left alone.
-    func failWatches(_ count: Int, status: Int, retryAfter: Int? = nil) {
+    package func failWatches(_ count: Int, status: Int, retryAfter: Int? = nil) {
         locked { failedWatches = (count, status, retryAfter) }
     }
 
     // MARK: Paths
 
-    struct Route {
-        var kind: Kind?
-        var groupVersion: String
-        var namespace: String?
-        var resource: String?
-        var name: String?
-        var subresource: String?
+    package struct Route {
+        package var kind: Kind?
+        package var groupVersion: String
+        package var namespace: String?
+        package var resource: String?
+        package var name: String?
+        package var subresource: String?
     }
 
     /// A resource path read: `/api/v1/namespaces/ns/pods/p/log`. Nil for
     /// `/version`, discovery's roots and anything else. `kinds`: those
     /// served, for the route's kind.
-    static func route(_ path: String, kinds: [Kind] = builtinKinds) -> Route? {
+    package static func route(_ path: String, kinds: [Kind] = builtinKinds) -> Route? {
         let parts = path.split(separator: "/", omittingEmptySubsequences: true).map { $0.removingPercentEncoding ?? String($0) }
         let groupVersion: String
         var rest: ArraySlice<String>
@@ -1232,17 +1232,17 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// A label selector as far as the fake reads one: `a=b`, `a==b`,
     /// `a!=b`, `a` (has it) and `!a` (hasn't), comma-separated — no sets.
-    struct LabelSelector: Sendable {
-        enum Requirement: Sendable {
+    package struct LabelSelector: Sendable {
+        package enum Requirement: Sendable {
             case equals(String, String)
             case notEquals(String, String)
             case exists(String)
             case missing(String)
         }
 
-        var requirements: [Requirement] = []
+        package var requirements: [Requirement] = []
 
-        init(_ text: String?) {
+        package init(_ text: String?) {
             for part in (text ?? "").split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !part.isEmpty {
                 if let range = part.range(of: "!=") {
                     requirements.append(.notEquals(String(part[..<range.lowerBound]), String(part[range.upperBound...])))
@@ -1256,7 +1256,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             }
         }
 
-        func matches(_ labels: [String: String]) -> Bool {
+        package func matches(_ labels: [String: String]) -> Bool {
             requirements.allSatisfy { requirement in
                 switch requirement {
                 case .equals(let key, let value): labels[key] == value
@@ -1272,11 +1272,11 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// A field selector as the fake reads one: `a.b=c`, `a.b==c`, `a.b!=c`,
     /// comma-separated, each a dotted path into the object as a GET answers it.
-    struct FieldSelector: Sendable {
-        var requirements: [(path: [String], value: String, equal: Bool)] = []
-        var isEmpty: Bool { requirements.isEmpty }
+    package struct FieldSelector: Sendable {
+        package var requirements: [(path: [String], value: String, equal: Bool)] = []
+        package var isEmpty: Bool { requirements.isEmpty }
 
-        init(_ text: String?) {
+        package init(_ text: String?) {
             for part in (text ?? "").split(separator: ",").map(String.init) where !part.isEmpty {
                 let (key, value, equal): (String, String, Bool)
                 if let range = part.range(of: "!=") {
@@ -1290,7 +1290,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             }
         }
 
-        func matches(_ object: [String: Any]) -> Bool {
+        package func matches(_ object: [String: Any]) -> Bool {
             requirements.allSatisfy { requirement in
                 var value: Any? = object
                 for key in requirement.path { value = (value as? [String: Any])?[key] }
@@ -1302,7 +1302,7 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     // MARK: Answers
 
-    enum Answer {
+    package enum Answer {
         case json(Int, Data)
         case text(Int, String)
         case raw(Int, Data, [(String, String)])
@@ -1312,7 +1312,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         case log(lines: [Data])
     }
 
-    func answer(_ method: HTTPMethod, _ uri: String, accept: String, body: Data = Data(), contentType: String = "", on channel: Channel) -> Answer {
+    package func answer(_ method: HTTPMethod, _ uri: String, accept: String, body: Data = Data(), contentType: String = "", on channel: Channel) -> Answer {
         let components = URLComponents(string: "http://localhost" + uri)
         let path = components?.percentEncodedPath ?? uri
         let query = Dictionary((components?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { $1 })
@@ -1575,7 +1575,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// `2026-11-04T10:00:00.123456789Z`.
-    static func nanoStamp(_ date: Date) -> String {
+    package static func nanoStamp(_ date: Date) -> String {
         let seconds = date.timeIntervalSince1970.rounded(.down)
         let nanos = min(999_999_999, max(0, Int(((date.timeIntervalSince1970 - seconds) * 1e9).rounded())))
         let whole = Date(timeIntervalSince1970: seconds).formatted(.iso8601.year().month().day().dateSeparator(.dash).time(includingFractionalSeconds: false).timeSeparator(.colon))
@@ -1739,7 +1739,7 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// A kind's Table columns: a CRD's printer columns (Name first, Age
     /// last, as the server adds them), else `kubectl get`'s for the kind.
-    static func columns(for kind: Kind) -> [Column] {
+    package static func columns(for kind: Kind) -> [Column] {
         let name = Column(name: "Name", format: "name", description: "Name must be unique within a namespace.")
         let age = Column(name: "Age", description: "CreationTimestamp is a timestamp representing the server time when this object was created.")
         // A CRD's own Age (Flux's: a date column) stands for the server's,
@@ -1857,7 +1857,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// A row's cells, in its kind's columns.
-    static func cells(_ object: Object, _ kind: Kind) -> [Any] {
+    package static func cells(_ object: Object, _ kind: Kind) -> [Any] {
         let age = age(since: object.created)
         if let pod = object.pod {
             let restarts: Any = pod.restarts > 0 && pod.lastRestart != nil ? "\(pod.restarts) (\(pod.lastRestart!) ago)" : pod.restarts
@@ -1912,7 +1912,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         return table
     }
 
-    static func time(_ date: Date) -> String { date.formatted(.iso8601) }
+    package static func time(_ date: Date) -> String { date.formatted(.iso8601) }
 
     private static func metadata(_ object: Object, managedFields: Bool) -> [String: Any] {
         var metadata: [String: Any] = [
@@ -1936,12 +1936,12 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// `metadata.generation` in an object's fields.
-    static func generation(in fields: [String: Any]) -> Int? {
+    package static func generation(in fields: [String: Any]) -> Int? {
         ((fields["metadata"] as? [String: Any])?["generation"] as? NSNumber)?.intValue
     }
 
     /// The object whole, as a plain GET answers it.
-    static func full(_ object: Object, _ kind: Kind) -> [String: Any] {
+    package static func full(_ object: Object, _ kind: Kind) -> [String: Any] {
         var full: [String: Any] = ["kind": kind.kind, "apiVersion": kind.groupVersion, "metadata": metadata(object, managedFields: true)]
         if let pod = object.pod {
             let names = pod.containerNames
@@ -2029,7 +2029,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// kubectl's short ages: `45s`, `3m12s`, `40m`, `5h`, `3d`.
-    static func age(since date: Date, now: Date = Date()) -> String {
+    package static func age(since date: Date, now: Date = Date()) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(date)))
         if seconds < 120 { return "\(seconds)s" }
         let minutes = seconds / 60
@@ -2096,7 +2096,7 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     // MARK: Writes
 
-    static let accessReviewPath = "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
+    package static let accessReviewPath = "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews"
 
     /// A write, applied to the objects as the server applies it — and sent
     /// to the watches as the change it is: an access review answered from
@@ -2395,7 +2395,7 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// What an apply's body owns, as managedFields says it: a map's keys
     /// `f:`, anything else a leaf.
-    static func fieldsV1(_ value: Any) -> [String: Any] {
+    package static func fieldsV1(_ value: Any) -> [String: Any] {
         guard let map = value as? [String: Any] else { return [:] }
         var out: [String: Any] = [:]
         for (key, inner) in map where !["apiVersion", "kind"].contains(key) {
@@ -2411,7 +2411,7 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// `fieldsV1`'s owned paths, each a list of keys: a list's items
     /// (`k:`, `v:`, `i:`) the list's own path, `.` the node's.
-    static func ownedPaths(_ fields: [String: Any], _ path: [String] = []) -> [[String]] {
+    package static func ownedPaths(_ fields: [String: Any], _ path: [String] = []) -> [[String]] {
         var out: [[String]] = []
         for (key, inner) in fields {
             if key.hasPrefix("f:") {
@@ -2428,7 +2428,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// Paths as fieldsV1 again.
-    static func fieldsV1(paths: [[String]]) -> [String: Any] {
+    package static func fieldsV1(paths: [[String]]) -> [String: Any] {
         var out: [String: Any] = [:]
         for path in paths {
             guard let first = path.first else { continue }
@@ -2532,7 +2532,7 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// Whether pods' `resize` subresource is served (Kubernetes 1.33 and
     /// later); off, an older server: discovery lists none, its PATCH 404s.
-    var servesResize: Bool {
+    package var servesResize: Bool {
         get { locked { kinds.first { $0.group.isEmpty && $0.resource == "pods" }?.subresources.contains("resize") ?? false } }
         set {
             locked {
@@ -2564,7 +2564,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// A Scale, as the subresource answers it.
-    static func scale(of object: Object, _ kind: Kind) -> [String: Any] {
+    package static func scale(of object: Object, _ kind: Kind) -> [String: Any] {
         let full = full(object, kind)
         let replicas = ((full["spec"] as? [String: Any])?["replicas"] as? NSNumber)?.intValue ?? 1
         let current = ((full["status"] as? [String: Any])?["replicas"] as? NSNumber)?.intValue ?? replicas
@@ -2594,7 +2594,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// RFC 7386: maps merged, `null` removing a key, anything else replaced.
-    static func mergePatch(_ target: Any?, _ patch: Any) -> Any {
+    package static func mergePatch(_ target: Any?, _ patch: Any) -> Any {
         guard let patch = patch as? [String: Any] else { return patch }
         var result = target as? [String: Any] ?? [:]
         for (key, value) in patch {
@@ -2604,7 +2604,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     }
 
     /// RFC 6902's `test`, `remove`, `add` and `replace`; nil when one fails.
-    static func jsonPatch(_ document: [String: Any], _ operations: [[String: Any]]) -> [String: Any]? {
+    package static func jsonPatch(_ document: [String: Any], _ operations: [[String: Any]]) -> [String: Any]? {
         var document: Any = document
         for operation in operations {
             guard let op = operation["op"] as? String, let pointer = operation["path"] as? String, pointer.hasPrefix("/") else { return nil }
@@ -2662,13 +2662,13 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     // MARK: Bytes
 
-    static func statusObject(_ code: Int, _ reason: String, _ message: String) -> [String: Any] {
+    package static func statusObject(_ code: Int, _ reason: String, _ message: String) -> [String: Any] {
         ["kind": "Status", "apiVersion": "v1", "metadata": [String: Any](), "status": "Failure", "message": message, "reason": reason, "code": code]
     }
 
-    static func status(_ code: Int, _ reason: String, _ message: String) -> Data { encode(statusObject(code, reason, message)) }
+    package static func status(_ code: Int, _ reason: String, _ message: String) -> Data { encode(statusObject(code, reason, message)) }
 
-    static func encode(_ object: Any) -> Data { (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data() }
+    package static func encode(_ object: Any) -> Data { (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data() }
 
     private static func line(_ object: Any) -> Data {
         var data = encode(object)

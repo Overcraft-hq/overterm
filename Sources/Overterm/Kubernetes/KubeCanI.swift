@@ -2,28 +2,28 @@ import Darwin
 import Foundation
 
 /// What `kubectl auth can-i` said.
-enum KubeCanIAnswer: Equatable, Sendable {
+package enum KubeCanIAnswer: Equatable, Sendable {
     case yes
     /// No, with the server's reason when kubectl printed one (`no - RBAC: …`).
     case no(String?)
     /// It couldn't be asked: no kubectl, a credential failure, a timeout.
     case failed(String)
 
-    var allowed: Bool { self == .yes }
+    package var allowed: Bool { self == .yes }
 }
 
 /// `kubectl auth can-i <verb> <resource> --context C -n NS` — a short-lived
 /// process with Overterm's `KUBECONFIG` (the proxy's environment): its
 /// arguments and what it says. kubectl prints `yes` and exits 0, or `no`
 /// (with a reason after ` - `) and exits 1; an error goes to stderr. Pure.
-enum KubeCanI {
-    static func arguments(_ access: KubeAccess, context: String, namespace: String, cacheDirectory: String? = nil) -> [String] {
+package enum KubeCanI {
+    package static func arguments(_ access: KubeAccess, context: String, namespace: String, cacheDirectory: String? = nil) -> [String] {
         var arguments = ["auth", "can-i", access.verb, access.resource, "--context", context, "-n", namespace]
         if let cacheDirectory { arguments += ["--cache-dir", cacheDirectory] }
         return arguments + ["--request-timeout=15s"]
     }
 
-    static func parse(status: Int32, stdout: String, stderr: String) -> KubeCanIAnswer {
+    package static func parse(status: Int32, stdout: String, stderr: String) -> KubeCanIAnswer {
         let said = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         let first = said.split(separator: "\n").first.map(String.init) ?? ""
         if status == 0, first.lowercased() == "yes" || first.lowercased().hasPrefix("yes ") { return .yes }
@@ -43,50 +43,50 @@ enum KubeCanI {
 }
 
 /// One question asked of `kubectl auth can-i`: a verb on a context's namespace.
-struct KubeAccessKey: Hashable, Sendable {
-    var context: String
-    var namespace: String
-    var access: KubeAccess
+package struct KubeAccessKey: Hashable, Sendable {
+    package var context: String
+    package var namespace: String
+    package var access: KubeAccess
 }
 
 /// The answers, each kept a minute (a failure ten seconds: a sign-in put
 /// right is seen soon). Pure over the clock it is given.
-struct KubeAccessCache: Equatable, Sendable {
-    static let answerLife: TimeInterval = 60
-    static let failureLife: TimeInterval = 10
+package struct KubeAccessCache: Equatable, Sendable {
+    package static let answerLife: TimeInterval = 60
+    package static let failureLife: TimeInterval = 10
 
     private var entries: [KubeAccessKey: (answer: KubeCanIAnswer, at: Date)] = [:]
 
-    func answer(for key: KubeAccessKey, now: Date) -> KubeCanIAnswer? {
+    package func answer(for key: KubeAccessKey, now: Date) -> KubeCanIAnswer? {
         guard let entry = entries[key] else { return nil }
         return now.timeIntervalSince(entry.at) < Self.life(of: entry.answer) ? entry.answer : nil
     }
 
     /// Kept, and what has run out dropped: the cache holds only answers
     /// that still count.
-    mutating func store(_ answer: KubeCanIAnswer, for key: KubeAccessKey, at now: Date) {
+    package mutating func store(_ answer: KubeCanIAnswer, for key: KubeAccessKey, at now: Date) {
         entries = entries.filter { now.timeIntervalSince($0.value.at) < Self.life(of: $0.value.answer) }
         entries[key] = (answer, now)
     }
 
-    var count: Int { entries.count }
+    package var count: Int { entries.count }
 
     private static func life(of answer: KubeCanIAnswer) -> TimeInterval {
         if case .failed = answer { failureLife } else { answerLife }
     }
 
     /// Everything about a context goes (it is gone, or its kubeconfig changed).
-    mutating func forget(context: String) {
+    package mutating func forget(context: String) {
         entries = entries.filter { $0.key.context != context }
     }
 
-    static func == (lhs: KubeAccessCache, rhs: KubeAccessCache) -> Bool {
+    package static func == (lhs: KubeAccessCache, rhs: KubeAccessCache) -> Bool {
         lhs.entries.mapValues(\.answer) == rhs.entries.mapValues(\.answer) && lhs.entries.mapValues(\.at) == rhs.entries.mapValues(\.at)
     }
 }
 
 /// Where a verb stands for a context's namespace, as a menu greys it.
-enum KubeAccessState: Equatable {
+package enum KubeAccessState: Equatable {
     /// Not asked yet, or asked over a minute ago.
     case unknown
     case checking
@@ -94,7 +94,7 @@ enum KubeAccessState: Equatable {
 
     /// Why the verb can't be used now (`ResourceVerb.unavailable`); nil when it can.
     /// `review`: asked of the API's access review (a write), not kubectl.
-    func unavailable(_ access: KubeAccess, namespace: String, review: Bool = false) -> String? {
+    package func unavailable(_ access: KubeAccess, namespace: String, review: Bool = false) -> String? {
         if review {
             let place = namespace.isEmpty ? "cluster-wide" : "in \(namespace)"
             switch self {
@@ -125,24 +125,24 @@ enum KubeAccessState: Equatable {
 /// context the kubeconfig no longer has, or now names another cluster,
 /// user, credential or class (`KubernetesModel`).
 @MainActor
-final class KubeAccessChecks: ObservableObject {
-    typealias Run = @Sendable (KubeContext, String, KubeAccess) async -> KubeCanIAnswer
+package final class KubeAccessChecks: ObservableObject {
+    package typealias Run = @Sendable (KubeContext, String, KubeAccess) async -> KubeCanIAnswer
 
-    @Published private(set) var cache = KubeAccessCache()
+    @Published package private(set) var cache = KubeAccessCache()
     /// Asks kubectl; a test's or a scenario's stands in.
-    var run: Run
-    var now: () -> Date = { Date() }
+    package var run: Run
+    package var now: () -> Date = { Date() }
     /// How many times kubectl was asked, for the tests.
-    private(set) var asked = 0
+    package private(set) var asked = 0
     private var asking: [KubeAccessKey: Task<KubeCanIAnswer, Never>] = [:]
     /// Each context's last question: the next waits for it.
     private var lastAsked: [String: Task<KubeCanIAnswer, Never>] = [:]
 
-    init(run: @escaping Run) {
+    package init(run: @escaping Run) {
         self.run = run
     }
 
-    func state(_ context: String, namespace: String, _ access: KubeAccess) -> KubeAccessState {
+    package func state(_ context: String, namespace: String, _ access: KubeAccess) -> KubeAccessState {
         let key = KubeAccessKey(context: context, namespace: namespace, access: access)
         if let answer = cache.answer(for: key, now: now()) { return .answered(answer) }
         return asking[key] != nil ? .checking : .unknown
@@ -150,12 +150,12 @@ final class KubeAccessChecks: ObservableObject {
 
     /// Asked, unless it is known or being asked. Publishes nothing until
     /// the answer comes: safe from inside a view's update.
-    func check(_ context: KubeContext, namespace: String, _ access: KubeAccess) {
+    package func check(_ context: KubeContext, namespace: String, _ access: KubeAccess) {
         _ = task(context, namespace: namespace, access)
     }
 
     /// The answer, asked when it isn't known.
-    func answer(_ context: KubeContext, namespace: String, _ access: KubeAccess) async -> KubeCanIAnswer {
+    package func answer(_ context: KubeContext, namespace: String, _ access: KubeAccess) async -> KubeCanIAnswer {
         await task(context, namespace: namespace, access).value
     }
 
@@ -179,7 +179,7 @@ final class KubeAccessChecks: ObservableObject {
         return task
     }
 
-    func forget(context: String) {
+    package func forget(context: String) {
         cache.forget(context: context)
     }
 }
@@ -192,10 +192,10 @@ final class KubeAccessChecks: ObservableObject {
 /// (`KubeProxies.beginShortLived`): a stopped context starts nothing, an
 /// oidc sign-in waits for any other, and a credential failure stops the
 /// context as a proxy's does.
-enum KubeCanIRunner {
-    static let timeout: TimeInterval = 20
+package enum KubeCanIRunner {
+    package static let timeout: TimeInterval = 20
 
-    static func run(
+    package static func run(
         _ context: KubeContext, namespace: String, _ access: KubeAccess, configuration: KubeProxies.Configuration,
         planner: KubeProxyPlanner = KubeProxyPlanner(), proxies: KubeProxies? = nil
     ) async -> KubeCanIAnswer {
@@ -238,7 +238,7 @@ extension KubeCanI {
     /// kubectl's stderr read as the proxy's error is (`KubeProxyProblem.classify`):
     /// the credential failures that stop a context; nil for anything else
     /// (a 401 from the server, the network).
-    static func credentialProblem(stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
+    package static func credentialProblem(stderr: String, signIn: KubeSignIn) -> KubeProxyProblem? {
         guard let line = KubeProxyProblem.lastLine(of: stderr) else { return nil }
         let said = line.hasPrefix("error: ") ? String(line.dropFirst("error: ".count)) : line
         let problem = KubeProxyProblem.classify(status: 500, contentType: nil, text: said, stderr: stderr, signIn: signIn)
@@ -254,23 +254,23 @@ extension KubeCanI {
 /// not, so nothing it started outlives it. Every one running is known
 /// (`livePIDs`) and ended at quit (`stopAll`), by its group's id — never
 /// by a pattern.
-enum KubeProcessRun {
-    struct Result: Sendable {
-        var status: Int32
-        var stdout: String
-        var stderr: String
+package enum KubeProcessRun {
+    package struct Result: Sendable {
+        package var status: Int32
+        package var stdout: String
+        package var stderr: String
         /// Its output went past the limit: what came is the start of it.
-        var truncated = false
+        package var truncated = false
     }
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var running: Set<pid_t> = []
 
     /// The ones running now (each its group's id), for tests.
-    static var livePIDs: [pid_t] { lock.withLock { running.sorted() } }
+    package static var livePIDs: [pid_t] { lock.withLock { running.sorted() } }
 
     /// Every one still running, its whole group: at quit.
-    static func stopAll() {
+    package static func stopAll() {
         // Under the lock: a run reaps its process only after taking it out
         // of `running`, so the group's id can't be another's yet.
         lock.withLock {
@@ -283,7 +283,7 @@ enum KubeProcessRun {
     /// file (a release's values for `helm template --values -`); else stdin
     /// is /dev/null. `helper`: which of Overterm's children it is, said in
     /// its environment beside the run's marker (D-15).
-    static func run(
+    package static func run(
         _ executable: URL, _ arguments: [String], environment: [String: String], timeout: TimeInterval, outputLimit: Int = 64 * 1024,
         input: Data? = nil, helper: OvertermRun.Helper = .kubectl
     ) -> Result? {
@@ -363,7 +363,7 @@ enum KubeProcessRun {
     }
 
     /// The exit code, or 128 + the signal that ended it, as a shell says it.
-    static func exitStatus(_ status: Int32) -> Int32 {
+    package static func exitStatus(_ status: Int32) -> Int32 {
         let signal = status & 0x7f
         return signal == 0 ? (status >> 8) & 0xff : 128 + signal
     }

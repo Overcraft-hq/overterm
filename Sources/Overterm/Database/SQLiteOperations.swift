@@ -5,15 +5,15 @@ import SQLite3
 /// `integrity_check` on request — and its rows edited, by primary key, a
 /// unique NOT NULL key, else the rowid. docs/architecture.md, Database.
 extension SQLiteDriver: DatabaseMonitoring, DatabaseTableEditing {
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview] }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview] }
 
-    func editDialect() async -> SQLDialect { .sqlite }
+    package func editDialect() async -> SQLDialect { .sqlite }
 
     private func pragma(_ name: String, schema: String = "main") async -> String? {
         (try? await execute("PRAGMA \(SQLDialect.sqlite.identifier(schema)).\(name)", limit: 1))?.rows.first?.first ?? nil
     }
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         let path = (connection.filePath as NSString).expandingTildeInPath
         let attributes = try? FileManager.default.attributesOfItem(atPath: path)
         let pages = await pragma("page_count").flatMap { Int64($0) } ?? 0
@@ -36,7 +36,7 @@ extension SQLiteDriver: DatabaseMonitoring, DatabaseTableEditing {
         return ServerOverview(facts: facts, notes: connection.readOnly ? ["Opened read-only."] : [])
     }
 
-    func integrityCheck() async throws -> String? {
+    package func integrityCheck() async throws -> String? {
         let result = try await execute("PRAGMA integrity_check", limit: 100)
         let lines = result.rows.compactMap { $0.first ?? nil }
         return lines == ["ok"] ? "ok — no problems found." : lines.joined(separator: "\n") + (result.truncated ? "\n…" : "")
@@ -51,7 +51,7 @@ extension SQLiteDriver: DatabaseMonitoring, DatabaseTableEditing {
 
     // MARK: Editing rows
 
-    func key(of table: TableName) async throws -> TableKey? {
+    package func key(of table: TableName) async throws -> TableKey? {
         let schema = table.schema ?? "main"
         let dialect = SQLDialect.sqlite
         let kind = try await execute(
@@ -69,7 +69,7 @@ extension SQLiteDriver: DatabaseMonitoring, DatabaseTableEditing {
         return SQLiteOps.key(TableName(schema: schema, name: table.name), info: info, uniqueIndexes: indexes, withoutRowid: withoutRowid)
     }
 
-    func apply(_ statements: [EditStatement]) async throws {
+    package func apply(_ statements: [EditStatement]) async throws {
         guard !connection.readOnly else { throw DatabaseError.readOnly("saving the edits") }
         guard let db else { throw DatabaseError.notConnected }
         // No await from BEGIN to COMMIT: nothing else on this actor runs between.
@@ -104,11 +104,11 @@ extension SQLiteDriver: DatabaseMonitoring, DatabaseTableEditing {
 }
 
 /// SQLite's answers read. Pure.
-enum SQLiteOps {
+package enum SQLiteOps {
     /// From `table_xinfo` (cid, name, type, notnull, dflt_value, pk, hidden)
     /// and the unique indexes: the primary key, else a unique key over NOT
     /// NULL columns, else the rowid (a WITHOUT ROWID table always has a key).
-    static func key(_ table: TableName, info: QueryResult, uniqueIndexes: [(name: String, columns: [String])], withoutRowid: Bool) -> TableKey? {
+    package static func key(_ table: TableName, info: QueryResult, uniqueIndexes: [(name: String, columns: [String])], withoutRowid: Bool) -> TableKey? {
         let rows = ResultRow.rows(of: info)
         var readOnly: Set<String> = []
         var notNull: Set<String> = []

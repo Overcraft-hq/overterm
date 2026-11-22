@@ -4,37 +4,37 @@ import Foundation
 /// `.http` file or a cURL command: a Bruno collection's worth of files, not
 /// yet written — so it can be tested whole, and written as a collection of
 /// its own or as a folder in the one the checkout has.
-struct APIImport: Equatable {
-    struct Request: Equatable {
-        var file: BruFile
+package struct APIImport: Equatable {
+    package struct Request: Equatable {
+        package var file: BruFile
     }
 
-    struct Folder: Equatable {
-        var name: String
-        var folders: [Folder] = []
-        var requests: [Request] = []
+    package struct Folder: Equatable {
+        package var name: String
+        package var folders: [Folder] = []
+        package var requests: [Request] = []
         /// folder.bru beyond its name: headers, auth, scripts.
-        var settings: BruFile?
+        package var settings: BruFile?
 
-        var allRequests: [Request] { requests + folders.flatMap(\.allRequests) }
+        package var allRequests: [Request] { requests + folders.flatMap(\.allRequests) }
     }
 
-    struct Environment: Equatable {
-        var name: String
-        var file: BruFile
+    package struct Environment: Equatable {
+        package var name: String
+        package var file: BruFile
     }
 
-    var name: String
-    var root: Folder
+    package var name: String
+    package var root: Folder
     /// collection.bru: what every request shares (auth, headers, vars, scripts).
-    var collectionFile: BruFile?
-    var environments: [Environment] = []
+    package var collectionFile: BruFile?
+    package var environments: [Environment] = []
     /// What couldn't come across as it was, said once after the import.
-    var notes: [String] = []
+    package var notes: [String] = []
 
-    enum WriteError: LocalizedError {
+    package enum WriteError: LocalizedError {
         case exists(String)
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .exists(let path): "\(path) is already there."
             }
@@ -44,7 +44,7 @@ struct APIImport: Equatable {
     /// Writes a collection of its own at `folder` (made; it must not hold a
     /// bruno.json yet). Returns the folder.
     @discardableResult
-    func writeCollection(at folder: URL) throws -> URL {
+    package func writeCollection(at folder: URL) throws -> URL {
         let config = folder.appendingPathComponent(BrunoCollection.configName)
         guard !FileManager.default.fileExists(atPath: config.path) else { throw WriteError.exists(config.path) }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -61,7 +61,7 @@ struct APIImport: Equatable {
     /// Writes the import as a folder of an existing collection, named after
     /// it; environments the collection lacks are added, none replaced.
     @discardableResult
-    func writeFolder(in collection: URL) throws -> URL {
+    package func writeFolder(in collection: URL) throws -> URL {
         let folder = Self.unique(collection.appendingPathComponent(APIWorkspace.fileName(name), isDirectory: true), isFolder: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var meta = root.settings ?? BruFile()
@@ -133,7 +133,7 @@ struct APIImport: Equatable {
     }
 
     /// `name.bru`, or `name 2.bru` when that is taken.
-    static func unique(_ url: URL, isFolder: Bool) -> URL {
+    package static func unique(_ url: URL, isFolder: Bool) -> URL {
         guard FileManager.default.fileExists(atPath: url.path) else { return url }
         let parent = url.deletingLastPathComponent()
         let ext = isFolder ? "" : url.pathExtension
@@ -148,11 +148,11 @@ struct APIImport: Equatable {
 
     // MARK: Reading a file into an import
 
-    enum Problem: LocalizedError, Equatable {
+    package enum Problem: LocalizedError, Equatable {
         case unreadable(String)
         case unknown(String)
 
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .unreadable(let name): "\(name) can't be read as JSON or YAML."
             case .unknown(let name): "\(name) isn't an OpenAPI document, a Postman collection or a .http file."
@@ -162,7 +162,7 @@ struct APIImport: Equatable {
 
     /// What an existing environment of the same name sets differently from
     /// the import — kept as it is, said in the import's notes.
-    func environmentConflicts(in collection: URL) -> [String] {
+    package func environmentConflicts(in collection: URL) -> [String] {
         environments.flatMap { environment -> [String] in
             let file = collection.appendingPathComponent("environments/\(APIWorkspace.fileName(environment.name)).bru")
             guard let existing = (try? String(contentsOf: file, encoding: .utf8)).map(BruFile.init(parsing:)) else { return [] }
@@ -175,7 +175,7 @@ struct APIImport: Equatable {
     }
 
     /// Whatever `url` holds — OpenAPI (JSON or YAML), Postman, .http.
-    static func read(_ url: URL) throws -> APIImport {
+    package static func read(_ url: URL) throws -> APIImport {
         let data = try Data(contentsOf: url)
         let text = String(decoding: data, as: UTF8.self)
         let ext = url.pathExtension.lowercased()
@@ -189,13 +189,13 @@ struct APIImport: Equatable {
     }
 
     /// JSON, else YAML.
-    static func parseDocument(_ data: Data) -> [String: Any]? {
+    package static func parseDocument(_ data: Data) -> [String: Any]? {
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { return json }
         return YAMLReader.parse(String(decoding: data, as: UTF8.self)) as? [String: Any]
     }
 
     /// Pretty JSON as people write it: two spaces, `"key": value`, keys sorted.
-    static func prettyJSON(_ value: Any) -> String {
+    package static func prettyJSON(_ value: Any) -> String {
         // Checked as JSONSerialization checks it — a NaN or infinity from YAML
         // (.nan, .inf) would make it raise, which try? doesn't catch.
         guard JSONSerialization.isValidJSONObject([value]),

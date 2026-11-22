@@ -39,8 +39,8 @@ import Foundation
 /// PATH (a shim stays rejected, D-8); a script, `bash -c` or `make apply`
 /// get around it — the pane header and the Inbox still see the terraform
 /// process and the agent's ask. Pure.
-enum TerraformAgentGuard {
-    enum Launch: Equatable, Sendable {
+package enum TerraformAgentGuard {
+    package enum Launch: Equatable, Sendable {
         /// Nothing added: no production root, or the setting is off.
         case none
         /// The deny rules are on its command line.
@@ -54,30 +54,30 @@ enum TerraformAgentGuard {
     /// `show` too — the agent's reads go through `tf_` tools); `refresh`
     /// writes state with no prompt; `test` with real providers creates and
     /// destroys real infrastructure (2.9).
-    static let deniedOperations = [
+    package static let deniedOperations = [
         "apply", "destroy", "import", "taint", "untaint", "force-unlock", "state", "workspace delete", "refresh", "test", "apply-all", "destroy-all",
     ]
     /// Flags that write wherever they are: `init -migrate-state` and
     /// `-force-copy` move state to a new backend.
-    static let deniedFlags = ["-auto-approve", "-migrate-state", "-force-copy"]
-    static let tools = ["terraform", "tofu", "terragrunt"]
+    package static let deniedFlags = ["-auto-approve", "-migrate-state", "-force-copy"]
+    package static let tools = ["terraform", "tofu", "terragrunt"]
 
     /// Claude Code's `Bash(…)` rules (see above).
-    static let claudeRules: [String] = tools.flatMap { tool in
+    package static let claudeRules: [String] = tools.flatMap { tool in
         deniedOperations.flatMap { operation in
             ["Bash(\(tool) \(operation):*)", "Bash(*\(tool) * \(operation)*)", "Bash(* \(tool) \(operation)*)"]
         } + deniedFlags.map { "Bash(*\(tool) *\($0)*)" }
     }
 
-    static let codexNote = "Codex has no per-command deny: its terraform writes aren't blocked — the header and the Inbox still show them"
-    static let piNote = "pi asks before nothing and has no per-command deny: its terraform writes aren't blocked — the header still shows them"
-    static let geminiAdminNote =
+    package static let codexNote = "Codex has no per-command deny: its terraform writes aren't blocked — the header and the Inbox still show them"
+    package static let piNote = "pi asks before nothing and has no per-command deny: its terraform writes aren't blocked — the header still shows them"
+    package static let geminiAdminNote =
         "Gemini CLI ignores Overterm's deny policy where an administrator's policies are installed: its terraform writes aren't blocked by Overterm"
 
     /// What `agent` gets in a checkout where a guard applies.
     /// `geminiAdminPolicies`: an administrator's Gemini policies are in
     /// place, so `--admin-policy` would be ignored.
-    static func launch(for agent: Agent, applies: Bool, geminiAdminPolicies: Bool = false) -> Launch {
+    package static func launch(for agent: Agent, applies: Bool, geminiAdminPolicies: Bool = false) -> Launch {
         guard applies else { return .none }
         switch agent {
         case .claude, .opencode: return .denied
@@ -92,7 +92,7 @@ enum TerraformAgentGuard {
     /// word after it, so nothing may follow it; opencode's in front, its
     /// variable; Gemini's `--admin-policy` last. One word each,
     /// single-quoted for the shell. `geminiPolicy`: the policy file's path.
-    static func command(_ base: String, launch: Launch, agent: Agent = .claude, geminiPolicy: String? = nil) -> String {
+    package static func command(_ base: String, launch: Launch, agent: Agent = .claude, geminiPolicy: String? = nil) -> String {
         guard launch == .denied else { return base }
         switch agent {
         case .claude: return base + " --disallowedTools '" + claudeRules.joined(separator: ",") + "'"
@@ -104,11 +104,11 @@ enum TerraformAgentGuard {
 
     /// opencode's `permission.bash` rules: each Claude rule's pattern, as
     /// opencode's wildcard reads it (`*` any run, the whole command).
-    static let opencodeRules: [String] = tools.flatMap { tool in
+    package static let opencodeRules: [String] = tools.flatMap { tool in
         deniedOperations.flatMap { ["\(tool) \($0)*", "*\(tool) * \($0)*", "* \(tool) \($0)*"] } + deniedFlags.map { "*\(tool) *\($0)*" }
     }
 
-    static let opencodePermission: String = {
+    package static let opencodePermission: String = {
         // Keys in order: opencode takes the last rule that matches.
         let rules = opencodeRules.map { "\(AgentLaunch.json([$0]).dropFirst().dropLast()):\"deny\"" }.joined(separator: ",")
         return "{\"bash\":{" + rules + "}}"
@@ -118,7 +118,7 @@ enum TerraformAgentGuard {
     /// (`commandPrefix`, a word boundary after it) and, for the two other
     /// forms and the flags, by `commandRegex` — matched from the start of
     /// the command's JSON value, so `[^"]*` stays inside it.
-    static let geminiPolicy: String = {
+    package static let geminiPolicy: String = {
         func literal(_ text: String) -> String { "'" + text + "'" }
         let prefixes = tools.flatMap { tool in deniedOperations.map { "\(tool) \($0)" } }
         var regexes = tools.flatMap { tool in
@@ -135,7 +135,7 @@ enum TerraformAgentGuard {
     }()
 
     /// Whether `command` (a typed line) carries the deny rules.
-    static func carriesRules(_ command: String) -> Bool {
+    package static func carriesRules(_ command: String) -> Bool {
         command.contains("--disallowedTools '" + claudeRules.joined(separator: ",") + "'")
     }
 
@@ -143,7 +143,7 @@ enum TerraformAgentGuard {
     /// documentation reads them: `X:*` a prefix ending at a word, `*` any
     /// run of characters elsewhere. The tests' model of the matcher — not
     /// Claude Code's own code. Pure.
-    static func denies(_ command: String, rules: [String] = claudeRules) -> Bool {
+    package static func denies(_ command: String, rules: [String] = claudeRules) -> Bool {
         rules.contains { rule in
             guard rule.hasPrefix("Bash("), rule.hasSuffix(")") else { return false }
             let pattern = String(rule.dropFirst("Bash(".count).dropLast())
@@ -174,10 +174,10 @@ enum TerraformAgentGuard {
 ///   and read off the main thread (`decide`, once at a time a checkout).
 /// No walk, no file read on the main thread. New Task awaits `decide`.
 @MainActor
-final class TerraformAgentGuards {
-    static let shared = TerraformAgentGuards()
+package final class TerraformAgentGuards {
+    package static let shared = TerraformAgentGuards()
 
-    enum Verdict: Equatable {
+    package enum Verdict: Equatable {
         /// Its production roots' paths ("." for the top).
         case production([String])
         /// None, as read under these settings and identities.
@@ -187,15 +187,15 @@ final class TerraformAgentGuards {
     private var verdicts: [String: Verdict] = [:]
     private var deciding: Set<String> = []
     /// Reads started (`decide`): a test counts them.
-    private(set) var reads = 0
+    package private(set) var reads = 0
 
     private static func key(_ checkout: URL) -> String { checkout.resolvingSymlinksInPath().standardizedFileURL.path }
 
     /// The checkout a launch's folder is in: the nearest folder above with a `.git`.
-    nonisolated static func checkout(of folder: URL) -> URL { TerraformProcesses.checkout(of: folder) ?? folder.standardizedFileURL }
+    package nonisolated static func checkout(of folder: URL) -> URL { TerraformProcesses.checkout(of: folder) ?? folder.standardizedFileURL }
 
     /// True: a production root; false: none, still valid; nil: unknown (guarded).
-    func known(_ checkout: URL) -> Bool? {
+    package func known(_ checkout: URL) -> Bool? {
         switch verdicts[Self.key(checkout)] {
         case .production: return true
         case .noProduction(let settings, let identities):
@@ -206,14 +206,14 @@ final class TerraformAgentGuards {
     }
 
     /// The paths of `checkout`'s production roots, as last read.
-    func productionRoots(_ checkout: URL) -> [String] {
+    package func productionRoots(_ checkout: URL) -> [String] {
         if case .production(let paths) = verdicts[Self.key(checkout)] { return paths }
         return []
     }
 
     /// A read of `checkout`'s roots (the panel's, a tool's): production
     /// kept; none only when `complete` (the listing wasn't capped).
-    func record(_ checkout: URL, roots: [TerraformRootCard], complete: Bool, settings: TerraformClassSettings, identities: Set<TerraformStateIdentity>) {
+    package func record(_ checkout: URL, roots: [TerraformRootCard], complete: Bool, settings: TerraformClassSettings, identities: Set<TerraformStateIdentity>) {
         let key = Self.key(checkout)
         let production = roots.filter { $0.isProduction || $0.workspaceClasses.values.contains(.production) }.map { $0.path.isEmpty ? "." : $0.path }
         if !production.isEmpty {
@@ -225,13 +225,13 @@ final class TerraformAgentGuards {
         }
     }
 
-    func forget(_ checkout: URL) { verdicts[Self.key(checkout)] = nil }
+    package func forget(_ checkout: URL) { verdicts[Self.key(checkout)] = nil }
 
     /// Reads `checkout`'s roots now (one `git ls-files`, the facts off the
     /// main thread) and keeps what they say; true when it is, or may be,
     /// production — nil listing or capped and nothing production found.
     @discardableResult
-    func decide(_ checkout: URL) async -> Bool {
+    package func decide(_ checkout: URL) async -> Bool {
         reads += 1
         let settings = TerraformClassSettings.current
         let identities = TerraformRootStore.shared.productionIdentities
@@ -248,7 +248,7 @@ final class TerraformAgentGuards {
     /// The guard for `agent` started in `folder`, now: Settings, then what
     /// is known of its checkout — unknown is guarded — and a read started
     /// for the next launch.
-    func launch(for agent: Agent, in folder: URL) -> TerraformAgentGuard.Launch {
+    package func launch(for agent: Agent, in folder: URL) -> TerraformAgentGuard.Launch {
         let settings = Settings.shared
         guard settings.terraformEnabled, settings.terraformAgentWriteGuard else { return .none }
         let checkout = Self.checkout(of: folder)

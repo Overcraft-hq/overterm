@@ -10,8 +10,8 @@ import GhosttyKit
 /// Ghostty 1.4). Completed unconfirmed, libghostty asks again at once —
 /// Overterm answered a denial that way once and looped until the stack
 /// overflowed.
-struct ClipboardConfirmation: Equatable {
-    enum Kind: Equatable {
+package struct ClipboardConfirmation: Equatable {
+    package enum Kind: Equatable {
         /// A paste libghostty flags: a line break no bracketed paste frames,
         /// or the bracketed-paste end sequence inside it.
         case paste
@@ -20,18 +20,18 @@ struct ClipboardConfirmation: Equatable {
     }
 
     /// What libghostty is answered: the text, confirmed, or a denial.
-    enum Reply: Equatable {
+    package enum Reply: Equatable {
         case hand(String)
         case deny
     }
 
-    let kind: Kind
+    package let kind: Kind
     /// What would be pasted, or handed to the program.
-    let text: String
+    package let text: String
 
     /// Nil for any other request: OSC 52 writes are confirmed through
     /// `write_clipboard_cb`.
-    init?(request: ghostty_clipboard_request_e, text: String) {
+    package init?(request: ghostty_clipboard_request_e, text: String) {
         switch request {
         case GHOSTTY_CLIPBOARD_REQUEST_PASTE: kind = .paste
         case GHOSTTY_CLIPBOARD_REQUEST_OSC_52_READ: kind = .read
@@ -43,22 +43,22 @@ struct ClipboardConfirmation: Equatable {
     /// Only the selected tab asks — you see who is asking — and one sheet at
     /// a time, so a program can't pile them up. Anything else is refused
     /// without asking.
-    static func shouldAsk(fromSelectedTab: Bool, alreadyAsking: Bool) -> Bool {
+    package static func shouldAsk(fromSelectedTab: Bool, alreadyAsking: Bool) -> Bool {
         fromSelectedTab && !alreadyAsking
     }
 
-    func reply(allowed: Bool) -> Reply {
+    package func reply(allowed: Bool) -> Reply {
         allowed ? .hand(text) : .deny
     }
 
-    var title: String {
+    package var title: String {
         switch kind {
         case .paste: "Paste Potentially Unsafe Text?"
         case .read: "Allow Clipboard Access?"
         }
     }
 
-    func message(tab: String) -> String {
+    package func message(tab: String) -> String {
         // A tab's title is often the running command line; its start, the
         // program, is who is asking.
         let name = tab.count > 40 ? String(tab.prefix(39)) + "…" : tab
@@ -68,13 +68,13 @@ struct ClipboardConfirmation: Equatable {
         }
     }
 
-    var allowTitle: String { kind == .paste ? "Paste" : "Allow" }
-    var denyTitle: String { kind == .paste ? "Cancel" : "Deny" }
+    package var allowTitle: String { kind == .paste ? "Paste" : "Allow" }
+    package var denyTitle: String { kind == .paste ? "Cancel" : "Deny" }
 
     /// The text as the sheet shows it: control characters as their symbols
     /// (an escape sequence hidden in a paste is what the sheet is for), line
     /// breaks and tabs as they are, cut after `limit` characters.
-    func preview(limit: Int = 2_000) -> String {
+    package func preview(limit: Int = 2_000) -> String {
         var shown = ""
         shown.unicodeScalars.append(contentsOf: text.prefix(limit).unicodeScalars.map(Self.visible))
         let rest = text.count - limit

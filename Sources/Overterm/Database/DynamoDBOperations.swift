@@ -6,21 +6,21 @@ import Foundation
 // docs/architecture.md, Database: Server page, Editing rows.
 
 extension DynamoDBDriver: DatabaseMonitoring {
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .sizes] }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .sizes] }
 
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? { [] }
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? { [] }
 
     /// How many tables are read for Sizes: three calls each.
-    static let describedTables = 100
+    package static let describedTables = 100
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         let tables = try await names()
         let limits = try? await call("DescribeLimits", [:])
         let host = config.serverName ?? config.host
         return DynamoOps.overview(region: region, endpoint: host, onAWS: DynamoItems.isAWS(host), tables: tables.count, limits: limits)
     }
 
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         let tables = try await names()
         var sizes = DatabaseSizes()
         for table in tables.prefix(Self.describedTables) {
@@ -44,12 +44,12 @@ extension DynamoDBDriver: DatabaseMonitoring {
 // MARK: Editing items
 
 extension DynamoDBDriver: DatabaseTableEditing {
-    func editDialect() async -> SQLDialect { .postgres }
+    package func editDialect() async -> SQLDialect { .postgres }
 
     /// Not SQL: a SELECT's items are found by `editableResult`.
-    func key(of table: TableName) async throws -> TableKey? { nil }
+    package func key(of table: TableName) async throws -> TableKey? { nil }
 
-    func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
+    package func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
         guard DynamoText.verb(of: statement) == "SELECT", let table = DynamoText.subject(of: statement) else {
             return .failure(.said("Items are edited in a SELECT from one table."))
         }
@@ -60,15 +60,15 @@ extension DynamoDBDriver: DatabaseTableEditing {
         return DynamoEdits.editable(table: table, description: description, result: result)
     }
 
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
+    package func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
         try DynamoEdits.statements(edits, rows: rows, result: result)
     }
 
-    func editSaveNote() async -> String {
+    package func editSaveNote() async -> String {
         "In one transaction (ExecuteTransaction): if any statement fails — an item changed or gone since it was read, a new item's key taken — none is kept. An item already deleted elsewhere is simply gone."
     }
 
-    func apply(_ statements: [EditStatement]) async throws {
+    package func apply(_ statements: [EditStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("a write") }
         guard statements.count <= DynamoEdits.transactionLimit else {
             throw DatabaseError.failed("DynamoDB's transaction takes \(DynamoEdits.transactionLimit) statements at most — save fewer changes at a time.")
@@ -84,8 +84,8 @@ extension DynamoDBDriver: DatabaseTableEditing {
 }
 
 /// DynamoDB's descriptions read for the Server page. Pure.
-enum DynamoOps {
-    static func overview(region: String, endpoint: String, onAWS: Bool, tables: Int, limits: [String: Any]?) -> ServerOverview {
+package enum DynamoOps {
+    package static func overview(region: String, endpoint: String, onAWS: Bool, tables: Int, limits: [String: Any]?) -> ServerOverview {
         var facts = [
             ServerFact(title: "Region", value: region, detail: onAWS ? "AWS" : "DynamoDB Local or another endpoint"),
             ServerFact(title: "Tables", value: "\(tables)", detail: endpoint),
@@ -107,7 +107,7 @@ enum DynamoOps {
     }
 
     /// A table as Sizes lists it, and its indexes.
-    static func table(_ description: [String: Any], ttl: [String: Any]?, backups: [String: Any]?) -> (SizeEntry, [SizeEntry]) {
+    package static func table(_ description: [String: Any], ttl: [String: Any]?, backups: [String: Any]?) -> (SizeEntry, [SizeEntry]) {
         func number(_ value: Any?) -> Int64 { (value as? NSNumber)?.int64Value ?? 0 }
         func capacity(_ value: Any?) -> String? {
             guard let throughput = value as? [String: Any], let read = throughput["ReadCapacityUnits"] as? NSNumber,
@@ -158,15 +158,15 @@ enum DynamoOps {
 /// is a no-op (PartiQL checks no condition of a missing item).
 /// A value is typed by its attribute's type: S as text, N a number, BOOL,
 /// NULL, a map or list (and a set) as JSON. Pure.
-enum DynamoEdits {
-    static let transactionLimit = 100
+package enum DynamoEdits {
+    package static let transactionLimit = 100
 
     /// `FROM "orders"."byStatus"` — an index, not the table.
-    static func readsIndex(_ statement: String) -> Bool {
+    package static func readsIndex(_ statement: String) -> Bool {
         statement.range(of: #"(?i)\bFROM\s+(?:"(?:[^"]|"")+"|[A-Za-z0-9_\-]+)\s*\.\s*(?:"|[A-Za-z0-9_])"#, options: .regularExpression) != nil
     }
 
-    static func editable(table: String, description: [String: Any], result: QueryResult) -> Result<EditableResult, EditRefusal> {
+    package static func editable(table: String, description: [String: Any], result: QueryResult) -> Result<EditableResult, EditRefusal> {
         let keys = DynamoItems.keyNames(description)
         guard !keys.isEmpty else { return .failure(.noKey(table)) }
         let definitions = Dictionary(
@@ -191,7 +191,7 @@ enum DynamoEdits {
         return .success(EditableResult(key: key, columns: result.columns, keyIndexes: indexes, removesFields: true, types: types))
     }
 
-    static func statements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
+    package static func statements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) throws -> [EditStatement] {
         let table = DynamoText.quote(result.key.table.name)
         let keyColumns = Set(result.keyIndexes)
         func type(_ at: Int) -> String { result.types[safe: at] ?? "" }
@@ -251,12 +251,12 @@ enum DynamoEdits {
     }
 
     /// `'it''s'` — PartiQL's string.
-    static func literalString(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "''") + "'" }
+    package static func literalString(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "''") + "'" }
 
     private static let numberPattern = #"^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$"#
 
     /// A cell's text as a PartiQL value of its attribute's type.
-    static func literal(_ text: String, type: String) throws -> String {
+    package static func literal(_ text: String, type: String) throws -> String {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         switch type {
         case "S": return literalString(text)
@@ -291,7 +291,7 @@ enum DynamoEdits {
     }
 
     /// JSON as PartiQL: strings quoted, maps `{'k': v}`, lists `[v]`.
-    static func partiQL(_ value: Any) throws -> String {
+    package static func partiQL(_ value: Any) throws -> String {
         switch value {
         case is NSNull: return "NULL"
         case let text as String: return literalString(text)

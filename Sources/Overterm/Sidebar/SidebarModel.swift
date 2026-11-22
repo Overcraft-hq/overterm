@@ -8,17 +8,17 @@ import Foundation
 /// only while it is the panel on screen — so the window has to be able to
 /// see the choice, not just the view.
 @MainActor
-final class SidebarModel: ObservableObject {
-    static let panelKey = "sidebarPanel"
+package final class SidebarModel: ObservableObject {
+    package static let panelKey = "sidebarPanel"
 
-    @Published var panel: SidebarPanel {
+    @Published package var panel: SidebarPanel {
         didSet {
             guard panel != oldValue else { return }
             AppEnvironment.defaults.set(panel.rawValue, forKey: Self.panelKey)
         }
     }
 
-    init() {
+    package init() {
         let last = SidebarPanel(stored: AppEnvironment.defaults.string(forKey: Self.panelKey))
         // Settings' "A new window opens on": a panel, or the last one open.
         let stored = SidebarPanel(rawValue: Settings.shared.string("general.sidebarStartPanel")) ?? last

@@ -9,20 +9,20 @@ import Foundation
 /// can't target two places), the workspace and data dir, the prior
 /// state's lineage and serial. Never written anywhere; the descriptor
 /// closes when the record goes.
-struct TerraformPlanRecord: Sendable {
-    var plan: TerraformPlan
-    var file: TerraformPlanFile
-    var binary: URL
-    var version: String?
-    var environment: [String: String]
-    var dataDir: String
-    var workspace: String
-    var zip: TerraformPlanZip?
+package struct TerraformPlanRecord: Sendable {
+    package var plan: TerraformPlan
+    package var file: TerraformPlanFile
+    package var binary: URL
+    package var version: String?
+    package var environment: [String: String]
+    package var dataDir: String
+    package var workspace: String
+    package var zip: TerraformPlanZip?
     /// 0: no changes; 2: changes.
-    var status: Int32
+    package var status: Int32
     /// The values the plan marks sensitive, for what its apply prints in
     /// clear (5.6): provisioner output, an error's detail. Memory only.
-    var mask: TerraformValueMask = .none
+    package var mask: TerraformValueMask = .none
 }
 
 /// The app's one register of Overterm's Terraform runs (analysis 3.6): one
@@ -33,66 +33,66 @@ struct TerraformPlanRecord: Sendable {
 /// what was asked this session (production's first plan, an agent's
 /// first `tf_plan` per root); each remote backend's last `workspace list`.
 @MainActor
-final class TerraformRunRegistry: ObservableObject {
-    static let shared = TerraformRunRegistry()
+package final class TerraformRunRegistry: ObservableObject {
+    package static let shared = TerraformRunRegistry()
 
-    struct StateWrite: Equatable, Sendable {
+    package struct StateWrite: Equatable, Sendable {
         /// The checkout the write came from (its folder's name).
-        var worktree: String
-        var at: Date
-        var operation: String
+        package var worktree: String
+        package var at: Date
+        package var operation: String
     }
 
-    @Published private(set) var stateWrites: [TerraformStateIdentity: StateWrite] = [:]
+    @Published package private(set) var stateWrites: [TerraformStateIdentity: StateWrite] = [:]
     /// The runs of this session, oldest first; at most `keep`, a dropped one's plan file closed.
-    @Published private(set) var runs: [TerraformPlanRun] = []
-    static let keep = 40
+    @Published package private(set) var runs: [TerraformPlanRun] = []
+    package static let keep = 40
     /// The applies of this session (6.4, "a runs row in memory"): time, who
     /// started it, counts, result — and those followed again after a
     /// crash or a quit (4.7).
-    @Published private(set) var applies: [TerraformApplyRun] = []
+    @Published package private(set) var applies: [TerraformApplyRun] = []
 
     /// Who holds each identity's turn, by its key; a waiting run's
     /// continuation, resumed true with the turn or false when it left the queue.
     private var holders: [String: String] = [:]
     private var waiting: [String: [(id: String, continuation: CheckedContinuation<Bool, Never>)]] = [:]
     /// Production roots planned this session: the first one asks (5.3).
-    var productionPlanned: Set<String> = []
+    package var productionPlanned: Set<String> = []
     /// Roots an agent's `tf_plan` was allowed on this session (D-12), with
     /// what their code ran or reached when the person said yes: a risk
     /// that isn't in it asks again (`TerraformPlanGate.agentAsks`).
-    var agentAllowed: [String: Set<TerraformRunRisk>] = [:]
+    package var agentAllowed: [String: Set<TerraformRunRisk>] = [:]
     /// A remote backend's workspaces, by identity of its default workspace.
-    var workspaceLists: [String: [String]] = [:]
+    package var workspaceLists: [String: [String]] = [:]
 
-    func add(_ run: TerraformPlanRun) {
+    package func add(_ run: TerraformPlanRun) {
         runs.append(run)
         if runs.count > Self.keep, let drop = runs.firstIndex(where: { !$0.isGoing }) { runs.remove(at: drop) }
     }
 
-    func run(id: String) -> TerraformPlanRun? { runs.last { $0.id == id } }
+    package func run(id: String) -> TerraformPlanRun? { runs.last { $0.id == id } }
 
-    func addApply(_ apply: TerraformApplyRun) {
+    package func addApply(_ apply: TerraformApplyRun) {
         applies.append(apply)
         if applies.count > Self.keep, let drop = applies.firstIndex(where: { !$0.isGoing }) { applies.remove(at: drop) }
     }
 
     /// Forgets an apply without touching its process: the scenario's
     /// crash, after `detach`.
-    func forgetApply(_ apply: TerraformApplyRun) {
+    package func forgetApply(_ apply: TerraformApplyRun) {
         apply.detach()
         applies.removeAll { $0 === apply }
         if holders[apply.key] == apply.id { release(apply.key) }
     }
 
     /// The applies still going, the app's: what quitting asks about.
-    var goingApplies: [TerraformApplyRun] { applies.filter(\.isGoing) }
+    package var goingApplies: [TerraformApplyRun] { applies.filter(\.isGoing) }
 
     /// The apply holding `key`'s turn, if one does.
-    func applyHolder(of key: String) -> TerraformApplyRun? { holders[key].flatMap { id in applies.last { $0.id == id } } }
+    package func applyHolder(of key: String) -> TerraformApplyRun? { holders[key].flatMap { id in applies.last { $0.id == id } } }
 
     /// Why a run on `key` can't go now — another holds its turn — or nil.
-    func busy(_ key: String, except id: String? = nil) -> String? {
+    package func busy(_ key: String, except id: String? = nil) -> String? {
         guard let holder = holders[key], holder != id else { return nil }
         if let apply = applyHolder(of: key) { return "An apply of \(apply.marker.name) in \(apply.worktree) is running on this state." }
         if let run = run(id: holder) {
@@ -103,7 +103,7 @@ final class TerraformRunRegistry: ObservableObject {
 
     /// Takes `key`'s turn for `id` now, or false when another holds it: an
     /// apply never queues — it is pressed again.
-    func take(_ key: String, id: String) -> Bool {
+    package func take(_ key: String, id: String) -> Bool {
         guard holders[key] == nil else { return holders[key] == id }
         holders[key] = id
         return true
@@ -112,19 +112,19 @@ final class TerraformRunRegistry: ObservableObject {
     /// The newest plan run of `root` (its path in the checkout) in
     /// `checkout`; `drift`: its newest drift check instead (2d), never
     /// counted as its last plan.
-    func latest(checkout: URL, root: String, kind: TerraformPlanRun.Kind = .plan, drift: Bool = false) -> TerraformPlanRun? {
+    package func latest(checkout: URL, root: String, kind: TerraformPlanRun.Kind = .plan, drift: Bool = false) -> TerraformPlanRun? {
         let path = checkout.standardizedFileURL.path
         return runs.last { $0.kind == kind && $0.mode.isRefreshOnly == drift && $0.card.path == root && $0.checkout.standardizedFileURL.path == path }
     }
 
     /// The run going on `key` now, if another one is.
-    func holder(of key: String) -> TerraformPlanRun? { holders[key].flatMap { run(id: $0) } }
+    package func holder(of key: String) -> TerraformPlanRun? { holders[key].flatMap { run(id: $0) } }
 
     /// Takes `key`'s turn for `run`, waiting while another holds it: true
     /// with the turn, false when the run left the queue (`cancelWaiting`)
     /// — it holds nothing then, and releases nothing.
     @discardableResult
-    func acquire(_ key: String, for run: TerraformPlanRun) async -> Bool {
+    package func acquire(_ key: String, for run: TerraformPlanRun) async -> Bool {
         if holders[key] == nil {
             holders[key] = run.id
             return true
@@ -133,7 +133,7 @@ final class TerraformRunRegistry: ObservableObject {
     }
 
     /// Gives `key`'s turn to the next run waiting.
-    func release(_ key: String) {
+    package func release(_ key: String) {
         if var queue = waiting[key], !queue.isEmpty {
             let next = queue.removeFirst()
             waiting[key] = queue.isEmpty ? nil : queue
@@ -146,7 +146,7 @@ final class TerraformRunRegistry: ObservableObject {
 
     /// Takes run `id` out of every queue it waits in, at once: its
     /// `acquire` answers false while the holder still holds.
-    func cancelWaiting(_ id: String) {
+    package func cancelWaiting(_ id: String) {
         for (key, queue) in waiting {
             guard let index = queue.firstIndex(where: { $0.id == id }) else { continue }
             var rest = queue
@@ -157,18 +157,18 @@ final class TerraformRunRegistry: ObservableObject {
     }
 
     /// Whether run `id` waits for a turn.
-    func isWaiting(_ id: String) -> Bool { waiting.values.contains { $0.contains { $0.id == id } } }
+    package func isWaiting(_ id: String) -> Bool { waiting.values.contains { $0.contains { $0.id == id } } }
 
     /// A terraform write to `identity` was seen — a pane's apply, destroy,
     /// import or state change — from `worktree`: every plan of it made
     /// before is stale.
-    func stateWritten(_ identity: TerraformStateIdentity, by worktree: String, operation: String, at date: Date = Date()) {
+    package func stateWritten(_ identity: TerraformStateIdentity, by worktree: String, operation: String, at date: Date = Date()) {
         if let known = stateWrites[identity], abs(known.at.timeIntervalSince(date)) < 5, known.worktree == worktree { return }
         stateWrites[identity] = StateWrite(worktree: worktree, at: date, operation: operation)
     }
 
     /// Forgets a run: its plan file closes with it.
-    func discard(_ run: TerraformPlanRun) {
+    package func discard(_ run: TerraformPlanRun) {
         run.stop()
         runs.removeAll { $0 === run }
     }
@@ -180,10 +180,10 @@ final class TerraformRunRegistry: ObservableObject {
 /// through the allow-list off the main thread, then dropped. A plan that
 /// exited 0 or 2 is held by its descriptor in `record`.
 @MainActor
-final class TerraformPlanRun: ObservableObject, Identifiable {
-    enum Kind: String, Sendable { case plan, initialize }
+package final class TerraformPlanRun: ObservableObject, Identifiable {
+    package enum Kind: String, Sendable { case plan, initialize }
 
-    enum Phase: Equatable, Sendable {
+    package enum Phase: Equatable, Sendable {
         case preparing
         case waiting(String)
         case running
@@ -199,67 +199,67 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
         case tooLarge(String)
     }
 
-    static let maxLog = 2_000
+    package static let maxLog = 2_000
     /// A plan older than this greys Apply (5.4 check 5, `terraform.planMaxAgeMinutes`).
-    static let maxAge: TimeInterval = 30 * 60
+    package static let maxAge: TimeInterval = 30 * 60
 
-    let id: String
-    let kind: Kind
-    let checkout: URL
-    let card: TerraformRootCard
+    package let id: String
+    package let kind: Kind
+    package let checkout: URL
+    package let card: TerraformRootCard
     /// Who asked, when an agent's `tf_plan` did: its tab and agent.
-    let agent: String?
-    let lockWait: TerraformCommands.LockWait
-    let varFiles: [String]
-    let pluginCache: String?
+    package let agent: String?
+    package let lockWait: TerraformCommands.LockWait
+    package let varFiles: [String]
+    package let pluginCache: String?
     /// Destroy, only some addresses, some replaced (2a): said in the header.
-    let mode: TerraformPlanMode
+    package let mode: TerraformPlanMode
     /// The checkout's branch @ commit, as the chip says it.
-    let branch: String?
+    package let branch: String?
     /// The checkout's HEAD when it was planned, and whether tracked files
     /// differed from it: a review posts only a plan of its head (2f).
-    var commit: String?
-    var uncommitted = false
+    package var commit: String?
+    package var uncommitted = false
     /// What its code runs or reaches (5.4), listed in the header.
-    var risks: [TerraformRunRisk] = []
+    package var risks: [TerraformRunRisk] = []
     /// The lines of the root's files this branch added (`git diff -U0
     /// <merge base>`), by path in the checkout: what "changed in this
     /// branch" reads, whatever the changes pane shows (3.1).
-    var changedLines: [String: Set<Int>] = [:]
+    package var changedLines: [String: Set<Int>] = [:]
 
-    @Published private(set) var phase: Phase = .preparing
-    @Published private(set) var log: [String] = []
-    @Published private(set) var refreshed = 0
-    @Published private(set) var plannedChanges = 0
-    @Published private(set) var diagnostics: [TerraformDiagnostic] = []
-    @Published private(set) var lock: TerraformLockInfo?
-    @Published private(set) var record: TerraformPlanRecord?
+    @Published package private(set) var phase: Phase = .preparing
+    @Published package private(set) var log: [String] = []
+    @Published package private(set) var refreshed = 0
+    @Published package private(set) var plannedChanges = 0
+    @Published package private(set) var diagnostics: [TerraformDiagnostic] = []
+    @Published package private(set) var lock: TerraformLockInfo?
+    @Published package private(set) var record: TerraformPlanRecord?
     /// Its apply (6.4): the plan view becomes its progress in place.
-    @Published var apply: TerraformApplyRun?
+    @Published package var apply: TerraformApplyRun?
     /// A file of its root changed after it finished.
-    @Published var configChanged = false
-    @Published private(set) var workspace: String
-    let started = Date()
-    @Published private(set) var finished: Date?
+    @Published package var configChanged = false
+    @Published package private(set) var workspace: String
+    package let started = Date()
+    @Published package private(set) var finished: Date?
     /// The run's inputs (2.2): the auto-loaded var files, the `TF_VAR_`
     /// names in its environment (never values), the profile's and region's names.
-    private(set) var autoVarFiles: [String] = []
-    private(set) var variableNames: [String] = []
-    private(set) var profile: String?
-    private(set) var region: String?
+    package private(set) var autoVarFiles: [String] = []
+    package private(set) var variableNames: [String] = []
+    package private(set) var profile: String?
+    package private(set) var region: String?
     /// The identity it plans, once its workspace was checked.
-    private(set) var identity: TerraformStateIdentity?
+    package private(set) var identity: TerraformStateIdentity?
     /// "The lock is held by this Mac, and no Terraform runs here": said (4.10).
-    @Published private(set) var lockNote: String?
+    @Published package private(set) var lockNote: String?
     /// The root's var files a failed plan offers (2.2), read off the main thread with the run.
-    @Published private(set) var offeredVarFiles: [String] = []
+    @Published package private(set) var offeredVarFiles: [String] = []
     /// `change_summary`'s counts from the stream: all a plan past `maxPlanBytes` shows.
-    private(set) var streamSummary: (add: Int, change: Int, remove: Int, importing: Int)?
+    package private(set) var streamSummary: (add: Int, change: Int, remove: Int, importing: Int)?
     private var pid: pid_t?
     private var stopping = false
     private weak var registry: TerraformRunRegistry?
 
-    init(
+    package init(
         kind: Kind, checkout: URL, card: TerraformRootCard, agent: String? = nil, lockWait: TerraformCommands.LockWait = .person, varFiles: [String] = [],
         pluginCache: String? = nil, branch: String? = nil, mode: TerraformPlanMode = .normal
     ) {
@@ -277,26 +277,26 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
         self.identity = card.identity
     }
 
-    var isGoing: Bool {
+    package var isGoing: Bool {
         switch phase {
         case .preparing, .waiting, .running: true
         default: false
         }
     }
 
-    var plan: TerraformPlan? { record?.plan }
+    package var plan: TerraformPlan? { record?.plan }
 
     /// The plan's stream warned that provider development overrides are on (4.5).
-    var devOverrides: Bool { TerraformApplyCheck.hasDevOverrides(diagnostics) }
+    package var devOverrides: Bool { TerraformApplyCheck.hasDevOverrides(diagnostics) }
 
     /// Its plan applied (or its apply started): the record and its
     /// descriptor dropped — a plan is applied once (6.4).
-    func dropRecord() { record = nil }
+    package func dropRecord() { record = nil }
 
     /// The root's class decided now, by the same classifier, settings and
     /// sticky identities as a card's, over `facts` (the plan's own when
     /// nil): what an apply is guarded as, never the card's alone (5.1).
-    func classNow(_ classing: Classing, facts: TerraformRootFacts? = nil) -> TerraformClassifier.Verdict {
+    package func classNow(_ classing: Classing, facts: TerraformRootFacts? = nil) -> TerraformClassifier.Verdict {
         TerraformRootCard.verdict(
             path: card.path, folder: card.folder, facts: facts ?? card.facts, workspace: workspace, varFiles: autoVarFiles, awsProfile: profile,
             terragruntTree: card.terragruntTree, settings: classing.settings, productionIdentities: classing.identities
@@ -304,7 +304,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     }
 
     /// Why Apply is greyed now (6.4), or nil: what needs nothing read.
-    func applyGreyed(_ registry: TerraformRunRegistry, writable: Bool, now: Date = Date(), classing: Classing? = nil) -> String? {
+    package func applyGreyed(_ registry: TerraformRunRegistry, writable: Bool, now: Date = Date(), classing: Classing? = nil) -> String? {
         if apply != nil { return "Applied: plan again for another apply." }
         if let why = TerraformApplyCheck.risen(name: card.name, planned: card.rootClass, now: classNow(classing ?? .current)) { return why }
         let key = identity?.description ?? card.folder.path
@@ -314,7 +314,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     }
 
     /// The variables a failed plan said have no value: offered the root's var files (2.2).
-    var missingVariables: [String] {
+    package var missingVariables: [String] {
         diagnostics.filter { $0.summary == "No value for required variable" }.compactMap { diagnostic in
             diagnostic.detail.range(of: #"variable "([^"]+)""#, options: .regularExpression).map {
                 String(diagnostic.detail[$0].dropFirst("variable \"".count).dropLast())
@@ -327,7 +327,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     /// A plan no longer held (applied, discarded) has nothing to apply —
     /// unless `held` is false: what a drift check found is "then" once its
     /// own Accept wrote the state (2.6).
-    func staleReason(_ registry: TerraformRunRegistry, now: Date = Date(), held: Bool = true) -> String? {
+    package func staleReason(_ registry: TerraformRunRegistry, now: Date = Date(), held: Bool = true) -> String? {
         guard kind == .plan, let finished, record != nil || !held else { return nil }
         if let identity, let write = registry.stateWrites[identity], write.at > finished {
             return "\(write.operation) from \(write.worktree) at \(Self.clock(write.at)): plan again"
@@ -337,7 +337,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
         return nil
     }
 
-    static func clock(_ date: Date) -> String {
+    package static func clock(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm"
@@ -345,7 +345,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     }
 
     /// "2 min ago".
-    func age(now: Date = Date()) -> String {
+    package func age(now: Date = Date()) -> String {
         let seconds = Int(max(0, now.timeIntervalSince(finished ?? started)))
         if seconds < 60 { return "just now" }
         if seconds < 3_600 { return "\(seconds / 60) min ago" }
@@ -354,14 +354,14 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
 
     /// Stops it: one SIGINT to its group (D-3), or out of the queue at
     /// once — a run waiting for another's turn ends while that one holds.
-    func stop() {
+    package func stop() {
         guard isGoing else { return }
         stopping = true
         if let pid { TerraformStreamRun.interrupt(pid) }
         if let registry, registry.isWaiting(id) { registry.cancelWaiting(id) }
     }
 
-    func refuse(_ why: String) {
+    package func refuse(_ why: String) {
         phase = .refused(why)
         finished = Date()
         appendLog("Refused: " + why)
@@ -372,7 +372,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
         if log.count > Self.maxLog { log.removeFirst(log.count - Self.maxLog) }
     }
 
-    func absorb(_ messages: [TerraformUIMessage]) {
+    package func absorb(_ messages: [TerraformUIMessage]) {
         var lines: [String] = []
         for message in messages {
             switch message {
@@ -398,25 +398,25 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
 
     // MARK: The run
 
-    struct Prepared: Sendable {
-        var facts: TerraformRootFacts
-        var names: [String]
-        var binary: URL?
-        var base: [String: String]?
-        var scratch: TerraformGuards.Scratch?
+    package struct Prepared: Sendable {
+        package var facts: TerraformRootFacts
+        package var names: [String]
+        package var binary: URL?
+        package var base: [String: String]?
+        package var scratch: TerraformGuards.Scratch?
     }
 
     /// What the class is decided from now, taken on the main thread:
     /// the same classifier, settings and sticky identities as the card's.
-    struct Classing: Sendable {
-        var settings: TerraformClassSettings
-        var identities: Set<TerraformStateIdentity>
+    package struct Classing: Sendable {
+        package var settings: TerraformClassSettings
+        package var identities: Set<TerraformStateIdentity>
 
-        @MainActor static var current: Classing { Classing(settings: .current, identities: TerraformRootStore.shared.productionIdentities) }
+        @MainActor package static var current: Classing { Classing(settings: .current, identities: TerraformRootStore.shared.productionIdentities) }
     }
 
     /// Runs it: checks, the queue, the process, the plan read as data.
-    func start(registry: TerraformRunRegistry = .shared, settingPath: String, classing: Classing? = nil) async {
+    package func start(registry: TerraformRunRegistry = .shared, settingPath: String, classing: Classing? = nil) async {
         self.registry = registry
         let root = card.folder
         let checkout = self.checkout
@@ -530,7 +530,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
 
     /// Takes `key`'s turn in `registry`, saying whose run it waits for:
     /// false — and stopped — when `stop()` took it out of the queue first.
-    func waitTurn(_ key: String, registry: TerraformRunRegistry) async -> Bool {
+    package func waitTurn(_ key: String, registry: TerraformRunRegistry) async -> Bool {
         self.registry = registry
         if let other = registry.holder(of: key) {
             phase = .waiting("Waiting for the \(other.kind == .plan ? "plan" : "init") of \(other.card.name) in \(other.checkout.lastPathComponent)")
@@ -550,14 +550,14 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     }
 
     /// The plan read: held, and the run done at `date`.
-    func landed(_ record: TerraformPlanRecord, at date: Date = Date()) {
+    package func landed(_ record: TerraformPlanRecord, at date: Date = Date()) {
         self.record = record
         phase = record.status == 0 ? .noChanges : .planned
         finished = date
     }
 
     /// The stream's counts and why there is nothing more (Section 10).
-    func tooLargeText() -> String {
+    package func tooLargeText() -> String {
         let limit = "over \(TerraformStreamRun.maxPlanBytes >> 20) MB"
         guard let counts = streamSummary else { return "Planned, but the plan is \(limit): too large to show attribute diffs." }
         let importing = counts.importing > 0 ? "\(counts.importing) to import, " : ""
@@ -565,7 +565,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     }
 
     /// The var files a failed plan offers: the root's own, not those it loads anyway.
-    nonisolated static func offered(_ names: [String]) -> [String] {
+    package nonisolated static func offered(_ names: [String]) -> [String] {
         names.filter { ($0.hasSuffix(".tfvars") || $0.hasSuffix(".tfvars.json")) && !$0.hasSuffix(".auto.tfvars") && !$0.hasSuffix(".auto.tfvars.json") }
             .filter { $0 != "terraform.tfvars" && $0 != "terraform.tfvars.json" }.sorted()
     }
@@ -575,7 +575,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     /// since (`terraform workspace select prod` in a pane of the
     /// worktree), its backend edited, or its class now production where
     /// the card's wasn't. An agent never plans production (D-12).
-    func changedSinceCard(_ facts: TerraformRootFacts, varFiles: [String], profile: String?, classing: Classing) -> String? {
+    package func changedSinceCard(_ facts: TerraformRootFacts, varFiles: [String], profile: String?, classing: Classing) -> String? {
         let root = card.folder
         let identity = TerraformStateIdentity.of(backend: facts.backend, workspace: facts.workspace, root: root)
         if facts.workspace != card.workspace {
@@ -650,10 +650,10 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
         try? await TerraformRun.short(binary, arguments, in: root, environment: environment, timeout: 60)
     }
 
-    struct Read: Sendable {
-        var plan: TerraformPlan
-        var zip: TerraformPlanZip?
-        var mask: TerraformValueMask
+    package struct Read: Sendable {
+        package var plan: TerraformPlan
+        package var zip: TerraformPlanZip?
+        package var mask: TerraformValueMask
     }
 
     /// `show -json /dev/fd/3` of the held plan, decoded through the
@@ -695,8 +695,8 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
 }
 
 /// Why a plan couldn't be read, in words.
-struct TerraformReadFailure: Error, Sendable {
-    var message: String
+package struct TerraformReadFailure: Error, Sendable {
+    package var message: String
     /// Past `maxPlanBytes`: the run planned, there is only too much to show.
-    var tooLarge = false
+    package var tooLarge = false
 }

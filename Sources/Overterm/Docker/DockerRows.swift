@@ -4,8 +4,8 @@ import SwiftUI
 /// vocabulary: green running, orange on its way (paused, starting,
 /// restarting, created), red wrong (exited non-zero, unhealthy, dead),
 /// the theme's grey stopped.
-enum DockerStatusStyle {
-    static func color(_ container: ContainerSummary, idle: Color) -> Color {
+package enum DockerStatusStyle {
+    package static func color(_ container: ContainerSummary, idle: Color) -> Color {
         if container.health == "unhealthy" || container.state == .dead || (container.exitCode ?? 0) != 0 { return TabStatusStyle.failed }
         switch container.state {
         case .running: return container.health == "starting" ? TabStatusStyle.waiting : TabStatusStyle.done
@@ -14,7 +14,7 @@ enum DockerStatusStyle {
         }
     }
 
-    static func color(_ project: ComposeProject, idle: Color) -> Color {
+    package static func color(_ project: ComposeProject, idle: Color) -> Color {
         if !project.failing.isEmpty { return TabStatusStyle.failed }
         switch project.status {
         case .running: return TabStatusStyle.done
@@ -25,21 +25,21 @@ enum DockerStatusStyle {
 
     /// A test run: green while anything of it runs. Never red — a test's
     /// containers end 143 or 137 when its run is done with them.
-    static func color(_ session: TestcontainersSession, idle: Color) -> Color {
+    package static func color(_ session: TestcontainersSession, idle: Color) -> Color {
         session.running > 0 ? TabStatusStyle.done : idle
     }
 
     /// What the row says of it: Docker's own words, less what the dot and
     /// the health already say.
-    static func status(_ container: ContainerSummary) -> String {
+    package static func status(_ container: ContainerSummary) -> String {
         container.Status.replacingOccurrences(of: #"\s*\((healthy|unhealthy|health: starting|Paused)\)"#, with: "", options: .regularExpression)
     }
 }
 
-struct DockerStatusDot: View {
-    let color: Color
+package struct DockerStatusDot: View {
+    package let color: Color
 
-    var body: some View {
+    package var body: some View {
         Circle().fill(color).frame(width: 7, height: 7)
     }
 }
@@ -53,13 +53,13 @@ struct DockerStatusDot: View {
 /// handed new values each time it is reused: the list's scroll step took
 /// 18.5 ms with them, 12 without (`dockerPerf`). Still a button to
 /// accessibility, opened by its action; the row itself is the keyboard's.
-struct DockerPortPill: View {
-    let port: PublishedPort
-    @ObservedObject var theme: ChromeTheme
-    var inList = false
-    let open: (URL) -> Void
+package struct DockerPortPill: View {
+    package let port: PublishedPort
+    @ObservedObject package var theme: ChromeTheme
+    package var inList = false
+    package let open: (URL) -> Void
 
-    var body: some View {
+    package var body: some View {
         if inList {
             label
                 .contentShape(Rectangle())
@@ -101,7 +101,7 @@ private struct DockerShownKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    var dockerShown: Bool {
+    package var dockerShown: Bool {
         get { self[DockerShownKey.self] }
         set { self[DockerShownKey.self] = newValue }
     }
@@ -114,15 +114,15 @@ extension EnvironmentValues {
 /// key's epoch), a container's only until it is known for good. Nothing
 /// when it runs natively — a view of no size, not an EmptyView, whose task
 /// may not run.
-struct DockerEmulationBadge: View {
-    enum Subject {
+package struct DockerEmulationBadge: View {
+    package enum Subject {
         case container(ContainerSummary)
         /// By its id.
         case image(String?)
     }
 
-    let subject: Subject
-    @ObservedObject var docker: DockerModel
+    package let subject: Subject
+    @ObservedObject package var docker: DockerModel
     @Environment(\.dockerShown) private var shown
 
     private var emulation: DockerEmulation? {
@@ -142,7 +142,7 @@ struct DockerEmulationBadge: View {
         }
     }
 
-    var body: some View {
+    package var body: some View {
         Group {
             if let emulation {
                 Text(verbatim: emulation.image.short)
@@ -169,14 +169,14 @@ struct DockerEmulationBadge: View {
 }
 
 /// A list row's emulation badge, handed what to show: the row reads it.
-struct DockerEmulationTag: View {
-    let emulation: DockerEmulation?
+package struct DockerEmulationTag: View {
+    package let emulation: DockerEmulation?
     /// What the platform was read for; asked once while on screen.
-    let key: String
-    let want: () -> Void
+    package let key: String
+    package let want: () -> Void
     @Environment(\.dockerShown) private var shown
 
-    var body: some View {
+    package var body: some View {
         Group {
             if let emulation {
                 Text(verbatim: emulation.image.short)
@@ -201,13 +201,13 @@ struct DockerEmulationTag: View {
 
 /// An emulated container's or image's box: why it is slow, what runs it
 /// natively, and the verb that does — the port-conflict box's way.
-struct DockerEmulationNote: View {
-    let emulation: DockerEmulation
-    let text: String
-    let verb: ResourceVerb?
-    @ObservedObject var theme: ChromeTheme
+package struct DockerEmulationNote: View {
+    package let emulation: DockerEmulation
+    package let text: String
+    package let verb: ResourceVerb?
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "cpu").foregroundStyle(TabStatusStyle.waiting)
@@ -233,28 +233,28 @@ struct DockerEmulationNote: View {
 
 /// A container in a list: its dot, what it is called there, its image,
 /// its ports, how long it has been up (or how it ended).
-struct DockerContainerRow: View {
-    let container: ContainerSummary
+package struct DockerContainerRow: View {
+    package let container: ContainerSummary
     /// In a project's block, it goes by its service.
-    let inProject: Bool
-    let busy: Bool
+    package let inProject: Bool
+    package let busy: Bool
     /// Whose platforms the badge reads.
-    let docker: DockerModel
-    @ObservedObject var theme: ChromeTheme
-    let open: (URL) -> Void
+    package let docker: DockerModel
+    @ObservedObject package var theme: ChromeTheme
+    package let open: (URL) -> Void
     /// The rail's narrow panel: no ports, no status words.
-    var compact = false
+    package var compact = false
     /// A remote engine's host, where its ports are (`DockerModel.publishedHost`).
-    var remoteHost: String?
+    package var remoteHost: String?
     /// What it uses now, for the page's columns.
-    var usage: DockerUsage? = nil
+    package var usage: DockerUsage? = nil
     /// The page's CPU and memory columns, at the end of the row.
-    var columns = false
+    package var columns = false
     /// Set in from the left: in a block, unless said otherwise (a run's
     /// detail lists its containers flush).
-    var indented: Bool? = nil
+    package var indented: Bool? = nil
 
-    var title: String {
+    package var title: String {
         // A test run's reaper, among the run's containers.
         if inProject, Testcontainers.isReaper(container) { return "Ryuk" }
         guard inProject, let service = container.composeService else { return container.name }
@@ -263,7 +263,7 @@ struct DockerContainerRow: View {
         return number > 1 ? "\(service) #\(number)" : service
     }
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 8) {
             DockerStatusDot(color: DockerStatusStyle.color(container, idle: theme.text3))
             VStack(alignment: .leading, spacing: 1) {
@@ -308,23 +308,23 @@ struct DockerContainerRow: View {
 /// how much of it runs; up, stop and restart on hover. A Testcontainers
 /// run's: its library and session, how long ago it started, how much of
 /// it runs.
-struct DockerProjectRow: View {
-    let group: DockerListGroup
-    let folded: Bool
-    let busy: Bool
-    @ObservedObject var theme: ChromeTheme
-    let fold: () -> Void
+package struct DockerProjectRow: View {
+    package let group: DockerListGroup
+    package let folded: Bool
+    package let busy: Bool
+    @ObservedObject package var theme: ChromeTheme
+    package let fold: () -> Void
     /// `up`, `stop`, `restart`, `down`.
-    let act: (String) -> Void
-    var compact = false
+    package let act: (String) -> Void
+    package var compact = false
     /// Its containers' use added up, for the page's columns.
-    var usage: DockerUsage? = nil
-    var columns = false
+    package var usage: DockerUsage? = nil
+    package var columns = false
     /// Its services whose registries name a newer image (Check for Updates).
-    var updates = 0
+    package var updates = 0
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 6) {
             Button(action: fold) {
                 Image(systemName: folded ? "chevron.right" : "chevron.down")
@@ -414,20 +414,20 @@ struct DockerProjectRow: View {
 /// A service of a project before it runs: a hollow dot, what it runs — its
 /// image or the folder it is built from, the services it waits for — and,
 /// with room, the host ports it will publish, as words: nothing listens yet.
-struct DockerPlannedServiceRow: View {
-    let service: ComposeService
-    @ObservedObject var theme: ChromeTheme
+package struct DockerPlannedServiceRow: View {
+    package let service: ComposeService
+    @ObservedObject package var theme: ChromeTheme
     /// The rail's narrow panel: no ports, no status words.
-    var compact = false
+    package var compact = false
     /// The checkout, for a build folder said from it.
-    var folder: String?
+    package var folder: String?
     /// Under its project's row, as a container is.
-    var indented = true
+    package var indented = true
     /// The page's CPU and memory columns: blank, so its words line up
     /// with the containers'.
-    var columns = false
+    package var columns = false
 
-    var body: some View {
+    package var body: some View {
         let replicas = service.spec?.replicas ?? 1
         HStack(spacing: 8) {
             Circle().strokeBorder(theme.text3, lineWidth: 1.2).frame(width: 7, height: 7)
@@ -471,16 +471,16 @@ struct DockerPlannedServiceRow: View {
 /// A row's CPU and memory on the page's list, as `docker stats` says them:
 /// a dash while a running one waits for its second read, nothing for one
 /// that isn't running. Memory turns orange near its limit.
-struct DockerUsageCells: View {
-    static let cpuWidth: CGFloat = 52
-    static let memoryWidth: CGFloat = 70
+package struct DockerUsageCells: View {
+    package static let cpuWidth: CGFloat = 52
+    package static let memoryWidth: CGFloat = 70
 
-    let usage: DockerUsage?
+    package let usage: DockerUsage?
     /// Whether it is read at all: running or paused.
-    let reads: Bool
-    @ObservedObject var theme: ChromeTheme
+    package let reads: Bool
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 8) {
             cell(usage?.cpuLabel, width: Self.cpuWidth, color: theme.text2)
                 .help("Of one CPU, as docker stats says it — 200% is two CPUs flat out")
@@ -507,11 +507,11 @@ struct DockerUsageCells: View {
 
 /// The page's list header: the columns' names; CPU and Memory sort by
 /// themselves, the busiest first, and again (or Name) back by name.
-struct DockerListColumns: View {
-    @Binding var sort: DockerListSort
-    @ObservedObject var theme: ChromeTheme
+package struct DockerListColumns: View {
+    @Binding package var sort: DockerListSort
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 8) {
             column("Name", .name, help: "By name: projects, then the rest")
             Spacer(minLength: 6)

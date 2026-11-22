@@ -9,17 +9,17 @@ import Foundation
 ///
 /// Pure. Compiled once, to a regular expression (immutable and safe across
 /// threads); matching is then one anchored ICU match per path.
-struct LSPGlob: @unchecked Sendable, Hashable, CustomStringConvertible {
+package struct LSPGlob: @unchecked Sendable, Hashable, CustomStringConvertible {
     /// As the server wrote it.
-    let pattern: String
+    package let pattern: String
     /// A RelativePattern's folder, as an absolute path without a trailing
     /// slash; nil for a string pattern.
-    let base: String?
+    package let base: String?
     private let regex: NSRegularExpression
 
     /// nil for a pattern that can't be read (an unclosed `{`): it then
     /// matches nothing, as a server's typo should.
-    init?(_ pattern: String, base: String? = nil) {
+    package init?(_ pattern: String, base: String? = nil) {
         guard !pattern.isEmpty, let source = Self.regularExpression(for: pattern),
             let regex = try? NSRegularExpression(pattern: source)
         else { return nil }
@@ -28,17 +28,17 @@ struct LSPGlob: @unchecked Sendable, Hashable, CustomStringConvertible {
         self.regex = regex
     }
 
-    var description: String { base.map { "\($0) + \(pattern)" } ?? pattern }
+    package var description: String { base.map { "\($0) + \(pattern)" } ?? pattern }
 
-    static func == (a: LSPGlob, b: LSPGlob) -> Bool { a.pattern == b.pattern && a.base == b.base }
-    func hash(into hasher: inout Hasher) {
+    package static func == (a: LSPGlob, b: LSPGlob) -> Bool { a.pattern == b.pattern && a.base == b.base }
+    package func hash(into hasher: inout Hasher) {
         hasher.combine(pattern)
         hasher.combine(base)
     }
 
     /// Whether this absolute path matches; `root` is what a string pattern
     /// that isn't absolute (`src/*.rs`) is taken below.
-    func matches(_ path: String, root: String? = nil) -> Bool {
+    package func matches(_ path: String, root: String? = nil) -> Bool {
         if let base {
             guard let relative = Self.relative(path, to: base) else { return false }
             return whole(relative)
@@ -54,7 +54,7 @@ struct LSPGlob: @unchecked Sendable, Hashable, CustomStringConvertible {
     }
 
     /// `path` below `folder`, without the slash; nil when it isn't below it.
-    static func relative(_ path: String, to folder: String) -> String? {
+    package static func relative(_ path: String, to folder: String) -> String? {
         let prefix = folder.hasSuffix("/") ? folder : folder + "/"
         guard path.hasPrefix(prefix), path.count > prefix.count else { return nil }
         return String(path.dropFirst(prefix.count))
@@ -62,7 +62,7 @@ struct LSPGlob: @unchecked Sendable, Hashable, CustomStringConvertible {
 
     /// The folder before the first wildcard of an absolute pattern
     /// (`/abs/dir/**/*.go` → `/abs/dir`): where a watcher must look.
-    static func literalFolder(of pattern: String) -> String? {
+    package static func literalFolder(of pattern: String) -> String? {
         guard pattern.hasPrefix("/") else { return nil }
         let meta = pattern.firstIndex { "*?[{".contains($0) } ?? pattern.endIndex
         let head = pattern[..<meta]
@@ -72,7 +72,7 @@ struct LSPGlob: @unchecked Sendable, Hashable, CustomStringConvertible {
     }
 
     /// The glob as an anchored ICU expression; nil if its braces don't close.
-    static func regularExpression(for pattern: String) -> String? {
+    package static func regularExpression(for pattern: String) -> String? {
         let characters = Array(pattern)
         var out = "^"
         var depth = 0
@@ -163,21 +163,22 @@ struct LSPGlob: @unchecked Sendable, Hashable, CustomStringConvertible {
 /// sourcekit-lsp registers `**/*` (and `**/*.swift` changes); clangd
 /// registers nothing; terraform-ls (#953) needs it to hear of `init` and of
 /// files an agent writes.
-struct LSPWatchedFiles: Sendable, Equatable {
+package struct LSPWatchedFiles: Sendable, Equatable {
     /// LSP's `WatchKind`.
-    struct Kinds: OptionSet, Sendable, Hashable {
-        let rawValue: Int
-        static let create = Kinds(rawValue: 1)
-        static let change = Kinds(rawValue: 2)
-        static let delete = Kinds(rawValue: 4)
-        static let all: Kinds = [.create, .change, .delete]
+    package struct Kinds: OptionSet, Sendable, Hashable {
+        package let rawValue: Int
+        package init(rawValue: Int) { self.rawValue = rawValue }
+        package static let create = Kinds(rawValue: 1)
+        package static let change = Kinds(rawValue: 2)
+        package static let delete = Kinds(rawValue: 4)
+        package static let all: Kinds = [.create, .change, .delete]
     }
 
     /// LSP's `FileChangeType`.
-    enum ChangeType: Int, Sendable {
+    package enum ChangeType: Int, Sendable {
         case created = 1, changed, deleted
 
-        var kind: Kinds {
+        package var kind: Kinds {
             switch self {
             case .created: .create
             case .changed: .change
@@ -186,39 +187,39 @@ struct LSPWatchedFiles: Sendable, Equatable {
         }
     }
 
-    struct Watcher: Sendable, Hashable {
-        var glob: LSPGlob
-        var kinds: Kinds
+    package struct Watcher: Sendable, Hashable {
+        package var glob: LSPGlob
+        package var kinds: Kinds
         /// The folder (a base, or an absolute pattern's) as the server spelled
         /// it, when the real path `glob` holds differs (`/tmp` →
         /// `/private/tmp`, a symlink → its target): its events go back to the
         /// server in its own spelling.
-        var spelled: String? = nil
+        package var spelled: String? = nil
     }
 
-    struct Change: Sendable, Hashable {
-        var path: String
-        var type: ChangeType
+    package struct Change: Sendable, Hashable {
+        package var path: String
+        package var type: ChangeType
     }
 
-    static let method = "workspace/didChangeWatchedFiles"
+    package static let method = "workspace/didChangeWatchedFiles"
     /// Folders watched at most besides the root, and never these: a server
     /// that names `/` or the home folder doesn't get the whole disk watched.
-    static let maxExtraFolders = 16
+    package static let maxExtraFolders = 16
     /// Changes per notification.
-    static let batchLimit = 1000
+    package static let batchLimit = 1000
 
     /// By registration id.
-    private(set) var registrations: [String: [Watcher]] = [:]
+    package private(set) var registrations: [String: [Watcher]] = [:]
 
-    var isEmpty: Bool { registrations.values.allSatisfy(\.isEmpty) }
-    var watchers: [Watcher] { registrations.keys.sorted().flatMap { registrations[$0] ?? [] } }
+    package var isEmpty: Bool { registrations.values.allSatisfy(\.isEmpty) }
+    package var watchers: [Watcher] { registrations.keys.sorted().flatMap { registrations[$0] ?? [] } }
 
     /// `client/registerCapability`'s params: the watched-files ones kept,
     /// their bases and absolute prefixes made real paths by `resolve` (FSEvents
     /// reports `/private/var/…` for `/var/…`). Whether anything changed.
     @discardableResult
-    mutating func register(_ params: Any?, resolve: (String) -> String = LSPWatchedFiles.realPath) -> Bool {
+    package mutating func register(_ params: Any?, resolve: (String) -> String = LSPWatchedFiles.realPath) -> Bool {
         let registrations = (params as? [String: Any])?["registrations"] as? [[String: Any]] ?? []
         var changed = false
         for registration in registrations where registration["method"] as? String == Self.method {
@@ -234,7 +235,7 @@ struct LSPWatchedFiles: Sendable, Equatable {
     /// `client/unregisterCapability`'s params (the spec's key is spelled
     /// `unregisterations`; `unregistrations` is taken too).
     @discardableResult
-    mutating func unregister(_ params: Any?) -> Bool {
+    package mutating func unregister(_ params: Any?) -> Bool {
         let object = params as? [String: Any]
         let list = (object?["unregisterations"] ?? object?["unregistrations"]) as? [[String: Any]] ?? []
         var changed = false
@@ -244,7 +245,7 @@ struct LSPWatchedFiles: Sendable, Equatable {
         return changed
     }
 
-    mutating func removeAll() { registrations = [:] }
+    package mutating func removeAll() { registrations = [:] }
 
     private static func watcher(_ json: [String: Any], resolve: (String) -> String) -> Watcher? {
         let kinds = (json["kind"] as? Int).map(Kinds.init(rawValue:)) ?? .all
@@ -276,7 +277,7 @@ struct LSPWatchedFiles: Sendable, Equatable {
     /// with no marker and no `.git` makes it the root, and pyright's `**`
     /// there would watch every file the user has. Such a root isn't
     /// watched; the registered folders that pass are, below it or not.
-    func folders(root: String, home: String = NSHomeDirectory()) -> [String] {
+    package func folders(root: String, home: String = NSHomeDirectory()) -> [String] {
         let rootWatched = Self.watchable(root, home: home)
         var extra: [String] = []
         for watcher in watchers {
@@ -302,7 +303,7 @@ struct LSPWatchedFiles: Sendable, Equatable {
     /// Whether a folder may be watched at all: not `/` or a folder right
     /// under it (`/Users`), not a whole volume (`/Volumes/x`), not the home
     /// folder, nor anything above it.
-    static func watchable(_ folder: String, home: String) -> Bool {
+    package static func watchable(_ folder: String, home: String) -> Bool {
         let components = (folder as NSString).pathComponents
         guard components.count > 2, folder != home, !home.hasPrefix(folder + "/") else { return false }
         return !(components.count == 3 && components[1] == "Volumes")
@@ -311,7 +312,7 @@ struct LSPWatchedFiles: Sendable, Equatable {
     /// The path as the server knows it: under the root as it was given
     /// (`rootSpelling`, not `/private/var/…`), or under a registered folder
     /// as the server spelled it — the longest real folder the path is in.
-    func serverPath(_ path: String, realRoot: String, rootSpelling: String) -> String {
+    package func serverPath(_ path: String, realRoot: String, rootSpelling: String) -> String {
         var folders = [(realRoot, rootSpelling)]
         for watcher in watchers {
             guard let spelled = watcher.spelled,
@@ -332,7 +333,7 @@ struct LSPWatchedFiles: Sendable, Equatable {
 
     /// Never sent, as VS Code's default `files.watcherExclude`: git's object
     /// store and the insides of each package in node_modules.
-    static func excluded(_ path: String) -> Bool {
+    package static func excluded(_ path: String) -> Bool {
         if path.contains("/.git/objects/") || path.contains("/.git/subtree-cache/") || path.contains("/.hg/store/") { return true }
         guard let range = path.range(of: "/node_modules/") else { return false }
         // node_modules/<package>/… — the package folder itself still counts.
@@ -342,7 +343,7 @@ struct LSPWatchedFiles: Sendable, Equatable {
     /// The changes these events make for the registered watchers, in order,
     /// one per path (its last). Whether a file came or went is what `exists`
     /// says now, since FSEvents' flags are coalesced and sticky.
-    func changes(for events: [DirectoryWatcher.Event], root: String, exists: (String) -> Bool) -> [Change] {
+    package func changes(for events: [DirectoryWatcher.Event], root: String, exists: (String) -> Bool) -> [Change] {
         let watchers = watchers
         guard !watchers.isEmpty else { return [] }
         var changes: [Change] = []
@@ -379,7 +380,7 @@ struct LSPWatchedFiles: Sendable, Equatable {
 
     /// The path FSEvents reports for `path`: symlinks resolved, /var as
     /// /private/var. The path itself when it doesn't exist.
-    static func realPath(_ path: String) -> String {
+    package static func realPath(_ path: String) -> String {
         guard let resolved = realpath(path, nil) else { return path }
         defer { free(resolved) }
         return String(cString: resolved)

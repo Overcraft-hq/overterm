@@ -8,9 +8,9 @@ import Foundation
 /// vhost and topic permissions. No rows are edited: messages aren't rows.
 /// docs/architecture.md, Database: Server page, Users and roles.
 extension RabbitMQDriver: DatabaseMonitoring, DatabaseUserManagement {
-    static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .sizes] }
+    package static func monitorParts(for kind: DatabaseKind) -> [MonitorPart] { [.overview, .activity, .sizes] }
 
-    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
+    package static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? {
         [
             SessionStop(
                 terminate: true, menu: "Close Connection…", title: "Close \(session.user ?? "its") connection from \(session.client ?? session.id)?",
@@ -21,7 +21,7 @@ extension RabbitMQDriver: DatabaseMonitoring, DatabaseUserManagement {
         ]
     }
 
-    func overview() async throws -> ServerOverview {
+    package func overview() async throws -> ServerOverview {
         let overview = try await json("GET", "/api/overview") as? [String: Any] ?? [:]
         let nodes: [[String: Any]]?
         do {
@@ -32,7 +32,7 @@ extension RabbitMQDriver: DatabaseMonitoring, DatabaseUserManagement {
         return RabbitOps.overview(overview, nodes: nodes)
     }
 
-    func activity() async throws -> Monitored<[DatabaseActivity]> {
+    package func activity() async throws -> Monitored<[DatabaseActivity]> {
         let connections =
             try await json(
                 "GET",
@@ -43,7 +43,7 @@ extension RabbitMQDriver: DatabaseMonitoring, DatabaseUserManagement {
         return .value(RabbitOps.activity(connections, channels: channels, now: Date()))
     }
 
-    func sizes() async throws -> Monitored<DatabaseSizes> {
+    package func sizes() async throws -> Monitored<DatabaseSizes> {
         let queues =
             try await json(
                 "GET",
@@ -52,18 +52,18 @@ extension RabbitMQDriver: DatabaseMonitoring, DatabaseUserManagement {
         return .value(RabbitOps.sizes(queues))
     }
 
-    func cancel(session: String, terminate: Bool) async throws {
+    package func cancel(session: String, terminate: Bool) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("closing a connection") }
         _ = try await request("DELETE", "/api/connections/\(RabbitText.segment(session))")
     }
 
     // MARK: Users
 
-    func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
+    package func userDialect() async -> UserDialect { .postgres }  // never read: `userStatements` is its own
 
-    func userStatements() async -> any UserStatementMaking { RabbitUserStatements() }
+    package func userStatements() async -> any UserStatementMaking { RabbitUserStatements() }
 
-    func users() async throws -> Monitored<[DatabaseUser]> {
+    package func users() async throws -> Monitored<[DatabaseUser]> {
         do {
             // Never `password_hash`: only the columns asked for come back.
             let list = try await json("GET", "/api/users?columns=name,tags") as? [[String: Any]] ?? []
@@ -82,7 +82,7 @@ extension RabbitMQDriver: DatabaseMonitoring, DatabaseUserManagement {
         }
     }
 
-    func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
+    package func grants(of user: DatabaseUser) async throws -> Monitored<[DatabaseGrant]> {
         let name = RabbitText.segment(user.name)
         let permissions = try await json("GET", "/api/users/\(name)/permissions") as? [[String: Any]] ?? []
         let topics = (try? await json("GET", "/api/users/\(name)/topic-permissions") as? [[String: Any]]) ?? []
@@ -92,7 +92,7 @@ extension RabbitMQDriver: DatabaseMonitoring, DatabaseUserManagement {
     /// Each statement a request — `METHOD /path {json}` — sent once.
     /// `NEW` before it: only where nothing is there yet (a new user never
     /// replaces one).
-    func run(_ statements: [UserStatement]) async throws {
+    package func run(_ statements: [UserStatement]) async throws {
         guard !config.readOnly else { throw DatabaseError.readOnly("changing users") }
         for statement in statements {
             guard let request = UserRequest(statement.sql) else { throw DatabaseError.failed("Couldn't read \(statement.shown).") }
@@ -118,14 +118,14 @@ extension RabbitMQDriver: DatabaseMonitoring, DatabaseUserManagement {
 }
 
 /// The management API's answers read. Pure.
-enum RabbitOps {
-    static func number(_ value: Any?) -> Double? { (value as? NSNumber)?.doubleValue }
+package enum RabbitOps {
+    package static func number(_ value: Any?) -> Double? { (value as? NSNumber)?.doubleValue }
 
-    static func rate(_ object: [String: Any]?, _ name: String) -> Double? {
+    package static func rate(_ object: [String: Any]?, _ name: String) -> Double? {
         ((object?[name + "_details"]) as? [String: Any]).flatMap { number($0["rate"]) }
     }
 
-    static func overview(_ overview: [String: Any], nodes: [[String: Any]]?) -> ServerOverview {
+    package static func overview(_ overview: [String: Any], nodes: [[String: Any]]?) -> ServerOverview {
         var facts: [ServerFact] = []
         var notes: [String] = []
         facts.append(
@@ -191,7 +191,7 @@ enum RabbitOps {
     /// Connections as sessions: who, from where, its vhost, its state
     /// (running, blocked by an alarm, flow), how long since it opened, its
     /// channels' consumers and unacknowledged messages.
-    static func activity(_ connections: [[String: Any]], channels: [[String: Any]], now: Date) -> [DatabaseActivity] {
+    package static func activity(_ connections: [[String: Any]], channels: [[String: Any]], now: Date) -> [DatabaseActivity] {
         var perConnection: [String: (channels: Int, consumers: Int, unacked: Int)] = [:]
         for channel in channels {
             guard let name = (channel["connection_details"] as? [String: Any])?["name"] as? String else { continue }
@@ -227,7 +227,7 @@ enum RabbitOps {
 
     /// The queues, biggest first (by bytes, then messages), and each
     /// vhost's sum; their rates beside them.
-    static func sizes(_ queues: [[String: Any]]) -> DatabaseSizes {
+    package static func sizes(_ queues: [[String: Any]]) -> DatabaseSizes {
         var sizes = DatabaseSizes()
         var vhosts: [String: (bytes: Int64, messages: Int, queues: Int)] = [:]
         for queue in queues {
@@ -262,7 +262,7 @@ enum RabbitOps {
     }
 
     /// A user, its tags as its attributes (administrator its superuser).
-    static func user(_ row: [String: Any]) -> DatabaseUser? {
+    package static func user(_ row: [String: Any]) -> DatabaseUser? {
         guard let name = row["name"] as? String else { return nil }
         let tags: [String]
         if let list = row["tags"] as? [String] {
@@ -275,7 +275,7 @@ enum RabbitOps {
 
     /// Its permissions per vhost (configure, write, read: each a regex of
     /// the names it may), and its topic permissions per exchange.
-    static func grants(permissions: [[String: Any]], topics: [[String: Any]]) -> [DatabaseGrant] {
+    package static func grants(permissions: [[String: Any]], topics: [[String: Any]]) -> [DatabaseGrant] {
         var grants: [DatabaseGrant] = []
         for permission in permissions {
             guard let vhost = permission["vhost"] as? String else { continue }
@@ -299,11 +299,11 @@ enum RabbitOps {
 /// path segment percent-encoded — a name never reaches another path. A
 /// password goes as its salted SHA-256 (`rabbit_password_hashing_sha256`,
 /// RabbitMQ's own), never in the clear; the shown request masks it. Pure.
-struct RabbitUserStatements: UserStatementMaking {
-    static let algorithm = "rabbit_password_hashing_sha256"
-    static let permissions = ["configure", "write", "read"]
+package struct RabbitUserStatements: UserStatementMaking {
+    package static let algorithm = "rabbit_password_hashing_sha256"
+    package static let permissions = ["configure", "write", "read"]
 
-    var form: UserForm {
+    package var form: UserForm {
         UserForm(
             superuser: "Administrator (the administrator tag)",
             passwordNote: "The password goes as its salted SHA-256 (RabbitMQ's own hashing), never in the clear, and is never kept here.",
@@ -313,7 +313,7 @@ struct RabbitUserStatements: UserStatementMaking {
 
     /// RabbitMQ's `rabbit_password_hashing_sha256`: base64 of a 4-byte salt,
     /// then SHA-256 of the salt and the password.
-    static func hash(_ password: String, salt: Data? = nil) -> String {
+    package static func hash(_ password: String, salt: Data? = nil) -> String {
         let salt = salt ?? Data((0..<4).map { _ in UInt8.random(in: 0...255) })
         return (salt + Data(SHA256.hash(data: salt + Data(password.utf8)))).base64EncodedString()
     }
@@ -330,27 +330,27 @@ struct RabbitUserStatements: UserStatementMaking {
         return UserStatement((onlyNew ? "NEW " : "") + "PUT \(path) \(body)", shown: "PUT \(path) \(shown)")
     }
 
-    func create(_ user: NewUser) throws -> [UserStatement] {
+    package func create(_ user: NewUser) throws -> [UserStatement] {
         [try put(user.name, password: user.password, tags: user.superuser ? ["administrator"] : [], onlyNew: true)]
     }
 
     /// A PUT replaces the user: its tags go with the new password.
-    func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
+    package func password(of user: DatabaseUser, to password: String) throws -> UserStatement {
         try put(user.name, password: password, tags: user.attributes, onlyNew: false)
     }
 
-    func offers(_ action: UserAction, on user: DatabaseUser) -> Bool { action != .grantRole }
+    package func offers(_ action: UserAction, on user: DatabaseUser) -> Bool { action != .grantRole }
 
-    func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
+    package func target(_ kind: GrantKind, fields: [String]) -> GrantTarget {
         let vhost = fields.first?.trimmingCharacters(in: .whitespaces) ?? ""
         return .named(kind: "Vhost", name: vhost.isEmpty ? "/" : vhost)
     }
 
-    func privileges(on target: GrantTarget) -> [String] { Self.permissions }
+    package func privileges(on target: GrantTarget) -> [String] { Self.permissions }
 
     /// The vhost's permissions set: each picked may use every name (`.*`),
     /// each not picked none (`^$`) — what it had there is replaced.
-    func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
+    package func grant(_ privileges: [String], on target: GrantTarget, to user: DatabaseUser, grantOption: Bool) throws -> UserStatement {
         guard case .named("Vhost", let vhost) = target else { throw Self.refusal("RabbitMQ grants on a vhost.") }
         guard !privileges.isEmpty else { throw Self.refusal("Pick configure, write or read.") }
         for privilege in privileges where !Self.permissions.contains(privilege) { throw Self.refusal("\(privilege) isn't a RabbitMQ permission.") }
@@ -360,17 +360,17 @@ struct RabbitUserStatements: UserStatementMaking {
         return UserStatement("PUT \(path) \(Self.json(body))")
     }
 
-    func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
+    package func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
         guard case .named(let kind, let vhost)? = grant.target, let name = try? checked(user.name) else { return nil }
         let base = kind == "Topic" ? "/api/topic-permissions/" : "/api/permissions/"
         return UserStatement("DELETE \(base)\(RabbitText.segment(vhost))/\(RabbitText.segment(name))")
     }
 
-    func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] { [] }
+    package func roleCandidates(for user: DatabaseUser, among users: [DatabaseUser]) -> [DatabaseUser] { [] }
 
-    func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement { throw Self.refusal("RabbitMQ has no roles — tags.") }
+    package func grantRole(_ role: DatabaseUser, to user: DatabaseUser) throws -> UserStatement { throw Self.refusal("RabbitMQ has no roles — tags.") }
 
-    func drop(_ user: DatabaseUser) throws -> UserStatement { UserStatement("DELETE /api/users/\(RabbitText.segment(try checked(user.name)))") }
+    package func drop(_ user: DatabaseUser) throws -> UserStatement { UserStatement("DELETE /api/users/\(RabbitText.segment(try checked(user.name)))") }
 }
 
 extension String {

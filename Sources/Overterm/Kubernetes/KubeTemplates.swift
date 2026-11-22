@@ -8,33 +8,33 @@ import Foundation
 /// it as any manifest (stage 2b): the access review, the confirmation, the
 /// rules of a writable context. The copy is never saved — a Secret's value
 /// typed into it stays in the editor's memory — and goes with its tab.
-struct KubeTemplate: Identifiable, Equatable, Sendable {
-    var file: URL
+package struct KubeTemplate: Identifiable, Equatable, Sendable {
+    package var file: URL
     /// The object's kind, from its `kind:` line (`Deployment`).
-    var kind: String
-    var isUsers: Bool
+    package var kind: String
+    package var isUsers: Bool
 
-    var id: String { file.lastPathComponent }
+    package var id: String { file.lastPathComponent }
     /// `deployment.yaml` → `deployment`.
-    var name: String { file.deletingPathExtension().lastPathComponent }
+    package var name: String { file.deletingPathExtension().lastPathComponent }
 }
 
-enum KubeTemplates {
+package enum KubeTemplates {
     /// The app's own.
-    static var bundled: URL? { Bundle.main.resourceURL?.appendingPathComponent("kubernetes/templates", isDirectory: true) }
+    package static var bundled: URL? { Bundle.main.resourceURL?.appendingPathComponent("kubernetes/templates", isDirectory: true) }
 
     /// The user's, in the support folder (an isolated run's own, a unit
     /// test's too).
-    static var userFolder: URL {
+    package static var userFolder: URL {
         AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/Templates", isDirectory: true)
     }
 
     /// Larger than any template: a file past it is passed over.
-    static let maxSize = 256 * 1024
+    package static let maxSize = 256 * 1024
 
     /// Every template, by kind: the user's file of a name in place of
     /// Overterm's. A file that isn't a manifest is passed over.
-    static func list(bundled: URL? = bundled, user: URL? = userFolder) -> [KubeTemplate] {
+    package static func list(bundled: URL? = bundled, user: URL? = userFolder) -> [KubeTemplate] {
         var byName: [String: KubeTemplate] = [:]
         for (folder, isUsers) in [(bundled, false), (user, true)] {
             guard let folder else { continue }
@@ -48,7 +48,7 @@ enum KubeTemplates {
         return byName.values.sorted { ($0.kind, $0.name) < ($1.kind, $1.name) }
     }
 
-    static func read(_ file: URL) -> String? {
+    package static func read(_ file: URL) -> String? {
         guard let size = (try? file.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size <= maxSize, let data = try? Data(contentsOf: file) else {
             return nil
         }
@@ -56,7 +56,7 @@ enum KubeTemplates {
     }
 
     /// The first top-level `kind:` — a template is one object.
-    static func kind(of text: String) -> String? {
+    package static func kind(of text: String) -> String? {
         guard KubeManifest.looksLikeManifest(text) else { return nil }
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) where line.hasPrefix("kind:") {
             let value = line.dropFirst(5).trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
@@ -68,7 +68,7 @@ enum KubeTemplates {
     /// The copy's text: what it is and where it would go, then the
     /// template with `${namespace}` the namespace — a YAML word, quoted
     /// when it would read as something else.
-    static func text(_ template: String, kind: String, context: String?, production: Bool, namespace: String) -> String {
+    package static func text(_ template: String, kind: String, context: String?, production: Bool, namespace: String) -> String {
         let place = context.map { "\(production ? "PRODUCTION · " : "")\($0) · namespace \(namespace)" } ?? "namespace \(namespace)"
         let header =
             "# A new \(kind) from a template — \(place)\n"

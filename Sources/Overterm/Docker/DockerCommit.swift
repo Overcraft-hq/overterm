@@ -8,16 +8,16 @@ import Foundation
 /// keeps the container's own config besides, so it is committed twice
 /// there (`DockerEngine.commitAnew`). What a command holds stays: a
 /// commit can't change it without changing what runs, so it is said. Pure.
-enum DockerCommit {
+package enum DockerCommit {
     /// What Compose and Testcontainers find their containers by. In an
     /// image, every container run from it would be counted as theirs:
     /// `compose up` would take it for a replica of the service, and Ryuk
     /// would reap it.
-    static let bookkeeping = ["com.docker.compose.", "org.testcontainers"]
+    package static let bookkeeping = ["com.docker.compose.", "org.testcontainers"]
 
     /// `ot-shop-web-1` → `ot-shop-web-1:20261028-2321`, the time it is
     /// saved: a second save never writes over the first.
-    static func suggestedName(for name: String, at date: Date) -> String {
+    package static func suggestedName(for name: String, at date: Date) -> String {
         let repository = name.lowercased().replacingOccurrences(of: #"[._-]+"#, with: "-", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         let formatter = DateFormatter()
@@ -30,7 +30,7 @@ enum DockerCommit {
     /// Why the engine would refuse `repository:tag`, said before it is
     /// asked; nil when it would take it. A registry's host may be in any
     /// case, the rest of the name only in lower case.
-    static func problem(_ reference: String) -> String? {
+    package static func problem(_ reference: String) -> String? {
         if reference.contains("@") { return "A tag, not a digest: name:tag." }
         if reference.contains(where: \.isWhitespace) { return "No spaces in an image's name." }
         let (name, tag) = DockerEngine.split(reference)
@@ -47,7 +47,7 @@ enum DockerCommit {
     /// The env keys whose values look like secrets — by their name, or a
     /// URL's password in them — and that its image didn't set itself
     /// (an image's own `GPG_KEY` stays). Sorted, once each.
-    static func secretKeys(env: [String], imageEnv: [String]) -> [String] {
+    package static func secretKeys(env: [String], imageEnv: [String]) -> [String] {
         let inherited = Set(imageEnv)
         var keys = Set<String>()
         for entry in env where !inherited.contains(entry) {
@@ -63,7 +63,7 @@ enum DockerCommit {
     /// The Dockerfile lines the commit puts over the container's config:
     /// its secrets blanked, Compose's and Testcontainers' labels emptied.
     /// None when there is nothing to leave out.
-    static func changes(env: [String], imageEnv: [String], labels: [String: String]) -> [String] {
+    package static func changes(env: [String], imageEnv: [String], labels: [String: String]) -> [String] {
         var lines: [String] = []
         let secrets = secretKeys(env: env, imageEnv: imageEnv)
         if !secrets.isEmpty { lines.append("ENV " + secrets.map { "\($0)=\"\"" }.joined(separator: " ")) }
@@ -73,19 +73,19 @@ enum DockerCommit {
     }
 
     /// Compose's and Testcontainers' among `labels`, sorted.
-    static func bookkeepingLabels(_ labels: [String: String]) -> [String] {
+    package static func bookkeepingLabels(_ labels: [String: String]) -> [String] {
         labels.keys.filter { key in bookkeeping.contains { key.hasPrefix($0) } }.sorted()
     }
 
     /// Where its volumes and bind mounts are: not in the image.
-    static func volumes(of container: ContainerSummary) -> [String] {
+    package static func volumes(of container: ContainerSummary) -> [String] {
         (container.Mounts ?? []).filter { $0.Type == "volume" || $0.Type == "bind" }.map(\.Destination)
     }
 
     /// Whether a command's words hold a password — a secret flag's value,
     /// `KEY=value`, a URL's, or one of the env's secret values (Compose
     /// puts `.env`'s into a command, where the env doesn't name them).
-    static func holdsSecret(_ words: [String], values: [String] = []) -> Bool {
+    package static func holdsSecret(_ words: [String], values: [String] = []) -> Bool {
         guard !words.isEmpty else { return false }
         if DockerSecrets.maskArguments(words).map(DockerSecrets.maskURLs) != words { return true }
         return words.contains { word in values.contains { word.contains($0) } }
@@ -93,23 +93,23 @@ enum DockerCommit {
 
     /// What a save leaves out, and what it can't: read from its inspect
     /// before it is asked, so the question says it.
-    struct Plan: Equatable, Sendable {
+    package struct Plan: Equatable, Sendable {
         /// The env keys blanked (`secretKeys`).
-        var secrets: [String] = []
+        package var secrets: [String] = []
         /// Compose's and Testcontainers' labels emptied.
-        var labels: [String] = []
+        package var labels: [String] = []
         /// The Dockerfile lines put over its config (`changes`).
-        var changes: [String] = []
+        package var changes: [String] = []
         /// Where its volumes and bind mounts are.
-        var volumes: [String] = []
+        package var volumes: [String] = []
         /// What holds a password a commit keeps — `command`, `health
         /// check`: taking it out would change what runs.
-        var keeps: [String] = []
+        package var keeps: [String] = []
         /// A running one is paused while it is copied.
-        var running = false
+        package var running = false
     }
 
-    static func plan(_ container: ContainerSummary, _ detail: ContainerDetail, imageEnv: [String]) -> Plan {
+    package static func plan(_ container: ContainerSummary, _ detail: ContainerDetail, imageEnv: [String]) -> Plan {
         let env = detail.Config.Env ?? []
         let labels = detail.Config.Labels ?? [:]
         let secrets = secretKeys(env: env, imageEnv: imageEnv)
@@ -131,7 +131,7 @@ enum DockerCommit {
     }
 
     /// The question's detail: what is in the image, and what isn't.
-    static func explanation(_ plan: Plan) -> String {
+    package static func explanation(_ plan: Plan) -> String {
         let listed = plan.volumes.prefix(3).joined(separator: ", ") + (plan.volumes.count > 3 ? ", …" : "")
         var said = ["Its files as they are now, in a new image — not its volumes" + (plan.volumes.isEmpty ? "." : " (\(listed)).")]
         let compose = plan.labels.contains { $0.hasPrefix("com.docker.compose.") }
@@ -148,7 +148,7 @@ enum DockerCommit {
     }
 
     /// What the page says once it is saved.
-    static func note(name: String, repository: String, tag: String, id: String, plan: Plan) -> String {
+    package static func note(name: String, repository: String, tag: String, id: String, plan: Plan) -> String {
         let short = String(id.replacingOccurrences(of: "sha256:", with: "").prefix(12))
         let left = [
             plan.volumes.isEmpty ? nil : "without its volumes", plan.secrets.isEmpty ? nil : "its secrets left out (\(plan.secrets.joined(separator: ", ")))",

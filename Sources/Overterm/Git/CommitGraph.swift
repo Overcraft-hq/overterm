@@ -3,27 +3,27 @@ import Foundation
 /// A line crossing a row of the graph: the lane it is in at the top of the
 /// row, and the lane it is in at the bottom. They are equal for the common
 /// case — a branch passing straight down beside the commits.
-struct GraphEdge: Equatable {
-    let from: Int
-    let to: Int
+package struct GraphEdge: Equatable {
+    package let from: Int
+    package let to: Int
 }
 
 /// One commit's row in the graph gutter.
-struct GraphRow: Equatable {
-    let sha: String
+package struct GraphRow: Equatable {
+    package let sha: String
     /// Where the commit's own dot sits.
-    let lane: Int
+    package let lane: Int
     /// Lines passing this row without touching the dot.
-    let through: [GraphEdge]
+    package let through: [GraphEdge]
     /// Lanes above that end at this dot: its children. More than one means
     /// branches rejoining here.
-    let incoming: [Int]
+    package let incoming: [Int]
     /// Lanes below the dot continues into: its parents. More than one means
     /// this commit is a merge.
-    let outgoing: [Int]
+    package let outgoing: [Int]
     /// How many lanes are in play — what the gutter has to be wide enough
     /// for at this row.
-    let width: Int
+    package let width: Int
 }
 
 /// Where each commit sits in the graph, and what connects to what.
@@ -35,11 +35,11 @@ struct GraphRow: Equatable {
 /// and the others take lanes of their own. A lane nobody is waiting in is
 /// free again at once, so six lanes serve a repository with a hundred
 /// branches in it as long as only six overlap at a time.
-enum GraphLayout {
+package enum GraphLayout {
     /// `maxLanes` is the gutter's budget. Beyond it lanes are drawn on top
     /// of the last one rather than widening the sidebar without end — the
     /// graph stops being exact, which is the right trade at 180 pt.
-    static func rows(for commits: [Commit], maxLanes: Int = 6) -> [GraphRow] {
+    package static func rows(for commits: [Commit], maxLanes: Int = 6) -> [GraphRow] {
         let cap = max(1, maxLanes)
         func clamp(_ lane: Int) -> Int { min(lane, cap - 1) }
 
@@ -96,7 +96,7 @@ enum GraphLayout {
 
     /// The widest any row gets — the gutter is one width for the whole
     /// list, or the commits' subjects would shift as you scroll.
-    static func width(of rows: [GraphRow]) -> Int {
+    package static func width(of rows: [GraphRow]) -> Int {
         rows.map(\.width).max() ?? 1
     }
 }

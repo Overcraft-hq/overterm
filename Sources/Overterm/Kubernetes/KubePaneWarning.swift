@@ -4,20 +4,20 @@ import Foundation
 /// (`CommandLedger`): `kubectl`, `helm`, `k9s` or `stern` — nothing else
 /// is looked at (analysis 3.11) — and the flags that say where it goes.
 /// Pure: the line is read as a shell would split it, never run.
-struct KubeCommandLine: Equatable, Sendable {
-    static let tools: Set<String> = ["kubectl", "helm", "k9s", "stern"]
+package struct KubeCommandLine: Equatable, Sendable {
+    package static let tools: Set<String> = ["kubectl", "helm", "k9s", "stern"]
 
-    var tool: String
+    package var tool: String
     /// `--context` (helm: `--kube-context`).
-    var context: String?
+    package var context: String?
     /// `--kubeconfig`, else a `KUBECONFIG=…` before the command: the files
     /// it reads instead of the pane's.
-    var kubeconfig: String?
+    package var kubeconfig: String?
 
     /// The first kubectl-family command of the line — in a pipeline, after
     /// `&&` or `;`, behind `sudo`, `env`, `time`, `watch` or assignments
     /// (`ShellCommandLine`).
-    static func parse(_ line: String) -> KubeCommandLine? {
+    package static func parse(_ line: String) -> KubeCommandLine? {
         for command in ShellCommandLine.commands(in: line) where tools.contains(command.tool) {
             return make(command)
         }
@@ -56,8 +56,8 @@ struct KubeCommandLine: Equatable, Sendable {
 /// Overterm can't see a pane's own environment — a `KUBECONFIG` exported in
 /// that shell — so when only the files settle it, the warning says
 /// "probably". Pure: the files are read elsewhere (`KubeAmbientContexts`).
-struct KubePaneWarning: Equatable, Sendable {
-    enum Source: Equatable, Sendable {
+package struct KubePaneWarning: Equatable, Sendable {
+    package enum Source: Equatable, Sendable {
         /// `--context` / `--kube-context` on the line.
         case flag
         /// `--kubeconfig`, or a `KUBECONFIG=` before the command: that file's `current-context`.
@@ -68,18 +68,18 @@ struct KubePaneWarning: Equatable, Sendable {
         case files
     }
 
-    var tool: String
-    var context: String
-    var displayName: String
-    var isProduction: Bool
-    var source: Source
+    package var tool: String
+    package var context: String
+    package var displayName: String
+    package var isProduction: Bool
+    package var source: Source
 
-    var probably: Bool { source == .files }
+    package var probably: Bool { source == .files }
 
     /// `⎈ acme-prod`, `⎈ probably acme-prod`.
-    var label: String { "⎈ " + (probably ? "probably " : "") + displayName }
+    package var label: String { "⎈ " + (probably ? "probably " : "") + displayName }
 
-    var help: String {
+    package var help: String {
         let reaches = "\(tool) here \(probably ? "probably " : "")reaches \(context)\(isProduction ? " — PRODUCTION" : "")"
         switch source {
         case .flag: return reaches + ": the command names it."
@@ -94,7 +94,7 @@ struct KubePaneWarning: Equatable, Sendable {
 
     /// Whether the header shows it: production only, and not a pin's own —
     /// the pin's label says that already, in the same red.
-    var shown: Bool { isProduction && source != .pinned }
+    package var shown: Bool { isProduction && source != .pinned }
 
     /// What `command` reaches. `ambient` is the plain kubectl's files read;
     /// `kubeconfig` reads a file a command names (nil while unread);
@@ -104,7 +104,7 @@ struct KubePaneWarning: Equatable, Sendable {
     /// couldn't be restored (`KUBECONFIG=/dev/null`) reaches nothing unless
     /// the command says otherwise. The class is the current settings' and
     /// the name's, as the page classes it.
-    static func resolve(
+    package static func resolve(
         command: String?, pin: KubeTerminalPin?, lost: Bool, ambient: KubeContextList?, paneFiles: KubeContextList? = nil,
         kubeconfig: (String) -> KubeContextList?, settings: [String: KubeContextSettings]
     ) -> KubePaneWarning? {
@@ -134,7 +134,7 @@ struct KubePaneWarning: Equatable, Sendable {
     /// lists, `:`-joined: `~`, `$HOME` and `${HOME}` expanded, a relative
     /// path (`--kubeconfig ./prod.yaml`) against the folder the command ran
     /// in. Nil when nothing in it can be placed.
-    static func kubeconfigKey(_ value: String, cwd: String?, home: URL) -> String? {
+    package static func kubeconfigKey(_ value: String, cwd: String?, home: URL) -> String? {
         let urls = KubeconfigSources.list(value, home: home, relativeTo: cwd.map { URL(fileURLWithPath: $0, isDirectory: true) })
         return urls.isEmpty ? nil : urls.map(\.standardizedFileURL.path).joined(separator: ":")
     }
@@ -164,14 +164,14 @@ struct KubePaneWarning: Equatable, Sendable {
 /// at the next such command (`kind create cluster` writing the first
 /// `~/.kube/config`); never per command. Kubernetes off, nothing is read.
 @MainActor
-final class KubeAmbientContexts: ObservableObject {
-    static let shared = KubeAmbientContexts()
+package final class KubeAmbientContexts: ObservableObject {
+    package static let shared = KubeAmbientContexts()
 
     /// The plain kubectl's files, merged as kubectl merges them; nil until read.
-    @Published private(set) var list: KubeContextList?
+    @Published package private(set) var list: KubeContextList?
     /// Files commands named with `--kubeconfig`, and pinned panes'
     /// `KUBECONFIG`s, by their absolute paths (`KubePaneWarning.kubeconfigKey`).
-    @Published private(set) var named: [String: KubeContextList] = [:]
+    @Published package private(set) var named: [String: KubeContextList] = [:]
     private var started = false
     private var asked: Set<String> = []
     private var watcher: KubeconfigFileWatcher?
@@ -181,7 +181,7 @@ final class KubeAmbientContexts: ObservableObject {
 
     /// The warning for what a pane runs (or ran last): `cwd`, the folder it
     /// ran in; `kubeconfig`, the pane's own `KUBECONFIG` (a pinned one's).
-    func warning(command: String?, cwd: String? = nil, kubeconfig: String? = nil, pin: KubeTerminalPin?, lost: Bool) -> KubePaneWarning? {
+    package func warning(command: String?, cwd: String? = nil, kubeconfig: String? = nil, pin: KubeTerminalPin?, lost: Bool) -> KubePaneWarning? {
         guard Settings.shared.kubernetesEnabled else { return nil }
         let home = home
         let paneFiles = lost ? nil : kubeconfig.flatMap { KubePaneWarning.kubeconfigKey($0, cwd: nil, home: home) }.flatMap { named[$0] }
@@ -193,7 +193,7 @@ final class KubeAmbientContexts: ObservableObject {
 
     /// A command began in a pane: the files read, the first time one is
     /// kubectl's, a new file named, or a folder that wasn't there is.
-    func noticed(_ command: String, cwd: String? = nil, kubeconfig: String? = nil) {
+    package func noticed(_ command: String, cwd: String? = nil, kubeconfig: String? = nil) {
         guard Settings.shared.kubernetesEnabled, let line = KubeCommandLine.parse(command) else { return }
         var again = !started
         started = true
@@ -208,7 +208,7 @@ final class KubeAmbientContexts: ObservableObject {
     }
 
     /// Everything read again, off the main thread.
-    func read() {
+    package func read() {
         reading?.cancel()
         let keys = Array(asked)
         let settings = Settings.shared.kubernetesContexts
@@ -254,7 +254,7 @@ final class KubeAmbientContexts: ObservableObject {
     /// `permitted` (`OVERTERM_KUBECONFIG`'s files) and a pin's own file in
     /// `pinFolder`, symlinks followed: a `--kubeconfig ~/work/prod.yaml` in
     /// an isolated run reads nothing of the user's.
-    nonisolated static func admitted(_ urls: [URL], guarded: Bool, permitted: [URL], pinFolder: URL) -> [URL] {
+    package nonisolated static func admitted(_ urls: [URL], guarded: Bool, permitted: [URL], pinFolder: URL) -> [URL] {
         guard guarded else { return urls }
         func real(_ url: URL) -> String { url.resolvingSymlinksInPath().standardizedFileURL.path }
         let allowed = Set(permitted.map(real))
@@ -275,12 +275,12 @@ final class KubeAmbientContexts: ObservableObject {
 /// the main queue. A folder that isn't there can't be watched: `missing`
 /// says which, for the next command to look at again.
 @MainActor
-final class KubeconfigFileWatcher {
+package final class KubeconfigFileWatcher {
     /// nonisolated(unsafe) so deinit can cancel them; only touched on the main queue.
     private nonisolated(unsafe) var sources: [DispatchSourceFileSystemObject] = []
-    private(set) var missing: [String] = []
+    package private(set) var missing: [String] = []
 
-    init(files: [URL], onChange: @escaping @MainActor @Sendable () -> Void) {
+    package init(files: [URL], onChange: @escaping @MainActor @Sendable () -> Void) {
         var folders: [String] = []
         var watched: [String] = []
         for file in files {
@@ -303,7 +303,7 @@ final class KubeconfigFileWatcher {
         }
     }
 
-    func stop() {
+    package func stop() {
         for source in sources { source.cancel() }
         sources = []
     }
@@ -322,7 +322,7 @@ final class KubeconfigFileWatcher {
     /// O_EVTONLY — a FIFO with no writer, a serial port waiting for
     /// carrier blocked the main thread, and a pane's title (any program's
     /// output) can name one.
-    nonisolated static func isSpecial(_ path: String) -> Bool {
+    package nonisolated static func isSpecial(_ path: String) -> Bool {
         var info = stat()
         guard stat(path, &info) == 0 else { return false }
         return !watchable(info.st_mode)
@@ -336,7 +336,7 @@ final class KubeconfigFileWatcher {
     /// A source for a file or a folder, nil for anything else: checked
     /// before it is opened, opened without blocking (`O_NONBLOCK`, should
     /// it be swapped in between), and checked again once open.
-    nonisolated static func source(
+    package nonisolated static func source(
         _ path: String, mask: DispatchSource.FileSystemEvent, _ handler: @escaping @Sendable () -> Void
     ) -> DispatchSourceFileSystemObject? {
         var info = stat()

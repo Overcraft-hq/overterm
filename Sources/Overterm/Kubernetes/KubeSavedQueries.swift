@@ -22,12 +22,12 @@ import Foundation
 /// a regex (`KubeTabQueries.podPattern`), so it goes in `=~` only. It is
 /// then one of the Service's two paths, `query_range`, under the tab's
 /// queue, its timeout, its 8 MB and its 12 series a chart. Pure.
-struct KubeSavedChart: Hashable, Sendable {
+package struct KubeSavedChart: Hashable, Sendable {
     /// What a saved chart's numbers are, as `unit` names them.
-    enum Unit: String, CaseIterable, Sendable {
+    package enum Unit: String, CaseIterable, Sendable {
         case count, perSecond, seconds, percent, bytes, bytesPerSecond, cores
 
-        var chartUnit: KubeChartUnit {
+        package var chartUnit: KubeChartUnit {
             switch self {
             case .count: .count
             case .perSecond: .perSecond
@@ -39,7 +39,7 @@ struct KubeSavedChart: Hashable, Sendable {
             }
         }
 
-        var title: String {
+        package var title: String {
             switch self {
             case .count: "a number"
             case .perSecond: "a rate, a second"
@@ -52,16 +52,16 @@ struct KubeSavedChart: Hashable, Sendable {
         }
 
         /// Its lines add up: past the twelve, the rest are summed as "other".
-        var additive: Bool { [.count, .perSecond, .bytes, .bytesPerSecond, .cores].contains(self) }
+        package var additive: Bool { [.count, .perSecond, .bytes, .bytesPerSecond, .cores].contains(self) }
     }
 
-    var title: String
-    var query: String
-    var unit: Unit = .count
+    package var title: String
+    package var query: String
+    package var unit: Unit = .count
 
     /// The entry's `charts`, as typed: those with a title and a query, in
     /// order (the schema says what is wrong with the others).
-    static func of(_ records: [[String: String]]) -> [KubeSavedChart] {
+    package static func of(_ records: [[String: String]]) -> [KubeSavedChart] {
         records.compactMap { record in
             let title = record["title"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let query = record["query"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -71,7 +71,7 @@ struct KubeSavedChart: Hashable, Sendable {
     }
 
     /// The `charts` field of a context's entry, for SettingsSchema.
-    static let field = SettingField(
+    package static let field = SettingField(
         name: "charts",
         kind: .records([
             SettingField(name: "title", kind: .text(placeholder: "Requests", monospaced: false), required: true),
@@ -83,20 +83,20 @@ struct KubeSavedChart: Hashable, Sendable {
     )
 }
 
-enum KubeSavedQueries {
+package enum KubeSavedQueries {
     /// At most this many a context are asked; the rest are said, not asked.
-    static let atMost = 6
+    package static let atMost = 6
     /// A query's length as typed: past it, refused (it goes in a URL).
-    static let lengthAtMost = 2000
+    package static let lengthAtMost = 2000
     /// The longest range a selector may read at each step.
-    static let rangeAtMost: TimeInterval = 3600
+    package static let rangeAtMost: TimeInterval = 3600
 
     /// The tab's id of the `index`th saved chart's query.
-    static func id(_ index: Int) -> String { "saved.\(index)" }
+    package static func id(_ index: Int) -> String { "saved.\(index)" }
 
     /// `query` with `$ns`, `$name`, `$pod` and `$w` filled in for a
     /// workload — or why it isn't sent.
-    static func fill(_ query: String, namespace: String, kind: String, name: String, window: TimeInterval) -> Result<String, KubeCommands.Refused> {
+    package static func fill(_ query: String, namespace: String, kind: String, name: String, window: TimeInterval) -> Result<String, KubeCommands.Refused> {
         func refused(_ why: String) -> Result<String, KubeCommands.Refused> { .failure(KubeCommands.Refused(reason: why)) }
         let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return refused("it is empty.") }
@@ -352,7 +352,7 @@ enum KubeSavedQueries {
     }
 
     /// `5m`, `1h30m`, `90s`, `1.5` (seconds) in seconds; nil, not a duration.
-    static func seconds(_ text: String) -> TimeInterval? {
+    package static func seconds(_ text: String) -> TimeInterval? {
         if let plain = Double(text) { return plain }
         let units: [(String, TimeInterval)] = [("ms", 0.001), ("s", 1), ("m", 60), ("h", 3600), ("d", 86400), ("w", 604_800), ("y", 31_536_000)]
         var total: TimeInterval = 0
@@ -369,7 +369,7 @@ enum KubeSavedQueries {
     }
 
     /// A PromQL string's text: backquoted raw, else Go's escapes; nil, one it doesn't know.
-    static func unquote(_ raw: String, quote: Character) -> String? {
+    package static func unquote(_ raw: String, quote: Character) -> String? {
         let inside = Array(raw.dropFirst().dropLast())
         if quote == "`" { return String(inside) }
         var out = ""
@@ -410,8 +410,8 @@ enum KubeSavedQueries {
 
     // MARK: Tokens
 
-    struct Token: Equatable {
-        enum Kind: Equatable {
+    package struct Token: Equatable {
+        package enum Kind: Equatable {
             case ident(String)
             /// Its text as typed, quotes included, and its quote.
             case string(String, Character)
@@ -421,12 +421,12 @@ enum KubeSavedQueries {
             case punct(String)
         }
 
-        var kind: Kind
-        var range: Range<Int>
+        package var kind: Kind
+        package var range: Range<Int>
     }
 
     /// PromQL's tokens, as far as a check needs them; comments dropped.
-    static func lex(_ chars: [Character]) throws -> [Token] {
+    package static func lex(_ chars: [Character]) throws -> [Token] {
         var tokens: [Token] = []
         var at = 0
         func isWord(_ character: Character) -> Bool { character.isLetter || character.isNumber || character == "_" }

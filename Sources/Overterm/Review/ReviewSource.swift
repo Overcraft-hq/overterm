@@ -2,7 +2,7 @@ import Foundation
 
 /// What a review is of — and, pure, the pieces every review reads with:
 /// a whole patch cut into files, and a file's diff laid out side by side.
-enum ReviewSource: Hashable, Sendable {
+package enum ReviewSource: Hashable, Sendable {
     /// The checkout's branch since it left `base`, with what isn't committed
     /// yet — the changes pane's Branch: `git diff <merge-base>` and the
     /// untracked files. `branch` is only its name, for the title.
@@ -29,7 +29,7 @@ enum ReviewSource: Hashable, Sendable {
     case paths(base: String, head: String, paths: [String])
 
     /// The tab's name.
-    var title: String {
+    package var title: String {
         switch self {
         case .branch(_, _, let branch): branch
         case .uncommitted: "Uncommitted"
@@ -41,7 +41,7 @@ enum ReviewSource: Hashable, Sendable {
     }
 
     /// Under the title: what it is compared with.
-    var subtitle: String {
+    package var subtitle: String {
         switch self {
         case .branch(_, let base, let branch): "\(branch) against \(base), with uncommitted changes"
         case .uncommitted(let branch): branch.map { "Changes on \($0) not yet committed" } ?? "Changes not yet committed"
@@ -53,7 +53,7 @@ enum ReviewSource: Hashable, Sendable {
         }
     }
 
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .branch, .range: "arrow.triangle.branch"
         case .uncommitted: "plusminus"
@@ -64,20 +64,20 @@ enum ReviewSource: Hashable, Sendable {
     }
 
     /// A SHA is shortened; a branch's name is kept.
-    static func short(_ ref: String) -> String {
+    package static func short(_ ref: String) -> String {
         ref.count == 40 && ref.allSatisfy(\.isHexDigit) ? String(ref.prefix(7)) : ref
     }
 }
 
 /// A whole `git diff` (or `gh pr diff`) cut into its files: each file's own
 /// patch, and what its header says it is.
-enum ReviewPatch {
-    struct File: Equatable {
-        let file: ChangedFile
-        let patch: String
+package enum ReviewPatch {
+    package struct File: Equatable {
+        package let file: ChangedFile
+        package let patch: String
     }
 
-    static func split(_ diff: String) -> [File] {
+    package static func split(_ diff: String) -> [File] {
         var files: [File] = []
         var current: [Substring] = []
         func finish() {
@@ -96,7 +96,7 @@ enum ReviewPatch {
 
     /// What one file's header says: its path (and where it came from), how
     /// it changed, and its lines added and removed — nil for a binary file's.
-    static func describe(_ lines: [Substring]) -> ChangedFile? {
+    package static func describe(_ lines: [Substring]) -> ChangedFile? {
         guard let first = lines.first else { return nil }
         var kind = ChangedFile.Kind.modified
         var path: String?
@@ -164,7 +164,7 @@ enum ReviewPatch {
     }
 
     /// git quotes a name with unusual characters in C style: "a/caf\303\251".
-    static func unquote(_ name: Substring) -> String {
+    package static func unquote(_ name: Substring) -> String {
         var text = String(name)
         if let tab = text.firstIndex(of: "\t") { text = String(text[..<tab]) }
         guard text.hasPrefix("\""), text.hasSuffix("\""), text.count >= 2 else { return text }
@@ -203,17 +203,17 @@ enum ReviewPatch {
 /// removed lines and the added run right after it pair up in order — as
 /// `DiffHighlight.pairs` pairs them for what changed inside a line — and
 /// the longer run's rest faces an empty side.
-enum SplitDiff {
-    struct Row: Identifiable, Equatable {
+package enum SplitDiff {
+    package struct Row: Identifiable, Equatable {
         /// The first line's id: rows keep their identity across a reload.
-        let id: Int
-        var left: DiffLine?
-        var right: DiffLine?
+        package let id: Int
+        package var left: DiffLine?
+        package var right: DiffLine?
         /// A hunk's header or a note ("\ No newline…"), across both sides.
-        var full: DiffLine?
+        package var full: DiffLine?
     }
 
-    static func rows(_ lines: [DiffLine]) -> [Row] {
+    package static func rows(_ lines: [DiffLine]) -> [Row] {
         var rows: [Row] = []
         var removed: [DiffLine] = []
         var added: [DiffLine] = []

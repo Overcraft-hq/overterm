@@ -9,9 +9,9 @@ import Foundation
 /// made it. Known two ways: what this run made, recorded here as each is
 /// made, and what the engine lists with the label — one a crash or a
 /// force quit left, or a version before this one, that nothing recorded.
-enum DockerHelpers {
+package enum DockerHelpers {
     /// This run's mark on what it makes (`overterm.run`).
-    static let run = UUID().uuidString.lowercased()
+    package static let run = UUID().uuidString.lowercased()
 
     private struct Helper {
         var engine: DockerEngine
@@ -26,20 +26,20 @@ enum DockerHelpers {
     nonisolated(unsafe) private static var removals: [String: Task<Void, Never>] = [:]
     private static let lock = NSLock()
 
-    static func made(_ id: String, volume: String, on engine: DockerEngine) {
+    package static func made(_ id: String, volume: String, on engine: DockerEngine) {
         lock.withLock { live[id] = Helper(engine: engine, volume: volume) }
     }
 
-    static var count: Int { lock.withLock { live.count } }
+    package static var count: Int { lock.withLock { live.count } }
 
     /// Those made on `engine`, for a test.
-    static func ids(on engine: DockerEngine) -> [String] {
+    package static func ids(on engine: DockerEngine) -> [String] {
         lock.withLock { live.filter { $0.value.engine === engine }.map(\.key).sorted() }
     }
 
     /// Removed, once however many ask: returns when the engine no longer
     /// has it (`DockerEngine.deleteHelper`).
-    static func remove(_ id: String, on engine: DockerEngine) async {
+    package static func remove(_ id: String, on engine: DockerEngine) async {
         await removal(of: id, on: engine).value
     }
 
@@ -66,7 +66,7 @@ enum DockerHelpers {
     /// Clean Up would be refused while one is there. This run's, and what
     /// `engine` lists that mounts it — by the mount, as a helper from
     /// before `overterm.volume` doesn't say it.
-    static func remove(mounting volume: String, on engine: DockerEngine?) async {
+    package static func remove(mounting volume: String, on engine: DockerEngine?) async {
         var holding = lock.withLock { live.filter { $0.value.volume == volume }.map { ($0.key, $0.value.engine) } }
         if let engine, let listed = try? await engine.helpers() {
             for helper in listed where (helper.Mounts ?? []).contains(where: { $0.Name == volume }) && !holding.contains(where: { $0.0 == helper.Id }) {
@@ -82,14 +82,14 @@ enum DockerHelpers {
     /// started (an export's, a save's) holds its volume for good, and no
     /// list shows it. Not one another Overterm on the same engine may be
     /// reading through still: made over ten minutes ago. Pure.
-    static func leftBehind(_ helpers: [ContainerSummary], now: Date = Date()) -> [String] {
+    package static func leftBehind(_ helpers: [ContainerSummary], now: Date = Date()) -> [String] {
         let before = Int(now.timeIntervalSince1970) - 600
         return helpers.filter { $0.isHelper && $0.labels["overterm.run"] != run && $0.state != .running && $0.Created < before }.map(\.Id)
     }
 
     /// Those removed, as an engine connects (`DockerModel.reload` hands its
     /// first list over). Nobody waits for it.
-    static func sweep(_ helpers: [ContainerSummary], on engine: DockerEngine) {
+    package static func sweep(_ helpers: [ContainerSummary], on engine: DockerEngine) {
         for id in leftBehind(helpers) { _ = removal(of: id, on: engine) }
     }
 
@@ -97,7 +97,7 @@ enum DockerHelpers {
     /// engine's forward is still open (`ManagedProcess.closeAll` comes
     /// after). Blocks the caller, the main thread at quit; the removal
     /// runs elsewhere, never on the main actor, so it can't wait on itself.
-    static func removeAll(waiting seconds: Double = 2) {
+    package static func removeAll(waiting seconds: Double = 2) {
         let helpers = lock.withLock { live.map { ($0.key, $0.value.engine) } }
         guard !helpers.isEmpty else { return }
         let done = DispatchSemaphore(value: 0)

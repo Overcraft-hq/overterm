@@ -11,7 +11,7 @@ import Foundation
 /// Off, nothing is responsible for anything, and an unknown never means
 /// "macOS" (rule 14 asks for no responsible app, and unknown isn't none:
 /// `ActivityAttribution` reads `nil` as unread). Any thread.
-enum ProcessResponsibility {
+package enum ProcessResponsibility {
     private typealias Responsible = @convention(c) (pid_t) -> pid_t
 
     private static let call: Responsible? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid").map {
@@ -24,7 +24,7 @@ enum ProcessResponsibility {
     nonisolated(unsafe) private static var probed = false
 
     /// Whether the call is there and answered for this process.
-    static var isAvailable: Bool {
+    package static var isAvailable: Bool {
         lock.withLock {
             guard !failed else { return false }
             guard let call else {
@@ -42,7 +42,7 @@ enum ProcessResponsibility {
 
     /// The pid responsible for `pid`: nil when off, when none answered (the
     /// process ended), or when it is its own.
-    static func responsible(for pid: pid_t) -> pid_t? {
+    package static func responsible(for pid: pid_t) -> pid_t? {
         guard pid > 0, isAvailable, let call else { return nil }
         let answer = call(pid)
         guard answer > 0, answer != pid else { return nil }

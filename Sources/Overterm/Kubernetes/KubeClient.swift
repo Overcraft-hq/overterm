@@ -11,7 +11,7 @@ import NIOHTTP1
 /// this session — and only the page's guard path sends one, after its
 /// access review and confirmation (`KubernetesPageModel+Writes`); a
 /// read-only context's socket refuses writes anyway.
-protocol KubeConnection: Sendable {
+package protocol KubeConnection: Sendable {
     func get(_ path: String, headers: [(String, String)]) async throws -> HTTPResponse
     /// A response read as it arrives: a watch.
     func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error>
@@ -25,95 +25,95 @@ protocol KubeConnection: Sendable {
 }
 
 extension KubeConnection {
-    var writable: Bool { false }
+    package var writable: Bool { false }
 
-    func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
+    package func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
         throw KubeWriteRefused(reason: "This connection reads only.")
     }
 }
 
 /// A socket (or any transport) spoken to directly.
-struct KubeSocketConnection: KubeConnection {
-    let transport: any HTTPTransport
-    let signIn: KubeSignIn
+package struct KubeSocketConnection: KubeConnection {
+    package let transport: any HTTPTransport
+    package let signIn: KubeSignIn
     /// The context's writability, as the caller knows it (a test's, the
     /// scenario's stand-in): false, nothing but GETs leaves.
-    let writable: Bool
+    package let writable: Bool
 
-    init(transport: any HTTPTransport, signIn: KubeSignIn = .none, writable: Bool = false) {
+    package init(transport: any HTTPTransport, signIn: KubeSignIn = .none, writable: Bool = false) {
         self.transport = transport
         self.signIn = signIn
         self.writable = writable
     }
 
     /// A proxy's socket: `Host: localhost`, or it answers 403.
-    init(socket: String, context: String, signIn: KubeSignIn = .none, writable: Bool = false) {
+    package init(socket: String, context: String, signIn: KubeSignIn = .none, writable: Bool = false) {
         self.init(transport: UnixHTTPTransport.kubernetes(socket: socket, context: context), signIn: signIn, writable: writable)
     }
 
-    func get(_ path: String, headers: [(String, String)]) async throws -> HTTPResponse {
+    package func get(_ path: String, headers: [(String, String)]) async throws -> HTTPResponse {
         try await transport.send(.GET, path, body: nil, headers: headers)
     }
 
-    func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> {
+    package func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> {
         transport.stream(.GET, path, body: nil, headers: headers)
     }
 
-    func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
+    package func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
         guard writable, method != .GET else { throw KubeWriteRefused(reason: "This context is read-only: Overterm changes nothing here.") }
         return try await transport.send(method, path, body: body, headers: headers)
     }
 }
 
 /// A context's requests through its `kubectl proxy`, started on first use.
-struct KubeProxyConnection: KubeConnection {
-    let proxies: KubeProxies
-    let context: KubeContext
-    var role: KubeProxies.Role = .page
+package struct KubeProxyConnection: KubeConnection {
+    package let proxies: KubeProxies
+    package let context: KubeContext
+    package var role: KubeProxies.Role = .page
 
-    var signIn: KubeSignIn { KubeSignIn(context.auth) }
-    var writable: Bool { context.isWritable }
+    package var signIn: KubeSignIn { KubeSignIn(context.auth) }
+    package var writable: Bool { context.isWritable }
 
-    func get(_ path: String, headers: [(String, String)]) async throws -> HTTPResponse {
+    package func get(_ path: String, headers: [(String, String)]) async throws -> HTTPResponse {
         try await proxies.send(context, role: role, .GET, path, headers: headers)
     }
 
-    func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> {
+    package func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> {
         proxies.stream(context, role: role, .GET, path, headers: headers)
     }
 
     /// Refused here unless this copy of the context is writable, and again
     /// by the proxies unless they know it so (`KubeProxies.sendWrite`).
-    func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
+    package func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
         guard writable else { throw KubeWriteRefused(reason: KubeWriteCheck.readOnly(context)) }
         return try await proxies.sendWrite(context, role: role, method, path, body: body, headers: headers)
     }
 }
 
 /// Selectors sent to the server (the filter's, later).
-struct KubeListOptions: Hashable, Sendable {
-    var labelSelector: String?
-    var fieldSelector: String?
+package struct KubeListOptions: Hashable, Sendable {
+    package var labelSelector: String?
+    package var fieldSelector: String?
     /// The rows carry their metadata (`includeObject=Metadata`) in one
     /// namespace too: the Overview's workloads, for their labels.
-    var metadata = false
+    package var metadata = false
     /// The rows carry the whole object (`includeObject=Object`): only for a
     /// kind with few objects whose conditions matter — the attention
     /// watches' Deployments. The reader keeps their conditions, nothing else.
-    var objects = false
+    package var objects = false
     /// The rows say which Argo CD or Flux object deploys each
     /// (`KubeRow.owners`, from its labels and tracking annotation — no
     /// other annotation is kept): only the rail's workloads, in the
     /// binding's one namespace, with `metadata` (gitops.md 4.2). Every
     /// other list's rows are read as before.
-    var owners = false
+    package var owners = false
     /// The rows keep Argo CD's marks (`KubeRow.marks`, `KubeMarkWire`'s
     /// allow-list), and carry their metadata for them: the GitOps section's
     /// reads from marks (gitops.md 14.4.1), the rail's bound workloads and
     /// its option B's rows (14.2.5).
-    var marks = false
+    package var marks = false
 
-    init(
+    package init(
         labelSelector: String? = nil, fieldSelector: String? = nil, metadata: Bool = false, objects: Bool = false, owners: Bool = false, marks: Bool = false
     ) {
         self.labelSelector = labelSelector
@@ -126,28 +126,28 @@ struct KubeListOptions: Hashable, Sendable {
 }
 
 /// `/version`'s answer.
-struct KubeServerVersion: Equatable, Sendable, Decodable {
-    var major: String
-    var minor: String
-    var gitVersion: String
+package struct KubeServerVersion: Equatable, Sendable, Decodable {
+    package var major: String
+    package var minor: String
+    package var gitVersion: String
 
     /// `"30+"` (EKS) is 30.
-    var minorNumber: Int? { Int(minor.prefix { $0.isNumber }) }
+    package var minorNumber: Int? { Int(minor.prefix { $0.isNumber }) }
 }
 
 /// One object, fetched whole when its detail opens: its JSON as the server
 /// sent it, and what identifies it.
-struct KubeObject: Sendable {
-    let data: Data
-    let kind: String
-    let apiVersion: String
-    let name: String
-    let namespace: String?
-    let uid: String?
-    let resourceVersion: String?
-    let creationTimestamp: String?
+package struct KubeObject: Sendable {
+    package let data: Data
+    package let kind: String
+    package let apiVersion: String
+    package let name: String
+    package let namespace: String?
+    package let uid: String?
+    package let resourceVersion: String?
+    package let creationTimestamp: String?
 
-    init(data: Data) throws {
+    package init(data: Data) throws {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let metadata = object["metadata"] as? [String: Any], let name = metadata["name"] as? String
         else { throw KubeTableReader.Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self)) }
@@ -161,7 +161,7 @@ struct KubeObject: Sendable {
         creationTimestamp = metadata["creationTimestamp"] as? String
     }
 
-    var json: [String: Any] { (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:] }
+    package var json: [String: Any] { (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:] }
 }
 
 /// What Overterm asks a cluster, over a `KubeConnection`: the server's
@@ -193,59 +193,59 @@ struct KubeObject: Sendable {
 ///   after its `Retry-After`. A follow gets past a 429 or the server's
 ///   5xx — on its list, its watch's answer or in the stream — saying
 ///   `.retrying`, and tries again: after the `Retry-After`, or backing off.
-struct KubeClient: Sendable {
-    let connection: any KubeConnection
+package struct KubeClient: Sendable {
+    package let connection: any KubeConnection
     /// Rows a page.
-    var pageSize = 500
+    package var pageSize = 500
     /// A streaming list in place of the first list, whatever the server's
     /// version (the tests'). Refused, the follow falls back.
-    var streamingLists = false
+    package var streamingLists = false
     /// Which servers take a streaming list, and this client's context: a
     /// follow streams its first list where its version serves them
     /// (1.32, 1.34+), and says when the server refused one or never ended
     /// it — that context lists and watches for the run (`KubeStreamingLists`).
-    var streaming: (lists: KubeStreamingLists, context: String)?
+    package var streaming: (lists: KubeStreamingLists, context: String)?
     /// How long a streaming list may take to say anything (a proxy still
     /// starting, waiting for a slot, an exec plugin) before this follow
     /// lists and watches instead; the context isn't marked for it.
-    var streamingListDeadline: Duration = .seconds(30)
+    package var streamingListDeadline: Duration = .seconds(30)
     /// How long a streaming list may go quiet, once its events began,
     /// without its end's bookmark: then it is given up for a list and the
     /// context lists and watches for the run — a server whose Tables'
     /// bookmarks lose the `k8s.io/initial-events-end` annotation would
     /// otherwise hold the page loading until the watch's timeout. A large
     /// list streaming steadily never goes quiet that long.
-    var streamingListQuiet: Duration = .seconds(5)
+    package var streamingListQuiet: Duration = .seconds(5)
     /// The watch's `timeoutSeconds`, client-go's way: 5 to 10 minutes, at
     /// random, so a cluster's watches don't all end at once.
-    var watchTimeout: @Sendable () -> Int = { Int.random(in: 300...600) }
+    package var watchTimeout: @Sendable () -> Int = { Int.random(in: 300...600) }
     /// 429s retried, each after its `Retry-After` (10 s at most).
-    var throttleRetries = 3
+    package var throttleRetries = 3
     /// A watch that ends at once, again and again (a proxy closing it),
     /// waits longer each time before the next, up to this.
-    var maxBackoff: Duration = .seconds(5)
+    package var maxBackoff: Duration = .seconds(5)
     /// How often a list without a resourceVersion is listed again.
-    var unversionedPoll: Duration = .seconds(30)
+    package var unversionedPoll: Duration = .seconds(30)
 
-    init(_ connection: any KubeConnection) {
+    package init(_ connection: any KubeConnection) {
         self.connection = connection
     }
 
-    static let tableAccept = "application/json;as=Table;v=v1;g=meta.k8s.io, application/json"
+    package static let tableAccept = "application/json;as=Table;v=v1;g=meta.k8s.io, application/json"
     /// A Table or nothing (406): for what must never come back whole — a
     /// Secret list's names.
-    static let tableOnlyAccept = "application/json;as=Table;v=v1;g=meta.k8s.io"
-    static let discoveryAccept =
+    package static let tableOnlyAccept = "application/json;as=Table;v=v1;g=meta.k8s.io"
+    package static let discoveryAccept =
         "application/json;g=apidiscovery.k8s.io;v=v2;as=APIGroupDiscoveryList, application/json;g=apidiscovery.k8s.io;v=v2beta1;as=APIGroupDiscoveryList, application/json"
 
     /// Whether a server of this minor serves streaming lists by default:
     /// beta and on in 1.32, off in 1.33, on again from 1.34.
-    static func servesStreamingLists(minor: Int) -> Bool { minor == 32 || minor >= 34 }
+    package static func servesStreamingLists(minor: Int) -> Bool { minor == 32 || minor >= 34 }
 
     // MARK: Requests
 
     /// One GET, its error said as what it is.
-    func get(_ path: String, accept: String = "application/json") async throws -> HTTPResponse {
+    package func get(_ path: String, accept: String = "application/json") async throws -> HTTPResponse {
         var tries = 0
         while true {
             let response: HTTPResponse
@@ -276,7 +276,7 @@ struct KubeClient: Sendable {
     /// each other — the Overview's health lists, a tree's: one after the
     /// other, each waited out the cluster's round trip in turn. Cancelled,
     /// what wasn't asked is a `CancellationError` in its place.
-    func getAll(_ requests: [(path: String, accept: String)], width: Int = 4) async -> [Result<Data, Error>] {
+    package func getAll(_ requests: [(path: String, accept: String)], width: Int = 4) async -> [Result<Data, Error>] {
         var answers = [Result<Data, Error>](repeating: .failure(CancellationError()), count: requests.count)
         let client = self
         await withTaskGroup(of: (Int, Result<Data, Error>).self) { group in
@@ -306,7 +306,7 @@ struct KubeClient: Sendable {
     /// never read, let alone held (`KubeBodyTooLarge`). For an answer the
     /// server decides the size of: `/openapi/v3`'s documents, which an
     /// aggregated API server serves as it likes.
-    func get(_ path: String, accept: String = "application/json", maxBytes: Int) async throws -> Data {
+    package func get(_ path: String, accept: String = "application/json", maxBytes: Int) async throws -> Data {
         var body = Data()
         do {
             for try await piece in connection.stream(path, headers: [("Accept", accept)]) {
@@ -325,7 +325,7 @@ struct KubeClient: Sendable {
     /// A stream's failure said as `get` says a response's: from the answer
     /// whole when the transport kept it (its `Content-Type`, its Status,
     /// a 429's `Retry-After`).
-    static func mapped(_ error: Error, signIn: KubeSignIn) -> Error {
+    package static func mapped(_ error: Error, signIn: KubeSignIn) -> Error {
         guard let http = error as? HTTPError, http.status != 0 else { return error }
         if let problem = KubeProxyProblem.classify(http, stderr: "", signIn: signIn) { return problem }
         if let response = http.response { return KubeAPIError.from(response) }
@@ -335,12 +335,12 @@ struct KubeClient: Sendable {
     /// What a list's or a watch's rows carry besides their cells: nothing
     /// in one namespace (or for a cluster-scoped kind), the metadata across
     /// all of them — where the namespace is only there.
-    static func includeObject(_ kind: KubeResourceKind, _ scope: KubeScope, metadata: Bool = false, objects: Bool = false) -> String {
+    package static func includeObject(_ kind: KubeResourceKind, _ scope: KubeScope, metadata: Bool = false, objects: Bool = false) -> String {
         if objects { return "Object" }
         return metadata || (kind.namespaced && scope.namespace(for: kind) == nil) ? "Metadata" : "None"
     }
 
-    func version() async throws -> KubeServerVersion {
+    package func version() async throws -> KubeServerVersion {
         let response = try await get("/version")
         do {
             return try JSONDecoder().decode(KubeServerVersion.self, from: response.body)
@@ -356,7 +356,7 @@ struct KubeClient: Sendable {
     /// core version's list, then every group's preferred version's, eight
     /// at a time. A group that is down is noted, not thrown: one the
     /// aggregated list marks `Stale`, one whose legacy list fails.
-    func discover() async throws -> KubeDiscovery {
+    package func discover() async throws -> KubeDiscovery {
         async let coreAnswer = get("/api", accept: Self.discoveryAccept)
         async let groupsAnswer = get("/apis", accept: Self.discoveryAccept)
         let core = try await KubeDiscovery.answer(coreAnswer.body)
@@ -418,7 +418,7 @@ struct KubeClient: Sendable {
 
     /// The whole list as Table rows, page by page. The collection's
     /// resourceVersion is the first page's (the same on every page).
-    func list(_ kind: KubeResourceKind, in scope: KubeScope = .all, options: KubeListOptions = KubeListOptions()) async throws -> KubeTable {
+    package func list(_ kind: KubeResourceKind, in scope: KubeScope = .all, options: KubeListOptions = KubeListOptions()) async throws -> KubeTable {
         if case .namespaces = scope, kind.namespaced { return try await listSeveral(kind, in: scope, options: options) }
         return try await listOne(kind, in: scope, options: options)
     }
@@ -494,7 +494,7 @@ struct KubeClient: Sendable {
     }
 
     /// One object, whole, as JSON.
-    func object(_ kind: KubeResourceKind, namespace: String?, name: String) async throws -> KubeObject {
+    package func object(_ kind: KubeResourceKind, namespace: String?, name: String) async throws -> KubeObject {
         let response = try await get(kind.path(namespace: kind.namespaced ? namespace : nil, name: name))
         return try KubeObject(data: response.body)
     }
@@ -503,7 +503,7 @@ struct KubeClient: Sendable {
     /// value, taken apart at once (`KubeSecret.read`) — the answer itself
     /// is not kept, and an answer that isn't a Secret is said without
     /// what it said.
-    func secret(_ kind: KubeResourceKind, namespace: String?, name: String) async throws -> KubeSecretRead {
+    package func secret(_ kind: KubeResourceKind, namespace: String?, name: String) async throws -> KubeSecretRead {
         let response = try await get(kind.path(namespace: kind.namespaced ? namespace : nil, name: name))
         return try KubeSecret.read(response.body)
     }
@@ -512,7 +512,7 @@ struct KubeClient: Sendable {
     /// lists, picked by the server (`fieldSelector` on `involvedObject`) —
     /// in its namespace, or across them for a cluster-scoped object (a
     /// node's are recorded in `default`).
-    func events(kind: String, name: String, namespace: String?, uid: String?) async throws -> [KubeEvent] {
+    package func events(kind: String, name: String, namespace: String?, uid: String?) async throws -> [KubeEvent] {
         let base = namespace.map { "/api/v1/namespaces/\(KubePath.segment($0))/events" } ?? "/api/v1/events"
         let selector = KubeEvent.fieldSelector(kind: kind, name: name, namespace: namespace, uid: uid)
         return try KubeEvent.list(try await get(KubePath.query(base, [("fieldSelector", selector)])).body)
@@ -522,7 +522,7 @@ struct KubeClient: Sendable {
     /// workload's ReplicaSets, its pods), at most `limit` — picked by the
     /// server (`type=Warning,involvedObject.kind=…`), newest first, and
     /// whether there were more than were read.
-    func warningEvents(about kind: String, namespace: String, limit: Int) async throws -> (events: [KubeEvent], more: Bool) {
+    package func warningEvents(about kind: String, namespace: String, limit: Int) async throws -> (events: [KubeEvent], more: Bool) {
         let base = "/api/v1/namespaces/\(KubePath.segment(namespace))/events"
         let selector = "type=Warning,involvedObject.kind=\(kind)"
         let body = try await get(KubePath.query(base, [("fieldSelector", selector), ("limit", String(limit))])).body
@@ -536,7 +536,7 @@ struct KubeClient: Sendable {
 
     /// A pod's log, once (`follow` off): its lines, parsed here, off the
     /// main actor.
-    func logLines(namespace: String, pod: String, query: KubeLogQuery) async throws -> [LogLine] {
+    package func logLines(namespace: String, pod: String, query: KubeLogQuery) async throws -> [LogLine] {
         var query = query
         query.follow = false
         let response = try await get(query.path(namespace: namespace, pod: pod), accept: "text/plain, */*")
@@ -549,7 +549,7 @@ struct KubeClient: Sendable {
     /// either end left out to its whitespace (`KubeLogText.tail`).
     /// `stopped`: the server stopped at the limit, so newer lines may be
     /// past it.
-    func logTail(namespace: String, pod: String, query: KubeLogQuery, keep: Int) async throws -> (lines: [LogLine], stopped: Bool) {
+    package func logTail(namespace: String, pod: String, query: KubeLogQuery, keep: Int) async throws -> (lines: [LogLine], stopped: Bool) {
         var query = query
         query.follow = false
         let body = try await get(query.path(namespace: namespace, pod: pod), accept: "text/plain, */*").body
@@ -563,7 +563,7 @@ struct KubeClient: Sendable {
     /// timeout, a dropped connection, the container gone — or throws what
     /// the server said (`KubeAPIError`, a `KubeProxyProblem`). Its consumer
     /// leaving closes the request.
-    func logs(namespace: String, pod: String, query: KubeLogQuery) -> AsyncThrowingStream<[LogLine], Error> {
+    package func logs(namespace: String, pod: String, query: KubeLogQuery) -> AsyncThrowingStream<[LogLine], Error> {
         let source = connection.stream(query.path(namespace: namespace, pod: pod), headers: [("Accept", "text/plain, */*")])
         let signIn = connection.signIn
         return AsyncThrowingStream { continuation in
@@ -603,7 +603,7 @@ struct KubeClient: Sendable {
     /// One watch from `version`, its events decoded with `columns` (the
     /// list's) until the server ends it — or, with no version, a streaming
     /// list's: every object ADDED, then a bookmark, then the changes.
-    func watch(
+    package func watch(
         _ kind: KubeResourceKind, in scope: KubeScope = .all, options: KubeListOptions = KubeListOptions(), from version: String?,
         columns: [KubeColumn]
     ) -> AsyncThrowingStream<KubeWatchEvent, Error> {
@@ -635,7 +635,7 @@ struct KubeClient: Sendable {
     /// Several namespaces are a follow each up to `cap` (`KubeScope.watchCap`;
     /// less where a page follows several lists in each, as the Overview
     /// does), past it one across the cluster kept to them.
-    func follow(
+    package func follow(
         _ kind: KubeResourceKind, in scope: KubeScope = .all, options: KubeListOptions = KubeListOptions(), cap: Int = KubeScope.watchCap
     ) -> AsyncThrowingStream<KubeFollowUpdate, Error> {
         AsyncThrowingStream { continuation in
@@ -986,19 +986,19 @@ struct KubeClient: Sendable {
 /// A streaming list whose end's bookmark didn't come: nothing said in
 /// time, or quiet after its events began (`received`) — or one that came
 /// with nothing listed and no columns known (`columnless`).
-struct KubeStreamingListUnended: Error {
-    var received = false
-    var columnless = false
+package struct KubeStreamingListUnended: Error {
+    package var received = false
+    package var columnless = false
 }
 
 /// A bounded GET's answer passed its bound: the read stopped there, its
 /// connection closed. `read`: what had come by then, for the tests.
-struct KubeBodyTooLarge: Error, Equatable, LocalizedError {
-    var path: String
-    var limit: Int
-    var read: Int
+package struct KubeBodyTooLarge: Error, Equatable, LocalizedError {
+    package var path: String
+    package var limit: Int
+    package var read: Int
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         let limit = self.limit >= 1 << 20 ? "\(self.limit >> 20) MB" : "\(self.limit >> 10) KB"
         return "\(path) answered more than \(limit): too much to read here."
     }

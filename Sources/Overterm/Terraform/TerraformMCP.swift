@@ -33,29 +33,29 @@ import Foundation
 /// `Secrets` matches; strings cut at 200 characters. Every answer goes
 /// through `Secrets` once more.
 @MainActor
-enum TerraformMCP {
-    static let prefix = "tf_"
-    static let names = ["tf_roots", "tf_fmt_check", "tf_validate", "tf_plan_summary", "tf_plan", "tf_run_status", "tf_plan_resource", "tf_why"] + stateNames + testNames
+package enum TerraformMCP {
+    package static let prefix = "tf_"
+    package static let names = ["tf_roots", "tf_fmt_check", "tf_validate", "tf_plan_summary", "tf_plan", "tf_run_status", "tf_plan_resource", "tf_why"] + stateNames + testNames
 
     /// Starts an agent's plan of a root in the window of the pane that
     /// asked (`TerminalWindowController.agentPlan`): asked there, never
     /// production. The window answers; nil outside any window.
-    static var startPlan: ((TerraformRootCard, URL, String) async -> Result<TerraformPlanRun, TerraformReadFailure>)?
+    package static var startPlan: ((TerraformRootCard, URL, String) async -> Result<TerraformPlanRun, TerraformReadFailure>)?
 
     /// The checkout a pane's tab works in — the window answers (nil
     /// outside any window's tabs, and in tests that set none), its agent's
     /// folder read again first while its window is off screen
     /// (`TerminalWindowController.paneCheckout`).
-    static var paneCheckout: ((String) async -> URL?)?
+    package static var paneCheckout: ((String) async -> URL?)?
 
     /// A plan's JSON is read up to this (`terraform.maxPlanBytes`, 4.1), the plan file too.
-    static let maxPlanBytes = 64 << 20
-    static let maxAnswer = 48 << 10
+    package static let maxPlanBytes = 64 << 20
+    package static let maxAnswer = 48 << 10
 
-    static let instructions =
+    package static let instructions =
         "Terraform in your checkout (Overterm's Terraform panel): tf_roots lists its roots with their workspace, backend and class (production is plan-only), tf_fmt_check and tf_validate check a root without credentials, tf_plan starts Overterm's plan of a non-production root (the person is asked the first time; follow it with tf_run_status), tf_plan_summary reads that plan — or one you saved with terraform plan -out=FILE — as a masked summary: counts, what is destroyed or replaced and why, the attributes that change; tf_plan_resource one resource's masked diff, tf_why the brief of a failed plan or a held lock; tf_state_list, tf_state_show and tf_outputs read a root's state, masked (a sensitive output's value is never given); tf_test runs terraform test (mocked providers at once, real ones only if the person agrees). Never run terraform apply, destroy, import or state commands yourself: the person does, after reading the plan."
 
-    static let tools: [[String: Any]] = [
+    package static let tools: [[String: Any]] = [
         tool("tf_roots", "The Terraform roots of your checkout: path, class (production, remote, local), workspace, backend, modules and who calls them.", [:]),
         tool(
             "tf_fmt_check", "Whether a root's .tf files pass terraform fmt, with the diff that would fix them. Writes nothing.",
@@ -113,7 +113,7 @@ enum TerraformMCP {
 
     // MARK: Calls
 
-    static func call(_ name: String, _ arguments: [String: Any], pane: String?) async throws -> [String: Any] {
+    package static func call(_ name: String, _ arguments: [String: Any], pane: String?) async throws -> [String: Any] {
         guard names.contains(name) else {
             throw BrowserMCP.ToolError(message: "Unknown tool: \(name). Agents read Terraform here; nothing here applies, destroys or changes state.")
         }
@@ -140,21 +140,21 @@ enum TerraformMCP {
     }
 
     /// Every answer, once more: credentials in text, URLs' passwords.
-    static func scrubbed(_ text: String) -> String { TerraformValidation.scrub(text) }
+    package static func scrubbed(_ text: String) -> String { TerraformValidation.scrub(text) }
 
-    static func argument(_ arguments: [String: Any], _ key: String) -> String? {
+    package static func argument(_ arguments: [String: Any], _ key: String) -> String? {
         (arguments[key] as? String).map { $0.trimmingCharacters(in: .whitespaces) }.flatMap { $0.isEmpty ? nil : $0 }
     }
 
     // MARK: tf_roots
 
-    struct Read: Sendable {
-        var roots: [TerraformRootCard]
-        var modules: [TerraformModuleRow]
+    package struct Read: Sendable {
+        package var roots: [TerraformRootCard]
+        package var modules: [TerraformModuleRow]
     }
 
     /// The checkout's roots, as the panel reads them.
-    static func read(_ checkout: URL) async -> Read? {
+    package static func read(_ checkout: URL) async -> Read? {
         let settings = TerraformClassSettings.current
         let identities = TerraformRootStore.shared.productionIdentities
         guard let listing = await TerraformRootScan.list(checkout) else { return nil }
@@ -171,7 +171,7 @@ enum TerraformMCP {
         return Read(roots: assembled.roots, modules: assembled.modules)
     }
 
-    static func roots(in checkout: URL) async -> String {
+    package static func roots(in checkout: URL) async -> String {
         guard let read = await read(checkout) else { return "\(checkout.lastPathComponent) isn't a git checkout Overterm can list." }
         guard !read.roots.isEmpty else { return "No Terraform roots in \(checkout.lastPathComponent)." }
         var lines = ["Terraform roots of \(checkout.lastPathComponent) (\(read.roots.count)):"]
@@ -193,7 +193,7 @@ enum TerraformMCP {
     // MARK: A root
 
     /// The root a call names, or the checkout's one root.
-    static func root(_ arguments: [String: Any], in checkout: URL, tool: String) async throws -> URL {
+    package static func root(_ arguments: [String: Any], in checkout: URL, tool: String) async throws -> URL {
         if let named = argument(arguments, "root") {
             let url = try TerraformMCPPath.resolve(named == "." ? "" : named, in: checkout, folder: true)
             guard TerraformProcesses.hasConfiguration(url) else { throw BrowserMCP.ToolError(message: "\(named) has no Terraform configuration.") }
@@ -206,7 +206,7 @@ enum TerraformMCP {
         return only.folder
     }
 
-    static func relative(_ folder: URL, to checkout: URL) -> String {
+    package static func relative(_ folder: URL, to checkout: URL) -> String {
         let top = checkout.resolvingSymlinksInPath().standardizedFileURL.path
         let path = folder.resolvingSymlinksInPath().standardizedFileURL.path
         if path == top { return "." }
@@ -215,7 +215,7 @@ enum TerraformMCP {
 
     // MARK: tf_fmt_check
 
-    static func formatCheck(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+    package static func formatCheck(_ arguments: [String: Any], in checkout: URL) async throws -> String {
         let root = try await root(arguments, in: checkout, tool: "tf_fmt_check")
         let name = relative(root, to: checkout)
         switch await TerraformEditorModel.run(TerraformCommands.formatCheckDiff, purpose: .agentRead, in: root) {
@@ -233,7 +233,7 @@ enum TerraformMCP {
     /// Why validate isn't run in `root` (5.10): it needs an initialised
     /// root whose lock file is committed and unchanged, and every module
     /// installed — Overterm never runs init for it. Nil: it may run.
-    static func validateRefusal(root: URL, checkout: URL, facts: TerraformRootFacts, lockFileClean: Bool) -> String? {
+    package static func validateRefusal(root: URL, checkout: URL, facts: TerraformRootFacts, lockFileClean: Bool) -> String? {
         let lock = root.appendingPathComponent(".terraform.lock.hcl")
         guard FileManager.default.fileExists(atPath: lock.path) else { return "it has no .terraform.lock.hcl" }
         guard lockFileClean else { return "its .terraform.lock.hcl isn't committed, or changed since HEAD" }
@@ -248,7 +248,7 @@ enum TerraformMCP {
     /// the agent's sandbox: only the providers a committed, unchanged lock
     /// file pins, never a binary an agent put in `.terraform/providers`
     /// with a lock file to match. Nil: they may start.
-    static func providersRefusal(root: URL, checkout: URL) async -> String? {
+    package static func providersRefusal(root: URL, checkout: URL) async -> String? {
         let name = relative(root, to: checkout)
         let facts = await TerraformPanelModel.blocking { TerraformRootFacts.read(root: root, checkout: checkout) }
         let lockPath = name == "." ? ".terraform.lock.hcl" : name + "/.terraform.lock.hcl"
@@ -258,7 +258,7 @@ enum TerraformMCP {
         return validateRefusal(root: root, checkout: checkout, facts: facts, lockFileClean: clean)
     }
 
-    static func validate(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+    package static func validate(_ arguments: [String: Any], in checkout: URL) async throws -> String {
         let root = try await root(arguments, in: checkout, tool: "tf_validate")
         let name = relative(root, to: checkout)
         if let why = await providersRefusal(root: root, checkout: checkout) {
@@ -286,7 +286,7 @@ enum TerraformMCP {
     // MARK: Overterm's plans (stage 1d)
 
     /// The root a call names, with its card, read as the panel reads it.
-    static func card(_ arguments: [String: Any], in checkout: URL, tool: String) async throws -> TerraformRootCard {
+    package static func card(_ arguments: [String: Any], in checkout: URL, tool: String) async throws -> TerraformRootCard {
         guard let read = await read(checkout), !read.roots.isEmpty else { throw BrowserMCP.ToolError(message: "No Terraform roots in this checkout.") }
         if let named = argument(arguments, "root") {
             let url = try TerraformMCPPath.resolve(named == "." ? "" : named, in: checkout, folder: true)
@@ -303,12 +303,12 @@ enum TerraformMCP {
     }
 
     /// The newest plan run of `card` in `checkout`.
-    static func lastRun(of card: TerraformRootCard, in checkout: URL) -> TerraformPlanRun? {
+    package static func lastRun(of card: TerraformRootCard, in checkout: URL) -> TerraformPlanRun? {
         TerraformRunRegistry.shared.latest(checkout: checkout, root: card.path)
             ?? TerraformRunRegistry.shared.latest(checkout: checkout.resolvingSymlinksInPath(), root: card.path)
     }
 
-    static func plan(_ arguments: [String: Any], in checkout: URL, pane: String) async throws -> String {
+    package static func plan(_ arguments: [String: Any], in checkout: URL, pane: String) async throws -> String {
         let card = try await card(arguments, in: checkout, tool: "tf_plan")
         if let why = TerraformProcessCheck.refused(.plan, rootClass: card.rootClass) { return "\(card.name): \(why)." }
         if card.isProduction {
@@ -325,7 +325,7 @@ enum TerraformMCP {
     /// A run's state; once planned, its summary as an agent reads it —
     /// masked again for agents, every destroy and replace with its cause
     /// chain to the line this branch changed (3.5, 5.10).
-    static func status(of run: TerraformPlanRun) async -> String {
+    package static func status(of run: TerraformPlanRun) async -> String {
         let name = run.card.name
         switch run.phase {
         case .preparing: return "Run \(run.id) (\(name)): starting."
@@ -356,7 +356,7 @@ enum TerraformMCP {
         }
     }
 
-    static func runStatus(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+    package static func runStatus(_ arguments: [String: Any], in checkout: URL) async throws -> String {
         guard let id = argument(arguments, "id") else { throw BrowserMCP.ToolError(message: "tf_run_status needs “id”: the run ID tf_plan returned.") }
         // Only a run of this pane's checkout: another worktree's is not this agent's to read.
         let top = checkout.resolvingSymlinksInPath().standardizedFileURL.path
@@ -367,7 +367,7 @@ enum TerraformMCP {
     }
 
     /// Where a run's root's variables and locals come from, read off the main thread.
-    static func sources(of run: TerraformPlanRun) async -> TerraformCauseChain.Sources {
+    package static func sources(of run: TerraformPlanRun) async -> TerraformCauseChain.Sources {
         let folder = run.card.folder
         let prefix = run.card.path.isEmpty ? "" : run.card.path + "/"
         let varFiles = run.autoVarFiles + run.varFiles
@@ -376,16 +376,16 @@ enum TerraformMCP {
 
     /// The lines this branch changed, as the run read them — and, when its
     /// window shows it, what the changes pane has uncommitted too.
-    static func changedLines(of run: TerraformPlanRun) -> [String: Set<Int>] {
+    package static func changedLines(of run: TerraformPlanRun) -> [String: Set<Int>] {
         var lines = run.changedLines
         for pane in paneModels() where pane.run === run { lines = pane.effectiveChangedLines }
         return lines
     }
 
     /// Every window's plan pane: set by the windows (nothing in tests).
-    static var paneModels: () -> [TerraformPlanPaneModel] = { [] }
+    package static var paneModels: () -> [TerraformPlanPaneModel] = { [] }
 
-    static func lastPlanSummary(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+    package static func lastPlanSummary(_ arguments: [String: Any], in checkout: URL) async throws -> String {
         let card = try await card(arguments, in: checkout, tool: "tf_plan_summary")
         guard let run = lastRun(of: card, in: checkout) else {
             return "Overterm hasn't planned \(card.name) this session. tf_plan starts one (non-production roots), or pass “path” for a plan you saved."
@@ -393,7 +393,7 @@ enum TerraformMCP {
         return await status(of: run)
     }
 
-    static func planResource(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+    package static func planResource(_ arguments: [String: Any], in checkout: URL) async throws -> String {
         guard let address = argument(arguments, "address") else { throw BrowserMCP.ToolError(message: "tf_plan_resource needs “address”.") }
         let card = try await card(arguments, in: checkout, tool: "tf_plan_resource")
         guard let run = lastRun(of: card, in: checkout), let plan = run.plan?.forAgents() else {
@@ -407,7 +407,7 @@ enum TerraformMCP {
         return TerraformPlanText.resource(change, plan: plan, cause: links.isEmpty ? nil : TerraformCauseChain.said(links))
     }
 
-    static func why(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+    package static func why(_ arguments: [String: Any], in checkout: URL) async throws -> String {
         let card = try await card(arguments, in: checkout, tool: "tf_why")
         let runs = TerraformRunRegistry.shared.runs.filter {
             $0.card.path == card.path && $0.checkout.resolvingSymlinksInPath().standardizedFileURL.path == checkout.resolvingSymlinksInPath().standardizedFileURL.path
@@ -424,7 +424,7 @@ enum TerraformMCP {
 
     // MARK: tf_plan_summary
 
-    static func planSummary(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+    package static func planSummary(_ arguments: [String: Any], in checkout: URL) async throws -> String {
         guard let path = argument(arguments, "path") else {
             throw BrowserMCP.ToolError(
                 message: "tf_plan_summary needs “path”: a plan you saved with terraform plan -out=FILE inside the checkout. Overterm's own plans come later.")
@@ -485,8 +485,8 @@ enum TerraformMCP {
 /// An agent's path argument, inside its pane's checkout only (5.10): no
 /// absolute path, no `~`, no `..`, and — `realpath` of both — no link
 /// that leads out (`envs/prod -> ../../acme-live/prod`).
-enum TerraformMCPPath {
-    static func resolve(_ relative: String, in checkout: URL, folder: Bool) throws -> URL {
+package enum TerraformMCPPath {
+    package static func resolve(_ relative: String, in checkout: URL, folder: Bool) throws -> URL {
         let parts = relative.split(separator: "/", omittingEmptySubsequences: true)
         if relative.hasPrefix("/") || relative.hasPrefix("~") || relative.contains("\u{0}") || parts.contains("..") || relative.count > 1024 {
             throw BrowserMCP.ToolError(message: "“\(relative)” must be a path inside your checkout, relative to it, without “..”.")
@@ -505,26 +505,26 @@ enum TerraformMCPPath {
     }
 
     /// The path an open descriptor names now (`F_GETPATH`).
-    static func path(of fd: Int32) -> String? {
+    package static func path(of fd: Int32) -> String? {
         var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
         guard fcntl(fd, F_GETPATH, &buffer) != -1 else { return nil }
         return String(cString: buffer)
     }
 
     /// Whether `folder` (resolved earlier) still resolves to itself, inside `top`.
-    static func stillInside(_ folder: URL, top: String) -> Bool {
+    package static func stillInside(_ folder: URL, top: String) -> Bool {
         guard let now = real(folder.path) else { return false }
         return now == folder.path && (now == top || now.hasPrefix(top + "/"))
     }
 
-    static func real(_ path: String) -> String? {
+    package static func real(_ path: String) -> String? {
         guard let resolved = realpath(path, nil) else { return nil }
         defer { free(resolved) }
         return String(cString: resolved)
     }
 
     /// The nearest folder at or above `file`'s with a configuration, up to the checkout (bounded).
-    static func rootAbove(_ file: URL, in checkout: URL) -> URL? {
+    package static func rootAbove(_ file: URL, in checkout: URL) -> URL? {
         guard let top = real(checkout.path) else { return nil }
         // Real paths both (never `standardizedFileURL`, which drops `/private`).
         var folder = URL(fileURLWithPath: real(file.deletingLastPathComponent().path) ?? file.deletingLastPathComponent().path, isDirectory: true)
@@ -542,7 +542,7 @@ enum TerraformMCPPath {
     /// regular file, at most `limit`, a zip as Terraform writes one — and
     /// handed back as a descriptor terraform reads as `/dev/fd/3`: nothing
     /// can swap the path once it is checked (4.4). The caller closes it.
-    static func openPlan(_ file: URL, limit: Int, inside top: String? = nil) throws -> Int32 {
+    package static func openPlan(_ file: URL, limit: Int, inside top: String? = nil) throws -> Int32 {
         let fd = open(file.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw BrowserMCP.ToolError(message: "The plan file can't be opened.") }
         // What was opened, by the descriptor: a folder on the way swapped

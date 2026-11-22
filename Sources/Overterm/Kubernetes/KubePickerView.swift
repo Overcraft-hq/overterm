@@ -5,11 +5,11 @@ import SwiftUI
 /// Esc or a click outside goes back to the list. The namespaces have their
 /// boxes: ⌥↩ or a click on one ticks it, shown at once, the picker open. The field is the palette's
 /// (`PaletteField`): arrows and Esc need the field editor's commands.
-struct KubePickerView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var theme: ChromeTheme
+package struct KubePickerView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if let picker = page.picker {
             ZStack(alignment: .top) {
                 Color.black.opacity(0.001).onTapGesture { page.closePicker() }

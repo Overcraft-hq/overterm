@@ -259,7 +259,7 @@ extension FakeKubeAPI {
     }
 
     /// `com.example.stable.v1.CronTab`: a CRD's schema's name, as the server makes it.
-    static func openAPISchemaName(_ kind: Kind) -> String {
+    package static func openAPISchemaName(_ kind: Kind) -> String {
         if kind.group.isEmpty { return "io.k8s.api.core.\(kind.version).\(kind.kind)" }
         let builtin = ["apps", "batch", "policy", "autoscaling"]
         if builtin.contains(kind.group) { return "io.k8s.api.\(kind.group).\(kind.version).\(kind.kind)" }
@@ -270,7 +270,7 @@ extension FakeKubeAPI {
     }
 
     /// The index: every group version served, its document's URL and hash.
-    static func openAPIIndex(_ kinds: [Kind], crdSchemas: [String: [String: Any]]) -> Data {
+    package static func openAPIIndex(_ kinds: [Kind], crdSchemas: [String: [String: Any]]) -> Data {
         var paths: [String: Any] = [:]
         for groupVersion in Set(kinds.map(\.groupVersion)) {
             let key = groupVersion.contains("/") ? "apis/\(groupVersion)" : "api/\(groupVersion)"
@@ -283,7 +283,7 @@ extension FakeKubeAPI {
     }
 
     /// FNV-1a of what the document holds: another CRD schema, another hash.
-    static func openAPIHash(_ groupVersion: String, kinds: [Kind], crdSchemas: [String: [String: Any]]) -> String {
+    package static func openAPIHash(_ groupVersion: String, kinds: [Kind], crdSchemas: [String: [String: Any]]) -> String {
         let own = kinds.filter { $0.groupVersion == groupVersion }.sorted { $0.kind < $1.kind }
         var text = own.map { $0.kind + "|" + $0.fullName }.joined(separator: ",")
         for kind in own { if let schema = crdSchemas[kind.fullName] { text += String(decoding: encode(schema), as: UTF8.self) } }
@@ -296,7 +296,7 @@ extension FakeKubeAPI {
     }
 
     /// `api/v1`, `apis/apps/v1`'s document; nil when nothing is served there.
-    static func openAPIDocument(_ key: String, kinds: [Kind], crdSchemas: [String: [String: Any]]) -> Data? {
+    package static func openAPIDocument(_ key: String, kinds: [Kind], crdSchemas: [String: [String: Any]]) -> Data? {
         let parts = key.split(separator: "/").map(String.init)
         let groupVersion: String
         if parts.count == 2, parts[0] == "api" {

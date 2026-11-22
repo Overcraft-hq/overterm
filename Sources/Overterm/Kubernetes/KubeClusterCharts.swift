@@ -10,7 +10,7 @@ import Foundation
 
 extension KubePromQL {
     /// The nodes' capacity, summed (X1, X2's line beside allocatable).
-    static func capacity(_ resource: String, profile: KubePromProfile = .unknown) -> String {
+    package static func capacity(_ resource: String, profile: KubePromProfile = .unknown) -> String {
         if profile.ksmMajor == 1 {
             return "sum(max by (node)(kube_node_status_capacity_\(resource == "cpu" ? "cpu_cores" : resource + "_bytes"){\(profile.ksmMatcher)}))"
         }
@@ -19,18 +19,18 @@ extension KubePromQL {
     }
 
     /// The claim's matchers.
-    static func claim(_ namespace: String, _ claim: String) -> String { matchers([("namespace", namespace), ("persistentvolumeclaim", claim)]) }
+    package static func claim(_ namespace: String, _ claim: String) -> String { matchers([("namespace", namespace), ("persistentvolumeclaim", claim)]) }
 
     /// How fast it fills, in bytes a second: its available bytes' fall over
     /// six hours, `deriv`'s least-squares slope (V1) — the same line
     /// `predict_linear` would extend, so it alone is asked: the chip's ETA
     /// and the projection both follow from it.
-    static func volumeFill(namespace: String, claim: String) -> String {
+    package static func volumeFill(namespace: String, claim: String) -> String {
         "-sum(deriv(\(volumeAvailable){\(self.claim(namespace, claim))}[6h]))"
     }
 
     /// Its inodes used, a fraction (V2).
-    static func volumeInodes(namespace: String, claim: String) -> String {
+    package static func volumeInodes(namespace: String, claim: String) -> String {
         let selector = self.claim(namespace, claim)
         return "sum(kubelet_volume_stats_inodes_used{\(selector)}) / sum(kubelet_volume_stats_inodes{\(selector)})"
     }
@@ -38,11 +38,11 @@ extension KubePromQL {
 
 extension KubeChart {
     /// How many namespaces X3 names; the rest is "other".
-    static let topNamespaces = 8
+    package static let topNamespaces = 8
 
     /// X3's tier over `range`: the mixin's per-container CPU rule, else raw
     /// cAdvisor where `KubeQueryCost` allows it across the cluster (≤ 6h).
-    static func namespaceTier(_ range: KubeChartRange, profile: KubePromProfile) -> KubePromTier? {
+    package static func namespaceTier(_ range: KubeChartRange, profile: KubePromProfile) -> KubePromTier? {
         if profile.containerCPURule != nil { return .rules }
         return KubeQueryCost.raw(.cluster, span: range.seconds, profile: profile).isAllowed ? .raw : nil
     }
@@ -54,7 +54,7 @@ extension KubeChart {
     /// end over the whole range — the rule's average, or the raw counter's
     /// rate over the range (no subquery), either ranked over the last 24h
     /// past the samples cap, said; nil where neither tier reads.
-    static func namespaceRanking(range: KubeChartRange, profile: KubePromProfile, picked names: [String]) -> (query: String, note: String?)? {
+    package static func namespaceRanking(range: KubeChartRange, profile: KubePromProfile, picked names: [String]) -> (query: String, note: String?)? {
         let picked = picked(names)
         switch namespaceTier(range, profile: profile) {
         case .rules:
@@ -80,7 +80,7 @@ extension KubeChart {
 
     /// X3's lines: the total of the namespaces picked, and the top ones by
     /// namespace (`top`, as ranked; none yet, the total alone).
-    static func namespaceQueries(range: KubeChartRange, profile: KubePromProfile, picked names: [String], top: [String]) -> KubeChartQueries {
+    package static func namespaceQueries(range: KubeChartRange, profile: KubePromProfile, picked names: [String], top: [String]) -> KubeChartQueries {
         let picked = picked(names)
         let window = KubePromQL.duration(KubeRateWindow.of(step: range.step, scrape: profile.scrapeInterval))
         let tier = namespaceTier(range, profile: profile)
@@ -110,14 +110,14 @@ extension KubeChart {
     }
 
     /// X4's step: the range as 60 cells.
-    static func nodeStep(_ range: KubeChartRange) -> TimeInterval { range.seconds / Double(KubeHeatStrip.cellCount) }
+    package static func nodeStep(_ range: KubeChartRange) -> TimeInterval { range.seconds / Double(KubeHeatStrip.cellCount) }
 
     /// X4: each node's CPU and memory over the range at a sixtieth of it —
     /// the mixin's per-container rules (they carry `node`), else raw
     /// cAdvisor by the profile's node label where it may be read across the
     /// cluster; each cell's highest kept past 5-minute steps. Each node's
     /// allocatable from kube-state-metrics, by node.
-    static func nodeQueries(range: KubeChartRange, profile: KubePromProfile) -> KubeChartQueries {
+    package static func nodeQueries(range: KubeChartRange, profile: KubePromProfile) -> KubeChartQueries {
         let step = nodeStep(range)
         let stepText = KubePromQL.duration(step)
         let peaks = step >= 300
@@ -166,34 +166,34 @@ extension KubeChart {
 }
 
 /// A node's row of X4: its CPU's and memory's strips, as a share of its allocatable.
-struct KubeNodeStripRow: Equatable, Sendable, Identifiable {
-    var node: String
-    var cpu: KubeHeatStrip?
-    var memory: KubeHeatStrip?
-    var id: String { node }
+package struct KubeNodeStripRow: Equatable, Sendable, Identifiable {
+    package var node: String
+    package var cpu: KubeHeatStrip?
+    package var memory: KubeHeatStrip?
+    package var id: String { node }
 
     /// What it is ranked by: the larger of its two shares now (else at their peak).
-    var hottest: Double {
+    package var hottest: Double {
         [cpu, memory].compactMap { $0.flatMap { $0.now ?? $0.peak?.percent } }.max() ?? -1
     }
 }
 
 /// The Overview's charts, built from what was read. Pure.
-enum KubeClusterCharts {
+package enum KubeClusterCharts {
     /// X4 names this many nodes at most: the hottest.
-    static let nodesAtMost = 50
+    package static let nodesAtMost = 50
 
     /// X1 and X2 from Prometheus: the cluster's CPU and memory against its
     /// active pods' requests and limits, its allocatable and capacity, with
     /// the requests' and limits' shares of allocatable as chips — red past
     /// all of it, overcommitted.
-    static func prometheus(_ reading: KubeChartReading) -> [KubePodCharts.Chart] {
+    package static func prometheus(_ reading: KubeChartReading) -> [KubePodCharts.Chart] {
         [true, false].map { isCPU in
             KubePodCharts.Chart(data: KubeChartData.of(reading, chart: .cluster, measure: isCPU ? .cpu : .memory), chips: chips(reading, cpu: isCPU))
         }
     }
 
-    static func chips(_ reading: KubeChartReading, cpu: Bool) -> [KubeChartChip] {
+    package static func chips(_ reading: KubeChartReading, cpu: Bool) -> [KubeChartChip] {
         let (requests, limits, allocatable): (KubeChartMeasure, KubeChartMeasure, KubeChartMeasure) =
             cpu ? (.cpuRequests, .cpuLimits, .cpuAllocatable) : (.memoryRequests, .memoryLimits, .memoryAllocatable)
         return [("requests", requests), ("limits", limits)].compactMap { name, measure in
@@ -202,19 +202,19 @@ enum KubeClusterCharts {
     }
 
     /// `requests 71% of allocatable`; past 100%, red and said overcommitted.
-    static func share(_ what: String, _ percent: Int) -> KubeChartChip {
+    package static func share(_ what: String, _ percent: Int) -> KubeChartChip {
         KubeChartChip(text: "\(what) \(percent)% of allocatable" + (percent > 100 ? " · overcommitted" : ""), alert: percent > 100)
     }
 
     /// The chip a sampled X1 or X2 carries in place of the requests' share.
-    static let requestsNeedPrometheus = "requests need Prometheus (kube-state-metrics)"
+    package static let requestsNeedPrometheus = "requests need Prometheus (kube-state-metrics)"
 
     /// X1 and X2 sampled: the cluster's samples taken while the Overview
     /// showed, against the nodes' allocatable and capacity (the `/nodes`
     /// read it already makes) — no requests line: the Pods section's rows
     /// carry no spec, and a cluster-wide list of pod objects is never read
     /// for it (metrics.md 2.9).
-    static func sampled(_ points: [KubeUsagePoint], allocatable: KubeUsage?, capacity: KubeUsage?, interval: TimeInterval, now: Date) -> [KubePodCharts.Chart] {
+    package static func sampled(_ points: [KubeUsagePoint], allocatable: KubeUsage?, capacity: KubeUsage?, interval: TimeInterval, now: Date) -> [KubePodCharts.Chart] {
         let start = min(points.first?.time ?? now, now.addingTimeInterval(-600))
         let end = max(points.last?.time ?? now, start.addingTimeInterval(1))
         return [true, false].map { isCPU in
@@ -239,7 +239,7 @@ enum KubeClusterCharts {
 
     /// X3 from Prometheus: the top namespaces by CPU, as ranked, stacked,
     /// and "other" — the total less them; nil where its lines weren't asked.
-    static func namespaces(_ reading: KubeChartReading) -> KubePodCharts.Chart? {
+    package static func namespaces(_ reading: KubeChartReading) -> KubePodCharts.Chart? {
         guard reading.refused == nil, let total = reading.series[.cpu] else { return nil }
         let window = reading.range.window(now: reading.read ?? Date())
         let parts = reading.parts[.cpu] ?? [:]
@@ -259,7 +259,7 @@ enum KubeClusterCharts {
 
     /// X4 sampled: each node's strips from the ring's list keys (the last
     /// 15 minutes the Overview's `/nodes` read sampled), against its allocatable.
-    static func nodeRows(_ ring: KubeUsageRing, allocatable: [String: KubeUsage], now: Date) -> (rows: [KubeNodeStripRow], more: Int) {
+    package static func nodeRows(_ ring: KubeUsageRing, allocatable: [String: KubeUsage], now: Date) -> (rows: [KubeNodeStripRow], more: Int) {
         let rows = allocatable.keys.map { name -> KubeNodeStripRow in
             let segments = ring.segments(.node(name), .list, now: now)
             let node = allocatable[name]
@@ -271,7 +271,7 @@ enum KubeClusterCharts {
 
     /// X4 from Prometheus: each node's lines as 60 cells over the range,
     /// against its allocatable — kube-state-metrics', else the `/nodes` read's.
-    static func nodeRows(_ reading: KubeChartReading, allocatable fallback: [String: KubeUsage]) -> (rows: [KubeNodeStripRow], more: Int) {
+    package static func nodeRows(_ reading: KubeChartReading, allocatable fallback: [String: KubeUsage]) -> (rows: [KubeNodeStripRow], more: Int) {
         guard reading.refused == nil, let read = reading.read else { return ([], 0) }
         let window = reading.range.window(now: read)
         let cpu = reading.parts[.cpu] ?? [:]
@@ -288,13 +288,13 @@ enum KubeClusterCharts {
     }
 
     /// The hottest `nodesAtMost`, by name; how many more there are.
-    static func top(_ rows: [KubeNodeStripRow]) -> (rows: [KubeNodeStripRow], more: Int) {
+    package static func top(_ rows: [KubeNodeStripRow]) -> (rows: [KubeNodeStripRow], more: Int) {
         let kept = rows.sorted { $0.hottest != $1.hottest ? $0.hottest > $1.hottest : $0.node < $1.node }.prefix(nodesAtMost)
         return (kept.sorted { $0.node < $1.node }, max(0, rows.count - nodesAtMost))
     }
 
     /// A row's strip identifier: `kubernetes.overview.heat.<node>.cpu`.
-    static func stripIdentifier(_ node: String, _ measure: KubeUsageCell.Measure) -> String {
+    package static func stripIdentifier(_ node: String, _ measure: KubeUsageCell.Measure) -> String {
         "kubernetes.overview.heat.\(node).\(measure == .cpu ? "cpu" : "memory")"
     }
 }
@@ -302,17 +302,17 @@ enum KubeClusterCharts {
 /// A claim's fill forecast (V1): how fast it fills by the last six hours'
 /// trend, when it will be full, and the dotted projection to the chart's
 /// right edge. None for a volume with no fixed size (EFS). Pure.
-enum KubeVolumeForecast {
+package enum KubeVolumeForecast {
     /// A fill past this is said "not filling": a year.
-    static let farthest: TimeInterval = 365 * 86400
+    package static let farthest: TimeInterval = 365 * 86400
     /// The chart reaches this share of its range past now, for the projection.
-    static let ahead = 0.25
+    package static let ahead = 0.25
 
     /// Bytes a second it fills, `deriv`'s; nil, not read.
-    static func rate(_ reading: KubeChartReading) -> Double? { reading.totals[.volumeFill] }
+    package static func rate(_ reading: KubeChartReading) -> Double? { reading.totals[.volumeFill] }
 
     /// "full in ~3 d", "full in ~5 h" (red under a day), or "not filling"; nil, nothing read.
-    static func chip(available: Double?, rate: Double?) -> KubeChartChip? {
+    package static func chip(available: Double?, rate: Double?) -> KubeChartChip? {
         guard let rate else { return nil }
         guard rate > 0, let available else { return KubeChartChip(text: "not filling") }
         let eta = max(0, available) / rate
@@ -321,7 +321,7 @@ enum KubeVolumeForecast {
     }
 
     /// `40 min`, `5 h`, `3 d`.
-    static func spoken(_ seconds: TimeInterval) -> String {
+    package static func spoken(_ seconds: TimeInterval) -> String {
         if seconds < 3600 { return "\(max(1, Int((seconds / 60).rounded()))) min" }
         if seconds < 48 * 3600 { return "\(Int((seconds / 3600).rounded())) h" }
         return "\(Int((seconds / 86400).rounded())) d"
@@ -329,7 +329,7 @@ enum KubeVolumeForecast {
 
     /// The projection from the last point used, at `rate`, to `end` — or to
     /// the capacity, where it gets there first. Nil where it doesn't fill.
-    static func projection(from last: KubeSeriesPoint, rate: Double, capacity: Double, until end: Date) -> KubeChartSeries? {
+    package static func projection(from last: KubeSeriesPoint, rate: Double, capacity: Double, until end: Date) -> KubeChartSeries? {
         guard rate > 0, end > last.time, capacity > last.value else { return nil }
         let full = last.time.addingTimeInterval((capacity - last.value) / rate)
         let stop = min(end, full)
@@ -338,7 +338,7 @@ enum KubeVolumeForecast {
     }
 
     /// What a volume with no fixed size says in place of its share and forecast.
-    static func unbounded(_ capacity: Double) -> String {
+    package static func unbounded(_ capacity: Double) -> String {
         "The volume reports \(KubeVolumeFormat.bytes(capacity)) of capacity, as EFS does: it has no fixed size, so there is no share of it and no forecast."
     }
 }

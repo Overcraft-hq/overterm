@@ -11,18 +11,18 @@ import SwiftUI
 ///
 /// The name is edited in the chip itself, not here — the island is already
 /// in the strip and renaming it in place is the thing you can see.
-struct GroupPopover: View {
-    @ObservedObject var group: TabGroup
-    @ObservedObject var theme: ChromeTheme
+package struct GroupPopover: View {
+    @ObservedObject package var group: TabGroup
+    @ObservedObject package var theme: ChromeTheme
     /// Where the group's tabs are, offered as the folder to bind to.
-    let folder: String?
-    let done: () -> Void
+    package let folder: String?
+    package let done: () -> Void
 
     private var folderName: String {
         folder.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? ""
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Color")
                 .font(.system(size: ChromeMetrics.text(11), weight: .semibold))

@@ -3,41 +3,41 @@ import Foundation
 /// A storage connection, open: its buckets, each folder's listing as far
 /// as it has been read (a page at a time), and the uploads under way.
 @MainActor
-final class StorageSession: ObservableObject {
-    enum State: Equatable {
+package final class StorageSession: ObservableObject {
+    package enum State: Equatable {
         case closed, connecting, open
         case failed(String)
     }
 
-    struct Transfer: Identifiable, Equatable {
-        let id = UUID()
-        var name: String
-        var progress: Double = 0
-        var error: String?
-        var done = false
+    package struct Transfer: Identifiable, Equatable {
+        package let id = UUID()
+        package var name: String
+        package var progress: Double = 0
+        package var error: String?
+        package var done = false
     }
 
-    let connection: DatabaseConnection
-    let client: any StorageClient
-    @Published private(set) var state = State.closed
-    @Published private(set) var buckets: [StorageBucket] = []
+    package let connection: DatabaseConnection
+    package let client: any StorageClient
+    @Published package private(set) var state = State.closed
+    @Published package private(set) var buckets: [StorageBucket] = []
     /// By `bucket/prefix`.
-    @Published private(set) var listings: [String: StorageListing] = [:]
-    @Published private(set) var loading: Set<String> = []
-    @Published private(set) var transfers: [Transfer] = []
+    @Published package private(set) var listings: [String: StorageListing] = [:]
+    @Published package private(set) var loading: Set<String> = []
+    @Published package private(set) var transfers: [Transfer] = []
     private var opening: Task<Void, Never>?
 
-    init(_ connection: DatabaseConnection, secrets: DatabaseSecrets) {
+    package init(_ connection: DatabaseConnection, secrets: DatabaseSecrets) {
         self.connection = connection
         client = StorageClients.make(
             connection, secret: secrets.value(.password, for: connection.id), serviceAccount: secrets.value(.serviceAccount, for: connection.id))
     }
 
-    var isOpen: Bool { state == .open }
+    package var isOpen: Bool { state == .open }
 
-    static func key(_ bucket: String, _ prefix: String) -> String { "\(bucket)/\(prefix)" }
+    package static func key(_ bucket: String, _ prefix: String) -> String { "\(bucket)/\(prefix)" }
 
-    func open() async {
+    package func open() async {
         if let opening {
             await opening.value
             return
@@ -58,16 +58,16 @@ final class StorageSession: ObservableObject {
         opening = nil
     }
 
-    func close() {
+    package func close() {
         state = .closed
         buckets = []
         listings = [:]
     }
 
-    func listing(_ bucket: String, _ prefix: String) -> StorageListing? { listings[Self.key(bucket, prefix)] }
+    package func listing(_ bucket: String, _ prefix: String) -> StorageListing? { listings[Self.key(bucket, prefix)] }
 
     /// A folder's first page — or, `more`, its next.
-    func load(_ bucket: String, _ prefix: String, more: Bool = false) async {
+    package func load(_ bucket: String, _ prefix: String, more: Bool = false) async {
         let key = Self.key(bucket, prefix)
         guard !loading.contains(key), more || listings[key] == nil else { return }
         let token = more ? listings[key]?.next : nil
@@ -88,7 +88,7 @@ final class StorageSession: ObservableObject {
     }
 
     /// What is shown again from the server: a folder (and the buckets).
-    func refresh(_ bucket: String? = nil, _ prefix: String = "") async {
+    package func refresh(_ bucket: String? = nil, _ prefix: String = "") async {
         if let bucket {
             listings = listings.filter { !$0.key.hasPrefix(Self.key(bucket, prefix)) }
             await load(bucket, prefix)
@@ -98,7 +98,7 @@ final class StorageSession: ObservableObject {
         }
     }
 
-    @Published var lastError: String?
+    @Published package var lastError: String?
 
     private func report(_ error: Error) {
         lastError = error.localizedDescription
@@ -114,7 +114,7 @@ final class StorageSession: ObservableObject {
 
     /// Files and folders from Finder into `bucket/prefix`, a folder's
     /// files under its name — one at a time, each with its progress.
-    func upload(_ urls: [URL], to bucket: String, prefix: String) async {
+    package func upload(_ urls: [URL], to bucket: String, prefix: String) async {
         guard !refuseIfReadOnly() else { return }
         var files: [(URL, String)] = []
         for url in urls {
@@ -162,10 +162,10 @@ final class StorageSession: ObservableObject {
         change(&transfers[index])
     }
 
-    func dismissTransfers() { transfers.removeAll { $0.done || $0.error != nil } }
+    package func dismissTransfers() { transfers.removeAll { $0.done || $0.error != nil } }
 
     /// An empty folder: S3 has none, so a `name/` marker stands for it.
-    func newFolder(_ name: String, in bucket: String, prefix: String) async {
+    package func newFolder(_ name: String, in bucket: String, prefix: String) async {
         guard !refuseIfReadOnly() else { return }
         let clean = name.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
         guard !clean.isEmpty else { return }
@@ -177,7 +177,7 @@ final class StorageSession: ObservableObject {
         await refresh(bucket, prefix)
     }
 
-    func newBucket(_ name: String) async {
+    package func newBucket(_ name: String) async {
         guard !refuseIfReadOnly() else { return }
         do {
             try await client.createBucket(name.lowercased())
@@ -188,12 +188,12 @@ final class StorageSession: ObservableObject {
     }
 
     /// The keys a delete would take: a file's own, a folder's every one.
-    func keys(for key: String, in bucket: String) async -> [String] {
+    package func keys(for key: String, in bucket: String) async -> [String] {
         guard key.hasSuffix("/") else { return [key] }
         return (try? await client.keys(bucket: bucket, prefix: key)) ?? []
     }
 
-    func delete(_ keys: [String], in bucket: String, refreshing prefix: String) async {
+    package func delete(_ keys: [String], in bucket: String, refreshing prefix: String) async {
         guard !refuseIfReadOnly(), !keys.isEmpty else { return }
         do {
             try await client.delete(bucket: bucket, keys: keys)
@@ -206,7 +206,7 @@ final class StorageSession: ObservableObject {
 
 extension DatabaseModel {
     /// A storage connection's session — one an id, made on first need.
-    func storage(_ connection: DatabaseConnection) -> StorageSession {
+    package func storage(_ connection: DatabaseConnection) -> StorageSession {
         if let session = storageSessions[connection.id], session.connection == connection { return session }
         let session = StorageSession(connection, secrets: store.secrets)
         storageSessions[connection.id] = session

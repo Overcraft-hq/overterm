@@ -6,54 +6,54 @@ import Foundation
 /// and the sentences that say why a chart is left out. Built from the
 /// ring (metrics-server's samples taken while shown) and the status
 /// history (the objects' own numbers read while shown). Pure.
-struct KubeObjectCharts: Equatable, Sendable {
-    struct Group: Equatable, Sendable, Identifiable {
-        var title: String
-        var charts: [KubePodCharts.Chart]
+package struct KubeObjectCharts: Equatable, Sendable {
+    package struct Group: Equatable, Sendable, Identifiable {
+        package var title: String
+        package var charts: [KubePodCharts.Chart]
         /// Its charts are read only while it is on screen (a node's top
         /// pods over Prometheus, K3: a series a pod on the node): its view
         /// says when it shows (metrics.md 6.2).
-        var readsWhenShown = false
+        package var readsWhenShown = false
         /// Not read yet: the view says it is asked once shown.
-        var pending = false
-        var id: String { title }
+        package var pending = false
+        package var id: String { title }
     }
 
-    var range: KubeMetricsRange
-    var groups: [Group]
-    var caption: String
+    package var range: KubeMetricsRange
+    package var groups: [Group]
+    package var caption: String
     /// "last 15 min", for each chart's summary.
-    var span: String
-    var hasSamples: Bool
+    package var span: String
+    package var hasSamples: Bool
     /// Why a chart is left out, or what a chart's numbers are not.
-    var notes: [String] = []
+    package var notes: [String] = []
     /// A workload's: the view drawn.
-    var view: KubeWorkloadView?
+    package var view: KubeWorkloadView?
 
-    var charts: [KubePodCharts.Chart] { groups.flatMap(\.charts) }
+    package var charts: [KubePodCharts.Chart] { groups.flatMap(\.charts) }
 }
 
 /// A workload's CPU and memory as one total (stacked: its top five pods
 /// and the rest) or its top five pods as lines, against the template's
 /// request and limit (metrics.md 2.5, decision 13).
-enum KubeWorkloadView: String, CaseIterable, Sendable {
+package enum KubeWorkloadView: String, CaseIterable, Sendable {
     case total, perPod
 
-    var title: String { self == .total ? "Total" : "Per pod" }
+    package var title: String { self == .total ? "Total" : "Per pod" }
 }
 
 /// What the builders share: a key's samples at a range, a chart's data
 /// with its version, series lined up on another's times. Pure.
-enum KubeChartBuild {
-    struct Usage {
-        var cpu: [KubeSeriesPoint]
-        var memory: [KubeSeriesPoint]
-        var breaks: Set<Date> = []
+package enum KubeChartBuild {
+    package struct Usage {
+        package var cpu: [KubeSeriesPoint]
+        package var memory: [KubeSeriesPoint]
+        package var breaks: Set<Date> = []
     }
 
     /// A ring key's CPU and memory over the range: Live its raw samples
     /// (its breaks kept), 6h its minute buckets — CPU the mean, memory the peak.
-    static func usage(_ ring: KubeUsageRing, _ key: KubeUsageKey, range: KubeMetricsRange, start: Date, now: Date) -> Usage {
+    package static func usage(_ ring: KubeUsageRing, _ key: KubeUsageKey, range: KubeMetricsRange, start: Date, now: Date) -> Usage {
         if range == .live {
             let segments = ring.segments(key, now: now).map { $0.filter { $0.time >= start && $0.time <= now } }.filter { !$0.isEmpty }
             let kept = segments.flatMap { $0 }
@@ -67,7 +67,7 @@ enum KubeChartBuild {
     }
 
     /// A chart's data, its version hashed from what it draws.
-    static func data(
+    package static func data(
         id: String, title: String, unit: KubeChartUnit, series: [KubeChartSeries], start: Date, end: Date, step: TimeInterval, stacked: Bool = false,
         source: String, tier: String?, breaksMarked: Bool, bands: [KubeChartBand] = [], stepped: Bool = false
     ) -> KubeChartData {
@@ -94,7 +94,7 @@ enum KubeChartBuild {
     }
 
     /// A reference line at one value.
-    static func reference(_ id: String, _ name: String, _ role: KubeChartRole, _ value: Double?, at now: Date) -> KubeChartSeries? {
+    package static func reference(_ id: String, _ name: String, _ role: KubeChartRole, _ value: Double?, at now: Date) -> KubeChartSeries? {
         value.map { KubeChartSeries(id: id, name: name, role: role, points: [KubeSeriesPoint(time: now, value: $0)]) }
     }
 
@@ -102,7 +102,7 @@ enum KubeChartBuild {
     /// than `within` before — none in a gap (never a guess). Pods on
     /// different nodes are stamped apart: stacked over a total, each is
     /// read at the total's times.
-    static func align(_ points: [KubeSeriesPoint], to times: [Date], within: TimeInterval) -> [KubeSeriesPoint] {
+    package static func align(_ points: [KubeSeriesPoint], to times: [Date], within: TimeInterval) -> [KubeSeriesPoint] {
         var out: [KubeSeriesPoint] = []
         out.reserveCapacity(times.count)
         var index = 0
@@ -116,26 +116,26 @@ enum KubeChartBuild {
 
     /// What a key is ranked by: its raw samples' mean CPU since `start`
     /// (the last 15 minutes), else the range's points'.
-    static func rank(_ ring: KubeUsageRing, _ key: KubeUsageKey, usage: Usage, since start: Date, now: Date) -> Double {
+    package static func rank(_ ring: KubeUsageRing, _ key: KubeUsageKey, usage: Usage, since start: Date, now: Date) -> Double {
         let raw = ring.points(key, now: now).map { KubeSeriesPoint(time: $0.time, value: $0.usage.cpu) }
         return mean(raw.isEmpty ? usage.cpu : raw, since: start)
     }
 
     /// The mean of `points` since `start` (0 with none).
-    static func mean(_ points: [KubeSeriesPoint], since start: Date) -> Double {
+    package static func mean(_ points: [KubeSeriesPoint], since start: Date) -> Double {
         let kept = points.filter { $0.time >= start }
         return kept.isEmpty ? 0 : kept.reduce(0) { $0 + $1.value } / Double(kept.count)
     }
 
     /// `total` less the parts at each of its times, never below zero: "other".
-    static func rest(_ total: [KubeSeriesPoint], minus parts: [[KubeSeriesPoint]]) -> [KubeSeriesPoint] {
+    package static func rest(_ total: [KubeSeriesPoint], minus parts: [[KubeSeriesPoint]]) -> [KubeSeriesPoint] {
         var taken: [Date: Double] = [:]
         for part in parts { for point in part { taken[point.time, default: 0] += point.value } }
         return total.map { KubeSeriesPoint(time: $0.time, value: max(0, $0.value - (taken[$0.time] ?? 0))) }
     }
 
     /// Live's step: the samples' own spacing, never under the poll's.
-    static func step(_ range: KubeMetricsRange, interval: TimeInterval, points: [KubeSeriesPoint]) -> TimeInterval {
+    package static func step(_ range: KubeMetricsRange, interval: TimeInterval, points: [KubeSeriesPoint]) -> TimeInterval {
         guard range == .live else { return range.step }
         var gaps: [TimeInterval] = []
         for (a, b) in zip(points, points.dropFirst()) { gaps.append(b.time.timeIntervalSince(a.time)) }
@@ -143,48 +143,48 @@ enum KubeChartBuild {
         return max(interval, spacing, 1)
     }
 
-    static func caption(first: Date?, range: KubeMetricsRange, interval: TimeInterval, of what: String) -> String {
+    package static func caption(first: Date?, range: KubeMetricsRange, interval: TimeInterval, of what: String) -> String {
         guard let first else { return "Waiting for metrics-server's first sample of \(what)…" }
         return "Sampled from metrics-server while shown since \(KubeChartTime.clock(first)), "
             + (range == .live ? "every \(KubePodCharts.seconds(interval))" : "in 1-minute buckets: CPU the minute's mean, memory its peak")
     }
 
-    static func tier(_ range: KubeMetricsRange, interval: TimeInterval) -> String {
+    package static func tier(_ range: KubeMetricsRange, interval: TimeInterval) -> String {
         range == .live ? "sampled every \(KubePodCharts.seconds(interval))" : "1-minute buckets (CPU the mean, memory the peak)"
     }
 
-    static func span(_ range: KubeMetricsRange) -> String { range == .live ? "last 15 min" : "last 6h" }
+    package static func span(_ range: KubeMetricsRange) -> String { range == .live ? "last 15 min" : "last 6h" }
 }
 
 // MARK: Workloads
 
 /// A workload's tab (W1–W4, and its HPA's H1 and H2 when one targets it).
-enum KubeWorkloadCharts {
-    static let top = 5
+package enum KubeWorkloadCharts {
+    package static let top = 5
 
-    struct Input {
-        var namespace: String
-        var kind: String
-        var name: String
+    package struct Input {
+        package var namespace: String
+        package var kind: String
+        package var name: String
         /// The workload's object (its template's requests and limits, its replicas).
-        var object: [String: Any]
-        var ring: KubeUsageRing
-        var statuses: KubeStatusHistory
+        package var object: [String: Any]
+        package var ring: KubeUsageRing
+        package var statuses: KubeStatusHistory
         /// The last sample's pods: who they are, and their revisions.
-        var pods: [KubePodMetrics]
-        var range: KubeMetricsRange
-        var now: Date
-        var interval: TimeInterval
-        var view: KubeWorkloadView?
+        package var pods: [KubePodMetrics]
+        package var range: KubeMetricsRange
+        package var now: Date
+        package var interval: TimeInterval
+        package var view: KubeWorkloadView?
         /// Each ReplicaSet's or ControllerRevision's name, and how its line is labelled: "rev 14 (nginx:1.27.2)".
-        var revisions: [String: String] = [:]
+        package var revisions: [String: String] = [:]
         /// The HPA that targets it, and what it said last.
-        var hpa: (name: String, status: KubeHPAStatus?)?
+        package var hpa: (name: String, status: KubeHPAStatus?)?
         /// What its markers are joined from: its History, its pods' states.
-        var changes = KubeChartChanges()
-        var window: KubeChartWindow?
+        package var changes = KubeChartChanges()
+        package var window: KubeChartWindow?
 
-        init(
+        package init(
             namespace: String, kind: String, name: String, object: [String: Any], ring: KubeUsageRing, statuses: KubeStatusHistory, pods: [KubePodMetrics],
             range: KubeMetricsRange, now: Date, interval: TimeInterval, view: KubeWorkloadView? = nil, revisions: [String: String] = [:],
             hpa: (name: String, status: KubeHPAStatus?)? = nil, changes: KubeChartChanges = KubeChartChanges(), window: KubeChartWindow? = nil
@@ -209,7 +209,7 @@ enum KubeWorkloadCharts {
 
     /// The template's per-pod request and limit (its containers' added up;
     /// nil where one container sets none), and how many pods it runs now.
-    static func template(_ object: [String: Any], kind: String) -> (perPod: KubePodCharts.Container, replicas: Int) {
+    package static func template(_ object: [String: Any], kind: String) -> (perPod: KubePodCharts.Container, replicas: Int) {
         let template = ((object["spec"] as? [String: Any])?["template"] as? [String: Any]) ?? [:]
         let containers = KubePodCharts.containers(of: ["spec": template["spec"] ?? [:]])
         func total(_ value: (KubePodCharts.Container) -> Double?) -> Double? {
@@ -233,16 +233,16 @@ enum KubeWorkloadCharts {
     }
 
     /// The default view: Per pod with five pods or fewer, else Total (decision 13).
-    static func defaultView(pods: Int) -> KubeWorkloadView { pods <= top ? .perPod : .total }
+    package static func defaultView(pods: Int) -> KubeWorkloadView { pods <= top ? .perPod : .total }
 
     /// A revision's line's name: its timeline label, else `rev <hash>`.
-    static func revisionName(_ hash: String, kind: String, workload: String, revisions: [String: String]) -> String {
+    package static func revisionName(_ hash: String, kind: String, workload: String, revisions: [String: String]) -> String {
         revisions[workload + "-" + hash] ?? revisions[hash] ?? "rev \(hash)"
     }
 
     /// Its charts marked with its History; W1 and W2 with every pod's
     /// OOMKills and restarts too, from the bounded read of its pods' states.
-    static func build(_ input: Input) -> KubeObjectCharts {
+    package static func build(_ input: Input) -> KubeObjectCharts {
         let range = input.window?.tier ?? (input.range.isSampled ? input.range : .live)
         let now = input.now
         let start = now.addingTimeInterval(-range.span)
@@ -377,11 +377,11 @@ enum KubeWorkloadCharts {
 /// An HPA's tab (H1, H2): its replicas against its bounds, and each of its
 /// metrics against its target — from its status, read every 15 s while
 /// shown (the controller's own sync period).
-enum KubeHPACharts {
+package enum KubeHPACharts {
     /// More scales than this in an hour is flapping.
-    static let flapping = 4
+    package static let flapping = 4
 
-    static func build(
+    package static func build(
         namespace: String, name: String, status: KubeHPAStatus?, statuses: KubeStatusHistory, range: KubeMetricsRange, now: Date, interval: TimeInterval,
         changes: KubeChartChanges = KubeChartChanges(), window: KubeChartWindow? = nil
     ) -> KubeObjectCharts {
@@ -399,13 +399,13 @@ enum KubeHPACharts {
     }
 
     /// How many times its current replicas changed in the hour before `now`.
-    static func scales(_ points: [KubeSeriesPoint], now: Date) -> Int {
+    package static func scales(_ points: [KubeSeriesPoint], now: Date) -> Int {
         let hour = points.filter { $0.time >= now.addingTimeInterval(-3600) }
         return zip(hour, hour.dropFirst()).filter { $0.value != $1.value }.count
     }
 
     /// The stretches its status said ScalingLimited.
-    static func limitedBands(_ statuses: KubeStatusHistory, _ key: KubeStatusKey, now: Date) -> [KubeChartBand] {
+    package static func limitedBands(_ statuses: KubeStatusHistory, _ key: KubeStatusKey, now: Date) -> [KubeChartBand] {
         guard let kept = statuses.of(key, now: now) else { return [] }
         var bands: [KubeChartBand] = []
         var since: Date?
@@ -421,7 +421,7 @@ enum KubeHPACharts {
         return bands
     }
 
-    static func charts(
+    package static func charts(
         namespace: String, name: String, status: KubeHPAStatus?, statuses: KubeStatusHistory, start: Date, now: Date, step: TimeInterval
     ) -> [KubePodCharts.Chart] {
         let key = KubeStatusKey.hpa(namespace: namespace, name: name)
@@ -466,7 +466,7 @@ enum KubeHPACharts {
     }
 
     /// A metric's name as an identifier part.
-    static func slug(_ name: String) -> String {
+    package static func slug(_ name: String) -> String {
         String(name.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "-" })
     }
 }
@@ -477,27 +477,27 @@ enum KubeHPACharts {
 /// request (its pods read as objects every 5 minutes), its allocatable and
 /// capacity; its pods against `allocatable.pods`; pressure and cordon as
 /// bands; and its largest pods, stacked, once "Sample top pods" is pressed.
-enum KubeNodeCharts {
-    static let topPods = 8
+package enum KubeNodeCharts {
+    package static let topPods = 8
 
-    struct Input {
-        var node: String
-        var facts: KubeNodeFacts
-        var ring: KubeUsageRing
-        var statuses: KubeStatusHistory
+    package struct Input {
+        package var node: String
+        package var facts: KubeNodeFacts
+        package var ring: KubeUsageRing
+        package var statuses: KubeStatusHistory
         /// Its pods as read last (requests, phase): nil until read.
-        var pods: KubeNodePods?
+        package var pods: KubeNodePods?
         /// The pods whose samples are shown stacked: nil, not sampled.
-        var top: [KubeRowID]?
-        var range: KubeMetricsRange
-        var now: Date
-        var interval: TimeInterval
+        package var top: [KubeRowID]?
+        package var range: KubeMetricsRange
+        package var now: Date
+        package var interval: TimeInterval
         /// Its events: its warnings marked.
-        var changes = KubeChartChanges()
-        var window: KubeChartWindow?
+        package var changes = KubeChartChanges()
+        package var window: KubeChartWindow?
     }
 
-    static func build(_ input: Input) -> KubeObjectCharts {
+    package static func build(_ input: Input) -> KubeObjectCharts {
         let range = input.window?.tier ?? (input.range.isSampled ? input.range : .live)
         let now = input.now
         let start = now.addingTimeInterval(-range.span)
@@ -590,25 +590,25 @@ enum KubeNodeCharts {
 /// — the top eight and "other" — against its ResourceQuota, and its pods
 /// by phase; each pod's workload from the namespace's Metadata rows, else
 /// read off its name ("grouped by name").
-enum KubeNamespaceCharts {
-    static let top = 8
+package enum KubeNamespaceCharts {
+    package static let top = 8
 
-    struct Input {
-        var namespace: String
-        var ring: KubeUsageRing
-        var statuses: KubeStatusHistory
-        var quota: KubeQuota?
+    package struct Input {
+        package var namespace: String
+        package var ring: KubeUsageRing
+        package var statuses: KubeStatusHistory
+        package var quota: KubeQuota?
         /// Whether the workloads came from the rows' owners (else from the names).
-        var byOwner: Bool
-        var range: KubeMetricsRange
-        var now: Date
-        var interval: TimeInterval
+        package var byOwner: Bool
+        package var range: KubeMetricsRange
+        package var now: Date
+        package var interval: TimeInterval
         /// Its own events: its warnings marked.
-        var changes = KubeChartChanges()
-        var window: KubeChartWindow?
+        package var changes = KubeChartChanges()
+        package var window: KubeChartWindow?
     }
 
-    static func build(_ input: Input) -> KubeObjectCharts {
+    package static func build(_ input: Input) -> KubeObjectCharts {
         let range = input.window?.tier ?? (input.range.isSampled ? input.range : .live)
         let now = input.now
         let start = now.addingTimeInterval(-range.span)

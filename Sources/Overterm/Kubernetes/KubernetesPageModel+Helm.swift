@@ -7,13 +7,13 @@ import Foundation
 /// tab (`KubernetesPageModel+HelmWrites`).
 extension KubernetesPageModel {
     /// Whether the Helm section is on screen.
-    var helmShows: Bool { section == .helm && visible && windowVisible }
+    package var helmShows: Bool { section == .helm && visible && windowVisible }
 
     /// The section shown: its list read again. Hidden — another section,
     /// the page or its window off screen — what a release's record said
     /// goes: another section closes it, the page hiding keeps it open
     /// saying so.
-    func updateHelmReading() {
+    package func updateHelmReading() {
         if helmShows {
             // One detail at a time: the kind's under the section goes.
             if detail != nil { closeDetail() }
@@ -26,14 +26,14 @@ extension KubernetesPageModel {
     }
 
     /// Refresh, and the section shown: the releases listed again.
-    func loadHelm() {
+    package func loadHelm() {
         guard let context = model.selectedName else { return }
         helm.load(context: context, scope: model.scope, client: model.client(for: context))
     }
 
     /// Another context or namespace: its releases, if the section shows;
     /// else what the last one read goes now.
-    func helmScopeChanged() {
+    package func helmScopeChanged() {
         if helmShows {
             loadHelm()
         } else if helm.context != model.selectedName || helm.scope != model.scope {
@@ -42,7 +42,7 @@ extension KubernetesPageModel {
     }
 
     /// A release opened (a click, ↩): its latest revision, or one of its history.
-    func openHelm(_ release: KubeHelmRelease, revision: KubeHelmRecord? = nil) {
+    package func openHelm(_ release: KubeHelmRelease, revision: KubeHelmRecord? = nil) {
         let production = model.contexts.context(named: helm.context ?? "")?.isProduction ?? true
         if revision == nil { helm.tab = .overview }
         helm.open(release, revision: revision, isProduction: production)
@@ -54,7 +54,7 @@ extension KubernetesPageModel {
     /// page's own keys (sections, `n`, `c`, `:`, `0`, `?`, `/`) as ever.
     /// The list's verbs would act on the kind under the section: refused.
     /// Nil: not Helm's, the page's to decide — every key while `?` shows.
-    func helmPress(_ characters: String) -> Bool? {
+    package func helmPress(_ characters: String) -> Bool? {
         // The cheat sheet showing: every key is its to close first.
         if cheatSheet { return nil }
         switch characters {
@@ -84,7 +84,7 @@ extension KubernetesPageModel {
     }
 
     /// The release picked's `helm status`, else the list's `helm list`.
-    var helmCommand: String {
+    package var helmCommand: String {
         let context = helm.context ?? model.selectedName ?? ""
         if let release = helmPicked {
             return KubeHelmLine.status(context: context, namespace: release.namespace, release: release.name)
@@ -94,7 +94,7 @@ extension KubernetesPageModel {
 
     /// Where the refusal sends you: a terminal pinned to the context, in
     /// the namespace shown (on production asked first).
-    func openHelmTerminal() {
+    package func openHelmTerminal() {
         guard let context = model.selected else { return }
         actions?.openTerminal(context, model.scope.namespace(for: .pods))
     }

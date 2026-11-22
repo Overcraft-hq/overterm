@@ -6,11 +6,11 @@ import SwiftUI
 /// What the engine would refuse is said here first
 /// (`DockerContainerSettings.problem`); what it says when it refuses
 /// anyway stays in the sheet too.
-struct DockerSettingsSheet: View {
-    @State var settings: DockerContainerSettings
-    @ObservedObject var page: DockerPageModel
-    @ObservedObject var docker: DockerModel
-    let actions: DockerActions
+package struct DockerSettingsSheet: View {
+    @State package var settings: DockerContainerSettings
+    @ObservedObject package var page: DockerPageModel
+    @ObservedObject package var docker: DockerModel
+    package let actions: DockerActions
     /// What the engine said to Apply.
     @State private var failed: String?
     @State private var applying = false
@@ -23,7 +23,7 @@ struct DockerSettingsSheet: View {
             + (settings.engineMemory.map { "; the engine has \(DockerBytes.string($0, memory: true))" } ?? "")
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(verbatim: "Settings of “\(settings.name)”").font(.system(size: ChromeMetrics.text(17), weight: .semibold))
             if let project = settings.project {

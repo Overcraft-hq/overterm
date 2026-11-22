@@ -12,29 +12,29 @@ import Foundation
 /// facts and the summaries (`KubeGitOpsWire`) share of how Argo CD and Flux
 /// say where things go: an in-cluster destination, an inventory entry's id.
 /// Pure.
-struct KubeGitOpsSource: Equatable, Sendable {
+package struct KubeGitOpsSource: Equatable, Sendable {
     /// As the Application says it — read from a dictionary, a URL may carry
     /// userinfo, so it is shown only where the tree already shows it; the
     /// summaries' (`KubeGitOpsWire`) never carries any.
-    var repoURL: String
-    var path: String?
-    var chart: String?
-    var targetRevision: String?
+    package var repoURL: String
+    package var path: String?
+    package var chart: String?
+    package var targetRevision: String?
     /// A values-only source (`ref: values`), read by another one's `$values/…`.
-    var ref: String?
+    package var ref: String?
 
     /// `chart`, else `path`: where in the repository.
-    var place: String? { chart ?? path }
+    package var place: String? { chart ?? path }
 
     /// The git repository it names (`GitRemoteURL`): nil for a chart's
     /// (`chart:` set — a Helm repository or `oci://`), which names none.
-    var repo: GitRemoteURL? { chart == nil ? GitRemoteURL(repoURL) : nil }
+    package var repo: GitRemoteURL? { chart == nil ? GitRemoteURL(repoURL) : nil }
 
     /// A values-only source (`ref:`), read by another one's `$values/…`.
-    var isValuesRef: Bool { ref != nil }
+    package var isValuesRef: Bool { ref != nil }
 
     /// As a row says it, host-less: `acme/shop apps/web @main`, `api@1.4.2`.
-    var said: String {
+    package var said: String {
         if let chart { return targetRevision.map { "\(chart)@\($0)" } ?? chart }
         let repository = repo?.path ?? GitRemoteURL.withoutUserinfo(repoURL)
         return [repository, path, targetRevision.map { "@\($0)" }].compactMap { $0 }.joined(separator: " ")
@@ -44,7 +44,7 @@ struct KubeGitOpsSource: Equatable, Sendable {
 
     /// Argo CD's in-cluster destination: `https://kubernetes.default.svc`,
     /// or the name `in-cluster`; neither said is the default, here too.
-    static func inCluster(server: String?, name: String?) -> Bool {
+    package static func inCluster(server: String?, name: String?) -> Bool {
         if let server, !server.isEmpty { return server == "https://kubernetes.default.svc" }
         if let name, !name.isEmpty { return name == "in-cluster" }
         return true
@@ -52,7 +52,7 @@ struct KubeGitOpsSource: Equatable, Sendable {
 
     /// A Flux inventory entry's id: `<namespace>_<name>_<group>_<kind>`
     /// (no Kubernetes name has an underscore); its version beside it.
-    static func inventoryEntry(_ id: String, version: String) -> (kind: String, name: String, namespace: String?, apiVersion: String)? {
+    package static func inventoryEntry(_ id: String, version: String) -> (kind: String, name: String, namespace: String?, apiVersion: String)? {
         let parts = id.split(separator: "_", omittingEmptySubsequences: false).map(String.init)
         guard parts.count == 4, !parts[1].isEmpty, !parts[3].isEmpty else { return nil }
         let group = parts[2]
@@ -62,7 +62,7 @@ struct KubeGitOpsSource: Equatable, Sendable {
     /// The Application's sources, in order: `spec.sources`, else
     /// `spec.source` as one. A source with no `repoURL` is kept (its
     /// index is what `revisions[i]` pairs with).
-    static func all(in spec: [String: Any]) -> [KubeGitOpsSource] {
+    package static func all(in spec: [String: Any]) -> [KubeGitOpsSource] {
         maps(spec, "source", "sources").map { map in
             KubeGitOpsSource(
                 repoURL: map["repoURL"] as? String ?? "", path: nonEmpty(map["path"]), chart: nonEmpty(map["chart"]),
@@ -74,7 +74,7 @@ struct KubeGitOpsSource: Equatable, Sendable {
     /// one `revision` —, one per source in a multi-source Application.
     /// Empty strings kept in place (a source with nothing fetched yet keeps
     /// its index); nothing at all is `[]`.
-    static func revisions(_ map: [String: Any]?) -> [String] {
+    package static func revisions(_ map: [String: Any]?) -> [String] {
         guard let map else { return [] }
         if let list = map["revisions"] as? [Any], !list.isEmpty { return list.map { $0 as? String ?? "" } }
         if let one = map["revision"] as? String, !one.isEmpty { return [one] }
@@ -82,7 +82,7 @@ struct KubeGitOpsSource: Equatable, Sendable {
     }
 
     /// `sourceType` or `sourceTypes[]` (Helm, Kustomize, Directory, Plugin).
-    static func sourceTypes(_ map: [String: Any]?) -> [String] {
+    package static func sourceTypes(_ map: [String: Any]?) -> [String] {
         guard let map else { return [] }
         if let list = map["sourceTypes"] as? [Any], !list.isEmpty { return list.map { $0 as? String ?? "" } }
         if let one = map["sourceType"] as? String, !one.isEmpty { return [one] }
@@ -91,7 +91,7 @@ struct KubeGitOpsSource: Equatable, Sendable {
 
     /// The revision for the source at `index`: its own from `revisions[]`,
     /// else the single `revision` when there is only one source.
-    static func revision(_ map: [String: Any]?, source index: Int) -> String? {
+    package static func revision(_ map: [String: Any]?, source index: Int) -> String? {
         let all = revisions(map)
         guard all.indices.contains(index) else { return nil }
         return all[index].isEmpty ? nil : all[index]
@@ -100,7 +100,7 @@ struct KubeGitOpsSource: Equatable, Sendable {
     /// What Argo has applied: the last `history` entry's revision(s), else
     /// the last operation's `syncResult`'s. `status.sync`'s is what git has
     /// now, which may not be applied yet.
-    static func applied(_ status: [String: Any]) -> [String] {
+    package static func applied(_ status: [String: Any]) -> [String] {
         if let last = (status["history"] as? [[String: Any]])?.last {
             let said = revisions(last)
             if !said.isEmpty { return said }
@@ -109,7 +109,7 @@ struct KubeGitOpsSource: Equatable, Sendable {
     }
 
     /// What git has now, as Argo last compared it (`status.sync`).
-    static func wanted(_ status: [String: Any]) -> [String] { revisions(status["sync"] as? [String: Any]) }
+    package static func wanted(_ status: [String: Any]) -> [String] { revisions(status["sync"] as? [String: Any]) }
 
     /// `key`'s map as a one-element list, else `plural`'s list of maps.
     private static func maps(_ map: [String: Any], _ key: String, _ plural: String) -> [[String: Any]] {

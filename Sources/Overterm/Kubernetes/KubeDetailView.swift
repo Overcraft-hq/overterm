@@ -7,14 +7,14 @@ import SwiftUI
 /// owners, its node, the pods it selects) that open theirs. Docker's
 /// container detail is its pattern. A Secret is read only by its Show
 /// (`KubeSecretView`), its values masked.
-struct KubeDetailView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var session: KubeDetailSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubeDetailView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var session: KubeDetailSession
+    @ObservedObject package var theme: ChromeTheme
     /// The window's checkout of an Application's repository, its history read there (G5).
     @State private var historyCheckout: KubeGitOpsHistoryCheckout?
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             tabs
@@ -564,7 +564,7 @@ struct KubeDetailView: View {
 
     /// A key in the text colour, its value dimmer, a block's lines and a
     /// list's dash as they are.
-    static func line(_ text: String, theme: ChromeTheme) -> NSAttributedString {
+    package static func line(_ text: String, theme: ChromeTheme) -> NSAttributedString {
         let out = NSMutableAttributedString(string: text, attributes: [.font: LogStyle.font, .foregroundColor: theme.textNS.withAlphaComponent(0.72)])
         if let range = text.range(of: #"^\s*(- )?("[^"]*"|[^\s:"'#][^:]*?):(?=\s|$)"#, options: .regularExpression) {
             out.addAttribute(.foregroundColor, value: theme.textNS, range: NSRange(range, in: text))
@@ -644,12 +644,12 @@ struct KubeDetailView: View {
 /// A pod's Logs tab: which container (init and ephemeral ones marked),
 /// Previous once it restarted, how far back, how it reads now — then the
 /// shared log pane, its options kept for the window, Save As, ⌘L.
-struct KubePodLogsView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var logs: KubePodLogSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubePodLogsView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var logs: KubePodLogSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             controls
             Rectangle().fill(theme.border).frame(height: 1)
@@ -736,13 +736,13 @@ struct KubePodLogsView: View {
 /// to: the detail's object and the pod's own sample, read every 15 s while
 /// it shows (metrics.md 4.1) — with a sparkline of the pod's samples taken
 /// while shown, kept an hour after it hides.
-struct KubePodUsageView: View {
-    @ObservedObject var page: KubernetesPageModel
-    @ObservedObject var metrics: KubeMetricsMonitor
-    @ObservedObject var session: KubeDetailSession
-    @ObservedObject var theme: ChromeTheme
+package struct KubePodUsageView: View {
+    @ObservedObject package var page: KubernetesPageModel
+    @ObservedObject package var metrics: KubeMetricsMonitor
+    @ObservedObject package var session: KubeDetailSession
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if let lines = page.containerUsage(of: session.ref, object: session.object?.json), !lines.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: "Usage").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
@@ -796,14 +796,14 @@ struct KubePodUsageView: View {
 
 /// "Logs from Here"'s note: the time it reads from, and why what shows
 /// isn't all of it (`text`).
-struct KubeLogsFromNote: View {
-    @ObservedObject var feed: LogFeed
-    let from: Date
+package struct KubeLogsFromNote: View {
+    @ObservedObject package var feed: LogFeed
+    package let from: Date
     /// More was logged since than the feed keeps: its first lines shown.
-    let cut: Bool
-    @ObservedObject var theme: ChromeTheme
+    package let cut: Bool
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         let first = feed.lines.first?.timestamp.flatMap { KubeMetricsReader.time($0.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)) }
         let said = Self.text(from: from, first: first, lines: feed.lines.count, cut: cut)
         Text(verbatim: said.text)
@@ -815,7 +815,7 @@ struct KubeLogsFromNote: View {
     /// The note: cut, our own limit says so — not rotation; else when the
     /// first line kept is well after `from`, nothing was logged between, or
     /// kubelet rotated it away. Pure.
-    static func text(from: Date, first: Date?, lines: Int, cut: Bool) -> (text: String, warns: Bool) {
+    package static func text(from: Date, first: Date?, lines: Int, cut: Bool) -> (text: String, warns: Bool) {
         let clock = "From \(KubeChartTime.clock(from))"
         if cut {
             let count = { (n: Int) in n.formatted(.number.locale(Locale(identifier: "en_US"))) }

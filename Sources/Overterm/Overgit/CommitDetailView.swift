@@ -4,17 +4,17 @@ import SwiftUI
 /// One commit in the right-hand pane, beside Changes, Pull Request and
 /// Usage: what it says, who made it, and what it changed — in the same
 /// cards the changes pane draws, without the stage box or Discard.
-struct CommitDetailView: View {
-    @ObservedObject var model: CommitDetailModel
-    @ObservedObject var theme: ChromeTheme
-    let onClose: () -> Void
-    let onOpen: (String) -> Void
+package struct CommitDetailView: View {
+    @ObservedObject package var model: CommitDetailModel
+    @ObservedObject package var theme: ChromeTheme
+    package let onClose: () -> Void
+    package let onOpen: (String) -> Void
     /// The commit in a review tab.
-    var onReview: (String) -> Void = { _ in }
+    package var onReview: (String) -> Void = { _ in }
 
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().opacity(0.3)

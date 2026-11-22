@@ -3,26 +3,26 @@ import Foundation
 /// What a Claude Code session is doing, from the end of its transcript:
 /// the session's title, the last prompt, and the agent's last words or
 /// the tool it is running.
-struct ClaudeActivity: Equatable {
+package struct ClaudeActivity: Equatable {
     /// Claude Code's own title for the session (`ai-title` lines).
-    var title: String?
+    package var title: String?
     /// What you last asked.
-    var lastPrompt: String?
+    package var lastPrompt: String?
     /// The last thing it said.
-    var lastReply: String?
+    package var lastReply: String?
     /// The tool call it made last, when that came after its last words:
     /// what it is doing now ("Bash: make test").
-    var currentTool: String?
-    var branch: String?
+    package var currentTool: String?
+    package var branch: String?
     /// Where the session runs (its transcript's cwd).
-    var cwd: String?
-    var updated: Date?
+    package var cwd: String?
+    package var updated: Date?
 
     /// How much of the end of the transcript is read — transcripts reach
     /// gigabytes; the latest state is always at the end.
-    static let tailSize = 512 * 1024
+    package static let tailSize = 512 * 1024
 
-    static func read(_ file: URL, tail: Int = tailSize) -> ClaudeActivity? {
+    package static func read(_ file: URL, tail: Int = tailSize) -> ClaudeActivity? {
         guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
@@ -38,7 +38,7 @@ struct ClaudeActivity: Equatable {
     }
 
     /// Lines oldest first; the newest of each kind wins.
-    static func parse(lines: [Data]) -> ClaudeActivity {
+    package static func parse(lines: [Data]) -> ClaudeActivity {
         var activity = ClaudeActivity()
         var sawReplyOrTool = false
         for data in lines.reversed() {
@@ -84,7 +84,7 @@ struct ClaudeActivity: Equatable {
     }
 
     /// "Bash: make test", "Edit: Sources/App.swift", or just the name.
-    static func describe(tool part: [String: Any]) -> String {
+    package static func describe(tool part: [String: Any]) -> String {
         let name = part["name"] as? String ?? "tool"
         let input = part["input"] as? [String: Any] ?? [:]
         let detail =

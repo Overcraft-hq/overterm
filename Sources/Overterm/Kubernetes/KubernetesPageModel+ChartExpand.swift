@@ -10,21 +10,21 @@ extension KubernetesPageModel {
     /// it into that window's right slot (its object's tab still the
     /// detail's). Its reads follow this, nothing more: the list, the
     /// Overview and the other tabs read only on the page.
-    var chartsShown: Bool { windowVisible && (visible || expansionFollowed) }
+    package var chartsShown: Bool { windowVisible && (visible || expansionFollowed) }
 
     /// The expanded chart shows in the slot and the tab it came from is still the detail's.
-    var expansionFollowed: Bool {
+    package var expansionFollowed: Bool {
         guard expandedChartOnScreen, let expanded = expandedChart, let detail, detail.ref == expanded.ref else { return false }
         return section.listsKinds && metricsTabShows
     }
 
     /// Whether the model keeps its usage and Prometheus read for the
     /// expanded chart alone: the page hidden, the chart on screen.
-    var holdsChartsForExpansion: Bool { !visible && windowVisible && expansionFollowed }
+    package var holdsChartsForExpansion: Bool { !visible && windowVisible && expansionFollowed }
 
     /// ⤢, or "Expand" in a chart's menu: the tab's chart alone in the
     /// window's right slot; the page steps aside (the window's `expandChart`).
-    func expandChart(_ chart: KubePodCharts.Chart, span: String, caption: String?) {
+    package func expandChart(_ chart: KubePodCharts.Chart, span: String, caption: String?) {
         guard let detail, metricsTabShows else { return }
         // A pod's chart: its section's container, as the tab's "Logs from Here" has it.
         var container: String?
@@ -39,7 +39,7 @@ extension KubernetesPageModel {
 
     /// The expanded chart as the tab builds it now: nil when its object's
     /// Metrics tab isn't the detail's, or no longer has that chart.
-    func liveChart(for expanded: KubeExpandedChart) -> KubeExpandedChart.Shown? {
+    package func liveChart(for expanded: KubeExpandedChart) -> KubeExpandedChart.Shown? {
         guard let detail, detail.ref == expanded.ref, metricsTabShows else { return nil }
         if detail.ref.isPod {
             guard let charts = podCharts(of: detail.ref, object: detail.object) else { return nil }
@@ -52,7 +52,7 @@ extension KubernetesPageModel {
 
     /// "Show in Kubernetes" from the slot: its object's Metrics tab on the
     /// page again — opened afresh when the detail has moved on.
-    func showExpandedChartSource(_ expanded: KubeExpandedChart) {
+    package func showExpandedChartSource(_ expanded: KubeExpandedChart) {
         if detail?.ref != expanded.ref {
             detailTab = .metrics
             open(expanded.ref, from: .link)
@@ -61,20 +61,20 @@ extension KubernetesPageModel {
     }
 
     /// The slot closed, or given to something else: nothing is read for it.
-    func expandedChartClosed() {
+    package func expandedChartClosed() {
         expandedChartOnScreen = false
     }
 
     /// Its window closes: the expanded chart goes with it, so no layout
     /// pass after (the right pane's, a hop late) can say it is on screen
     /// again and hold the model's metrics for a window that is gone.
-    func expandedChartWindowClosing() {
+    package func expandedChartWindowClosing() {
         expandedChart = nil
         expandedChartOnScreen = false
     }
 
     /// "Copy PromQL", "Copy Values as CSV": the clipboard, nowhere else.
-    func copyChartText(_ text: String) {
+    package func copyChartText(_ text: String) {
         actions?.copy(text)
     }
 
@@ -82,7 +82,7 @@ extension KubernetesPageModel {
     /// Prometheus refused as sent (`bad_data`, a saved query's 422) or the
     /// metrics proxy's filter did (metrics.md 4.7: a bug report — a chart
     /// that drew nothing has no menu to offer it); nil, none.
-    func reportedPromQL(of session: KubeDetailSession) -> String? {
+    package func reportedPromQL(of session: KubeDetailSession) -> String? {
         guard metricsSource(of: session.ref) != .sampled, let reading = tabReading(of: session) else { return nil }
         return KubeChartExport.promQL(reading.reported)
     }

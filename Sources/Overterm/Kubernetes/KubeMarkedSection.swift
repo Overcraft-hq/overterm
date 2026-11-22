@@ -15,12 +15,12 @@ import Foundation
 /// every sentence: never "another cluster", never missing beside
 /// Applications. Nothing in it reads, and no row it makes has a kind of
 /// its own: no write can pair with one. Pure.
-enum KubeMarkedSection {
+package enum KubeMarkedSection {
     // MARK: Rows
 
     /// Where an app read from marks stands beside the Applications read
     /// (14.2.1, 14.3): "not in this cluster" only from a whole read.
-    enum Beside: Equatable, Sendable {
+    package enum Beside: Equatable, Sendable {
         /// No Application of its instance name where they were read:
         /// `whole`, listed across the cluster; else in the namespaces read.
         case missing(whole: Bool)
@@ -32,7 +32,7 @@ enum KubeMarkedSection {
         case otherInstallation(String)
 
         /// What its row's tag says, short.
-        var tag: String {
+        package var tag: String {
             switch self {
             case .missing(whole: true): "not in this cluster"
             case .missing(whole: false): "not where Applications were read"
@@ -42,7 +42,7 @@ enum KubeMarkedSection {
         }
 
         /// What its hover says, whole.
-        var said: String {
+        package var said: String {
             switch self {
             case .missing(whole: true): "Its Application isn't in this cluster."
             case .missing(whole: false): "Its Application wasn't found where Applications were read."
@@ -53,23 +53,23 @@ enum KubeMarkedSection {
     }
 
     /// The apps read from marks as the section's rows.
-    struct Derived: Equatable, Sendable {
+    package struct Derived: Equatable, Sendable {
         /// Among the section's rows: every app when they are Argo CD's
         /// whole side (`.only`); beside Applications read, those with none here.
-        var shown: [KubeGitOpsRow] = []
+        package var shown: [KubeGitOpsRow] = []
         /// Beside Applications read: those with none here, which their chip
         /// shows alone.
-        var beside: [KubeGitOpsRow] = []
+        package var beside: [KubeGitOpsRow] = []
         /// Beside Applications read in some namespaces only: the marked
         /// apps whose Application's namespace wasn't read — counted.
-        var unread = 0
+        package var unread = 0
     }
 
     /// The rows the mode shows: every app when derived apps are Argo CD's
     /// whole side; beside Applications read, only those with none here,
     /// among the Applications, each saying where it stands — their chip
     /// shows them alone; none when off.
-    static func derived(_ apps: [KubeMarkedRanked], mode: KubeMarkedAppsMode, applications: KubeMarkedAppsMode.ApplicationsRead) -> Derived {
+    package static func derived(_ apps: [KubeMarkedRanked], mode: KubeMarkedAppsMode, applications: KubeMarkedAppsMode.ApplicationsRead) -> Derived {
         derived(rows: apps.map(base), mode: mode, applications: applications)
     }
 
@@ -77,7 +77,7 @@ enum KubeMarkedSection {
     /// thread, by `KubeMarkedBook` (14.4.6): only tags and a hover line
     /// are added here. Beside Applications, an app grouped by
     /// `app.kubernetes.io/instance` alone is never listed (14.3).
-    static func derived(rows: [KubeGitOpsRow], mode: KubeMarkedAppsMode, applications: KubeMarkedAppsMode.ApplicationsRead) -> Derived {
+    package static func derived(rows: [KubeGitOpsRow], mode: KubeMarkedAppsMode, applications: KubeMarkedAppsMode.ApplicationsRead) -> Derived {
         switch mode {
         case .off:
             return Derived()
@@ -107,11 +107,11 @@ enum KubeMarkedSection {
     }
 
     /// The prefix of a derived row's id: no kind's full name is it.
-    static let idPrefix = "marks/"
+    package static let idPrefix = "marks/"
 
     /// One app's row (14.2.2), where it stands beside Applications and
     /// its installation (when several mark objects here) as tags.
-    static func row(_ ranked: KubeMarkedRanked, installations several: Bool, beside: Beside? = nil) -> KubeGitOpsRow {
+    package static func row(_ ranked: KubeMarkedRanked, installations several: Bool, beside: Beside? = nil) -> KubeGitOpsRow {
         decorated(base(ranked), installations: several, beside: beside)
     }
 
@@ -120,7 +120,7 @@ enum KubeMarkedSection {
     /// object, its members counted by kind ("label only", "probably" as
     /// tags), where its members live, no revision, its main image as its
     /// source, when its state began. Made off the main thread.
-    static func base(_ ranked: KubeMarkedRanked) -> KubeGitOpsRow {
+    package static func base(_ ranked: KubeMarkedRanked) -> KubeGitOpsRow {
         let app = ranked.app
         let health = ranked.health
         var tags: [KubeGitOpsTag] = []
@@ -149,7 +149,7 @@ enum KubeMarkedSection {
     /// Applications read — its tag, and its sentence second in the hover,
     /// never the line a long hover loses —, else its installation id when
     /// several mark objects here (the header counts the apps with none).
-    static func decorated(_ row: KubeGitOpsRow, installations several: Bool, beside: Beside?) -> KubeGitOpsRow {
+    package static func decorated(_ row: KubeGitOpsRow, installations several: Bool, beside: Beside?) -> KubeGitOpsRow {
         var row = row
         if let beside {
             row.tags.append(.text(beside.tag))
@@ -164,7 +164,7 @@ enum KubeMarkedSection {
     /// The main image, its registry left out — the first container of the
     /// first workload — then how many more: `…/checkout-api:4.12.0 +1`.
     /// Not a git source: the header's hover says so.
-    static func source(_ images: [String]) -> String {
+    package static func source(_ images: [String]) -> String {
         guard let first = images.first else { return "" }
         let main = shortImage(first)
         return images.count > 1 ? "\(main) +\(images.count - 1)" : main
@@ -172,7 +172,7 @@ enum KubeMarkedSection {
 
     /// `registry.acme.example/acme/checkout-api:4.12.0` → `…/checkout-api:4.12.0`;
     /// a name with no path as it is.
-    static func shortImage(_ image: String) -> String {
+    package static func shortImage(_ image: String) -> String {
         let capped = String(image.prefix(256))
         guard let slash = capped.lastIndex(of: "/") else { return capped }
         return "…/" + capped[capped.index(after: slash)...]
@@ -180,7 +180,7 @@ enum KubeMarkedSection {
 
     /// An image's repository, its tag and digest left out: what `G`'s
     /// source groups an app by.
-    static func repository(_ image: String) -> String {
+    package static func repository(_ image: String) -> String {
         var name = Substring(image.prefix(256))
         if let at = name.firstIndex(of: "@") { name = name[..<at] }
         // The tag is after the last ":" that follows the last "/": a registry's port is before one.
@@ -188,7 +188,7 @@ enum KubeMarkedSection {
         return String(name)
     }
 
-    static func imageGroup(_ image: String) -> KubeGitOpsGroupKey {
+    package static func imageGroup(_ image: String) -> KubeGitOpsGroupKey {
         let repository = repository(image)
         return KubeGitOpsGroupKey(id: "\(KubeGitOpsGrouping.groupPrefix)source:image:\(repository)", title: repository, head: nil)
     }
@@ -199,7 +199,7 @@ enum KubeMarkedSection {
     /// to 0 "scaled by its Rollout" —, its hooks, what its age is, and
     /// what isn't known here (where it stands beside Applications is the
     /// mode's: `decorated`). At most 4 KB.
-    static func hover(_ ranked: KubeMarkedRanked) -> String {
+    package static func hover(_ ranked: KubeMarkedRanked) -> String {
         let app = ranked.app
         let health = ranked.health
         var lines = ["\(health.word): \(health.why)"]
@@ -225,12 +225,12 @@ enum KubeMarkedSection {
 
     /// The Source column's hover on an app read from marks: its images
     /// (each capped where its member was made), at most 4 KB.
-    static func sourceHover(_ images: [String]) -> String {
+    package static func sourceHover(_ images: [String]) -> String {
         capped("Images, not a repository: \(images.prefix(8).joined(separator: ", "))\(images.count > 8 ? " +\(images.count - 8)" : "")")
     }
 
     /// Text cut to `limit` bytes of UTF-8, "…" ending what was cut.
-    static func capped(_ text: String, limit: Int = KubeGitOpsMessage.hoverLimit) -> String {
+    package static func capped(_ text: String, limit: Int = KubeGitOpsMessage.hoverLimit) -> String {
         guard text.utf8.count > limit else { return text }
         var kept = ""
         var bytes = 0
@@ -253,7 +253,7 @@ enum KubeMarkedSection {
 
     /// The installations whose marks are here, the most apps first: "" for
     /// marks that carry no installation id.
-    static func installations(_ apps: [KubeMarkedApp]) -> [(installation: String, apps: Int)] {
+    package static func installations(_ apps: [KubeMarkedApp]) -> [(installation: String, apps: Int)] {
         var counts: [String: Int] = [:]
         for app in apps { counts[app.key.installation, default: 0] += 1 }
         return counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map { ($0.key, $0.value) }
@@ -261,7 +261,7 @@ enum KubeMarkedSection {
 
     /// `2 Argo CD installations mark objects here: hub-eu (812 apps),
     /// unnamed (82 apps)`; nil for one.
-    static func installationsLine(_ apps: [KubeMarkedApp]) -> String? {
+    package static func installationsLine(_ apps: [KubeMarkedApp]) -> String? {
         let all = installations(apps)
         guard all.count > 1 else { return nil }
         let each = all.map { "\($0.installation.isEmpty ? "unnamed" : $0.installation) (\(counted($0.apps, "app")))" }
@@ -269,7 +269,7 @@ enum KubeMarkedSection {
     }
 
     /// `1 app`, `1,024 apps`.
-    static func counted(_ count: Int, _ noun: String) -> String { "\(count.formatted()) \(noun)\(count == 1 ? "" : "s")" }
+    package static func counted(_ count: Int, _ noun: String) -> String { "\(count.formatted()) \(noun)\(count == 1 ? "" : "s")" }
 
     // MARK: The header
 
@@ -279,7 +279,7 @@ enum KubeMarkedSection {
     /// a read that wasn't whole found none; nil when a whole read found
     /// none (the empty sentence says so) or nothing is read. Apps grouped
     /// by `app.kubernetes.io/instance` alone are said as only that.
-    static func header(apps: Int, reading: KubeMarkedReading, readAt: Date?, now: Date, probable: Bool = false) -> String? {
+    package static func header(apps: Int, reading: KubeMarkedReading, readAt: Date?, now: Date, probable: Bool = false) -> String? {
         guard !reading.kinds.isEmpty else { return nil }
         var parts = [probable ? "Argo CD, probably: by app.kubernetes.io/instance" : "Argo CD: from marks"]
         if !reading.isReading {
@@ -299,7 +299,7 @@ enum KubeMarkedSection {
     /// it is served (`.only`) — the tools' alone again once a whole read
     /// found no mark; beside Applications read, when the marked apps were
     /// read.
-    static func sectionHeader(
+    package static func sectionHeader(
         mode: KubeMarkedAppsMode, argo: Int, flux: Int, summarisedAt: Date?, summarising: Bool, apps: Int, reading: KubeMarkedReading, readAt: Date?,
         now: Date, probable: Bool = false
     ) -> String {
@@ -321,21 +321,21 @@ enum KubeMarkedSection {
     }
 
     /// Beside Applications read, their chip: `12 marked apps with no Application here`.
-    static func besideChip(_ count: Int) -> String {
+    package static func besideChip(_ count: Int) -> String {
         "\(counted(count, "marked app")) with no Application here"
     }
 
     /// The Revision column's hover on an app read from marks: "another
     /// cluster" only where Argo CD's Applications aren't served and the app
     /// carries Argo CD's own marks.
-    static func revisionHover(_ mode: KubeMarkedAppsMode, probable: Bool = false) -> String {
+    package static func revisionHover(_ mode: KubeMarkedAppsMode, probable: Bool = false) -> String {
         if probable { return "Argo CD's revision, if Argo CD deploys it, is in its Application, which isn't read here" }
         return mode == .only(.notServed)
             ? "Argo CD's revision is in the Application, in another cluster" : "Argo CD's revision is in the Application, which isn't read here"
     }
 
     /// Beside Applications read: today's words, and when the marked apps were read.
-    static func besideHeader(_ header: String, readAt: Date?, now: Date, reading: Bool) -> String {
+    package static func besideHeader(_ header: String, readAt: Date?, now: Date, reading: Bool) -> String {
         let marks: String
         if reading {
             marks = "reading marked apps…"
@@ -355,20 +355,20 @@ enum KubeMarkedSection {
     }
 
     /// What the header card says above its notes, in marks mode.
-    struct Lines: Equatable, Sendable {
+    package struct Lines: Equatable, Sendable {
         /// Why the apps are read from marks, and how many: the mode's line,
         /// then the count — a floor when the read wasn't whole.
-        var lead: String?
+        package var lead: String?
         /// The lead names what couldn't be read: the notes needn't again.
-        var saysUnread = false
+        package var saysUnread = false
         /// Muted: what isn't known here, and what health is.
-        var limits: String?
+        package var limits: String?
         /// The limits' hover.
-        var hover = ""
+        package var hover = ""
         /// Several installations mark objects here.
-        var installations: String?
+        package var installations: String?
         /// Beside Applications read in some namespaces only: those counted.
-        var unread: String?
+        package var unread: String?
     }
 
     /// The lines for the mode (14.2.1): derived apps Argo CD's whole side —
@@ -380,7 +380,7 @@ enum KubeMarkedSection {
     /// among them, and those whose Application's namespace wasn't read,
     /// counted. None until an app was read: the empty sentence says the
     /// rest.
-    static func lines(
+    package static func lines(
         mode: KubeMarkedAppsMode, context: String, apps: [KubeMarkedApp], reading: KubeMarkedReading, tally: KubeMarkedApps.Tally, kinds: [String],
         unread: Int
     ) -> Lines {
@@ -412,7 +412,7 @@ enum KubeMarkedSection {
     /// The marks' notes under the header: what was refused, cut or is
     /// being checked — less what the lead or the empty sentence drawn says
     /// already (`emptyDrawn`: the marks' empty sentence is on screen).
-    static func notes(_ reading: KubeMarkedReading, mode: KubeMarkedAppsMode, lines: Lines, emptyDrawn: Bool) -> [String] {
+    package static func notes(_ reading: KubeMarkedReading, mode: KubeMarkedAppsMode, lines: Lines, emptyDrawn: Bool) -> [String] {
         guard mode != .off else { return [] }
         let said = reading.said
         let above = lines.saysUnread || (emptyDrawn && !reading.isReading && !reading.isWhole)
@@ -424,7 +424,7 @@ enum KubeMarkedSection {
     /// The count after the mode's sentence: "These 894 apps are read from
     /// the marks Argo CD leaves on their objects."; "At least 12 apps, from
     /// what could be read: …"; while the first rows come, what is read.
-    static func countSentence(_ reason: KubeMarkedAppsMode.Reason, apps: Int, reading: KubeMarkedReading) -> String {
+    package static func countSentence(_ reason: KubeMarkedAppsMode.Reason, apps: Int, reading: KubeMarkedReading) -> String {
         if reading.isReading { return "Reading the marks on \(reading.kinds.isEmpty ? "Deployments, StatefulSets and DaemonSets" : KubeMarkedReading.joined(reading.kinds))…" }
         guard reading.isWhole else { return "At least \(counted(apps, "app")), from what could be read: \(reading.unread.joined(separator: "; "))." }
         let argo = reason == .notServed || reason == .noApplications
@@ -435,13 +435,13 @@ enum KubeMarkedSection {
     }
 
     /// What an app grouped by `app.kubernetes.io/instance` alone is.
-    static let probablyArgos = "only probably Argo CD's, grouped by app.kubernetes.io/instance — a label Helm and kustomize set too."
+    package static let probablyArgos = "only probably Argo CD's, grouped by app.kubernetes.io/instance — a label Helm and kustomize set too."
 
     /// The lead when no object here carries Argo CD's own marks and the
     /// apps are grouped by `app.kubernetes.io/instance` alone (D-5): only
     /// "probably" Argo CD's — a label Helm and kustomize set too —, never
     /// that Argo CD runs in another cluster.
-    static func probableSentence(apps: Int, reading: KubeMarkedReading) -> String {
+    package static func probableSentence(apps: Int, reading: KubeMarkedReading) -> String {
         if reading.isReading { return countSentence(.notServed, apps: apps, reading: reading) }
         guard reading.isWhole else {
             return
@@ -453,7 +453,7 @@ enum KubeMarkedSection {
     /// The second line, muted: no sync status, repository or revision —
     /// they are the Application's — and health is Argo CD's built-in rules;
     /// "Argo CD's cluster" never for apps only probably Argo CD's.
-    static func limits(_ reason: KubeMarkedAppsMode.Reason?, probable: Bool = false) -> String {
+    package static func limits(_ reason: KubeMarkedAppsMode.Reason?, probable: Bool = false) -> String {
         let fields: String
         if probable {
             fields = "No sync status, repository or revision: if Argo CD deploys these, those are in its Application, which isn't read here."
@@ -471,7 +471,7 @@ enum KubeMarkedSection {
     /// known, what is read here and what never is, Argo Rollouts read for
     /// health only, the marks counted and not shown. "Argo CD runs in
     /// another cluster" explained only where it is said.
-    static func limitsHover(_ mode: KubeMarkedAppsMode, kinds: [String], rolloutsServed: Bool, tally: KubeMarkedApps.Tally, probable: Bool = false) -> String {
+    package static func limitsHover(_ mode: KubeMarkedAppsMode, kinds: [String], rolloutsServed: Bool, tally: KubeMarkedApps.Tally, probable: Bool = false) -> String {
         var lines: [String] = []
         if probable {
             lines.append(
@@ -508,7 +508,7 @@ enum KubeMarkedSection {
     /// that wasn't whole, what couldn't be read — never "carries no marks";
     /// a whole one, that none does, in the mode's words (`plain`: an
     /// agent's counts).
-    static func empty(_ reason: KubeMarkedAppsMode.Reason, context: String, scope: KubeScope, reading: KubeMarkedReading, plain: Bool = false) -> String {
+    package static func empty(_ reason: KubeMarkedAppsMode.Reason, context: String, scope: KubeScope, reading: KubeMarkedReading, plain: Bool = false) -> String {
         guard !reading.isReading, reading.isWhole else {
             return reading.empty(context: context, scope: scope, served: reason == .noApplications, plain: plain)
         }
@@ -528,12 +528,12 @@ enum KubeMarkedSection {
     /// Copied, never run. A name the marks' parser lets through starts
     /// with `[a-z0-9]` (`KubeTrackingID`); nil for any other, so no part of
     /// it is ever read as an option.
-    static func cliLine(_ row: KubeGitOpsRow) -> String? {
+    package static func cliLine(_ row: KubeGitOpsRow) -> String? {
         row.marked.flatMap { cliLine(key: $0.key) }
     }
 
     /// The same for an app by its key: the detail's Copy as argocd.
-    static func cliLine(key: KubeTrackingID.AppKey) -> String? {
+    package static func cliLine(key: KubeTrackingID.AppKey) -> String? {
         let q = KubeCommands.quoted
         let instance = key.instance
         let parts = instance.split(separator: "_", omittingEmptySubsequences: false).map(String.init)
@@ -545,7 +545,7 @@ enum KubeMarkedSection {
     /// Why Sync, Refresh, Rollback and Diff aren't offered (14.2.3): they
     /// act on the Application, which isn't here, in the mode's words — for
     /// an app only probably Argo CD's, nothing said of where Argo CD runs.
-    static func absentVerbs(_ mode: KubeMarkedAppsMode, context: String, probable: Bool = false) -> String {
+    package static func absentVerbs(_ mode: KubeMarkedAppsMode, context: String, probable: Bool = false) -> String {
         let verbs = "Sync, Refresh, Rollback and Diff act on the Application"
         if probable { return "\(verbs) — if Argo CD deploys this app at all: it is only probably Argo CD's, and no Application of it is read here." }
         switch mode {

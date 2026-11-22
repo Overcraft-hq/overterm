@@ -3,12 +3,12 @@ import Foundation
 /// A result's rows as text to copy or save: TSV (what a spreadsheet takes
 /// from the pasteboard), CSV, JSON, a Markdown table, INSERT statements.
 /// Pure.
-enum ResultExport {
-    enum Format: String, CaseIterable, Identifiable {
+package enum ResultExport {
+    package enum Format: String, CaseIterable, Identifiable {
         case tsv, csv, json, markdown, insert
-        var id: String { rawValue }
+        package var id: String { rawValue }
 
-        var title: String {
+        package var title: String {
             switch self {
             case .tsv: "Tab-Separated"
             case .csv: "CSV"
@@ -18,7 +18,7 @@ enum ResultExport {
             }
         }
 
-        var fileExtension: String {
+        package var fileExtension: String {
             switch self {
             case .tsv: "tsv"
             case .csv: "csv"
@@ -29,7 +29,7 @@ enum ResultExport {
         }
     }
 
-    static func text(_ format: Format, columns: [String], rows: [[String?]], table: String = "table_name", header: Bool = true) -> String {
+    package static func text(_ format: Format, columns: [String], rows: [[String?]], table: String = "table_name", header: Bool = true) -> String {
         switch format {
         case .tsv:
             let lines = rows.map { $0.map { ($0 ?? "").replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ") } }
@@ -64,13 +64,13 @@ enum ResultExport {
     }
 
     /// Rows sorted by a column: numbers as numbers, NULLs last.
-    static func sorted(_ rows: [[String?]], by column: Int, ascending: Bool) -> [[String?]] {
+    package static func sorted(_ rows: [[String?]], by column: Int, ascending: Bool) -> [[String?]] {
         sortedIndexes(rows, by: column, ascending: ascending).map { rows[$0] }
     }
 
     /// The rows' indexes in that order — the grid keeps where each row came
     /// from, so an edit lands on the row it was made on.
-    static func sortedIndexes(_ rows: [[String?]], by column: Int, ascending: Bool) -> [Int] {
+    package static func sortedIndexes(_ rows: [[String?]], by column: Int, ascending: Bool) -> [Int] {
         rows.indices.sorted { i, j in
             let a = rows[i]
             let b = rows[j]

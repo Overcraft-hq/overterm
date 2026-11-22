@@ -3,23 +3,23 @@ import Foundation
 /// What completion offers in a console: tables after FROM, a table's columns
 /// after `alias.`, and elsewhere the columns of the statement's tables, the
 /// keywords and the tables — from the connection's catalog. Pure.
-enum SQLCompletion {
-    struct Candidate: Equatable {
-        enum Kind: Equatable { case table, view, column, schema, keyword }
-        var label: String
-        var insert: String
-        var kind: Kind
-        var detail: String
+package enum SQLCompletion {
+    package struct Candidate: Equatable {
+        package enum Kind: Equatable { case table, view, column, schema, keyword }
+        package var label: String
+        package var insert: String
+        package var kind: Kind
+        package var detail: String
     }
 
     /// The catalog as far as it is read: tables by schema, columns by schema.
-    struct Catalog {
-        var schemas: [String]
-        var defaultSchema: String?
-        var tables: [String: [CatalogTable]]
-        var columns: [String: [CatalogColumn]]
+    package struct Catalog {
+        package var schemas: [String]
+        package var defaultSchema: String?
+        package var tables: [String: [CatalogTable]]
+        package var columns: [String: [CatalogColumn]]
 
-        func columns(of table: String, schema: String?) -> [CatalogColumn] {
+        package func columns(of table: String, schema: String?) -> [CatalogColumn] {
             let schemas = schema.map { [$0] } ?? ([defaultSchema].compactMap { $0 } + self.schemas)
             for schema in schemas {
                 let found = columns[schema]?.filter { $0.table.caseInsensitiveCompare(table) == .orderedSame } ?? []
@@ -30,7 +30,7 @@ enum SQLCompletion {
     }
 
     /// The schemas whose columns it needs and hasn't read — read, then asked again.
-    static func missing(_ context: SQLText.CompletionContext, statement: String, catalog: Catalog) -> Set<String> {
+    package static func missing(_ context: SQLText.CompletionContext, statement: String, catalog: Catalog) -> Set<String> {
         var wanted: Set<String> = []
         switch context {
         case .table(let schema, _):
@@ -44,7 +44,7 @@ enum SQLCompletion {
         return wanted
     }
 
-    static func candidates(_ context: SQLText.CompletionContext, statement: String, catalog: Catalog) -> [Candidate] {
+    package static func candidates(_ context: SQLText.CompletionContext, statement: String, catalog: Catalog) -> [Candidate] {
         switch context {
         case .table(let schema, let prefix):
             var found = tables(in: schema ?? catalog.defaultSchema, catalog: catalog)
@@ -93,7 +93,7 @@ enum SQLCompletion {
     }
 
     /// Those that start with the prefix first, then those that hold it.
-    static func filter(_ candidates: [Candidate], _ prefix: String) -> [Candidate] {
+    package static func filter(_ candidates: [Candidate], _ prefix: String) -> [Candidate] {
         guard !prefix.isEmpty else { return candidates }
         let starts = candidates.filter { $0.label.range(of: prefix, options: [.caseInsensitive, .anchored]) != nil }
         let holds = candidates.filter {

@@ -6,25 +6,25 @@ import Foundation
 /// A container stopped because someone asked (`docker stop`, compose down,
 /// the page's s) gets `kill` before its `die`; one that crashed gets `die`
 /// alone. An exit 0 is a container done with its work.
-struct DockerAttention: Sendable {
-    struct Alert: Equatable, Sendable {
-        var container: String
+package struct DockerAttention: Sendable {
+    package struct Alert: Equatable, Sendable {
+        package var container: String
         /// `exited (137)`, `ran out of memory`, `is unhealthy`.
-        var detail: String
+        package var detail: String
         /// Its compose project's folder, which says whose checkout it is.
-        var workingDir: String?
+        package var workingDir: String?
 
-        var note: String { "\(container) \(detail)" }
+        package var note: String { "\(container) \(detail)" }
     }
 
     /// How long after a `kill` its `die` is the one asked for: `docker
     /// stop` waits ten seconds before it kills.
-    static let asked: TimeInterval = 30
+    package static let asked: TimeInterval = 30
 
     private var stopping: [String: Date] = [:]
     private var outOfMemory: Set<String> = []
 
-    mutating func note(_ event: DockerEvent, at now: Date = Date()) -> Alert? {
+    package mutating func note(_ event: DockerEvent, at now: Date = Date()) -> Alert? {
         guard event.Type == "container" else { return nil }
         let id = event.Actor.ID
         let attributes = event.Actor.Attributes ?? [:]
@@ -53,7 +53,7 @@ struct DockerAttention: Sendable {
 
     /// Whether a project run in `workingDir` is the checkout's — run in
     /// it, or the checkout is a folder of it (a tab in `services/api`).
-    static func belongs(_ workingDir: String, to checkout: String) -> Bool {
+    package static func belongs(_ workingDir: String, to checkout: String) -> Bool {
         guard checkout.count > 1, workingDir.count > 1 else { return false }
         return workingDir == checkout || workingDir.hasPrefix(checkout + "/") || checkout.hasPrefix(workingDir + "/")
     }
@@ -63,7 +63,7 @@ struct DockerAttention: Sendable {
     /// inside it, then a repository holding it, the nearest first. A
     /// folder above it that is no repository (`~`, `~/code`) holds every
     /// project there is, so its agent isn't this one's: nil.
-    static func closeness(of checkout: String, to workingDir: String, isRepository: Bool) -> Int? {
+    package static func closeness(of checkout: String, to workingDir: String, isRepository: Bool) -> Int? {
         guard belongs(workingDir, to: checkout) else { return nil }
         if checkout == workingDir { return 0 }
         if checkout.hasPrefix(workingDir + "/") { return 1 }
@@ -75,7 +75,7 @@ struct DockerAttention: Sendable {
 /// What is wrong with a container, as far as its list row and its inspect
 /// data say: what the list paints red, and what Ask Why asks about. Pure.
 extension DockerAttention {
-    enum Trouble: Equatable, Sendable {
+    package enum Trouble: Equatable, Sendable {
         case outOfMemory
         /// Its last exit, when known.
         case restarting(exit: Int?)
@@ -86,7 +86,7 @@ extension DockerAttention {
         case didNotStart(String)
 
         /// As an alert says it: `ran out of memory`, `exited (137)`.
-        var detail: String {
+        package var detail: String {
             switch self {
             case .outOfMemory: "ran out of memory"
             case .restarting: "keeps restarting"
@@ -98,7 +98,7 @@ extension DockerAttention {
         }
 
         /// The question an agent is started with.
-        func question(_ name: String) -> String {
+        package func question(_ name: String) -> String {
             switch self {
             case .outOfMemory: "Why did \(name) run out of memory?"
             case .restarting: "Why does \(name) keep restarting?"
@@ -115,7 +115,7 @@ extension DockerAttention {
     /// runs, created with the engine's error. From the summary alone it is
     /// what the list paints red, and restarting. `detail` is used only
     /// when it is this container's.
-    static func trouble(of container: ContainerSummary, detail: ContainerDetail? = nil) -> Trouble? {
+    package static func trouble(of container: ContainerSummary, detail: ContainerDetail? = nil) -> Trouble? {
         let detail = detail?.Id == container.Id ? detail : nil
         if detail?.State.OOMKilled == true { return .outOfMemory }
         switch container.state {
@@ -133,7 +133,7 @@ extension DockerAttention {
     }
 
     /// `Restarting (1) 5 seconds ago` → 1, as moby writes it.
-    static func restartingExit(_ status: String) -> Int? {
+    package static func restartingExit(_ status: String) -> Int? {
         guard status.hasPrefix("Restarting ("), let close = status.firstIndex(of: ")") else { return nil }
         return Int(status[status.index(status.startIndex, offsetBy: "Restarting (".count)..<close])
     }

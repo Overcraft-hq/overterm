@@ -4,13 +4,13 @@ import SwiftUI
 /// The find bar over the terminal: needle, "3/12", previous / next, close.
 /// Return = next match, Shift-Return = previous, Escape = close (or, with
 /// text, back to the terminal keeping the highlights), as in Ghostty.
-struct TerminalSearchBar: View {
-    @ObservedObject var search: TerminalSearch
-    @ObservedObject var theme: ChromeTheme
+package struct TerminalSearchBar: View {
+    @ObservedObject package var search: TerminalSearch
+    @ObservedObject package var theme: ChromeTheme
     /// Give the keyboard back to the terminal.
-    let onDismiss: () -> Void
+    package let onDismiss: () -> Void
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 4) {
             SearchField(
                 text: $search.needle,

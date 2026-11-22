@@ -13,33 +13,33 @@ import Foundation
 /// per-file diffs — and why each file changed — only load while
 /// `panelVisible`.
 @MainActor
-final class DiffModel: ObservableObject {
-    struct FileDiff {
-        let lines: [DiffLine]
-        let truncated: Bool
+package final class DiffModel: ObservableObject {
+    package struct FileDiff {
+        package let lines: [DiffLine]
+        package let truncated: Bool
         /// Each line's syntax colours and changed part, by `DiffLine.id`;
         /// lines with neither are left out.
-        let styles: [Int: DiffLineStyle]
+        package let styles: [Int: DiffLineStyle]
 
         /// A file's `git diff`: its hunks and their lines (the card's header
         /// already names the file), at most `limit`, each styled — the
         /// work done once as the diff loads, never while drawing.
-        init(parsing diff: String, path: String, limit: Int = DiffModel.maxDiffLines) {
+        package init(parsing diff: String, path: String, limit: Int = DiffModel.maxDiffLines) {
             let parsed = UnifiedDiff.parse(diff, limit: limit)
             lines = parsed.lines.filter { $0.kind != .meta || $0.text.hasPrefix("\\") }
             truncated = parsed.truncated
             styles = DiffHighlight.styles(for: lines, language: SyntaxHighlighter.language(for: URL(fileURLWithPath: path)))
         }
 
-        func style(of line: DiffLine) -> DiffLineStyle { styles[line.id] ?? DiffLineStyle() }
+        package func style(of line: DiffLine) -> DiffLineStyle { styles[line.id] ?? DiffLineStyle() }
     }
 
-    enum Scope: String {
+    package enum Scope: String {
         case uncommitted, branch
     }
 
     /// What `.branch` compares the working tree with — or why it can't.
-    enum BranchComparison: Equatable {
+    package enum BranchComparison: Equatable {
         /// merge-base(HEAD, base); `base` as `branchBase` names it.
         case since(mergeBase: String, base: String)
         /// No HEAD yet.
@@ -52,12 +52,12 @@ final class DiffModel: ObservableObject {
         /// HEAD shares no history with the base.
         case unrelated(String)
 
-        var mergeBase: String? {
+        package var mergeBase: String? {
             if case .since(let mergeBase, _) = self { mergeBase } else { nil }
         }
 
         /// Why `.branch` can't be shown; nil when it can.
-        var unavailable: String? {
+        package var unavailable: String? {
             switch self {
             case .since: nil
             case .noCommits: "No commits yet — nothing to compare with"
@@ -69,14 +69,14 @@ final class DiffModel: ObservableObject {
     }
 
     /// What the ± badge in the title bar shows.
-    enum Badge: Equatable {
+    package enum Badge: Equatable {
         case uncommitted(added: Int, removed: Int)
         case branch(added: Int, removed: Int)
         case plain
 
         /// The scope whose totals it shows — the one a click on it opens;
         /// none for the plain ±.
-        var scope: Scope? {
+        package var scope: Scope? {
             switch self {
             case .uncommitted: .uncommitted
             case .branch: .branch
@@ -85,47 +85,47 @@ final class DiffModel: ObservableObject {
         }
     }
 
-    @Published private(set) var root: URL?
+    @Published package private(set) var root: URL?
     /// Why this checkout is the one shown (set by the window).
-    @Published var showing: CheckoutReason = .shell
+    @Published package var showing: CheckoutReason = .shell
     /// Uncommitted: staged, unstaged and untracked, against HEAD.
-    @Published private(set) var files: [ChangedFile] = []
+    @Published package private(set) var files: [ChangedFile] = []
     /// Everything since the branch left its base, committed or not.
-    @Published private(set) var branchFiles: [ChangedFile] = []
+    @Published package private(set) var branchFiles: [ChangedFile] = []
     /// The branch's commits since then, newest first.
-    @Published private(set) var commits: [BranchCommit] = []
+    @Published package private(set) var commits: [BranchCommit] = []
     /// There were more than `maxCommits`.
-    @Published private(set) var moreCommits = false
+    @Published package private(set) var moreCommits = false
     /// nil until the checkout's first refresh.
-    @Published private(set) var comparison: BranchComparison?
+    @Published package private(set) var comparison: BranchComparison?
     /// The one picked in the pane (`choose`); remembered.
-    @Published private(set) var scope: Scope
-    @Published private(set) var branch: String?
+    @Published package private(set) var scope: Scope
+    @Published package private(set) var branch: String?
     /// HEAD's commit; set only when it moves.
-    @Published private(set) var head: String?
+    @Published package private(set) var head: String?
     /// Bumped when git wrote a remote-tracking ref (a fetch, a push): the
     /// rail's GitOps answers compared with `origin/<branch>` look again.
     /// Read from the watchers' paths — no git.
-    @Published private(set) var remoteRefsMoved = 0
-    @Published private(set) var diffs: [String: FileDiff] = [:]
+    @Published package private(set) var remoteRefsMoved = 0
+    @Published package private(set) var diffs: [String: FileDiff] = [:]
     /// Folded or not, by path: how each card started when first shown in
     /// the pane, or how the user left it. Kept while the pane stays on this
     /// checkout, in either scope; another starts afresh.
-    @Published private(set) var folded: [String: Bool] = [:]
+    @Published package private(set) var folded: [String: Bool] = [:]
     /// Collapse All / Expand All: how the cards shown after it start.
     private var allFolded: Bool?
     /// Cards whose why the user opened: every reason, in full.
-    @Published private(set) var openWhy: Set<String> = []
-    @Published private(set) var error: String?
+    @Published package private(set) var openWhy: Set<String> = []
+    @Published package private(set) var error: String?
     /// Why each file changed, by path: what Claude said making its edits,
     /// newest first (ClaudeEdits.byFile) — from the checkout's session
     /// transcripts, read only while the panel is open.
-    @Published private(set) var reasons: [String: [ClaudeEdit]] = [:]
+    @Published package private(set) var reasons: [String: [ClaudeEdit]] = [:]
     /// The branch's commits that touched each file, newest first.
-    @Published private(set) var commitsByFile: [String: [BranchCommit]] = [:]
+    @Published package private(set) var commitsByFile: [String: [BranchCommit]] = [:]
 
     /// Published: the pane renders nothing while hidden (RightPaneView).
-    @Published var panelVisible = false {
+    @Published package var panelVisible = false {
         didSet {
             guard panelVisible != oldValue, panelVisible else { return }
             Task { await refresh() }
@@ -134,16 +134,16 @@ final class DiffModel: ObservableObject {
 
     /// Diffs past this many files aren't loaded — a huge change set is for
     /// the terminal, not a panel.
-    static let maxDiffedFiles = 60
+    package static let maxDiffedFiles = 60
     /// Lines of one file's diff shown at most.
-    nonisolated static let maxDiffLines = 3_000
+    package nonisolated static let maxDiffLines = 3_000
     /// Commits listed at most: a base far behind is no reason to parse
     /// thousands on every refresh.
-    static let maxCommits = 100
+    package static let maxCommits = 100
     /// git's well-known empty tree: the base before a repository's first commit.
-    static let emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    package static let emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
     /// The picked scope, in AppEnvironment.defaults.
-    static let scopeKey = "diffScope"
+    package static let scopeKey = "diffScope"
 
     private let defaults: UserDefaults
     private var watcher: DirectoryWatcher?
@@ -163,14 +163,14 @@ final class DiffModel: ObservableObject {
     private var readingReasons = false
     private var readReasonsAgain = false
 
-    init(defaults: UserDefaults = AppEnvironment.defaults, transcripts: ClaudeEditsReader? = nil) {
+    package init(defaults: UserDefaults = AppEnvironment.defaults, transcripts: ClaudeEditsReader? = nil) {
         self.defaults = defaults
         self.transcripts = transcripts
         scope = defaults.string(forKey: Self.scopeKey).flatMap(Scope.init(rawValue:)) ?? .uncommitted
     }
 
     /// The pane's Uncommitted | Branch switch.
-    func choose(_ scope: Scope) {
+    package func choose(_ scope: Scope) {
         guard scope != self.scope else { return }
         self.scope = scope
         defaults.set(scope.rawValue, forKey: Self.scopeKey)
@@ -184,13 +184,13 @@ final class DiffModel: ObservableObject {
 
     /// What the pane lists: Branch when picked and there is something to
     /// compare with, else Uncommitted.
-    var shownScope: Scope { scope == .branch && comparison?.mergeBase != nil ? .branch : .uncommitted }
-    var shownFiles: [ChangedFile] { shownScope == .branch ? branchFiles : files }
+    package var shownScope: Scope { scope == .branch && comparison?.mergeBase != nil ? .branch : .uncommitted }
+    package var shownFiles: [ChangedFile] { shownScope == .branch ? branchFiles : files }
 
-    var totals: (added: Int, removed: Int) { Self.totals(files) }
-    var shownTotals: (added: Int, removed: Int) { Self.totals(shownFiles) }
+    package var totals: (added: Int, removed: Int) { Self.totals(files) }
+    package var shownTotals: (added: Int, removed: Int) { Self.totals(shownFiles) }
 
-    nonisolated static func totals(_ files: [ChangedFile]) -> (added: Int, removed: Int) {
+    package nonisolated static func totals(_ files: [ChangedFile]) -> (added: Int, removed: Int) {
         files.reduce(into: (0, 0)) { sum, file in
             sum.0 += file.added ?? 0
             sum.1 += file.removed ?? 0
@@ -199,13 +199,13 @@ final class DiffModel: ObservableObject {
 
     /// Under the switch when Branch is picked: what it compares with, or
     /// why there is nothing to compare with.
-    var scopeNote: String? {
+    package var scopeNote: String? {
         guard scope == .branch, let comparison else { return nil }
         guard case .since(_, let base) = comparison else { return comparison.unavailable }
         return "Since \(base) · \(Self.commitCount(commits.count, more: moreCommits))"
     }
 
-    nonisolated static func commitCount(_ count: Int, more: Bool) -> String {
+    package nonisolated static func commitCount(_ count: Int, more: Bool) -> String {
         if more { return "\(count)+ commits" }
         switch count {
         case 0: return "no commits yet"
@@ -219,14 +219,14 @@ final class DiffModel: ObservableObject {
     /// `root` is not that question — it is set to whatever folder the tab
     /// is in, repository or not, and reading it as "there is a checkout"
     /// offered the Ask Agent sheet a git diff anywhere.
-    var isRepository: Bool { error == nil && comparison != nil }
+    package var isRepository: Bool { error == nil && comparison != nil }
 
-    var badge: Badge? { Self.badge(isRepository: isRepository, uncommitted: files, branch: branchFiles) }
+    package var badge: Badge? { Self.badge(isRepository: isRepository, uncommitted: files, branch: branchFiles) }
 
     /// In any repository, so the pane is one click away: what is uncommitted
     /// while there is some, else the branch's totals — the agent's work stays
     /// in sight after it commits — else a plain ±.
-    nonisolated static func badge(isRepository: Bool, uncommitted: [ChangedFile], branch: [ChangedFile]) -> Badge? {
+    package nonisolated static func badge(isRepository: Bool, uncommitted: [ChangedFile], branch: [ChangedFile]) -> Badge? {
         guard isRepository else { return nil }
         if !uncommitted.isEmpty {
             let sum = totals(uncommitted)
@@ -241,7 +241,7 @@ final class DiffModel: ObservableObject {
 
     /// Follows the selected tab's checkout. Watching starts right away: the
     /// badge wants counts whether or not the panel is open.
-    func setRoot(_ url: URL?) {
+    package func setRoot(_ url: URL?) {
         guard url != root else { return }
         root = url
         files = []
@@ -293,16 +293,16 @@ final class DiffModel: ObservableObject {
 
     /// What the watchers saw change, noise aside: the Terraform panel's
     /// "files changed", rather than a second watcher on the checkout.
-    let changes = PassthroughSubject<[String], Never>()
+    package let changes = PassthroughSubject<[String], Never>()
     /// Refreshes run: a scenario checks `init`'s writes cost none.
-    private(set) var refreshCount = 0
+    package private(set) var refreshCount = 0
 
     /// A folder FSEvents reports whose changes say nothing about the
     /// checkout: what `terraform init` writes under `.terraform/` (~50 MB of
     /// providers) and Terragrunt's cache. Under `.terraform/`, only the
     /// folder itself (its `environment`, `terraform.tfstate`) and `modules/`
     /// count (analysis 4.12 step 6).
-    nonisolated static func isNoise(_ reported: String) -> Bool {
+    package nonisolated static func isNoise(_ reported: String) -> Bool {
         // FSEvents ends a folder's path with "/".
         let path = reported.hasSuffix("/") ? String(reported.dropLast()) : reported
         if path.contains("/.terragrunt-cache/") || path.hasSuffix("/.terragrunt-cache") { return true }
@@ -313,7 +313,7 @@ final class DiffModel: ObservableObject {
 
     /// A directory FSEvents reports (a directory, not a file) that holds
     /// remote-tracking refs: a fetch writes `refs/remotes/<remote>/<branch>` loose.
-    nonisolated static func isRemoteRef(_ path: String) -> Bool {
+    package nonisolated static func isRemoteRef(_ path: String) -> Bool {
         path.contains("/refs/remotes/") || path.hasSuffix("/refs/remotes")
     }
 
@@ -321,7 +321,7 @@ final class DiffModel: ObservableObject {
     /// worktree's own git directory (index, HEAD, its reflog) and the
     /// repository's refs/ (its branch, origin/HEAD). A main checkout's .git
     /// is inside it, so none.
-    nonisolated static func gitDirectories(outside root: URL) async -> [URL] {
+    package nonisolated static func gitDirectories(outside root: URL) async -> [URL] {
         guard let output = try? await Git.run(["rev-parse", "--absolute-git-dir", "--git-common-dir"], in: root) else { return [] }
         let lines = output.split(separator: "\n").map(String.init)
         guard lines.count == 2 else { return [] }
@@ -364,7 +364,7 @@ final class DiffModel: ObservableObject {
     /// it — however many asked — and every caller returns after a refresh
     /// that started after its call. Overlapping ones (each six-odd git
     /// processes) stacked up under a stream of changes.
-    func refresh() async {
+    package func refresh() async {
         if let refreshLoop {
             refreshAgain = true
             await refreshLoop.value
@@ -480,7 +480,7 @@ final class DiffModel: ObservableObject {
     }
 
     /// Tried in order when the default branch can't be used.
-    nonisolated static let fallbackBases = ["origin/main", "origin/master", "main", "master"]
+    package nonisolated static let fallbackBases = ["origin/main", "origin/master", "main", "master"]
 
     /// What Branch compares with: `preferred` — MergedWorktrees.base, the
     /// default branch merged worktrees are judged by (origin/HEAD, else the
@@ -489,7 +489,7 @@ final class DiffModel: ObservableObject {
     /// repository pushed from a local init has no origin/HEAD, and its main
     /// checkout may be on a feature branch: that branch then gets main.
     /// MergedWorktrees.base itself stays as it is: clean-up relies on it.
-    nonisolated static func branchBase(default preferred: String?, current: String?, existing: Set<String>) -> String? {
+    package nonisolated static func branchBase(default preferred: String?, current: String?, existing: Set<String>) -> String? {
         func isCurrent(_ base: String) -> Bool { current.map { isBranch(base, $0) } ?? false }
         if let preferred, !isCurrent(preferred) { return preferred }
         return fallbackBases.first { existing.contains($0) && !isCurrent($0) }
@@ -521,7 +521,7 @@ final class DiffModel: ObservableObject {
     }
 
     /// Lines in a small text file; nil for binary, unreadable or > 1 MB.
-    nonisolated static func lineCount(_ url: URL) -> Int? {
+    package nonisolated static func lineCount(_ url: URL) -> Int? {
         guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int, size <= 1_048_576,
             let data = try? Data(contentsOf: url), !data.prefix(8192).contains(0)
         else { return nil }
@@ -553,7 +553,7 @@ final class DiffModel: ObservableObject {
 
     /// Parses and styles a file's diff off the main thread: tokenizing a
     /// capped diff takes milliseconds, which a scroll can't spare.
-    nonisolated static func fileDiff(parsing text: String, path: String, limit: Int = maxDiffLines) async -> FileDiff {
+    package nonisolated static func fileDiff(parsing text: String, path: String, limit: Int = maxDiffLines) async -> FileDiff {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(returning: FileDiff(parsing: text, path: path, limit: limit))
@@ -565,26 +565,26 @@ final class DiffModel: ObservableObject {
 
     /// More files changed than this, and cards start folded: the pane reads
     /// as a list of files with their counts, a click opening one.
-    static let startFoldedAbove = 8
+    package static let startFoldedAbove = 8
 
-    func isFolded(_ path: String) -> Bool { folded[path] ?? startsFolded }
+    package func isFolded(_ path: String) -> Bool { folded[path] ?? startsFolded }
 
     /// How a card not shown before starts: as Collapse All or Expand All
     /// last said, else folded when the list is long.
     private var startsFolded: Bool { allFolded ?? (shownFiles.count > Self.startFoldedAbove) }
 
     /// Every card shown is folded: the header offers Expand All.
-    var everyCardFolded: Bool { shownFiles.allSatisfy { isFolded($0.path) } }
+    package var everyCardFolded: Bool { shownFiles.allSatisfy { isFolded($0.path) } }
 
     /// A click on a card's header.
-    func toggleFold(_ path: String) { folded[path] = !isFolded(path) }
+    package func toggleFold(_ path: String) { folded[path] = !isFolded(path) }
 
     /// A file asked for from elsewhere (Overgit): unfolded, and the pane
     /// scrolls to it.
-    @Published private(set) var revealed: (path: String, ticket: Int)?
+    @Published package private(set) var revealed: (path: String, ticket: Int)?
     private var revealTicket = 0
 
-    func reveal(_ path: String) {
+    package func reveal(_ path: String) {
         if scope != .uncommitted { choose(.uncommitted) }
         folded[path] = false
         revealTicket += 1
@@ -592,10 +592,10 @@ final class DiffModel: ObservableObject {
     }
 
     /// The pane header's Collapse All: every card, and those shown later.
-    func collapseAll() { foldAll(true) }
+    package func collapseAll() { foldAll(true) }
 
     /// The pane header's Expand All: every card, and those shown later.
-    func expandAll() { foldAll(false) }
+    package func expandAll() { foldAll(false) }
 
     private func foldAll(_ fold: Bool) {
         allFolded = fold
@@ -622,18 +622,18 @@ final class DiffModel: ObservableObject {
     /// What a file's card says about why it changed: what Claude said making
     /// its edits — the newest, or all once opened — and, in Branch, the
     /// commits that touched it.
-    func why(for path: String) -> FileWhy {
+    package func why(for path: String) -> FileWhy {
         FileWhy(reasons: reasons[path] ?? [], commits: shownScope == .branch ? commitsByFile[path] ?? [] : [], open: openWhy.contains(path))
     }
 
     /// A click on a card's why: all of it, or back to the newest.
-    func toggleWhy(_ path: String) {
+    package func toggleWhy(_ path: String) {
         if openWhy.contains(path) { openWhy.remove(path) } else { openWhy.insert(path) }
     }
 
     /// Transcripts are read this far back when the branch gives no better
     /// point (on the default branch, before the first commit).
-    nonisolated static let reasonsWindow: TimeInterval = 7 * 86_400
+    package nonisolated static let reasonsWindow: TimeInterval = 7 * 86_400
 
     /// Reads, off the main thread, what the checkout's Claude sessions said
     /// making their edits. One read at a time: asked again meanwhile, it
@@ -671,7 +671,7 @@ final class DiffModel: ObservableObject {
     /// branch left its base — the merge-base, or its oldest commit if older
     /// (a rebase moves the merge-base on, not the work) — else a week back.
     /// Older transcripts aren't read at all, so a long history stays cheap.
-    nonisolated static func reasonsSince(mergeBase: String?, in root: URL, now: Date = Date()) async -> Date {
+    package nonisolated static func reasonsSince(mergeBase: String?, in root: URL, now: Date = Date()) async -> Date {
         let fallback = now.addingTimeInterval(-reasonsWindow)
         guard let mergeBase,
             let times = try? await Git.run(["log", "--boundary", "--no-show-signature", "--format=%at %ct", "\(mergeBase)..HEAD"], in: root)
@@ -682,7 +682,7 @@ final class DiffModel: ObservableObject {
     /// The repository's main checkout, when `root` is another worktree of
     /// it: a session started there and moved here (EnterWorktree) keeps its
     /// transcript under the main checkout's name.
-    nonisolated static func mainWorktree(of root: URL) async -> String? {
+    package nonisolated static func mainWorktree(of root: URL) async -> String? {
         guard let listed = try? await Git.run(["worktree", "list", "--porcelain"], in: root),
             let main = Worktree.parse(porcelain: listed).first(where: \.isMain), !main.isBare,
             ClaudeEdits.canonical(main.path.path) != ClaudeEdits.canonical(root.path)
@@ -693,29 +693,29 @@ final class DiffModel: ObservableObject {
     // MARK: Staging and committing
 
     /// Set when a stage/discard/commit fails; shown in the panel.
-    @Published var actionError: String?
+    @Published package var actionError: String?
 
-    var stagedCount: Int { files.filter(\.isStaged).count }
+    package var stagedCount: Int { files.filter(\.isStaged).count }
 
     /// Stages the whole file, or unstages it if it is fully staged.
-    func toggleStaged(_ file: ChangedFile) async {
+    package func toggleStaged(_ file: ChangedFile) async {
         if file.stageState == .full { await unstage(file) } else { await stage(file) }
     }
 
-    func stage(_ file: ChangedFile) async { await perform(["add", "--", file.path]) }
+    package func stage(_ file: ChangedFile) async { await perform(["add", "--", file.path]) }
 
     /// A newly added file isn't in HEAD (and before the first commit there
     /// is no HEAD), so `restore --staged` can't apply: drop it from the index.
     /// --force because git refuses --cached when the index differs from both
     /// HEAD and the file (added, then edited); --cached never touches the file.
-    func unstage(_ file: ChangedFile) async {
+    package func unstage(_ file: ChangedFile) async {
         await perform(file.kind == .added ? ["rm", "--cached", "--force", "--quiet", "--", file.path] : ["restore", "--staged", "--", file.path])
     }
 
-    func stageAll() async { await perform(["add", "--all"]) }
+    package func stageAll() async { await perform(["add", "--all"]) }
 
     /// Everything out of the index, the files left as they are.
-    func unstageAll() async {
+    package func unstageAll() async {
         guard let root else { return }
         // Before the first commit there is no HEAD to restore from.
         let hasHead = (try? await Git.run(["rev-parse", "--verify", "--quiet", "HEAD"], in: root)) != nil
@@ -723,7 +723,7 @@ final class DiffModel: ObservableObject {
     }
 
     /// The last commit's message — what Amend starts from.
-    func lastCommitMessage() async -> String? {
+    package func lastCommitMessage() async -> String? {
         guard let root else { return nil }
         return (try? await Git.run(["log", "-1", "--format=%B"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -731,7 +731,7 @@ final class DiffModel: ObservableObject {
     /// Pushes the branch — to its upstream, or, the first time, to origin
     /// as its upstream (what `git push` would tell you to do).
     @discardableResult
-    func push() async -> Bool {
+    package func push() async -> Bool {
         guard let root else { return false }
         let upstream = (try? await Git.run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], in: root)) != nil
         return await perform(upstream ? ["push"] : ["push", "--set-upstream", "origin", "HEAD"], timeout: nil)
@@ -740,7 +740,7 @@ final class DiffModel: ObservableObject {
     /// Throws the file's changes away: back to HEAD, staged and unstaged. A
     /// file HEAD doesn't have (untracked, or newly added) goes to the Trash,
     /// not oblivion.
-    func discard(_ file: ChangedFile) async {
+    package func discard(_ file: ChangedFile) async {
         guard let root else { return }
         if file.kind == .untracked || file.kind == .added {
             // Not in HEAD: take it out of the index (if there), then Trash it.
@@ -758,12 +758,12 @@ final class DiffModel: ObservableObject {
 
     /// Commits what is staged. Returns whether it worked (the panel clears
     /// its message field then).
-    func commit(message: String, amend: Bool = false) async -> Bool {
+    package func commit(message: String, amend: Bool = false) async -> Bool {
         await perform(["commit", "-m", message] + (amend ? ["--amend"] : []), timeout: nil)
     }
 
     /// Nothing staged: stage everything, then commit — Warp's one-button path.
-    func commitAll(message: String, amend: Bool = false) async -> Bool {
+    package func commitAll(message: String, amend: Bool = false) async -> Bool {
         guard await perform(["add", "--all"]) else { return false }
         return await perform(["commit", "-m", message] + (amend ? ["--amend"] : []), timeout: nil)
     }
@@ -784,20 +784,20 @@ final class DiffModel: ObservableObject {
 }
 
 /// Why a file changed, as its card shows it.
-struct FileWhy: Equatable {
+package struct FileWhy: Equatable {
     /// What Claude said making its edits, newest first.
-    let reasons: [ClaudeEdit]
+    package let reasons: [ClaudeEdit]
     /// The branch's commits that touched it (Branch only), newest first.
-    let commits: [BranchCommit]
+    package let commits: [BranchCommit]
     /// Opened: every reason, in full; else the newest, in two lines.
-    let open: Bool
+    package let open: Bool
 
     /// A card with no strip at all — a commit's files, for one.
-    static let none = FileWhy(reasons: [], commits: [], open: false)
+    package static let none = FileWhy(reasons: [], commits: [], open: false)
 
     /// Nothing to say: no strip at all.
-    var isEmpty: Bool { reasons.isEmpty && commits.isEmpty }
-    var shownReasons: [ClaudeEdit] { open ? reasons : Array(reasons.prefix(1)) }
+    package var isEmpty: Bool { reasons.isEmpty && commits.isEmpty }
+    package var shownReasons: [ClaudeEdit] { open ? reasons : Array(reasons.prefix(1)) }
     /// Reasons a click would show.
-    var hiddenReasons: Int { reasons.count - shownReasons.count }
+    package var hiddenReasons: Int { reasons.count - shownReasons.count }
 }

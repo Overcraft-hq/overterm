@@ -10,8 +10,8 @@ import Foundation
 /// way **by path components**, never by a string prefix — so `..` or a
 /// symlink out of the checkout is refused. One `fileExists` per path,
 /// never a walk up the tree. Pure but for that one look at the disk.
-enum KubeGitOpsPath {
-    enum Resolved: Equatable, Sendable {
+package enum KubeGitOpsPath {
+    package enum Resolved: Equatable, Sendable {
         /// In the checkout: its path from the root, `""` for the root itself.
         case inCheckout(String)
         /// Inside the checkout's tree, but not on this branch.
@@ -20,7 +20,7 @@ enum KubeGitOpsPath {
         case refused(String)
 
         /// What a pathspec is made of: only a path that is there.
-        var relative: String? {
+        package var relative: String? {
             if case .inCheckout(let path) = self { return path }
             return nil
         }
@@ -28,7 +28,7 @@ enum KubeGitOpsPath {
 
     /// `path` against the checkout at `root`. `fromRoot`: a leading `/`
     /// means the repository's root (as Argo CD reads `manifest-generate-paths`).
-    static func resolve(_ path: String, in root: URL, fromRoot: Bool = false) -> Resolved {
+    package static func resolve(_ path: String, in root: URL, fromRoot: Bool = false) -> Resolved {
         guard !path.contains("\u{0}") else { return .refused("a path with a NUL byte") }
         var relative = path.trimmingCharacters(in: .whitespaces)
         if relative.hasPrefix("/") {
@@ -53,7 +53,7 @@ enum KubeGitOpsPath {
 
     /// A `manifest-generate-paths` entry: relative to the Application's own
     /// path, or — with a leading `/` — to the repository's root.
-    static func resolve(generatePath entry: String, appPath: String?, in root: URL) -> Resolved {
+    package static func resolve(generatePath entry: String, appPath: String?, in root: URL) -> Resolved {
         if entry.hasPrefix("/") { return resolve(entry, in: root, fromRoot: true) }
         let base = (appPath ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !base.contains("\u{0}"), !(appPath ?? "").hasPrefix("/") else { return .refused("an absolute path (\(appPath ?? ""))") }
@@ -61,7 +61,7 @@ enum KubeGitOpsPath {
     }
 
     /// "path apps/web is not on this branch".
-    static func said(_ resolved: Resolved) -> String {
+    package static func said(_ resolved: Resolved) -> String {
         switch resolved {
         case .inCheckout(let path): path.isEmpty ? "the repository's root" : path
         case .missing(let path): "path \(path) is not on this branch"

@@ -4,8 +4,8 @@ import Foundation
 /// `backtick` names and comments) or a blank line. `:use db` — Neo4j
 /// Browser's — alone or as a statement's first line, says the database the
 /// rest runs in. Pure.
-enum CypherText: KindConsoleText {
-    static func statements(in text: String) -> [NSRange] {
+package enum CypherText: KindConsoleText {
+    package static func statements(in text: String) -> [NSRange] {
         let ns = text as NSString
         var ranges: [NSRange] = []
         var start = 0
@@ -77,7 +77,7 @@ enum CypherText: KindConsoleText {
     }
 
     /// `:use db` leading a statement, and what follows it.
-    static func use(_ statement: String) -> (database: String, rest: String)? {
+    package static func use(_ statement: String) -> (database: String, rest: String)? {
         let trimmed = statement.trimmingCharacters(in: .whitespacesAndNewlines)
         let firstLine = trimmed.prefix { $0 != "\n" }
         let words = firstLine.split(separator: " ", maxSplits: 1).map(String.init)
@@ -91,7 +91,7 @@ enum CypherText: KindConsoleText {
 
     /// The statement with strings, names in backticks and comments blanked,
     /// upper-cased — what the checks read.
-    static func stripped(_ statement: String) -> String {
+    package static func stripped(_ statement: String) -> String {
         var out = ""
         var quote: Character?
         var escaped = false
@@ -150,7 +150,7 @@ enum CypherText: KindConsoleText {
     private static let readingProcedures =
         #"^(DB\.(LABELS|RELATIONSHIPTYPES|PROPERTYKEYS|SCHEMA\.[A-Z.]+|INDEXES|CONSTRAINTS|INFO|PING|INDEX\.FULLTEXT\.QUERY[A-Z]+|INDEX\.VECTOR\.QUERY[A-Z]+)|DBMS\.(COMPONENTS|INFO|PROCEDURES|FUNCTIONS|LISTCONFIG|QUERYJMX|SHOWCURRENTUSER)|APOC\.META\.[A-Z.]+)$"#
 
-    static func verb(of statement: String) -> String {
+    package static func verb(of statement: String) -> String {
         let body = use(statement).map { $0.rest.isEmpty ? statement : $0.rest } ?? statement
         let upper = stripped(body)
         if upper.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix(":USE") { return "USE" }
@@ -164,11 +164,11 @@ enum CypherText: KindConsoleText {
     /// No clause that writes, and every procedure it calls one that reads —
     /// or, for a person, any procedure (the server's read mode stops a
     /// write one: `access-mode: READ`).
-    static func onlyReads(_ statement: String) -> Bool { reads(statement, strictProcedures: false) }
+    package static func onlyReads(_ statement: String) -> Bool { reads(statement, strictProcedures: false) }
 
     /// Stricter: a procedure only from the list that reads, and no
     /// `CALL { } IN TRANSACTIONS`.
-    static func agentReads(_ statement: String) -> Bool { reads(statement, strictProcedures: true) }
+    package static func agentReads(_ statement: String) -> Bool { reads(statement, strictProcedures: true) }
 
     private static func reads(_ statement: String, strictProcedures: Bool) -> Bool {
         let body = use(statement)?.rest ?? statement
@@ -184,7 +184,7 @@ enum CypherText: KindConsoleText {
     }
 
     /// `CALL db.labels()` → DB.LABELS; a subquery's `CALL {` isn't one.
-    static func procedures(_ upper: String) -> [String] {
+    package static func procedures(_ upper: String) -> [String] {
         guard let regex = try? NSRegularExpression(pattern: #"\bCALL\s+([A-Z_][A-Z0-9_]*(?:\.[A-Z_][A-Z0-9_]*)+)"#) else { return [] }
         let ns = upper as NSString
         return regex.matches(in: upper, range: NSRange(location: 0, length: ns.length)).map { ns.substring(with: $0.range(at: 1)) }
@@ -192,7 +192,7 @@ enum CypherText: KindConsoleText {
 
     /// DELETE with no WHERE and no property to match by: the whole graph,
     /// or every node of a label. DROP drops a schema's index, constraint, or a database.
-    static func danger(of statement: String) -> String? {
+    package static func danger(of statement: String) -> String? {
         let body = use(statement)?.rest ?? statement
         let upper = stripped(body)
         if upper.range(of: #"(?<![\w.$:])DROP\s+(DATABASE|ALIAS|USER|ROLE)\b"#, options: .regularExpression) != nil {
@@ -209,7 +209,7 @@ enum CypherText: KindConsoleText {
     }
 
     /// The first label (or relationship type) it names.
-    static func subject(of statement: String) -> String? {
+    package static func subject(of statement: String) -> String? {
         let body = use(statement)?.rest ?? statement
         guard let regex = try? NSRegularExpression(pattern: #"[(\[]\s*\w*\s*:\s*(`(?:[^`]|``)+`|\w+)"#) else { return nil }
         let ns = body as NSString
@@ -218,17 +218,17 @@ enum CypherText: KindConsoleText {
     }
 
     /// A label or type as Cypher writes it: bare when it can be.
-    static func name(_ text: String) -> String {
+    package static func name(_ text: String) -> String {
         text.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil
             ? text : "`" + text.replacingOccurrences(of: "`", with: "``") + "`"
     }
 
     /// Relationship types in the tree are `[:TYPE]`; labels bare.
-    static func relationshipType(_ table: String) -> String? {
+    package static func relationshipType(_ table: String) -> String? {
         table.hasPrefix("[:") && table.hasSuffix("]") ? String(table.dropFirst(2).dropLast()) : nil
     }
 
-    static func browse(_ table: CatalogTable, connection: DatabaseConnection, limit: Int) -> String {
+    package static func browse(_ table: CatalogTable, connection: DatabaseConnection, limit: Int) -> String {
         let use = table.schema == (connection.database.isEmpty ? "neo4j" : connection.database) ? "" : ":use \(table.schema)\n"
         if let type = relationshipType(table.name) {
             return use + "MATCH (a)-[r:\(name(type))]->(b) RETURN a, r, b LIMIT \(limit)"
@@ -241,14 +241,14 @@ enum CypherText: KindConsoleText {
 /// "properties": {…}}`, a relationship as `{"type": …, "properties": {…}}`
 /// — their labels and types from the `graph` part — and a path as the list
 /// of both. Pure.
-enum Neo4jParse {
-    struct Answer {
-        var result: QueryResult
+package enum Neo4jParse {
+    package struct Answer {
+        package var result: QueryResult
         /// `Neo.ClientError.Statement.SyntaxError`…
-        var errors: [(code: String, message: String)]
+        package var errors: [(code: String, message: String)]
     }
 
-    static func answer(_ data: Data, limit: Int) throws -> Answer {
+    package static func answer(_ data: Data, limit: Int) throws -> Answer {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw DatabaseError.failed("Neo4j's answer isn't JSON: " + String(decoding: data.prefix(300), as: UTF8.self))
         }
@@ -297,7 +297,7 @@ enum Neo4jParse {
     /// The Query API's plain JSON: `{"data": {"fields", "values"}, "counters"}`,
     /// a node `{"elementId", "labels", "properties"}`, a relationship
     /// `{"elementId", "type", "startNodeElementId", …, "properties"}`.
-    static func queryAPI(_ data: [String: Any], counters: Any?, limit: Int) -> QueryResult {
+    package static func queryAPI(_ data: [String: Any], counters: Any?, limit: Int) -> QueryResult {
         var result = QueryResult()
         result.columns = data["fields"] as? [String] ?? []
         result.types = Array(repeating: "", count: result.columns.count)
@@ -319,7 +319,7 @@ enum Neo4jParse {
     }
 
     /// A Query API value shaped as the transactional one's are.
-    static func plain(_ value: Any) -> Any {
+    package static func plain(_ value: Any) -> Any {
         if let object = value as? [String: Any], object["elementId"] != nil, let properties = object["properties"] {
             if let labels = object["labels"] { return ["labels": labels, "properties": properties] as [String: Any] }
             if let type = object["type"] { return ["type": type, "properties": properties] as [String: Any] }
@@ -329,7 +329,7 @@ enum Neo4jParse {
     }
 
     /// Either API's rows, their raw values.
-    static func rawRows(_ data: Data) -> [[Any]] {
+    package static func rawRows(_ data: Data) -> [[Any]] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
         if let query = object["data"] as? [String: Any] { return query["values"] as? [[Any]] ?? [] }
         let result = (object["results"] as? [[String: Any]])?.first
@@ -337,7 +337,7 @@ enum Neo4jParse {
     }
 
     /// A value with its meta: a node, a relationship, a path, or what it is.
-    static func shape(_ value: Any, meta: Any?, labels: [String: [String]], types: [String: String]) -> Any {
+    package static func shape(_ value: Any, meta: Any?, labels: [String: [String]], types: [String: String]) -> Any {
         if let meta = meta as? [String: Any], let kind = meta["type"] as? String {
             let id = meta["id"].flatMap(HTTPDriverTransport.text) ?? ""
             let properties = value as? [String: Any] ?? [:]
@@ -355,7 +355,7 @@ enum Neo4jParse {
     }
 
     /// An error in words: credentials, a missing database, else the server's.
-    static func explain(_ code: String, _ message: String) -> String {
+    package static func explain(_ code: String, _ message: String) -> String {
         if code.hasPrefix("Neo.ClientError.Security.Unauthorized") || code.hasPrefix("Neo.ClientError.Security.AuthenticationRateLimit") {
             return "Neo4j refused the user or password (\(message))."
         }
