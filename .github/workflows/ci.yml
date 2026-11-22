@@ -33,6 +33,11 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
+    inputs:
+      test_workers:
+        description: Unit-test processes run at once (Scripts/unit-tests.sh)
+        required: false
+        default: '4'
 
 concurrency:
   group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
@@ -133,7 +138,8 @@ jobs:
     if: needs.changes.outputs.tests != 'none'
     runs-on: xcode-27  # public preview (see the top)
     # A cold GhosttyKit build (≈10 min, when its cache misses), the debug
-    # build (≈14 min cold, ≈8 with its packages cached) and the tests (≈9).
+    # build (≈14 min cold, ≈8 with its packages cached) and the tests (≈9
+    # serial; in parallel, a few).
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -208,16 +214,37 @@ jobs:
           restore-keys: |
             spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
 
+      # A step of its own, so that the compile's time shows apart from the
+      # tests'.
+      - name: Build for tests
+        run: swift build --build-tests
+
+      # Several xctest processes at once (Scripts/unit-tests.sh): the tests
+      # mostly wait — on fakes, timers, git — so they share the runner's
+      # cores. In one process 4,344 took 507 s here. Each test's time is in
+      # the logs, kept as an artifact of the run.
       - name: Unit tests
         env:
           FILTER: ${{ needs.changes.outputs.tests }}
+          TEST_WORKERS: ${{ inputs.test_workers || '4' }}
+          UNIT_TEST_LOGS: ${{ runner.temp }}/unit-tests
         run: |
+          echo "$(sysctl -n hw.ncpu) cores"
           if [[ "$FILTER" == all ]]; then
-            make test
+            ./Scripts/unit-tests.sh "$TEST_WORKERS"
           else
             echo "The tests this change reaches: $FILTER"
-            swift test --skip OvertermE2ETests --filter "$FILTER"
+            ./Scripts/unit-tests.sh "$TEST_WORKERS" "$FILTER"
           fi
+
+      - name: Keep the tests' logs
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests
+          path: ${{ runner.temp }}/unit-tests
+          if-no-files-found: ignore
 
       # Main's only, as the release build's: a pull request's would be its own.
       - name: Save the debug build
