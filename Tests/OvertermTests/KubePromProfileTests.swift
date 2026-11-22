@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// Stage M5 of docs/design/kubernetes/metrics.md (4.3, 4.4, 4.7, 6.3):
 /// the probe's four queries and what they derive — the metrics there and

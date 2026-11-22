@@ -12,6 +12,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// Stage 4's listeners (docs/design/activity/analysis.md, 6.8, D-25,
 /// D-32) over a fake Mac: other users' from a nettop reading, launchd's

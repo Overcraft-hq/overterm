@@ -12,6 +12,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// A tab's agent from a fake census (docs/design/activity/analysis.md,
 /// 7.8): the readers that walked every pane's tree with a scan of their own

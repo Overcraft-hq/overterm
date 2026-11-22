@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// SQL as text: its statements, what they do, what the caret is writing.
 final class SQLTextTests: XCTestCase {

@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// `TerraformRun.short` against stand-ins behind the recording wrapper:
 /// what it passes, what it refuses before starting, its bounds.

@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// Settings ▸ Editor ▸ Colours ▸ The terminal theme's: the syntax in the
 /// terminal's own sixteen.

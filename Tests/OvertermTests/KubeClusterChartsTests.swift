@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The Overview's usage by namespace and node and a claim's fill forecast
 /// (docs/design/kubernetes/metrics.md 2.9, 4.6; stage M8): X1–X4's queries

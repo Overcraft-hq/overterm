@@ -1,11 +1,6 @@
 import AppKit
 import SwiftUI
 
-extension ThemeColor {
-    package var nsColor: NSColor { NSColor(srgbRed: red, green: green, blue: blue, alpha: 1) }
-    package var color: Color { Color(nsColor: nsColor) }
-}
-
 extension TerminalTheme {
     /// The chrome this theme would dress the window in — the same
     /// derivation the real window uses, so the preview is the thing.

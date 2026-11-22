@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// Which Overterm started a process (docs/design/activity/analysis.md, 6.9,
 /// D-15, 10.5): the run's marker, the argv signs that name it, the

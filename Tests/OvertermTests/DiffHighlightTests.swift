@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 final class DiffHighlightTests: XCTestCase {
     /// `git diff` output for `path` with these hunk lines, as loadDiffs reads it.

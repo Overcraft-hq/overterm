@@ -12,6 +12,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// A Metrics tab's group read only while on screen (a workload's saved
 /// queries, a node's top pods, its disks and network) is said shown only

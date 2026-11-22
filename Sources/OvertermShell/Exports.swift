@@ -3,6 +3,10 @@
 @_exported import OvertermTerraform
 @_exported import OvertermOvergit
 @_exported import OvertermNotes
+@_exported import OvertermSimulator
+@_exported import OvertermUsage
+@_exported import OvertermSettingsPage
+@_exported import OvertermAgents
 
 /// The app's settings, not SwiftUI's scene of that name: imported from
 /// two modules here, the name needs saying once.

@@ -13,6 +13,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The Kubernetes client against `FakeKubeAPI` on a socket of the test's
 /// own: the version, discovery (aggregated and the legacy walk), lists as

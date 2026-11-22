@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// A page's filter field (`ResourceFilter`): words split and lowercased,
 /// `key:value` by a page's own keys and aliases, `-` negating, unknown

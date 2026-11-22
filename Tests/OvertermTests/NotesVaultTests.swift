@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// A vault as Obsidian keeps one: its settings read from `.obsidian/`, its
 /// tree in Obsidian's order, iCloud's placeholders under their real names.

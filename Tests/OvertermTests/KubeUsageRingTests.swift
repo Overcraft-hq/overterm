@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The samples taken while shown (docs/design/kubernetes/metrics.md, 4.1):
 /// keyed by metrics-server's stamp, gaps kept as breaks, folded into

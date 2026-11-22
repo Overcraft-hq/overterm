@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// Which names look secret (`Secrets.isSecret`): the words anywhere in the
 /// name, and PASS, PWD, PASSPHRASE, PIN as one of its words — a name

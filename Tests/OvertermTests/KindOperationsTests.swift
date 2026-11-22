@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The Server page, node editing and users of Neo4j, InfluxDB, RabbitMQ and
 /// Redis — every pure part: the engines' answers read, the statements and

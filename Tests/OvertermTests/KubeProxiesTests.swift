@@ -12,6 +12,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The proxies a context each (`KubeProxies`), over stand-in proxies whose
 /// answers the test writes: opened once and kept, `maxProxies` with the

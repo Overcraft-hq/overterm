@@ -12,6 +12,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// A cluster object's YAML in the editor (2.8), against `FakeKubeAPI` on a
 /// socket of the test's own — never ~/.kube, over fictional contexts on it

@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// Agents' write tools (stage 2a; docs/design/kubernetes/analysis.md, 3.5
 /// and rule 10) against `FakeKubeAPI` on a socket of the test's own, over

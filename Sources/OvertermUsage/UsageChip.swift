@@ -17,6 +17,13 @@ package struct UsageChip: View {
     package let action: () -> Void
     @State private var hovering = false
 
+    package init(model: UsageModel, theme: ChromeTheme, settings: Settings = .shared, action: @escaping () -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self._settings = ObservedObject(wrappedValue: settings)
+        self.action = action
+    }
+
     package var body: some View {
         if settings.usageChip, model.isAvailable {
             let shown = model.chipMeter()

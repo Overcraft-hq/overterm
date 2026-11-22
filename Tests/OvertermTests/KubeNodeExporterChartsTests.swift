@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// A node's disks and network from node-exporter (docs/design/kubernetes/
 /// metrics.md 2.8's K6 and K7, 4.6, decision 6; stage M8b): their queries

@@ -8,7 +8,7 @@ version is tagged `v<version>`.
 
 ## 1.6.6 — 2026-11-22
 
-- build: the API client, the git panel and the notes are modules of their own
+- build: the API client, the git panel, the notes, the simulator, the agents' usage, the settings page and the agents' overview are modules of their own
 
 ## 1.6.5 — 2026-11-22
 

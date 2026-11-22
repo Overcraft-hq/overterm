@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// Helm's releases read from the cluster's own records (docs/design/
 /// kubernetes/analysis.md, 2.12, Section 4 and rule 9): a record decoded as

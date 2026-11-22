@@ -12,6 +12,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// nettop's listeners (docs/design/activity/analysis.md, 6.8, D-25): the
 /// pinned, hand-written fixture — every name invented —, the blind check,

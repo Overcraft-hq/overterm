@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 final class RefsTests: XCTestCase {
     private func line(_ refname: String, _ sha: String, _ upstream: String, _ track: String, _ at: String, _ subject: String) -> String {

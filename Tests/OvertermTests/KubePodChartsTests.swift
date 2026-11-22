@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// A pod's Metrics tab, sampled (docs/design/kubernetes/metrics.md 2.3,
 /// 2.4, stage M3a): the containers in the Logs tab's order, references

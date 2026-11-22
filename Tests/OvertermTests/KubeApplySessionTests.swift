@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// A manifest diffed with and applied to `FakeKubeAPI` on a socket of the
 /// test's own (stage 2b), over three fictional contexts on it — never

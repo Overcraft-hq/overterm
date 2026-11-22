@@ -20,6 +20,10 @@ module, each its own) and a change rebuilds what is above it only:
 | `OvertermTerraform` | Terraform (over Kubernetes: a context's class) |
 | `OvertermOvergit` | the git panel (⌥⌘G), beside the features: only the window shows it |
 | `OvertermNotes` | the notes vault (⌥⌘N), beside the features; the editor reaches a note's Live Preview, reading view, drawing, completion and templates through `EditorNotes` (`NotesEditor`) |
+| `OvertermSimulator` | the iOS simulator in the browser's column (the column itself is the window's) |
+| `OvertermUsage` | what the agents have spent: the pane, and the strip's chip the window hands the tab bar (`TabBarView.usageChip`) |
+| `OvertermSettingsPage` | ⌘,'s page, the themes' gallery, preview and editor (the settings store, the schema and the theme catalog are the shell's) |
+| `OvertermAgents` | the agents' overview (⇧⌘A) and the Sessions panel (a tab's agent, `PaneAgent`, is the shell's) |
 | `OvertermShell` | the window and what holds the features together: `TerminalWindowController` and its extensions, the app delegate, the menus, the right slot, the sidebar, Tab Info, the Inbox's view, the review page, the E2E scenarios; `OvertermFeatures` |
 
 `OvertermApp` (`Sources/OvertermApp/main.swift`) calls `AppMain.run()`; its

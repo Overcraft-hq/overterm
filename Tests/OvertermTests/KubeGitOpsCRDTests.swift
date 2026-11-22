@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The fake against Argo CD's and Flux's own CRDs (docs/design/kubernetes/
 /// gitops.md, 8.5): pinned and SHA-checked by `Scripts/fetch-gitops-crds.sh`

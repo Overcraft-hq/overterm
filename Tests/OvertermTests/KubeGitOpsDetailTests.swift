@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// A GitOps object's detail and its Ask Why (docs/design/kubernetes/
 /// gitops.md, 2.9, 6.2, G3): the header's state sentence, sources,

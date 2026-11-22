@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// Scripts/affected-tests.sh, which picks the unit tests a change reaches
 /// (`make test-changed`, CI's `changes` job). It runs for real with macOS's

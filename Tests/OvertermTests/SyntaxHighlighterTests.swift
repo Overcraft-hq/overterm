@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 final class SyntaxHighlighterTests: XCTestCase {
     private func tokens(_ text: String, _ file: String) -> [(String, SyntaxHighlighter.Kind)] {

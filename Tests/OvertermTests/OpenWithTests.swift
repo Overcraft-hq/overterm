@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 final class OpenWithTests: XCTestCase {
     private static func app(_ bundleID: String, _ name: String, at path: String? = nil) -> ExternalApp {

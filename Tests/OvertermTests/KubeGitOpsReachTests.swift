@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// Has this branch reached the cluster (docs/design/kubernetes/gitops.md,
 /// 4.3, 8.1): what each tool applied as a commit or not (`.gitopsRevision`,

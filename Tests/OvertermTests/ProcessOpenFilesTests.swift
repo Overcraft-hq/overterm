@@ -12,6 +12,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The detail's Files (docs/design/activity/analysis.md, 6.4, `l`) over a
 /// fake Mac: files by path, sockets as the census decodes them, pipes and

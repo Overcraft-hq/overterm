@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The summary's decode is its allow-list (docs/design/kubernetes/
 /// gitops.md, 2.4, 8.1, decision 15): every struct's keys against a

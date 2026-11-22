@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The tunnel's ssh arguments, always; a real tunnel through the bastion of
 /// Scripts/database-test-servers.sh to its PostgreSQL with OVERTERM_DB_TESTS=1.

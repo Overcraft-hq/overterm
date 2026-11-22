@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The app's version: VERSION and CHANGELOG.md, Scripts/bump-version.sh, and
 /// the git hooks that keep them in step with the code (.githooks; CLAUDE.md,

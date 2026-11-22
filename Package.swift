@@ -156,7 +156,20 @@ let package = Package(
         feature("OvertermOvergit", over: ["Overterm"]),
         // OvertermNotes: the notes vault (⌥⌘N), beside the features.
         feature("OvertermNotes", over: ["Overterm"]),
-        feature("OvertermShell", over: ["OvertermTerraform", "OvertermOvergit", "OvertermNotes"]),
+        // OvertermSimulator: the iOS simulator in the browser's column.
+        feature("OvertermSimulator", over: ["Overterm"]),
+        // OvertermUsage: what the agents have spent, the strip's chip and pane.
+        feature("OvertermUsage", over: ["Overterm"]),
+        // OvertermSettingsPage: ⌘, — the page, the themes' gallery and editor.
+        feature("OvertermSettingsPage", over: ["Overterm"]),
+        // OvertermAgents: the agents' overview (⇧⌘A) and the Sessions panel.
+        feature("OvertermAgents", over: ["Overterm"]),
+        feature(
+            "OvertermShell",
+            over: [
+                "OvertermTerraform", "OvertermOvergit", "OvertermNotes", "OvertermSimulator", "OvertermUsage", "OvertermSettingsPage",
+                "OvertermAgents",
+            ]),
         // The app: Sources/OvertermApp/main.swift starts the library. Its
         // product keeps the name the binary always had (make-app.sh, the
         // docs' `.build/debug/Overterm`).

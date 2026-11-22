@@ -10,6 +10,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The storage clients: S3's XML read offline, the AWS CLI's profiles,
 /// and the whole round trip against an S3 server (RustFS, in Docker) when

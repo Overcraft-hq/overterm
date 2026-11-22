@@ -12,6 +12,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// Left Behind's signs (docs/design/activity/analysis.md, 6.9; 6.5 rules 8
 /// and 11) over a fake Mac: a closed pane's tag, an agent run's window from

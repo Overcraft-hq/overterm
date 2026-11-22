@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// The cluster's docs read from `FakeKubeAPI` on a socket of the test's own
 /// (3.15), never a real cluster: GETs only, read when asked and not before,

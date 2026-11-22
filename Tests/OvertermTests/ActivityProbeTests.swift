@@ -11,6 +11,10 @@ import XCTest
 @testable import OvertermOvergit
 @testable import OvertermAPI
 @testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
 
 /// What the census relies on, checked on the Mac it runs on (docs/design/
 /// activity/analysis.md, 12: measured on one macOS): the structures' sizes,
