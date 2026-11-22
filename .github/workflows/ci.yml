@@ -198,18 +198,30 @@ jobs:
       # The debug build of the last run on main, its packages compiled once
       # per Package.resolved. Overterm's own modules are left out: the
       # checkout's fresh mtimes rebuild them anyway, and they are half its size.
+      # The layout is Swift Build's (.build/out; .build/debug a link into it).
+      # An exclusion only drops a path the patterns above it listed — the
+      # cache tars what is listed, folders whole — so each level is listed
+      # with its globs before what leaves it out: `.build` with
+      # `!.build/*/debug/…` kept everything (1.1 GB from main's run).
+      # Left out: Overterm's intermediates, its products (the app, the
+      # modules, OvertermTests.xctest, OvertermE2ETests.xctest), the
+      # testable object in ExecutableModules, the index store (out/v5), and
+      # Products/Release.
       - name: Restore the debug build
         uses: actions/cache/restore@v6
         with:
           path: |
-            .build
-            !.build/release
-            !.build/*/release
-            !.build/*/debug/Overterm.build
-            !.build/*/debug/OvertermTests.build
-            !.build/*/debug/OvertermE2ETests.build
-            !.build/*/debug/OvertermPackageTests.xctest
-            !.build/*/debug/index
+            .build/*
+            !.build/out
+            .build/out/*
+            !.build/out/Intermediates.noindex
+            !.build/out/Products
+            !.build/out/v5
+            .build/out/Intermediates.noindex/*
+            !.build/out/Intermediates.noindex/Overterm.build
+            .build/out/Products/Debug/*
+            !.build/out/Products/Debug/Overterm*
+            !.build/out/Products/Debug/ExecutableModules
           key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
             spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
@@ -252,14 +264,17 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: |
-            .build
-            !.build/release
-            !.build/*/release
-            !.build/*/debug/Overterm.build
-            !.build/*/debug/OvertermTests.build
-            !.build/*/debug/OvertermE2ETests.build
-            !.build/*/debug/OvertermPackageTests.xctest
-            !.build/*/debug/index
+            .build/*
+            !.build/out
+            .build/out/*
+            !.build/out/Intermediates.noindex
+            !.build/out/Products
+            !.build/out/v5
+            .build/out/Intermediates.noindex/*
+            !.build/out/Intermediates.noindex/Overterm.build
+            .build/out/Products/Debug/*
+            !.build/out/Products/Debug/Overterm*
+            !.build/out/Products/Debug/ExecutableModules
           key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
 
   # The release path otherwise runs only when someone releases: assemble the
