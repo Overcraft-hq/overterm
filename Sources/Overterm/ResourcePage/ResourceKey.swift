@@ -94,6 +94,13 @@ package struct ResourceKeySheet<Key: ResourceKey>: View {
     package var footnote: String? = nil
     package let close: () -> Void
 
+    package init(theme: ChromeTheme, identifier: String, footnote: String? = nil, close: @escaping () -> Void) {
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.identifier = identifier
+        self.footnote = footnote
+        self.close = close
+    }
+
     package var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Keys in the list").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text).padding(.bottom, 4)

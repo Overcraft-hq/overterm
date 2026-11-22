@@ -6,6 +6,8 @@ import Foundation
 /// or is doing right now. Refreshed every 2 s while shown.
 @MainActor
 package final class AgentOverviewModel: ObservableObject {
+    package init() {}
+
     package struct Card: Identifiable, Equatable {
         package let id: Tab.ID
         package let title: String

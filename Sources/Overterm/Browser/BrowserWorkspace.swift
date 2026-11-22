@@ -7,6 +7,8 @@ import WebKit
 /// that shows, and can open, pick and close pages (BrowserMCP).
 @MainActor
 package final class BrowserWorkspace: ObservableObject {
+    package init() {}
+
     @Published package private(set) var pages: [BrowserSession] = []
     @Published package private(set) var activeIndex = 0
     package var onOpenExternally: ((URL) -> Void)?

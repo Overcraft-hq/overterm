@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Reading an agent's question off the screen. The inbox answers these by
 /// typing a number, so a wrong parse is a wrong answer sent to a running

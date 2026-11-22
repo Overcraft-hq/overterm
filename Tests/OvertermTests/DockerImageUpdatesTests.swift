@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 private func digest(_ character: Character) -> String { "sha256:" + String(repeating: character, count: 64) }
 

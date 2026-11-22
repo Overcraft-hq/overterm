@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Terminal in this context (docs/design/kubernetes/analysis.md, 3.11): the
 /// pin's file — what it holds and doesn't, its permissions — the shell's

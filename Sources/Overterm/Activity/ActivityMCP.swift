@@ -33,6 +33,11 @@ package enum ActivityMCP {
     package struct Scene: Sendable {
         package let caller: ActivityMCPCaller
         package let options: ActivityRows.Options
+
+        package init(caller: ActivityMCPCaller, options: ActivityRows.Options) {
+            self.caller = caller
+            self.options = options
+        }
     }
 
     /// The pane's scene — the window answers; nil for a pane no window

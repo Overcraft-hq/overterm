@@ -40,6 +40,24 @@ package struct ListeningPort: Identifiable, Hashable {
     /// id, so it is copied only.
     package var host: String? = "localhost"
 
+    package init(
+        pid: pid_t, process: String, port: Int, address: String, container: String? = nil, movedFrom: Int? = nil, forward: KubeForwardPill? = nil, proto: String = "tcp",
+        families: SocketRecord.Families = [], scope: Scope = Scope.thisMac, start: UInt64? = nil, host: String? = "localhost"
+    ) {
+        self.pid = pid
+        self.process = process
+        self.port = port
+        self.address = address
+        self.container = container
+        self.movedFrom = movedFrom
+        self.forward = forward
+        self.proto = proto
+        self.families = families
+        self.start = start
+        self.host = host
+        self.scope = scope
+    }
+
     /// Who can reach a listener (6.8, Scope).
     package enum Scope: Hashable, Sendable {
         /// Loopback only: 127/8, ::1, a v4-mapped `::ffff:127.0.0.1`.

@@ -40,6 +40,15 @@ package struct ReviewFileTable: NSViewRepresentable {
     package let select: (String) -> Void
     package let toggleViewed: (String) -> Void
 
+    package init(rows: [ReviewListRow], selected: String?, viewed: Set<String>, theme: ChromeTheme, select: @escaping (String) -> Void, toggleViewed: @escaping (String) -> Void) {
+        self.rows = rows
+        self.selected = selected
+        self.viewed = viewed
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.select = select
+        self.toggleViewed = toggleViewed
+    }
+
     package func makeCoordinator() -> Coordinator { Coordinator() }
 
     package func makeNSView(context: Context) -> NSScrollView {

@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The database client's Server page, editing and users — the pure parts:
 /// quoting, which results can be edited, pending changes and the statements

@@ -705,6 +705,49 @@ package enum ActivityRows {
         /// The same census made again (a sort, a fold): `previous`'s ended
         /// rows stay as they were, still once.
         package var repeatsEnded = false
+
+        package init(
+            titles: [UUID: String] = [:], tabs: [UUID: ActivityTabFacts] = [:], context: ActivityContext = ActivityContext(), checkouts: [String] = [], runningApps: [pid_t: String] = [:],
+            grouping: ActivityGrouping? = .checkout, tree: Bool = true, scope: ActivityScope = ActivityScope.mac, folds: [String: Bool] = [:], containers: [ActivityContainer] = [],
+            reveal: String? = nil, groupLimit: Int = 500, everyone: Bool = true, isolated: Bool = false, processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false),
+            portSort: ResourceSort? = ResourceSort(column: "port"), subjectOf: ActivityProcessID? = nil, historyOf: ActivityProcessID? = nil, processFilter: String = "", portFilter: String = "",
+            connections: Bool = false, launchAgents: [LaunchdJobs.Agent] = [], ephemeralFirst: Int = 49_152, others: NettopListeners.Reading? = nil,
+            othersState: ActivityOtherListeners = ActivityOtherListeners.off, launchdSockets: [LaunchdSockets.Job] = [], unixSockets: Bool = false, processLimit: Int? = ActivityProcessLimit.perUser,
+            previous: [ActivityProcessRow] = [], marksNew: Bool = false, shownAt: Date? = nil, repeatsEnded: Bool = false
+        ) {
+            self.titles = titles
+            self.tabs = tabs
+            self.context = context
+            self.checkouts = checkouts
+            self.runningApps = runningApps
+            self.grouping = grouping
+            self.tree = tree
+            self.scope = scope
+            self.folds = folds
+            self.containers = containers
+            self.reveal = reveal
+            self.groupLimit = groupLimit
+            self.everyone = everyone
+            self.isolated = isolated
+            self.processSort = processSort
+            self.portSort = portSort
+            self.subjectOf = subjectOf
+            self.historyOf = historyOf
+            self.processFilter = processFilter
+            self.portFilter = portFilter
+            self.connections = connections
+            self.launchAgents = launchAgents
+            self.ephemeralFirst = ephemeralFirst
+            self.others = others
+            self.othersState = othersState
+            self.launchdSockets = launchdSockets
+            self.unixSockets = unixSockets
+            self.processLimit = processLimit
+            self.previous = previous
+            self.marksNew = marksNew
+            self.shownAt = shownAt
+            self.repeatsEnded = repeatsEnded
+        }
     }
 
     /// `row`'s 15 minutes from the history (6.11): one of the user's, its

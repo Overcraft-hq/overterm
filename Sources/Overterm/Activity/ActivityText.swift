@@ -48,7 +48,7 @@ package enum ActivityText {
     package static func forAgents(_ text: String, home: String = ActivityText.home, limit: Int? = agentFieldLimit) -> String {
         var out = title(text)
         if !home.isEmpty, home != "/" { out = replacingHome(home, in: out) }
-        out = DockerMCP.displayed(String(out.map { $0.isNewline || $0 == "\t" ? " " : $0 }))
+        out = VisibleText.displayed(String(out.map { $0.isNewline || $0 == "\t" ? " " : $0 }))
         if let limit, out.count > limit { out = String(out.prefix(max(limit - 1, 0))) + "…" }
         return out
     }

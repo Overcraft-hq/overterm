@@ -4,6 +4,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// nettop's listeners (docs/design/activity/analysis.md, 6.8, D-25): the
 /// pinned, hand-written fixture — every name invented —, the blind check,

@@ -5,6 +5,12 @@ package struct GitError: LocalizedError {
     package let status: Int32
     package let stderr: String
 
+    package init(arguments: [String], status: Int32, stderr: String) {
+        self.arguments = arguments
+        self.status = status
+        self.stderr = stderr
+    }
+
     package var errorDescription: String? {
         let message = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         return message.isEmpty ? "git \(arguments.joined(separator: " ")) exited with \(status)" : message
@@ -15,6 +21,9 @@ package struct GitError: LocalizedError {
 /// concurrency one: blocking the cooperative pool with many waits starves
 /// the whole app (signalbox froze exactly that way).
 package enum Git {
+    /// Git's global option that makes every pathspec a plain name.
+    package static let literalPathspecs = "--literal-pathspecs"
+
     /// /usr/bin/git is the Xcode shim; a GUI app's PATH has no Homebrew.
     package static let executable = URL(fileURLWithPath: "/usr/bin/git")
 
@@ -182,6 +191,8 @@ package enum Git {
 /// The process a `Git.run` call is running, so cancelling the task can
 /// stop it — whether that comes before it starts, or after.
 package final class RunningProcess: @unchecked Sendable {
+    package init() {}
+
     private let lock = NSLock()
     private var process: Process?
     private var cancelled = false

@@ -472,8 +472,6 @@ package final class Settings: ObservableObject {
     package var terraformProductionAccounts: [String] {
         (value("terraform.productionAccounts")?.list ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
-    /// Each root's own settings, by its path in the repository.
-    package var terraformRoots: [String: TerraformRootSettings] { TerraformRootSettings.all(from: value("terraform.roots")) }
     /// Agents started with Terraform's writes denied (analysis 3.4, D-8).
     package var terraformAgentWriteGuard: Bool { terraformEnabled && bool("terraform.agentWriteGuard") }
     /// New Task initialises a new worktree's roots without their backend (stage 2b).
@@ -539,8 +537,6 @@ package final class Settings: ObservableObject {
     package var kubernetesAgentAccess: Bool { kubernetesEnabled && bool("kubernetes.agentAccess") }
     /// The setting's extra kubeconfig files and folders, as written (`~` unexpanded).
     package var kubernetesKubeconfigs: [String] { value("kubernetes.kubeconfigs")?.list ?? [] }
-    /// Each context's own settings, by its name.
-    package var kubernetesContexts: [String: KubeContextSettings] { KubeContextSettings.all(from: value("kubernetes.contexts")) }
     package var kubernetesPinnedContexts: [String] { value("kubernetes.pinnedContexts")?.list ?? [] }
     package var kubernetesAgentWrites: [String] {
         (value("kubernetes.agentWrites")?.list ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }

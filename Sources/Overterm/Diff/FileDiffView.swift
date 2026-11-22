@@ -82,6 +82,24 @@ package struct FileCard: View {
     package var onDiscard: () -> Void = {}
     package let onOpen: () -> Void
 
+    package init(
+        file: ChangedFile, diff: DiffModel.FileDiff?, collapsed: Bool, editable: Bool = false, theme: ChromeTheme, palette: DiffPalette, why: FileWhy = .none, onToggleWhy: @escaping () -> Void = {},
+        onToggle: @escaping () -> Void, onStage: @escaping () -> Void = {}, onDiscard: @escaping () -> Void = {}, onOpen: @escaping () -> Void
+    ) {
+        self.file = file
+        self.diff = diff
+        self.collapsed = collapsed
+        self.editable = editable
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.palette = palette
+        self.why = why
+        self.onToggleWhy = onToggleWhy
+        self.onToggle = onToggle
+        self.onStage = onStage
+        self.onDiscard = onDiscard
+        self.onOpen = onOpen
+    }
+
     private var emptyDiff: String {
         if file.kind == .renamed, let original = file.originalPath { return "Renamed from \(original), content unchanged." }
         return "No textual diff (binary or empty)."
@@ -209,6 +227,13 @@ package struct DiffLineView: View, Equatable {
     package let style: DiffLineStyle
     package let palette: DiffPalette
     @ObservedObject package var theme: ChromeTheme
+
+    package init(line: DiffLine, style: DiffLineStyle, palette: DiffPalette, theme: ChromeTheme) {
+        self.line = line
+        self.style = style
+        self.palette = palette
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
 
     /// The palette and theme are the app's for its life: a line is drawn
     /// again only when its text or style changes, not on every refresh.

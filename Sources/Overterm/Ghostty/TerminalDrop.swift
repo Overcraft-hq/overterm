@@ -61,7 +61,7 @@ package enum TerminalDrop {
             case .file(let url, let isDirectory):
                 let path = url.standardizedFileURL.path
                 guard case .claude(let directory) = program, !plainPaths else {
-                    words.append(TerminalWindowController.shellQuoted(path))
+                    words.append(ShellPaths.shellQuoted(path))
                     continue
                 }
                 if !isDirectory, isImage(path), let image = claudeImagePath(path) {
@@ -69,7 +69,7 @@ package enum TerminalDrop {
                 } else {
                     let relative = relativePath(url.standardizedFileURL, to: directory)
                     let written = isDirectory && !relative.hasSuffix("/") ? relative + "/" : relative
-                    words.append(claudeMention(written) ?? TerminalWindowController.shellQuoted(path))
+                    words.append(claudeMention(written) ?? ShellPaths.shellQuoted(path))
                 }
             }
         }
@@ -134,9 +134,9 @@ package enum TerminalDrop {
     /// `url` relative to `directory` when inside it, else absolute — also
     /// when the two spell the same place differently (/var is /private/var).
     package static func relativePath(_ url: URL, to directory: String?) -> String {
-        let direct = TerminalWindowController.relativePath(url, cwd: directory)
+        let direct = ShellPaths.relativePath(url, cwd: directory)
         guard direct.hasPrefix("/"), let directory else { return direct }
-        let resolved = TerminalWindowController.relativePath(
+        let resolved = ShellPaths.relativePath(
             url.resolvingSymlinksInPath(), cwd: URL(fileURLWithPath: directory).resolvingSymlinksInPath().path)
         return resolved.hasPrefix("/") ? direct : resolved
     }

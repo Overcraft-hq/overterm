@@ -34,6 +34,12 @@ package final class ThemeCatalog: ObservableObject {
         package let source: Source
         /// The file it was read from (nil in tests that make one up).
         package var url: URL? = nil
+
+        package init(theme: TerminalTheme, source: Source, url: URL? = nil) {
+            self.theme = theme
+            self.source = source
+            self.url = url
+        }
         package var id: String { theme.name }
     }
 

@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Neo4j: Cypher's statements and checks, both HTTP APIs' answers as rows —
 /// offline; the driver against neo4j:5 when OVERTERM_DB_TESTS=1 and

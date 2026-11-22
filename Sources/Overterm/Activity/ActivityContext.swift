@@ -68,6 +68,14 @@ package struct ActivityContext: Hashable, Sendable {
         package let port: UInt16
         /// "tcp" or "udp".
         package let proto: String
+
+        package init(container: String, project: String? = nil, address: String, port: UInt16, proto: String) {
+            self.container = container
+            self.project = project
+            self.address = address
+            self.port = port
+            self.proto = proto
+        }
     }
 
     /// A Kubernetes port-forward (`KubeForwards`): kubectl is Overterm's
@@ -82,6 +90,14 @@ package struct ActivityContext: Hashable, Sendable {
         package var tab: UUID?
         /// It serves https: its URL says so (6.8, Open).
         package var https = false
+
+        package init(pid: pid_t, port: UInt16, target: String, tab: UUID? = nil, https: Bool = false) {
+            self.pid = pid
+            self.port = port
+            self.target = target
+            self.tab = tab
+            self.https = https
+        }
     }
 
     /// A database tunnel (`SSHTunnel`): ssh's local port.
@@ -90,6 +106,12 @@ package struct ActivityContext: Hashable, Sendable {
         package let port: UInt16
         /// The connection's name.
         package let name: String
+
+        package init(pid: pid_t, port: UInt16, name: String) {
+            self.pid = pid
+            self.port = port
+            self.name = name
+        }
     }
 
     /// A pane this run closed (stage 3, 6.9): a process that still carries

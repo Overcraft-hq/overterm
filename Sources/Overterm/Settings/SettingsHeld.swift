@@ -36,7 +36,7 @@ package struct HeldSetting: Equatable, Sendable {
         if written != nil && proposed == nil {
             found.insert(Line(text: "the file's value can't be used, so its default", widens: true), at: 0)
         }
-        return found.map { Line(text: DockerMCP.displayed("\(key): " + $0.text), widens: $0.widens) }
+        return found.map { Line(text: VisibleText.displayed("\(key): " + $0.text), widens: $0.widens) }
     }
 
     /// What changed from `old` to `new`: each name a list adds or removes,
@@ -124,6 +124,11 @@ package struct SettingsHeldBanner: View {
     @ObservedObject package var theme: ChromeTheme
     @State private var reviewing = false
 
+    package init(settings: Settings, theme: ChromeTheme) {
+        self._settings = ObservedObject(wrappedValue: settings)
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
+
     /// Every line of the change, untruncated: what widens first, then by
     /// key, each setting's lines in their own order.
     @MainActor package static func lines(_ held: [String: HeldSetting]) -> [String] {
@@ -138,7 +143,7 @@ package struct SettingsHeldBanner: View {
             let summary = HeldBannerSummary(lines)
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "lock.trianglebadge.exclamationmark.fill")
-                    .font(.system(size: ChromeMetrics.text(14))).foregroundStyle(KubeResourceBanner.warning)
+                    .font(.system(size: ChromeMetrics.text(14))).foregroundStyle(ProductionColor.warning)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("settings.json changed outside Overterm. Until you keep it, the value before stays in effect:")
                         .font(.system(size: ChromeMetrics.text(11.5), weight: .semibold)).foregroundStyle(theme.text)
@@ -148,7 +153,7 @@ package struct SettingsHeldBanner: View {
                     }
                     if !summary.keepInBanner {
                         Text(verbatim: summary.hidden > 0 ? "…and \(summary.hidden) more. Review all of it before keeping it." : "Review all of it before keeping it.")
-                            .font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(KubeResourceBanner.warning)
+                            .font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(ProductionColor.warning)
                     }
                 }
                 Spacer(minLength: 8)
@@ -174,8 +179,8 @@ package struct SettingsHeldBanner: View {
             .frame(maxWidth: 760)
             .background(
                 RoundedRectangle(cornerRadius: 8).fill(theme.card)
-                    .overlay(RoundedRectangle(cornerRadius: 8).fill(KubeResourceBanner.warning.opacity(0.14)))
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(KubeResourceBanner.warning.opacity(0.6)))
+                    .overlay(RoundedRectangle(cornerRadius: 8).fill(ProductionColor.warning.opacity(0.14)))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(ProductionColor.warning.opacity(0.6)))
             )
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("settings.held.banner")

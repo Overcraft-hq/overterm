@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Kubeconfigs as kubectl reads them, the contexts' classes, and the guard
 /// that keeps tests and isolated runs off the user's own kubeconfig — whose

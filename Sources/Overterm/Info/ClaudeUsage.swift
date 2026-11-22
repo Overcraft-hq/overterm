@@ -21,6 +21,8 @@ package struct ClaudeUsage: Equatable {
 /// Reads session transcripts incrementally: a transcript only grows, so after
 /// the first read only the appended bytes are parsed.
 package final class ClaudeUsageReader: @unchecked Sendable {
+    package init() {}
+
     private struct Progress {
         var offset: UInt64 = 0
         /// Per reply id, its latest usage: Claude Code writes a reply once

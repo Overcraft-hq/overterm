@@ -23,6 +23,18 @@ package enum DockerTar {
         /// back keeps it.
         package var uid = 0
         package var gid = 0
+
+        package init(name: String, kind: Kind, size: Int, mode: Int, modified: Date, linkTarget: String, data: Data, uid: Int = 0, gid: Int = 0) {
+            self.name = name
+            self.kind = kind
+            self.size = size
+            self.mode = mode
+            self.modified = modified
+            self.linkTarget = linkTarget
+            self.data = data
+            self.uid = uid
+            self.gid = gid
+        }
     }
 
     package static let block = 512

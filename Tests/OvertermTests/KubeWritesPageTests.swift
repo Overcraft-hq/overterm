@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The page's guard path against the fake API server, over three fictional
 /// contexts on it: `kind-fake` (local, writable), `fake-dev` (remote, set

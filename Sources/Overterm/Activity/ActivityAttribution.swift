@@ -247,6 +247,20 @@ package struct ActivityTabFacts: Hashable, Sendable {
     /// Since when it waits (`TabActivity.waitingSince`): the burn counts
     /// from then.
     package var waitingSince: Date?
+
+    package init(
+        id: UUID, title: String, checkout: String? = nil, branch: String? = nil, repository: String? = nil, order: Int = 0, agent: Agent? = nil, waiting: Bool = false, waitingSince: Date? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.checkout = checkout
+        self.branch = branch
+        self.repository = repository
+        self.order = order
+        self.agent = agent
+        self.waiting = waiting
+        self.waitingSince = waitingSince
+    }
 }
 
 /// Each process's owner, reason and certainty (6.5): pure, one snapshot,

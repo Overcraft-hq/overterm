@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Which names look secret (`Secrets.isSecret`): the words anywhere in the
 /// name, and PASS, PWD, PASSPHRASE, PIN as one of its words — a name

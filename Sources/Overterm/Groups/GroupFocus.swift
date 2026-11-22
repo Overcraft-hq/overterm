@@ -9,6 +9,8 @@ import Foundation
 /// waiting than by arriving, so `.waiting` is never queued.
 @MainActor
 package final class GroupFocus: ObservableObject {
+    package init() {}
+
     package struct Held: Identifiable, Equatable {
         package let id: Tab.ID
         package let title: String

@@ -5,6 +5,8 @@ import Foundation
 /// Loaded only while the pane shows it; everything goes through gh.
 @MainActor
 package final class PullRequestModel: ObservableObject {
+    package init() {}
+
     package enum Phase: Equatable {
         case idle, loading, loaded, none
         case failed(String)

@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A checkout tied to what it deploys (docs/design/kubernetes/analysis.md,
 /// 3.1): the guess read from fixture checkouts' files — a chart's name as

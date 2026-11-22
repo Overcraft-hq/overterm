@@ -9,6 +9,8 @@ import os
 /// observes it, so a move redraws the overlays and nothing else.
 @MainActor
 package final class TimeChartCursor: ObservableObject {
+    package init() {}
+
     package struct Hover: Equatable {
         package var time: Date
         /// The chart under the mouse (its identifier): the one that shows the tooltip.
@@ -70,6 +72,11 @@ package final class TimeChartDraws: Sendable {
     private struct Key: Hashable, Sendable {
         var id: String
         var window: ObjectIdentifier
+
+        package init(id: String, window: ObjectIdentifier) {
+            self.id = id
+            self.window = window
+        }
     }
 
     private let counts = OSAllocatedUnfairLock<[Key: Counts]>(initialState: [:])
@@ -271,6 +278,27 @@ package struct TimeChartView: View {
     /// The marker whose popover is open.
     @State private var popover: String?
 
+    package init(
+        data: TimeChartData, cursor: TimeChartCursor, headline: String? = nil, span: String, height: CGFloat = 120, chips: [TimeChartChip] = [], openMarker: ((KubeChartMarker) -> Void)? = nil,
+        showAround: ((KubeChartMarker) -> Void)? = nil, logsFromHere: ((Date) -> Void)? = nil, zoom: ((Date, Date) -> Void)? = nil, copy: ((String) -> Void)? = nil, expand: (() -> Void)? = nil,
+        ask: (() -> Void)? = nil, theme: ChromeTheme
+    ) {
+        self.data = data
+        self.cursor = cursor
+        self.headline = headline
+        self.span = span
+        self.height = height
+        self.chips = chips
+        self.openMarker = openMarker
+        self.showAround = showAround
+        self.logsFromHere = logsFromHere
+        self.zoom = zoom
+        self.copy = copy
+        self.expand = expand
+        self.ask = ask
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
+
     package var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             header
@@ -455,11 +483,11 @@ package struct TimeChartView: View {
                         .help("The Logs tab from a minute before the crosshair's time")
                 }
                 if let copy {
-                    if let promQL = KubeChartExport.promQL(data) {
+                    if let promQL = TimeChartExport.promQL(data) {
                         Button("Copy PromQL") { copy(promQL) }
                             .help("The exact query this chart was drawn from, to paste into Grafana")
                     }
-                    Button("Copy Values as CSV") { copy(KubeChartExport.csv(data, hidden: hidden, hideReferences: hideReferences)) }
+                    Button("Copy Values as CSV") { copy(TimeChartExport.csv(data, hidden: hidden, hideReferences: hideReferences)) }
                         .help("The window shown, a row a time and a column a series shown — to the clipboard only")
                 }
                 if let ask {
@@ -563,7 +591,7 @@ package struct TimeChartView: View {
             .padding(.horizontal, 3)
             .background(RoundedRectangle(cornerRadius: 3).fill(theme.border.opacity(0.6)))
             .position(x: plot.frame.minX + 30, y: plot.frame.maxY - 20)
-            .help("\(data.earlierMarkers) older change\(data.earlierMarkers == 1 ? "" : "s") in this window aren't marked: only the newest \(KubeChartMarkers.cap) are")
+            .help("\(data.earlierMarkers) older change\(data.earlierMarkers == 1 ? "" : "s") in this window aren't marked: only the newest \(KubeChartMarker.cap) are")
             .accessibilityIdentifier(data.identifier + ".earlier")
     }
 
@@ -683,6 +711,11 @@ package final class TimeChartHoverMemo {
 package struct TimeChartChip: Equatable, Sendable {
     package var text: String
     package var alert = false
+
+    package init(text: String, alert: Bool = false) {
+        self.text = text
+        self.alert = alert
+    }
 }
 
 /// Over a chart: the crosshair at the cursor's time, the hovered points,

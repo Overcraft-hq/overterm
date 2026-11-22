@@ -37,6 +37,13 @@ package struct ActivitySurvivors: Hashable, Sendable {
     /// Names of what started here and isn't affected (tmux, an app).
     package var unaffected: [String] = []
 
+    package init(keepRunning: [Survivor] = [], shellDecides: [Survivor] = [], interruptOnly: [Survivor] = [], unaffected: [String] = []) {
+        self.keepRunning = keepRunning
+        self.shellDecides = shellDecides
+        self.interruptOnly = interruptOnly
+        self.unaffected = unaffected
+    }
+
     package var isEmpty: Bool { keepRunning.isEmpty && shellDecides.isEmpty && interruptOnly.isEmpty }
     /// What gets a checkbox.
     package var all: [Survivor] { keepRunning + shellDecides }

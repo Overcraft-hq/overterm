@@ -110,8 +110,7 @@ package final class LanguageServers {
                 "indexing": .object(["ignoreDirectoryNames": .array([.string(".terragrunt-cache"), .string("node_modules")])]),
                 "experimentalFeatures": .object(["validateOnSave": .bool(false)]),
             ]),
-            environmentAdded: TerraformEnvironment.languageServerAdded(scratch: TerraformGuards.Scratch(folder: AppEnvironment.terraformScratchDirectory)),
-            environmentRemoved: TerraformEnvironment.languageServerRemoved),
+            environmentAdded: terraformEnvironment.added, environmentRemoved: terraformEnvironment.removed),
     ]
 
     /// The spec whose files these are.
@@ -241,7 +240,21 @@ package final class LanguageServers {
     /// `TerraformCLI.knownBinary`, warmed when a Terraform file opens.
     package static func terraformPath(_ spec: Spec) -> String? {
         guard spec.id == "terraform" else { return nil }
-        return TerraformCLI.knownBinary()?.path
+        return terraformKnownPath?()
+    }
+
+    /// terraform-ls's environment, Terraform's to say (`TerraformEnvironment`):
+    /// no credential, the scratch HOME. Set at install (`OvertermFeatures`).
+    package nonisolated static var terraformEnvironment: (added: [String: String], removed: [String]) {
+        FeatureHooks.ensure()
+        return terraformEnvironmentStorage
+    }
+    package nonisolated(unsafe) static var terraformEnvironmentStorage: (added: [String: String], removed: [String]) = ([:], [])
+    /// `TerraformCLI.knownBinary`'s path, Terraform's to say.
+    package nonisolated(unsafe) static var terraformKnownPathStorage: (@Sendable () -> String?)?
+    package nonisolated static var terraformKnownPath: (@Sendable () -> String?)? {
+        FeatureHooks.ensure()
+        return terraformKnownPathStorage
     }
 
     /// The spec's `initializationOptions`, with `terraform.path` for

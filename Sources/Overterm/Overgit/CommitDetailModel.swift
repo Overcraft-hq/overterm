@@ -9,6 +9,8 @@ import Foundation
 /// what it shows has already happened.
 @MainActor
 package final class CommitDetailModel: ObservableObject {
+    package init() {}
+
     /// As many files as the changes pane diffs, for the same reason: a
     /// commit that moved a vendored tree would otherwise run git a
     /// thousand times.

@@ -1,5 +1,5 @@
-import Overterm
+import OvertermShell
 
-// Everything is in the Overterm library (Sources/Overterm), which the tests
-// import too; this executable only starts it.
+// Everything is in the app's library modules (Package.swift), which the
+// tests import too; this executable only starts them.
 AppMain.run()

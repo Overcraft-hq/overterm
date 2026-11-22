@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The Server page, node editing and users of Neo4j, InfluxDB, RabbitMQ and
 /// Redis — every pure part: the engines' answers read, the statements and

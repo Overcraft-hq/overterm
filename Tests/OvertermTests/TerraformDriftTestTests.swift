@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Stage 2d (analysis 2.6, 2.9, 5.3, 5.10, D-19): drift — the
 /// refresh-only plan, its age and staleness, Accept into State as the

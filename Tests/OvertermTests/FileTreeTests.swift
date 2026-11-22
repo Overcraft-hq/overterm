@@ -3,6 +3,11 @@ import Combine
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 final class FileTreeTests: XCTestCase {
     private var dir: URL!

@@ -34,6 +34,14 @@ package enum LaunchdSockets {
         /// do: neither is stopped from here (`match`).
         package var sharedWith: String?
 
+        package init(label: String, port: Int, proto: String, domain: Domain, sharedWith: String? = nil) {
+            self.label = label
+            self.port = port
+            self.proto = proto
+            self.domain = domain
+            self.sharedWith = sharedWith
+        }
+
         /// Apple's own (`com.apple.…`): part of macOS.
         package var isApple: Bool { label.hasPrefix("com.apple.") }
 
@@ -67,7 +75,7 @@ package enum LaunchdSockets {
         /// A label as the row shows it: every character visible, a line
         /// break or a tab too — the sentence is one line.
         package static func shown(_ label: String) -> String {
-            DockerMCP.displayed(label).replacingOccurrences(of: "\n", with: "\\u{A}").replacingOccurrences(of: "\t", with: "\\u{9}")
+            VisibleText.displayed(label).replacingOccurrences(of: "\n", with: "\\u{A}").replacingOccurrences(of: "\t", with: "\\u{9}")
         }
     }
 
@@ -75,6 +83,11 @@ package enum LaunchdSockets {
     package struct Folder: Hashable, Sendable {
         package let url: URL
         package let domain: Domain
+
+        package init(url: URL, domain: Domain) {
+            self.url = url
+            self.domain = domain
+        }
     }
 
     /// The system's folders and the user's LaunchAgents.

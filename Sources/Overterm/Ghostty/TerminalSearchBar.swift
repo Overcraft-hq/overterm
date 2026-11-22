@@ -10,6 +10,12 @@ package struct TerminalSearchBar: View {
     /// Give the keyboard back to the terminal.
     package let onDismiss: () -> Void
 
+    package init(search: TerminalSearch, theme: ChromeTheme, onDismiss: @escaping () -> Void) {
+        self._search = ObservedObject(wrappedValue: search)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onDismiss = onDismiss
+    }
+
     package var body: some View {
         HStack(spacing: 4) {
             SearchField(

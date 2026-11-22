@@ -38,14 +38,14 @@ package final class EditorBuffer {
     /// An Excalidraw drawing: shown as its canvas (DrawingView) over its text.
     package var drawing: DrawingModel?
     /// A `.sql` file: the console under it (connection, results).
-    package var sqlConsole: SQLConsole?
+    package var consolePart: (any EditorConsole)?
     /// A Kubernetes manifest — a cluster object's copy (`y`), a checkout's
     /// file, a kustomization: the bar under it (Diff with Cluster, Apply).
-    package var kubeManifest: KubeManifestSession?
+    package var manifestPart: (any EditorManifest)?
     /// A cluster object's YAML (`KubeResourceBuffer`): one buffer for the
     /// resource, shown by the detail's YAML tab and by the editor's tab `y`
     /// opens — never a file.
-    package weak var resource: KubeResourceBuffer?
+    package weak var resourcePart: (any EditorResource)?
     /// A note shown as Obsidian's Live Preview (NoteLivePreview) — on by default.
     package var livePreview = false
     /// The caret's lines when Live Preview last styled them: their markup shows.
@@ -54,7 +54,7 @@ package final class EditorBuffer {
     package var liveBlocks: (version: Int, blocks: [NoteLivePreview.Block])?
 
     /// A Terraform file: its module folder — validate, Format — and the bar under it.
-    package var terraform: TerraformFolder?
+    package var terraformPart: AnyObject?
     /// Validate asked for while it had edits: it is saved first, and its
     /// folder validated once the save has written it (format on save
     /// writes later than `save` returns).

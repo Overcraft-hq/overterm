@@ -30,6 +30,30 @@ package struct OvergitActions {
     package var reviewPullRequest: (Int) -> Void = { _ in }
     /// Pull, push, branches, commits, tags, stashes (`overgit(_:)`).
     package var git: (OvergitCommand) -> Void = { _ in }
+
+    package init(
+        showCommit: @escaping (Commit) -> Void, checkOut: @escaping (BranchRef) -> Void, newWorktree: @escaping (BranchRef) -> Void, showPullRequest: @escaping () -> Void,
+        openPullRequest: @escaping (PullRequestSummary) -> Void, showPullRequestNumber: @escaping (PullRequestSummary) -> Void = { _ in }, applyStash: @escaping (Stash) -> Void,
+        dropStash: @escaping (Stash) -> Void, showChanges: @escaping () -> Void, showChangedFile: @escaping (ChangedFile) -> Void = { _ in },
+        compare: @escaping (_ base: String, _ head: String) -> Void = { _, _ in }, reviewCommits: @escaping (_ from: String, _ to: String) -> Void = { _, _ in },
+        reviewBranch: @escaping (String) -> Void = { _ in }, reviewPullRequest: @escaping (Int) -> Void = { _ in }, git: @escaping (OvergitCommand) -> Void = { _ in }
+    ) {
+        self.showCommit = showCommit
+        self.checkOut = checkOut
+        self.newWorktree = newWorktree
+        self.showPullRequest = showPullRequest
+        self.openPullRequest = openPullRequest
+        self.showPullRequestNumber = showPullRequestNumber
+        self.applyStash = applyStash
+        self.dropStash = dropStash
+        self.showChanges = showChanges
+        self.showChangedFile = showChangedFile
+        self.compare = compare
+        self.reviewCommits = reviewCommits
+        self.reviewBranch = reviewBranch
+        self.reviewPullRequest = reviewPullRequest
+        self.git = git
+    }
 }
 
 /// Overgit: one git home in the sidebar — where you are, what has
@@ -52,6 +76,21 @@ package struct OvergitView: View {
     @ObservedObject package var theme: ChromeTheme
     package let actions: OvergitActions
     package let worktreeActions: WorktreeActions
+
+    package init(
+        model: OvergitModel, diff: DiffModel, worktrees: WorktreeModel, store: TabStore, currentRoot: URL?, group: TabGroup?, theme: ChromeTheme, actions: OvergitActions,
+        worktreeActions: WorktreeActions
+    ) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._diff = ObservedObject(wrappedValue: diff)
+        self._worktrees = ObservedObject(wrappedValue: worktrees)
+        self._store = ObservedObject(wrappedValue: store)
+        self.currentRoot = currentRoot
+        self.group = group
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.actions = actions
+        self.worktreeActions = worktreeActions
+    }
 
     /// Fixed, because the graph's lines have to meet across rows.
     package static var commitRowHeight: CGFloat { ChromeMetrics.row(36) }

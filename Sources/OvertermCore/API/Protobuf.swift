@@ -130,6 +130,17 @@ package enum Protobuf {
         package var oneofIndex: Int?
         package var proto3Optional: Bool
 
+        package init(name: String, jsonName: String, number: Int, repeated: Bool, type: Int, typeName: String, oneofIndex: Int? = nil, proto3Optional: Bool) {
+            self.name = name
+            self.jsonName = jsonName
+            self.number = number
+            self.repeated = repeated
+            self.type = type
+            self.typeName = typeName
+            self.oneofIndex = oneofIndex
+            self.proto3Optional = proto3Optional
+        }
+
         package var isMessage: Bool { type == 11 }
         package var isEnum: Bool { type == 14 }
         /// Numbers packed in one length-delimited field when repeated (proto3's default).

@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A Secret's values (docs/design/kubernetes/analysis.md, rule 9): taken
 /// apart as Show reads them — masked, lengths only, `tls.key` never

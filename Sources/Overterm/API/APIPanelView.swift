@@ -22,6 +22,24 @@ package struct APIActions {
     package var openDocs: (URL) -> Void = { _ in }
     /// An MCP server, inspected in the right-hand pane.
     package var openMCP: (MCPServerConfig) -> Void = { _ in }
+
+    package init(
+        open: @escaping (URL) -> Void, prompt: @escaping (_ title: String, _ initial: String, _ done: @escaping (String) -> Void) -> Void, report: @escaping (Error) -> Void,
+        run: @escaping (_ items: [APIItem], _ title: String) -> Void, inform: @escaping (_ title: String, _ detail: String) -> Void,
+        editSecrets: @escaping (_ environment: String, _ collection: BrunoCollection) -> Void, rename: @escaping (_ item: APIItem, _ name: String) throws -> URL,
+        trash: @escaping (_ item: APIItem) -> Void, openDocs: @escaping (URL) -> Void = { _ in }, openMCP: @escaping (MCPServerConfig) -> Void = { _ in }
+    ) {
+        self.open = open
+        self.prompt = prompt
+        self.report = report
+        self.run = run
+        self.inform = inform
+        self.editSecrets = editSecrets
+        self.rename = rename
+        self.trash = trash
+        self.openDocs = openDocs
+        self.openMCP = openMCP
+    }
 }
 
 /// The sidebar's API panel: the checkout's Bruno collection — its
@@ -37,6 +55,13 @@ package struct APIPanelView: View {
     @State private var selection: String?
     /// A folder's (or the collection's) docs, read in a sheet.
     @State private var docs: FolderDocs?
+
+    package init(workspace: APIWorkspace, group: TabGroup?, theme: ChromeTheme, actions: APIActions) {
+        self._workspace = ObservedObject(wrappedValue: workspace)
+        self.group = group
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.actions = actions
+    }
 
     /// What the docs sheet shows: whose, and the file they are kept in.
     package struct FolderDocs: Identifiable {

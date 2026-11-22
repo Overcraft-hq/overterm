@@ -13,6 +13,19 @@ package struct AgentOverviewView: View {
     package var onOpen: ((AgentOverviewModel.Card, URL) -> Void)? = nil
     package let onDismiss: () -> Void
 
+    package init(
+        model: AgentOverviewModel, worktrees: WorktreeModel, theme: ChromeTheme, onChoose: @escaping (Tab.ID) -> Void, onActivity: ((AgentOverviewModel.Card) -> Void)? = nil,
+        onOpen: ((AgentOverviewModel.Card, URL) -> Void)? = nil, onDismiss: @escaping () -> Void
+    ) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._worktrees = ObservedObject(wrappedValue: worktrees)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onChoose = onChoose
+        self.onActivity = onActivity
+        self.onOpen = onOpen
+        self.onDismiss = onDismiss
+    }
+
     package var body: some View {
         ZStack {
             Color.black.opacity(0.35).onTapGesture(perform: onDismiss)
@@ -173,7 +186,7 @@ private struct AgentCard: View {
     private func usageRow(_ usage: AgentOverviewModel.AgentUsage) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "cpu").font(.system(size: ChromeMetrics.text(10)))
-            Text(verbatim: "\(TabInfoView.cpu(usage.cpu)) · \(TabInfoView.memory(usage.footprint))")
+            Text(verbatim: "\(InfoText.cpu(usage.cpu)) · \(InfoText.memory(usage.footprint))")
                 .help("Its agent and every process under it: CPU (100% is one core) and memory, as Activity Monitor counts it")
                 .accessibilityIdentifier("overview.usage")
             ForEach(usage.servers.prefix(4)) { server in

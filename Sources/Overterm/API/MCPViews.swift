@@ -165,7 +165,7 @@ package struct MCPAddServerSheet: View {
         let transport: MCPServerConfig.Transport
         switch kind {
         case "stdio":
-            let words = (try? RedisProtocol.words(command)) ?? command.split(separator: " ").map(String.init)
+            let words = (try? RedisCommandLine.words(command)) ?? command.split(separator: " ").map(String.init)
             guard let first = words.first else { return problem = "A command, please." }
             transport = .stdio(command: first, args: Array(words.dropFirst()), env: values)
         case "sse": transport = .sse(url: url.trimmingCharacters(in: .whitespaces), headers: values)
@@ -186,6 +186,12 @@ package struct MCPPageView: View {
     @ObservedObject package var inspector: MCPInspector
     @ObservedObject package var theme: ChromeTheme
     package let close: () -> Void
+
+    package init(inspector: MCPInspector, theme: ChromeTheme, close: @escaping () -> Void) {
+        self._inspector = ObservedObject(wrappedValue: inspector)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.close = close
+    }
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -411,7 +417,7 @@ package struct MCPPageView: View {
                 HStack {
                     Text(verbatim: outcome.isError ? "Error" : "Result").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold))
                         .foregroundStyle(outcome.isError ? DiffColors.removed : TabStatusStyle.done)
-                    Text(verbatim: SQLConsoleView.duration(outcome.duration)).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
+                    Text(verbatim: InfoText.duration(outcome.duration)).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
                     Spacer()
                     Button("Copy JSON") {
                         NSPasteboard.general.clearContents()

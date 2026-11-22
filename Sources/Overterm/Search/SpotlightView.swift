@@ -7,6 +7,13 @@ package struct SpotlightView: View {
     package let onChoose: (SpotlightModel.Row) -> Void
     package let onDismiss: () -> Void
 
+    package init(model: SpotlightModel, theme: ChromeTheme, onChoose: @escaping (SpotlightModel.Row) -> Void, onDismiss: @escaping () -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onChoose = onChoose
+        self.onDismiss = onDismiss
+    }
+
     package var body: some View {
         ZStack(alignment: .top) {
             Color.black.opacity(0.001).onTapGesture(perform: onDismiss)

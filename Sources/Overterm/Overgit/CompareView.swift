@@ -12,6 +12,18 @@ package struct CompareView: View {
     package var onReview: (_ base: String, _ head: String) -> Void = { _, _ in }
     @State private var behindOpen = false
 
+    package init(
+        model: CompareModel, theme: ChromeTheme, onClose: @escaping () -> Void, onCommit: @escaping (Commit) -> Void, onOpen: @escaping (String) -> Void,
+        onReview: @escaping (_ base: String, _ head: String) -> Void = { _, _ in }
+    ) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onClose = onClose
+        self.onCommit = onCommit
+        self.onOpen = onOpen
+        self.onReview = onReview
+    }
+
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
     package var body: some View {

@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A chart's Copy PromQL and Copy Values as CSV, and the expanded chart's
 /// own identity (docs/design/kubernetes/metrics.md 2.1, 3.9; stage M9). Pure.
@@ -119,9 +124,9 @@ final class KubeChartExportTests: XCTestCase {
             KubeChartSeries(id: "limit", name: "limit", role: .limit, points: [KubeSeriesPoint(time: at(0), value: 3)]),
         ])
         XCTAssertEqual(KubeChartExport.csv(chart, hidden: ["sidecar"], hideReferences: true), "time,app (cores)\n2027-01-15T08:00:00Z,1\n")
-        XCTAssertEqual(KubeChartExport.number(-0.5), "-0.5")
-        XCTAssertEqual(KubeChartExport.number(1_048_576), "1048576")
-        XCTAssertEqual(KubeChartExport.number(.infinity), "+Inf")
+        XCTAssertEqual(TimeChartExport.number(-0.5), "-0.5")
+        XCTAssertEqual(TimeChartExport.number(1_048_576), "1048576")
+        XCTAssertEqual(TimeChartExport.number(.infinity), "+Inf")
     }
 
     func testAnExpandedChartIsTheTabsUnderItsOwnIdentifier() {

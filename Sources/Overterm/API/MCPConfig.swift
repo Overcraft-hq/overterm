@@ -55,6 +55,13 @@ package struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
     package var transport: Transport
     /// Where a stdio server runs: the checkout, for a project's.
     package var directory: String?
+
+    package init(name: String, source: Source, transport: Transport, directory: String? = nil) {
+        self.name = name
+        self.source = source
+        self.transport = transport
+        self.directory = directory
+    }
     /// An added one's: its keychain account names its secrets.
     package var id: String { "\(source.rawValue):\(name)" }
 

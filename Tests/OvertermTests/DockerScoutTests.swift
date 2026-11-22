@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Docker Scout's SARIF, read: Scout 1.17's shape (Fixtures/scout-cves.sarif.json,
 /// written after real reports), 0.6's, and what isn't a report at all; its

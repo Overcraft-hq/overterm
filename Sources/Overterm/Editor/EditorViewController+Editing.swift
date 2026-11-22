@@ -15,6 +15,23 @@ package struct CompletionState {
         package let additionalEdits: [LSP.TextEdit]
         package let sortText: String
         package let fromServer: Bool
+
+        package init(
+            label: String, filterText: String, insertText: String, isSnippet: Bool, badge: String, badgeColor: NSColor, detail: String, edit: LSP.TextEdit?, additionalEdits: [LSP.TextEdit],
+            sortText: String, fromServer: Bool
+        ) {
+            self.label = label
+            self.filterText = filterText
+            self.insertText = insertText
+            self.isSnippet = isSnippet
+            self.badge = badge
+            self.badgeColor = badgeColor
+            self.detail = detail
+            self.edit = edit
+            self.additionalEdits = additionalEdits
+            self.sortText = sortText
+            self.fromServer = fromServer
+        }
     }
 
     /// Where the word being completed starts.
@@ -39,6 +56,22 @@ package struct CompletionState {
     /// A Kubernetes manifest's fields, from its cluster's docs
     /// (EditorViewController+Kubernetes): filtered there, accepted as any.
     package var isKube = false
+
+    package init(
+        anchor: Int, requestedAt: Int, buffer: EditorBuffer? = nil, incomplete: Bool = false, candidates: [Candidate], shown: [Int] = [], generation: Int, isNote: Bool = false, isSQL: Bool = false,
+        isKube: Bool = false
+    ) {
+        self.anchor = anchor
+        self.requestedAt = requestedAt
+        self.buffer = buffer
+        self.incomplete = incomplete
+        self.candidates = candidates
+        self.shown = shown
+        self.generation = generation
+        self.isNote = isNote
+        self.isSQL = isSQL
+        self.isKube = isKube
+    }
 }
 
 extension EditorViewController: CodeTextViewHost {
@@ -88,7 +121,7 @@ extension EditorViewController: CodeTextViewHost {
         case "editor.showHover": showHover(at: textView.selectedRange().location, fromKeyboard: true)
         case "editor.complete": triggerCompletion(manual: true)
         case "editor.format":
-            if !formatTerraform(buffer, manual: true, then: {}) { formatDocument {} }
+            if !Self.hooks.format.contains(where: { $0(self, buffer) }) { formatDocument {} }
         case "editor.toggleComment":
             guard let style = commentStyle(for: buffer) else { return true }
             apply(EditCommands.toggleLineComment(in: text, selections: selections, style: style))
@@ -99,7 +132,7 @@ extension EditorViewController: CodeTextViewHost {
         case "editor.deleteLine": apply(EditCommands.deleteLines(in: text, selections: selections))
         case "editor.insertLineBelow":
             // ⌘↩ in a console runs, as DataGrip's does.
-            if buffer.sqlConsole?.connection != nil { return runConsoleStatement() }
+            if let taken = Self.hooks.command.firstAnswer({ $0(self, id, buffer) }) { return taken }
             apply(EditCommands.insertLineBelow(in: text, selections: selections, style: buffer.indentStyle, languageID: buffer.languageID))
         case "editor.insertLineAbove": apply(EditCommands.insertLineAbove(in: text, selections: selections))
         case "editor.selectNext":
@@ -117,8 +150,7 @@ extension EditorViewController: CodeTextViewHost {
             applyWrap()
         case "editor.toggleZoom": onToggleZoom?()
         case "terraform.validate":
-            guard buffer.terraform != nil else { return false }
-            validateTerraform(manual: true)
+            return Self.hooks.command.firstAnswer({ $0(self, id, buffer) }) ?? false
         case "editor.markdownPreview":
             guard buffer.language?.id == "markdown" else { return false }
             toggleMarkdownPreview()
@@ -223,7 +255,7 @@ extension EditorViewController: CodeTextViewHost {
             ("Go to Symbol in File…", "editor.goToSymbol"), ("Format Document", "editor.format"),
             ("Toggle Line Comment", "editor.toggleComment"),
         ]
-        if active?.terraform != nil { items.append(("Validate Terraform", "terraform.validate")) }
+        if active?.terraformPart != nil { items.append(("Validate Terraform", "terraform.validate")) }
         var index = 0
         for (title, id) in items {
             let item = NSMenuItem(title: title, action: #selector(runMenuCommand(_:)), keyEquivalent: "")
@@ -257,14 +289,7 @@ extension EditorViewController: CodeTextViewHost {
             return
         }
         if completion?.isNote == true { dismissCompletion() }
-        if buffer.sqlConsole?.session?.isOpen == true {
-            if text.count == 1, text == "." || text.unicodeScalars.allSatisfy({ Self.isWordUnit(unichar(min($0.value, 0xFFFF))) }),
-                updateSQLCompletion()
-            {
-                return
-            }
-            return dismissCompletion()
-        }
+        if Self.hooks.typed.contains(where: { $0(self, buffer, text) }) { return }
         if let state = completion {
             if text.unicodeScalars.allSatisfy({ Self.isWordUnit(unichar(min($0.value, 0xFFFF))) }) {
                 // An incomplete list is the server's first answer, not its
@@ -300,7 +325,7 @@ extension EditorViewController: CodeTextViewHost {
     package func triggerCompletion(manual: Bool, character: String? = nil, skipKube: Bool = false) {
         guard let buffer = active, textView.selectedRanges.count == 1, textView.selectedRange().length == 0 else { return }
         // A manifest's key: its cluster's fields (read on ⌃Space, else as cached).
-        if !skipKube, buffer.kubeManifest != nil, character == nil, updateKubeCompletion(manual: manual) { return }
+        if Self.hooks.trigger.contains(where: { $0(self, buffer, manual, character, skipKube) }) { return }
         let caret = textView.selectedRange().location
         let anchor = wordStart(before: caret)
         // Never reused, not even after a dismissal: an answer to an older
@@ -349,14 +374,7 @@ extension EditorViewController: CodeTextViewHost {
             if !updateNoteCompletion() { dismissCompletion() }
             return
         }
-        if state.isSQL {
-            if !updateSQLCompletion() { dismissCompletion() }
-            return
-        }
-        if state.isKube {
-            if !updateKubeCompletion(manual: false) { dismissCompletion() }
-            return
-        }
+        if Self.hooks.refilter.contains(where: { $0(self, state) }) { return }
         let text = textView.string as NSString
         let caret = textView.selectedRange().location
         guard textView.selectedRanges.count == 1, caret >= state.anchor, caret <= text.length else { return dismissCompletion() }

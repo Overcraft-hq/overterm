@@ -48,6 +48,11 @@ package final class IsolatedApps: AppCatalog {
     package struct Opened: Equatable {
         package let file: URL
         package let bundleID: String
+
+        package init(file: URL, bundleID: String) {
+            self.file = file
+            self.bundleID = bundleID
+        }
     }
 
     package var installed: [ExternalApp] = []

@@ -75,7 +75,7 @@ package struct ActivityBrief: Equatable, Sendable {
     ) -> (text: String, parts: [AskAgentModel.Part]) {
         let row = detail.row
         var lines: [String] = []
-        lines.append("A process on this Mac, as Overterm's Activity page sees it: \(quoted), \(DockerMCP.displayed(stateLine(row))).")
+        lines.append("A process on this Mac, as Overterm's Activity page sees it: \(quoted), \(VisibleText.displayed(stateLine(row))).")
         if !inside {
             lines.append("It runs outside the asking agent's checkout: its command, folder, tab and branch aren't given.")
         } else if let tab = row.tabTitle {

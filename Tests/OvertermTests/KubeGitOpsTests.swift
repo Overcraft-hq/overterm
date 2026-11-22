@@ -4,6 +4,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Stage 4's Flux and Argo CD verbs (docs/design/kubernetes/analysis.md,
 /// 2.23, decision 24). Pure: which kinds take them, the class check, each

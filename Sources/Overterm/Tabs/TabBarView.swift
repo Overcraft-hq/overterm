@@ -37,12 +37,43 @@ package struct TabBarActions {
     package var resumeAll: () -> Void = {}
     /// A press, drag or release on a tab (`StripPressView`).
     package var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
+
+    package init(
+        select: @escaping (Tab) -> Void, close: @escaping (Tab) -> Void, newTab: @escaping () -> Void, newAgentTab: @escaping (Agent) -> Void, newTask: @escaping () -> Void,
+        toggleDiff: @escaping () -> Void, showPullRequest: @escaping () -> Void, showUsage: @escaping () -> Void, showUpdate: @escaping () -> Void, showOverlay: @escaping (WorkspaceOverlay) -> Void,
+        closeOverlay: @escaping (WorkspaceOverlay) -> Void, showReview: @escaping (ReviewModel) -> Void = { _ in }, closeReview: @escaping (ReviewModel) -> Void = { _ in },
+        renameEnded: @escaping () -> Void, setPinned: @escaping (Tab, Bool) -> Void, toggleBrowser: @escaping () -> Void = {}, toggleSimulator: @escaping () -> Void = {},
+        resume: @escaping (Tab) -> Void = { _ in }, resumeAll: @escaping () -> Void = {}, press: @escaping (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
+    ) {
+        self.select = select
+        self.close = close
+        self.newTab = newTab
+        self.newAgentTab = newAgentTab
+        self.newTask = newTask
+        self.toggleDiff = toggleDiff
+        self.showPullRequest = showPullRequest
+        self.showUsage = showUsage
+        self.showUpdate = showUpdate
+        self.showOverlay = showOverlay
+        self.closeOverlay = closeOverlay
+        self.showReview = showReview
+        self.closeReview = closeReview
+        self.renameEnded = renameEnded
+        self.setPinned = setPinned
+        self.toggleBrowser = toggleBrowser
+        self.toggleSimulator = toggleSimulator
+        self.resume = resume
+        self.resumeAll = resumeAll
+        self.press = press
+    }
 }
 
 /// What the title bar's globe shows: whether there is a browser (Settings
 /// ▸ Browser) and whether its column is open.
 @MainActor
 package final class BrowserButtonState: ObservableObject {
+    package init() {}
+
     @Published package var isEnabled = true
     /// The phone beside it (Settings ▸ Browser ▸ Simulator): each has its own switch.
     @Published package var isSimulatorEnabled = true
@@ -66,6 +97,21 @@ package struct TabBarView: View {
     @ObservedObject package var browser: BrowserButtonState
     package let actions: TabBarActions
     package let groupActions: TabGroupActions
+
+    package init(
+        store: TabStore, diff: DiffModel, worktrees: WorktreeModel, updates: UpdateChecker, usage: UsageModel, theme: ChromeTheme, browser: BrowserButtonState, actions: TabBarActions,
+        groupActions: TabGroupActions
+    ) {
+        self._store = ObservedObject(wrappedValue: store)
+        self._diff = ObservedObject(wrappedValue: diff)
+        self._worktrees = ObservedObject(wrappedValue: worktrees)
+        self._updates = ObservedObject(wrappedValue: updates)
+        self._usage = ObservedObject(wrappedValue: usage)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self._browser = ObservedObject(wrappedValue: browser)
+        self.actions = actions
+        self.groupActions = groupActions
+    }
 
     /// The branch of the checkout the selected tab works in.
     private var selectedBranch: String? {
@@ -353,7 +399,7 @@ package struct TabItemView: View {
         let production = tab.kubeBadge?.alert == true
         return Image(systemName: tab.agent?.symbol ?? kind.symbol)
             .font(.system(size: ChromeMetrics.text(11), weight: kind == .shell || production ? .bold : .regular))
-            .foregroundStyle(production ? KubernetesPageView.production : tab.color?.color ?? (isSelected ? theme.text : theme.text2))
+            .foregroundStyle(production ? ProductionColor.color : tab.color?.color ?? (isSelected ? theme.text : theme.text2))
             .frame(width: 20, height: 20)
             .background(RoundedRectangle(cornerRadius: 5).fill(theme.iconBg))
             .overlay(alignment: .bottomTrailing) {
@@ -400,7 +446,7 @@ package struct TabItemView: View {
                     .font(.system(size: ChromeMetrics.text(10.5), weight: badge.alert ? .semibold : .regular, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .foregroundStyle(badge.alert ? KubernetesPageView.production : theme.text3)
+                    .foregroundStyle(badge.alert ? ProductionColor.color : theme.text3)
                     .help(badge.help)
                     .frame(maxWidth: 150)
                     .layoutPriority(1)
@@ -816,6 +862,10 @@ private struct PullRequestChip: View {
 /// traffic lights stand on the same panel as the tabs.
 package struct TitleBand: View {
     @ObservedObject package var theme: ChromeTheme
+
+    package init(theme: ChromeTheme) {
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
     package var body: some View { theme.card.ignoresSafeArea() }
 }
 

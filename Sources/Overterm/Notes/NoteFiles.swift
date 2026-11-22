@@ -179,6 +179,15 @@ package struct NoteItem: Identifiable, Equatable, Hashable, Sendable {
     /// Under Obsidian's "Excluded files": left out of the tree, kept in the index.
     package var isExcluded = false
 
+    package init(url: URL, kind: Kind, children: [NoteItem]? = nil, modified: Date = .distantPast, isEvicted: Bool = false, isExcluded: Bool = false) {
+        self.url = url
+        self.kind = kind
+        self.children = children
+        self.modified = modified
+        self.isEvicted = isEvicted
+        self.isExcluded = isExcluded
+    }
+
     package var id: String { url.path }
     package var isFolder: Bool { kind == .folder }
     /// As Obsidian shows it: a note without `.md`, a drawing without

@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Bruno's scripts and tests in JavaScriptCore: what `bru`, `req`, `res`,
 /// `test` and `expect` do, the assert block, and a whole request run

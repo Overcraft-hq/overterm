@@ -8,6 +8,11 @@ package struct UsageSlice: Equatable, Sendable {
         package let hour: Date
         /// Empty when the log never named a model.
         package let model: String
+
+        package init(hour: Date, model: String) {
+            self.hour = hour
+            self.model = model
+        }
     }
 
     package let hour: Date

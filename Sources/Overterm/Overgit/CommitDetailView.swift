@@ -12,6 +12,14 @@ package struct CommitDetailView: View {
     /// The commit in a review tab.
     package var onReview: (String) -> Void = { _ in }
 
+    package init(model: CommitDetailModel, theme: ChromeTheme, onClose: @escaping () -> Void, onOpen: @escaping (String) -> Void, onReview: @escaping (String) -> Void = { _ in }) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onClose = onClose
+        self.onOpen = onOpen
+        self.onReview = onReview
+    }
+
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }
 
     package var body: some View {

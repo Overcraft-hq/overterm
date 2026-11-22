@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Oracle's and ClickHouse's Server page, editing and users against real
 /// servers, when OVERTERM_DB_TESTS=1: ClickHouse from

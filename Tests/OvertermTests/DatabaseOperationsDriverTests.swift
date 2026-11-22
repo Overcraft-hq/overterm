@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The Server page, editing and users against real databases: SQLite
 /// always; PostgreSQL, MySQL and MariaDB when OVERTERM_DB_TESTS=1 and

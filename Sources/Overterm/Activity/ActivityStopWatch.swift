@@ -18,6 +18,14 @@ package enum ActivityStopWatch {
         package var parent: pid_t
         /// The ports it listened on.
         package var ports: [Int] = []
+
+        package init(identity: ActivityProcessID, name: String, path: String? = nil, parent: pid_t, ports: [Int] = []) {
+            self.identity = identity
+            self.name = name
+            self.path = path
+            self.parent = parent
+            self.ports = ports
+        }
     }
 
     /// One of the user's processes a read found: what a comeback is told by.
@@ -64,7 +72,7 @@ package enum ActivityStopWatch {
 
     /// What the page's header says of it.
     package static func label(_ state: State, _ listed: Listed) -> String {
-        let name = "“\(DockerMCP.displayed(listed.name))” (pid \(listed.identity.pid))"
+        let name = "“\(VisibleText.displayed(listed.name))” (pid \(listed.identity.pid))"
         switch state {
         case .stopping: return "Stopping \(name)…"
         case .stopped: return "Stopped \(name)"

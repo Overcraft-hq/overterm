@@ -189,6 +189,10 @@ package enum FakePromQL {
         /// How two vectors' samples are matched: `on` nil, by every label.
         private struct Match {
             var on: [String]?
+
+            package init(on: [String]? = nil) {
+                self.on = on
+            }
         }
 
         /// `on(…)` and `group_left(…)`, either or both.

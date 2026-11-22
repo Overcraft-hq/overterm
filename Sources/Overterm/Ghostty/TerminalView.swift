@@ -18,10 +18,10 @@ package final class TerminalView: NSView {
     /// The Kubernetes context this pane's `KUBECONFIG` pins, if any — what
     /// a plain kubectl there reaches now: followed when the pin's file
     /// changes (a `use-context` typed in the pane; `KubeTerminalFollow`).
-    package var kubePin: KubeTerminalPin?
+    package var kubePinStorage: Any?
     /// A pin that couldn't be restored: the pane's `KUBECONFIG` reaches no
     /// cluster, and its header says so (`KubeTerminalLost`).
-    package let kubePinLost: KubeTerminalLost?
+    package let kubePinLostStorage: Any?
     /// Terminal in this root (Terraform, analysis 4.9): the root it was
     /// opened at, said by its header and its tab's icon. Not a pin: no
     /// `TF_WORKSPACE`, the root's own `.terraform/environment` selects.
@@ -33,7 +33,7 @@ package final class TerminalView: NSView {
     package var terraformSensitive = false
     /// An agent started here and how Terraform's writes were guarded at
     /// its launch (`TerraformAgentGuard`, 3.4): its header says when not.
-    package var terraformAgentGuard: TerraformAgentGuard.Launch = .none
+    package var terraformAgentGuardStorage: Any?
     /// A pod's tab (`e`, `A`, `t`): the pod's plain env values, which ⌘L
     /// on its output scrubs as the page's Logs tab does. In memory only.
     package var kubePodEnv: [(key: String, value: String)] = []
@@ -151,11 +151,11 @@ package final class TerminalView: NSView {
     ///     `environment` is `KubeTerminalLost.environment`).
     package init(
         workingDirectory: String? = nil, initialInput: String? = nil, fontSize: Float? = nil, restoring: URL? = nil,
-        environment: [String: String] = [:], kubePin: KubeTerminalPin? = nil, kubePinLost: KubeTerminalLost? = nil
+        environment: [String: String] = [:], kubePin: Any? = nil, kubePinLost: Any? = nil
     ) {
         self.environment = environment
-        self.kubePin = kubePin
-        self.kubePinLost = kubePinLost
+        self.kubePinStorage = kubePin
+        self.kubePinLostStorage = kubePinLost
         // A non-zero initial frame so the renderer's layer has real bounds
         // before the first layout pass.
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -881,7 +881,7 @@ package final class TerminalView: NSView {
     /// you paste a screenshot in — quoted as a drop's are: a file named
     /// `x;$(…)` must not become a command once Return is pressed.
     package nonisolated static func pastedPaths(_ urls: [URL]) -> String {
-        urls.map { TerminalWindowController.shellQuoted($0.path) }.joined(separator: " ")
+        urls.map { ShellPaths.shellQuoted($0.path) }.joined(separator: " ")
     }
 
     /// A read libghostty asks for: the text (`text/plain` — files as their

@@ -6,6 +6,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The shared transport over a real unix socket, against a small server of
 /// the test's own that checks the Host header as `kubectl proxy` does:

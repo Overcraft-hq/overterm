@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Revisions as Argo CD and Flux write them (docs/design/kubernetes/
 /// gitops.md, 2.6), and what reaches git from the cluster (5.4): paths

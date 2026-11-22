@@ -31,6 +31,8 @@ package struct FileRow: Identifiable, Hashable {
 /// listing of any folder that changes, so the tree stays live.
 @MainActor
 package final class FileTreeModel: ObservableObject {
+    package init() {}
+
     @Published package private(set) var root: URL?
     @Published package private(set) var rows: [FileRow] = []
     @Published package var selection: URL?
@@ -61,6 +63,11 @@ package final class FileTreeModel: ObservableObject {
     private struct Listed: Equatable {
         let entries: [FileEntry]
         let gitignore: Date?
+
+        package init(entries: [FileEntry], gitignore: Date?) {
+            self.entries = entries
+            self.gitignore = gitignore
+        }
     }
     /// `check-ignore` runs started — what the tests count.
     package private(set) var ignoreChecks = 0

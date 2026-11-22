@@ -36,6 +36,14 @@ package struct GraphQLSchema: Equatable, Sendable {
         package var arguments: [Argument]
         package var description: String?
         package var deprecation: String?
+
+        package init(name: String, type: TypeRef, arguments: [Argument], description: String? = nil, deprecation: String? = nil) {
+            self.name = name
+            self.type = type
+            self.arguments = arguments
+            self.description = description
+            self.deprecation = deprecation
+        }
     }
 
     package struct NamedType: Equatable, Sendable {
@@ -282,6 +290,11 @@ package struct GraphQLSchema: Equatable, Sendable {
     package struct Candidate: Equatable {
         package var label: String
         package var detail: String
+
+        package init(label: String, detail: String) {
+            self.label = label
+            self.detail = detail
+        }
     }
 
     /// The word being typed, and what may finish it.

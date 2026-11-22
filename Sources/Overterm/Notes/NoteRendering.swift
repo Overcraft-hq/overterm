@@ -8,6 +8,11 @@ package struct NoteRenderPayload: Equatable, Sendable {
     package struct Target: Equatable, Sendable {
         package var path: String
         package var kind: NoteItem.Kind
+
+        package init(path: String, kind: NoteItem.Kind) {
+            self.path = path
+            self.kind = kind
+        }
     }
 
     package var path: String

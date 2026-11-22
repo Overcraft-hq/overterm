@@ -10,6 +10,8 @@ import Combine
 /// own.
 @MainActor
 package final class PaneBlocks: ObservableObject {
+    package init() {}
+
     @Published package private(set) var ledger = CommandLedger()
     /// The link under the pointer, if any. libghostty pushes the URL and
     /// nothing else — no rectangle — so this is all anyone can know about
@@ -50,6 +52,14 @@ package final class PaneBlocks: ObservableObject {
         }
     }
 
+    /// A command begun in a pane, as Kubernetes hears it (`KubeAmbientContexts`):
+    /// set at install (`OvertermFeatures`).
+    package static var commandNoticed: [@MainActor (_ title: String, _ cwd: String?, _ kubeconfig: String?) -> Void] {
+        FeatureHooks.ensure()
+        return commandNoticedStorage
+    }
+    package nonisolated(unsafe) static var commandNoticedStorage: [@MainActor (_ title: String, _ cwd: String?, _ kubeconfig: String?) -> Void] = []
+
     /// The shell set its title. With shell integration that is the command
     /// about to run — the only name a command ever gets — except when it
     /// is the directory, which means the prompt came back.
@@ -65,7 +75,7 @@ package final class PaneBlocks: ObservableObject {
             if TerraformCommandLine.all(in: title).contains(where: \.printsSecrets) { printedTerraformSecrets = true }
             // A kubectl-family command: the files its context comes from are
             // read the first time (KubeAmbientContexts), never per command.
-            KubeAmbientContexts.shared.noticed(title, cwd: cwd, kubeconfig: kubeconfig)
+            for hook in Self.commandNoticed { hook(title, cwd, kubeconfig) }
         }
     }
 

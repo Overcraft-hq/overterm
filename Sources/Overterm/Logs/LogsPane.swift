@@ -26,6 +26,14 @@ package struct LogFilter: Equatable {
     /// The text marks the lines it matches rather than picking them out.
     package var highlight = false
 
+    package init(text: String = "", level: Level = Level.all, source: String? = nil, regex: Bool = false, highlight: Bool = false) {
+        self.text = text
+        self.level = level
+        self.source = source
+        self.regex = regex
+        self.highlight = highlight
+    }
+
     /// Whether the text picks lines: it marks them instead, highlighting.
     package var picksByText: Bool { !text.isEmpty && !highlight }
     package var isEmpty: Bool { !picksByText && level == .all && source == nil }
@@ -79,6 +87,14 @@ package struct LogViewOptions: Equatable {
     package var newestFirst = false
     package var regex = false
     package var highlight = false
+
+    package init(wrap: Bool = true, timestamps: Bool = true, newestFirst: Bool = false, regex: Bool = false, highlight: Bool = false) {
+        self.wrap = wrap
+        self.timestamps = timestamps
+        self.newestFirst = newestFirst
+        self.regex = regex
+        self.highlight = highlight
+    }
 }
 
 /// A Logs tab: followed, filtered, coloured by level — one source's (a
@@ -113,6 +129,26 @@ package struct LogsPane: View {
     @State private var filter = LogFilter()
     @FocusState private var filterFocused: Bool
     @State private var ownOptions = LogViewOptions()
+
+    package init(
+        feed: LogFeed, theme: ChromeTheme, identifier: String, runInTerminal: @escaping (String) -> Void, sources: [String] = [], source: Binding<String?>? = nil, noun: String = "service",
+        ask: ((String) -> Void)? = nil, options: Binding<LogViewOptions>? = nil, save: ((String) -> Void)? = nil, older: (() -> Void)? = nil,
+        stoppedHelp: String = "Nothing runs: its log is followed again when it starts", focusFilter: Int = 0
+    ) {
+        self._feed = ObservedObject(wrappedValue: feed)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.identifier = identifier
+        self.runInTerminal = runInTerminal
+        self.sources = sources
+        self.source = source
+        self.noun = noun
+        self.ask = ask
+        self.options = options
+        self.save = save
+        self.older = older
+        self.stoppedHelp = stoppedHelp
+        self.focusFilter = focusFilter
+    }
 
     private var view: Binding<LogViewOptions> { options ?? $ownOptions }
 

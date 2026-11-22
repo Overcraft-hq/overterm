@@ -182,3 +182,13 @@ package struct TerraformCommandLine: Equatable, Sendable {
         return line
     }
 }
+
+extension TerraformCommandLine {
+    /// What prints a value Terraform marks sensitive, or an output's, in
+    /// clear (5.6 rule 6): a pane that ran one keeps no scrollback.
+    package var printsSecrets: Bool {
+        guard let operation else { return false }
+        return ["output", "show", "console", "state show", "state pull", "run output", "run show"].contains(operation)
+            || operation.hasPrefix("run --all output") || operation.hasPrefix("run --all show")
+    }
+}

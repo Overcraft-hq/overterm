@@ -74,6 +74,15 @@ package struct ActivityContainer: Hashable, Sendable {
     package var folder: String?
     package var cpu: Double?
     package var memory: UInt64?
+
+    package init(id: String, name: String, project: String? = nil, folder: String? = nil, cpu: Double? = nil, memory: UInt64? = nil) {
+        self.id = id
+        self.name = name
+        self.project = project
+        self.folder = folder
+        self.cpu = cpu
+        self.memory = memory
+    }
 }
 
 /// A compose project's folder in its checkout's spelling (6.5): Compose

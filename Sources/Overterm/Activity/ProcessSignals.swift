@@ -254,8 +254,19 @@ package enum ActivitySignalLineage: Hashable, Sendable {
 /// from any thread.
 package enum ActivityHelperGroups {
     package static func now() -> Set<pid_t> {
-        Set(ManagedProcess.openGroups).union(KubeProcessRun.livePIDs).union(TerraformRun.live.all).union(TerraformApplyGroupRegistry.shared.all)
+        var groups = Set(ManagedProcess.openGroups).union(KubeProcessRun.livePIDs)
+        for source in lock.withLock({ sources }) { groups.formUnion(source()) }
+        return groups
     }
+
+    /// A feature's own registry of the groups it leads, read with the rest
+    /// (Terraform's runs and applies): added once, as the registry is made.
+    package static func register(_ source: @escaping @Sendable () -> Set<pid_t>) {
+        lock.withLock { sources.append(source) }
+    }
+
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var sources: [@Sendable () -> Set<pid_t>] = []
 }
 
 /// The one signal path (6.10, 9.6): every change Activity makes to a

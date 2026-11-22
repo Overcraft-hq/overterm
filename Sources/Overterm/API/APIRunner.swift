@@ -15,6 +15,15 @@ package final class APIRunner: ObservableObject {
         package let folder: String
         package var state: State = .waiting
         package var result: APIExecution.Result?
+
+        package init(url: URL, name: String, method: String, folder: String, state: State = .waiting, result: APIExecution.Result? = nil) {
+            self.url = url
+            self.name = name
+            self.method = method
+            self.folder = folder
+            self.state = state
+            self.result = result
+        }
         package var id: String { url.path }
 
         package var passed: Bool { result?.succeeded == true }

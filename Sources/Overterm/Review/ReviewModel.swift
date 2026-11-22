@@ -28,7 +28,8 @@ package final class ReviewModel: ObservableObject, Identifiable {
     package let root: URL
     package let source: ReviewSource
     /// The roots it touches and their plans (Terraform, stage 2f).
-    package let terraform = TerraformReviewModel()
+    /// Terraform's section of the review (`ReviewModel.terraform`), made when first asked.
+    package var terraformStorage: AnyObject?
 
     @Published package private(set) var phase: Phase = .loading
     /// In the order the list shows them: by folder, then name.
@@ -157,7 +158,7 @@ package final class ReviewModel: ObservableObject, Identifiable {
     /// `git diff --name-status` with `--numstat`'s counts — under `paths`
     /// only when given, each a literal path (`--literal-pathspecs`).
     private func changedFiles(against revisions: [String], paths: [String] = []) async throws -> [ChangedFile] {
-        let literal = paths.isEmpty ? [] : [KubeGitOpsGitArgs.literal]
+        let literal = paths.isEmpty ? [] : [Git.literalPathspecs]
         var list = GitStatus.parse(
             nameStatusZ: try await Git.run(literal + ["diff", "--name-status", "-z", "-M"] + revisions + ["--"] + paths, in: root))
         let numbers = GitStatus.parse(numstatZ: try await Git.run(literal + ["diff", "--numstat", "-z", "-M"] + revisions + ["--"] + paths, in: root))
@@ -221,7 +222,7 @@ package final class ReviewModel: ObservableObject, Identifiable {
             return try await Git.run(["diff", "--no-color", "-M", commitsBase ?? DiffModel.emptyTree, to, "--"] + paths, in: root, outputLimit: limit)
         case .paths(let base, let head, _):
             return try await Git.run(
-                [KubeGitOpsGitArgs.literal, "diff", "--no-color", "-M", "\(base)..\(head)", "--"] + paths, in: root, outputLimit: limit)
+                [Git.literalPathspecs, "diff", "--no-color", "-M", "\(base)..\(head)", "--"] + paths, in: root, outputLimit: limit)
         }
     }
 

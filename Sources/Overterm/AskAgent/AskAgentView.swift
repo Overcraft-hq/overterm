@@ -8,6 +8,14 @@ package struct SelectionActions {
     package var search: () -> Void
     /// Into today's note — nil while notes are off.
     package var toNote: (() -> Void)? = nil
+
+    package init(ask: @escaping () -> Void, copy: @escaping () -> Void, copyAsMarkdown: @escaping () -> Void, search: @escaping () -> Void, toNote: (() -> Void)? = nil) {
+        self.ask = ask
+        self.copy = copy
+        self.copyAsMarkdown = copyAsMarkdown
+        self.search = search
+        self.toNote = toNote
+    }
 }
 
 /// The strip that appears over a selection: the four things you do with
@@ -20,6 +28,11 @@ package struct SelectionActions {
 package struct SelectionBar: View {
     @ObservedObject package var theme: ChromeTheme
     package let actions: SelectionActions
+
+    package init(theme: ChromeTheme, actions: SelectionActions) {
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.actions = actions
+    }
 
     package var body: some View {
         HStack(spacing: 2) {
@@ -70,6 +83,13 @@ package struct AskAgentView: View {
     @ObservedObject package var theme: ChromeTheme
     package let send: () -> Void
     package let cancel: () -> Void
+
+    package init(model: AskAgentModel, theme: ChromeTheme, send: @escaping () -> Void, cancel: @escaping () -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.send = send
+        self.cancel = cancel
+    }
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 10) {

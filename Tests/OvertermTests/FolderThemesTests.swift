@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Settings ▸ Themes ▸ Themes by folder: which theme a tab's folder takes.
 final class FolderThemesTests: XCTestCase {

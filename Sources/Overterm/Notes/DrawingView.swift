@@ -93,6 +93,15 @@ package final class DrawingView: NSView, WKNavigationDelegate, WKUIDelegate, WKS
         package var page = 0
         package var width = 0
         package var appWidth = 0
+
+        package init(ready: Bool = false, count: Int = 0, texts: [String] = [], page: Int = 0, width: Int = 0, appWidth: Int = 0) {
+            self.ready = ready
+            self.count = count
+            self.texts = texts
+            self.page = page
+            self.width = width
+            self.appWidth = appWidth
+        }
     }
 
     package func state() async -> State {

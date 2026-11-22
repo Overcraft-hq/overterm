@@ -11,6 +11,8 @@ import Foundation
 /// open, as the inbox's column only polls while it shows.
 @MainActor
 package final class UsageModel: ObservableObject {
+    package init() {}
+
     @Published package private(set) var providers: [UsageSnapshot] = []
     @Published package private(set) var isRefreshing = false
     /// Set by the window when the pane is the one showing.

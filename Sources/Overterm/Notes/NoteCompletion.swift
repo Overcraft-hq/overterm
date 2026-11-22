@@ -16,6 +16,12 @@ package enum NoteCompletion {
         package var label: String
         package var insert: String
         package var detail: String
+
+        package init(label: String, insert: String, detail: String) {
+            self.label = label
+            self.insert = insert
+            self.detail = detail
+        }
     }
 
     /// From the line up to the caret.

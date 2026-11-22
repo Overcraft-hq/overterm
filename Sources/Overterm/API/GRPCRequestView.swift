@@ -239,7 +239,7 @@ package struct GRPCRequestView: View {
                     }
                     Spacer()
                     Text(verbatim: "\(result.received.count) received").foregroundStyle(theme.text3)
-                    if !result.running { Text(verbatim: SQLConsoleView.duration(result.duration)).foregroundStyle(theme.text3) }
+                    if !result.running { Text(verbatim: InfoText.duration(result.duration)).foregroundStyle(theme.text3) }
                 }
                 .font(.system(size: ChromeMetrics.text(11.5)))
                 .padding(.horizontal, 10).frame(height: ChromeMetrics.row(30))

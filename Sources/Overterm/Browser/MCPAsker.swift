@@ -20,11 +20,19 @@ package enum MCPAsker {
         // A shell sets its own title: one line, every character visible,
         // so a title can't draw a second asker under the first.
         func shown(_ text: String) -> String {
-            DockerMCP.displayed(String(text.map { $0.isNewline || $0 == "\t" ? " " : $0 }))
+            VisibleText.displayed(String(text.map { $0.isNewline || $0 == "\t" ? " " : $0 }))
         }
         let folder = checkout.flatMap { $0 == tab ? nil : " (\(shown($0)))" } ?? ""
         return "Asked through MCP by \(agent ?? "an agent") in the tab “\(shown(tab))”\(folder)"
     }
+
+    /// Where a pane's agent works now (`TerminalWindowController.paneCheckout`):
+    /// set at install.
+    package static var paneCheckout: (@MainActor (String) async -> URL?)? {
+        FeatureHooks.ensure()
+        return paneCheckoutStorage
+    }
+    package nonisolated(unsafe) static var paneCheckoutStorage: (@MainActor (String) async -> URL?)?
 
     /// The line for the call running now; nil when this isn't an agent's call.
     @MainActor package static func current() async -> String? {
@@ -36,7 +44,7 @@ package enum MCPAsker {
             agent = await Self.agent(tab: tab.id, pane: terminal.processTag)
         }
         // Where its agent works now, read again first while its window is off screen.
-        let checkout = await TerminalWindowController.paneCheckout(pane) ?? tab.checkoutSource?.root
+        let checkout = await paneCheckout?(pane) ?? tab.checkoutSource?.root
         return line(tab: tab.title, checkout: checkout?.lastPathComponent, agent: agent)
     }
 
@@ -51,8 +59,8 @@ package enum MCPAsker {
     }
 
     /// Every terminal window's controller; none before the app is up (a unit test).
-    @MainActor private static func controllers() -> [TerminalWindowController] {
-        ((NSApp as NSApplication?)?.windows ?? []).compactMap { $0.windowController as? TerminalWindowController }
+    @MainActor private static func controllers() -> [any TerminalWindowHost] {
+        ((NSApp as NSApplication?)?.windows ?? []).compactMap { $0.windowController as? any TerminalWindowHost }
     }
 
     /// The pane's tab, over every pane of every tab (`tab.terminals`).

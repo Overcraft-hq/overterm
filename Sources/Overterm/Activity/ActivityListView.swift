@@ -249,8 +249,8 @@ package struct ActivityListView: View, Equatable {
     }
 
     private static let heat = (
-        light: KubeHeatStrip.Level.allCases.map { heatColour(TimeChartPalette.heat($0, dark: false)) },
-        dark: KubeHeatStrip.Level.allCases.map { heatColour(TimeChartPalette.heat($0, dark: true)) }
+        light: HeatStripLevel.allCases.map { heatColour(TimeChartPalette.heat($0, dark: false)) },
+        dark: HeatStripLevel.allCases.map { heatColour(TimeChartPalette.heat($0, dark: true)) }
     )
 
     private static func heatColour(_ rgb: TimeChartPalette.RGB) -> NSColor {

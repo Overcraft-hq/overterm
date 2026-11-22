@@ -5,6 +5,8 @@ import Foundation
 /// window controller turns changes into view changes.
 @MainActor
 package final class TabStore: ObservableObject {
+    package init() {}
+
     @Published package private(set) var tabs: [Tab] = []
     @Published package private(set) var selectedID: Tab.ID?
     /// The tab whose name is being edited in the strip, if any.

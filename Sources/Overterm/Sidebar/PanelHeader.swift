@@ -17,6 +17,14 @@ package struct PanelHeader<Trailing: View>: View {
     package var help: String?
     @ViewBuilder package var trailing: Trailing
 
+    package init(title: String, group: TabGroup?, theme: ChromeTheme, help: String? = nil, @ViewBuilder trailing: () -> Trailing) {
+        self.title = title
+        self.group = group
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.help = help
+        self.trailing = trailing()
+    }
+
     package var body: some View {
         HStack(spacing: 6) {
             Text(title)
@@ -60,6 +68,13 @@ package struct PanelHeaderButton: View {
     package let help: String
     package let action: () -> Void
     @ObservedObject package var theme: ChromeTheme
+
+    package init(symbol: String, help: String, action: @escaping () -> Void, theme: ChromeTheme) {
+        self.symbol = symbol
+        self.help = help
+        self.action = action
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
 
     package var body: some View {
         Button(action: action) {

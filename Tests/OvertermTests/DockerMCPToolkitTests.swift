@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Docker's MCP Toolkit as Overterm's agents see it: what `docker mcp
 /// client ls --global --json` says of Claude Code and Codex, and the

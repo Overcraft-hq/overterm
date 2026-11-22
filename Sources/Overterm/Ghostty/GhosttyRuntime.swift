@@ -325,14 +325,14 @@ package final class GhosttyRuntime {
     /// those stay unhandled until Overterm has them.
     private func perform(target: ghostty_target_s, action: ghostty_action_s) -> Bool {
         let view: TerminalView? = target.tag == GHOSTTY_TARGET_SURFACE ? TerminalView.from(surface: target.target.surface) : nil
-        let window = view?.window?.windowController as? TerminalWindowController
+        let window = view?.window?.windowController as? TerminalWindowHost
 
         switch action.tag {
         // Tabs are Overterm's, not Ghostty's — but the user's Ghostty keybinds
         // for them (cmd+t, cmd+shift+], goto_tab:N, ...) still drive ours.
         case GHOSTTY_ACTION_NEW_TAB:
             guard let window else { return false }
-            window.newTab(from: view)
+            window.newTab(from: view, joining: nil)
             return true
 
         // Splits are Overterm's too; Ghostty's keybinds (cmd+d, cmd+[, …) drive them.
@@ -471,7 +471,7 @@ package final class GhosttyRuntime {
 
         // Ghostty's ⌘, (open_config): Overterm's Settings, not a text file.
         case GHOSTTY_ACTION_OPEN_CONFIG:
-            DispatchQueue.main.async { (NSApp.delegate as? AppDelegate)?.showSettings(nil) }
+            DispatchQueue.main.async { NSApp.sendAction(NSSelectorFromString("showSettings:"), to: nil, from: nil) }
             return true
 
         case GHOSTTY_ACTION_OPEN_URL:
@@ -578,7 +578,7 @@ package final class GhosttyRuntime {
             case .deny: ghostty_surface_deny_clipboard_request(surface, state)
             }
         }
-        guard let confirmation, let window = view.window?.windowController as? TerminalWindowController else { return complete(false) }
+        guard let confirmation, let window = view.window?.windowController as? TerminalWindowHost else { return complete(false) }
         window.confirmClipboard(confirmation, from: view, answer: complete)
     }
 

@@ -24,9 +24,9 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// The window's API client: a `.bru` request opens as one, sent through it.
     package var apiWorkspace: APIWorkspace?
     /// The window: a Kubernetes manifest's confirmations and its diff.
-    package weak var kubernetesHost: KubeManifestHost?
+    package weak var kubernetesHostStorage: AnyObject?
     /// The window: Ask Why on a Terraform folder's failed validate.
-    package weak var terraformHost: TerraformEditorHost?
+    package weak var terraformHostStorage: AnyObject?
     /// The file showing changed (another tab, a rename, the last one closed):
     /// the notes panel highlights it.
     package var onActiveChanged: ((URL?) -> Void)?
@@ -54,7 +54,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// applied (never saved: closing loses them).
     package var unsavedNames: [String] {
         buffers.filter {
-            ($0.document.isDirty && $0.document.unsaveable == nil) || $0.resource?.isEdited == true || ($0.sqlConsole?.unsavedEdits() ?? 0) > 0
+            ($0.document.isDirty && $0.document.unsaveable == nil) || $0.resourcePart?.isEdited == true || ($0.consolePart?.unsavedEdits() ?? 0) > 0
         }.map(\.name)
     }
     /// The Kubernetes detail's YAML tab (`KubeResourceYAMLView`): one
@@ -296,8 +296,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         view = root
         header.setZoomed(isZoomed)
         observeDiagnostics()
-        observeTerraformDiagnostics()
-        observeTerraformTestDiagnostics()
+        for hook in Self.hooks.didLoad { hook(self) }
         applySettings()
         refreshChrome()
     }
@@ -311,7 +310,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     package func open(_ url: URL, then done: @escaping (Bool) -> Void = { _ in }) {
         _ = view
         // A cluster object's YAML is no file: its buffer, wherever it shows.
-        if let resource = KubernetesModel.shared.resourceBuffers.resource(at: url) {
+        if let resource = Self.hooks.resourceAt.firstAnswer({ $0(url) }) {
             adopt(resource.buffer)
             return done(true)
         }
@@ -335,9 +334,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         attachRequest(buffer)
         attachNote(buffer)
         attachDrawing(buffer)
-        attachConsole(buffer)
-        attachManifest(buffer)
-        attachTerraform(buffer)
+        for hook in Self.hooks.attach { hook(self, buffer) }
         // A new tab goes after the one showing, as Zed's.
         let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
         buffers.insert(buffer, at: index)
@@ -354,10 +351,10 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         didSet { if isOnScreen != oldValue { updateResourceWatch() } }
     }
     /// The resource this editor follows now: its active tab's, while on screen.
-    package private(set) weak var watching: KubeResourceBuffer?
+    package private(set) weak var watching: (any EditorResource)?
 
     private func updateResourceWatch(none: Bool = false) {
-        let wanted = embedded || none || !isOnScreen ? nil : active?.resource
+        let wanted = embedded || none || !isOnScreen ? nil : active?.resourcePart
         guard wanted !== watching else { return }
         watching?.unwatch(by: self)
         watching = wanted
@@ -370,12 +367,12 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     package func releaseResources() {
         updateResourceWatch(none: true)
         for buffer in buffers {
-            guard let resource = buffer.resource else { continue }
+            guard let resource = buffer.resourcePart else { continue }
             buffer.relay.editors.remove(self)
             if !embedded { resource.release(by: self) }
         }
         let count = buffers.count
-        buffers.removeAll { $0.resource != nil }
+        buffers.removeAll { $0.resourcePart != nil }
         guard buffers.count != count else { return }
         // The window is going: nothing shows any more.
         activeIndex = -1
@@ -392,7 +389,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             return
         }
         buffer.relay.editors.add(self)
-        if !embedded { buffer.resource?.hold(by: self) }
+        if !embedded { buffer.resourcePart?.hold(by: self) }
         let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
         buffers.insert(buffer, at: index)
         activate(index, recordHistory: !embedded)
@@ -405,7 +402,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let buffer, buffers.count == 1, buffers[0] === buffer {
             if activeIndex != 0 { activate(0) }
             // The window's editor may have answered for it since.
-            if let manifest = buffer.kubeManifest { bindManifest(buffer, manifest) }
+            for hook in Self.hooks.rebind { hook(self, buffer, false) }
             return
         }
         if buffer == nil, buffers.isEmpty { return }
@@ -421,7 +418,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         guard let buffer else {
             attach(emptyStorage)
             hideTransientUI()
-            showConsole(nil)
+            for hook in Self.hooks.show { hook(self, nil) }
             refreshChrome()
             return
         }
@@ -491,10 +488,10 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         let buffer = buffers[index]
         attach(buffer.storage)
         updateResourceWatch()
-        if let manifest = buffer.kubeManifest, buffer.resource != nil { bindManifest(buffer, manifest) }
+        for hook in Self.hooks.rebind { hook(self, buffer, true) }
         applyWrap()
         setLiveLayout(buffer.livePreview)
-        showConsole(buffer)
+        for hook in Self.hooks.show { hook(self, buffer) }
         let unavailable = buffer.document.unavailable
         messageLabel.stringValue = unavailable ?? ""
         messageLabel.isHidden = unavailable == nil
@@ -558,7 +555,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             textView.breakUndoCoalescing()
         }
         // A cluster object's YAML is the resource's, not this tab's: let go, never closed here.
-        if let resource = buffer.resource {
+        if let resource = buffer.resourcePart {
             buffer.relay.editors.remove(self)
             buffers.remove(at: index)
             if !embedded {
@@ -570,7 +567,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         bufferWillClose(buffer)
         closeDrawing(buffer)
         // A cluster object's copy goes with its tab.
-        buffer.kubeManifest?.close()
+        buffer.manifestPart?.close()
         // Read first: closing the document forgets its URL.
         let closed = buffer.url
         buffer.document.close()
@@ -587,7 +584,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             activeIndex = -1
             attach(emptyStorage)
             hideTransientUI()
-            showConsole(nil)
+            for hook in Self.hooks.show { hook(self, nil) }
             updatePreview()
             refreshChrome()
             onClose?()
@@ -1167,18 +1164,21 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     package func save(_ buffer: EditorBuffer, overwriting: Bool, formatted: Bool = false) {
         // Overterm's copy of a cluster object: never written, never formatted (its text never leaves).
         if let why = buffer.document.unsaveable {
-            buffer.kubeManifest?.say(why)
+            buffer.manifestPart?.say(why)
             return
         }
         // A new request: saving it is naming it and putting it in its collection.
         if isDraft(buffer) { return saveDraft(buffer) }
         // A Terraform file: terraform fmt, only where the checkout already passes fmt -check — never the server's formatter.
-        if !formatted, let url = buffer.url, TerraformEditorModel.isFormattable(url) {
-            if TerraformEditorModel.shared.formatsOnSave(url) {
-                formatTerraform(buffer) { [weak self] in self?.save(buffer, overwriting: overwriting, formatted: true) }
-                return
-            }
-        } else if !formatted, Settings.shared.editorFormatOnSave, Settings.shared.editorLanguageServers {
+        let own =
+            formatted
+            ? nil
+            : Self.hooks.saveFormat.firstAnswer({ hook in
+                hook(self, buffer) { [weak self] in self?.save(buffer, overwriting: overwriting, formatted: true) }
+            })
+        if own == .formatting {
+            return
+        } else if own == nil, !formatted, Settings.shared.editorFormatOnSave, Settings.shared.editorLanguageServers {
             formatDocument(buffer) { [weak self] in self?.save(buffer, overwriting: overwriting, formatted: true) }
             return
         }
@@ -1214,21 +1214,21 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// for Cancel (or a failed save).
     private func confirmDiscard(_ buffer: EditorBuffer, _ proceed: @escaping (Bool) -> Void) {
         // A console's rows edited and not saved: asked about first, then the file.
-        if let console = buffer.sqlConsole, console.unsavedEdits() > 0, let window = view.window {
+        if let console = buffer.consolePart, console.unsavedEdits() > 0, let window = view.window {
             Task { @MainActor [weak self] in
-                guard await Self.askDiscardRowEdits(console.unsavedEdits(), on: window) else { return proceed(false) }
+                guard await type(of: console).askDiscardRowEdits(console.unsavedEdits(), on: window) else { return proceed(false) }
                 console.discardAllEdits()
                 guard let self else { return proceed(true) }
                 self.confirmDiscard(buffer, proceed)
             }
             return
         }
-        if let resource = buffer.resource {
+        if let resource = buffer.resourcePart {
             guard resource.isEdited, let window = view.window else { return proceed(true) }
             let alert = NSAlert()
             alert.messageText = "Discard your edits to \(resource.spoken)?"
             alert.informativeText =
-                "A cluster object's YAML is never saved: Overterm keeps no copy of it on disk. Apply it first, or discard the edits — the YAML goes back to what \(resource.ref.context) has."
+                "A cluster object's YAML is never saved: Overterm keeps no copy of it on disk. Apply it first, or discard the edits — the YAML goes back to what \(resource.contextName) has."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Discard Edits").hasDestructiveAction = true
             alert.beginSheetModal(for: window) { response in

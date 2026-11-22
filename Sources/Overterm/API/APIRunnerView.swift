@@ -11,6 +11,14 @@ package struct APIRunnerView: View {
     /// Runs the same under bru, in a terminal tab.
     package let runWithBru: () -> Void
 
+    package init(runner: APIRunner, workspace: APIWorkspace, theme: ChromeTheme, open: @escaping (URL) -> Void, runWithBru: @escaping () -> Void) {
+        self._runner = ObservedObject(wrappedValue: runner)
+        self._workspace = ObservedObject(wrappedValue: workspace)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.open = open
+        self.runWithBru = runWithBru
+    }
+
     package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header

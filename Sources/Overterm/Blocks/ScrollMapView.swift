@@ -18,6 +18,12 @@ package struct ScrollMapView: View {
     /// Scroll the pane by this many rows (positive is down).
     package let scroll: (Int) -> Void
 
+    package init(blocks: PaneBlocks, theme: ChromeTheme, scroll: @escaping (Int) -> Void) {
+        self._blocks = ObservedObject(wrappedValue: blocks)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.scroll = scroll
+    }
+
     package static let width: CGFloat = 16
 
     private var ledger: CommandLedger { blocks.ledger }

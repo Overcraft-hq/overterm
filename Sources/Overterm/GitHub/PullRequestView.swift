@@ -16,6 +16,14 @@ package struct PullRequestView: View {
     @State private var replies: [Int: String] = [:]
     @State private var checksOpen = false
 
+    package init(model: PullRequestModel, theme: ChromeTheme, onClose: @escaping () -> Void, onOpenFile: @escaping (String, Int?) -> Void, onReview: @escaping (Int) -> Void = { _ in }) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onClose = onClose
+        self.onOpenFile = onOpenFile
+        self.onReview = onReview
+    }
+
     package var body: some View {
         VStack(spacing: 0) {
             header
@@ -350,6 +358,10 @@ package struct StatePill: View {
 /// CI at a glance: ✓ passing, ✗ failing, ● running.
 package struct CIGlyph: View {
     package let overall: CheckSummary.Overall
+
+    package init(overall: CheckSummary.Overall) {
+        self.overall = overall
+    }
 
     package var body: some View {
         switch overall {

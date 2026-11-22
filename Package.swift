@@ -8,6 +8,31 @@ let e2eSettings: [SwiftSetting] = [
     .define("E2E", .when(traits: ["E2E"])),
 ]
 
+/// A module of the app over `below`, with every package the app uses (an
+/// unused one costs nothing).
+func feature(_ name: String, over below: [String]) -> Target {
+    .target(
+        name: name,
+        dependencies: below.map { .target(name: $0) } + [
+            "GhosttyKit", "TreeSitterKit",
+            .product(name: "PostgresNIO", package: "postgres-nio"),
+            .product(name: "MySQLNIO", package: "mysql-nio"),
+            .product(name: "NIOCore", package: "swift-nio"),
+            .product(name: "NIOPosix", package: "swift-nio"),
+            // Docker's Engine API: HTTP over its unix socket.
+            .product(name: "NIOHTTP1", package: "swift-nio"),
+            .product(name: "NIOSSL", package: "swift-nio-ssl"),
+            .product(name: "NIOHTTP2", package: "swift-nio-http2"),
+            .product(name: "NIOHPACK", package: "swift-nio-http2"),
+            .product(name: "Logging", package: "swift-log"),
+            .product(name: "_CryptoExtras", package: "swift-crypto"),
+            .product(name: "OracleNIO", package: "oracle-nio"),
+        ],
+        path: "Sources/\(name)",
+        swiftSettings: e2eSettings
+    )
+}
+
 let package = Package(
     name: "Overterm",
     platforms: [
@@ -76,8 +101,9 @@ let package = Package(
             path: "Sources/OvertermCore",
             swiftSettings: e2eSettings
         ),
-        // Overterm: the app shell and the features not yet split out. The
-        // executable below and the tests link it.
+        // Overterm: the shell under the features — tabs, terminals, the
+        // editor, settings, Activity — and the few pieces of a feature it
+        // holds itself (docs/architecture.md, Targets).
         .target(
             name: "Overterm",
             dependencies: [
@@ -112,17 +138,28 @@ let package = Package(
                 .linkedLibrary("sqlite3"),
             ]
         ),
+        // The features, each over the shell and the ones it uses:
+        // Database, then Docker (its containers' databases), Kubernetes
+        // (Docker's images and CLI), Terraform (a context's class).
+        feature("OvertermDatabase", over: ["Overterm"]),
+        feature("OvertermDocker", over: ["OvertermDatabase"]),
+        feature("OvertermKubernetes", over: ["OvertermDocker"]),
+        feature("OvertermTerraform", over: ["OvertermKubernetes"]),
+        // OvertermShell: the window and what holds the features together —
+        // TerminalWindowController and its extensions, the app delegate, the
+        // menus, the right slot and the sidebar — and the E2E scenarios.
+        feature("OvertermShell", over: ["OvertermTerraform"]),
         // The app: Sources/OvertermApp/main.swift starts the library. Its
         // product keeps the name the binary always had (make-app.sh, the
         // docs' `.build/debug/Overterm`).
         .executableTarget(
             name: "OvertermApp",
-            dependencies: ["Overterm"],
+            dependencies: ["OvertermShell"],
             path: "Sources/OvertermApp"
         ),
         .testTarget(
             name: "OvertermTests",
-            dependencies: ["Overterm"],
+            dependencies: ["OvertermShell"],
             path: "Tests/OvertermTests"
         ),
         // Launches the built app per scenario; opt-in (make e2e).

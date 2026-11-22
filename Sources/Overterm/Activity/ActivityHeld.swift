@@ -177,7 +177,7 @@ package final class ActivityHeld: ObservableObject {
     package nonisolated static func notResumedQuestion(_ failed: [(pid: pid_t, name: String?, why: String)]) -> (title: String, detail: String)? {
         guard !failed.isEmpty else { return nil }
         let title = failed.count == 1 ? "A process you suspended couldn't be resumed" : "\(failed.count) processes you suspended couldn't be resumed"
-        let lines = failed.map { "pid \($0.pid)\($0.name.map { " " + DockerMCP.displayed($0) } ?? ""): \($0.why)" }
+        let lines = failed.map { "pid \($0.pid)\($0.name.map { " " + VisibleText.displayed($0) } ?? ""): \($0.why)" }
         let detail =
             lines.joined(separator: "\n")
             + "\n\(failed.count == 1 ? "It stays" : "They stay") stopped once Overterm is gone. Resume All on the Activity page tries again."

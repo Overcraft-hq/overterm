@@ -29,6 +29,26 @@ package struct NotesActions {
     /// Notes, files or folders dropped on a folder: moved into it, the links
     /// to them written again.
     package var move: ([URL], URL) -> Void = { _, _ in }
+
+    package init(
+        open: @escaping (URL) -> Void, newNote: @escaping (URL?) -> Void, newDrawing: @escaping (URL?) -> Void = { _ in }, newFolder: @escaping (URL?) -> Void, dailyNote: @escaping () -> Void,
+        rename: @escaping (URL) -> Void, trash: @escaping (URL) -> Void, insertPath: @escaping (URL) -> Void, newTab: @escaping (URL) -> Void = { _ in }, chooseVault: @escaping () -> Void,
+        openAt: @escaping (URL, Int) -> Void = { _, _ in }, toggleTask: @escaping (URL, Int, String) -> Void = { _, _, _ in }, move: @escaping ([URL], URL) -> Void = { _, _ in }
+    ) {
+        self.open = open
+        self.newNote = newNote
+        self.newDrawing = newDrawing
+        self.newFolder = newFolder
+        self.dailyNote = dailyNote
+        self.rename = rename
+        self.trash = trash
+        self.insertPath = insertPath
+        self.newTab = newTab
+        self.chooseVault = chooseVault
+        self.openAt = openAt
+        self.toggleTask = toggleTask
+        self.move = move
+    }
 }
 
 /// The sidebar's Notes panel: the vault's folders and notes, Obsidian's
@@ -37,6 +57,12 @@ package struct NotesPanelView: View {
     @ObservedObject package var model: NotesModel
     @ObservedObject package var theme: ChromeTheme
     package let actions: NotesActions
+
+    package init(model: NotesModel, theme: ChromeTheme, actions: NotesActions) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.actions = actions
+    }
 
     package var body: some View {
         GeometryReader { geometry in

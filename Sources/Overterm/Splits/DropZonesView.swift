@@ -17,6 +17,15 @@ package struct DropZonesView: View {
     package let pointer: CGPoint
     @ObservedObject package var theme: ChromeTheme
 
+    package init(pane: CGRect, active: DropZone?, title: String, symbol: String, pointer: CGPoint, theme: ChromeTheme) {
+        self.pane = pane
+        self.active = active
+        self.title = title
+        self.symbol = symbol
+        self.pointer = pointer
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
+
     package var body: some View {
         ZStack(alignment: .topLeading) {
             Color.clear

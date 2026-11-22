@@ -10,6 +10,12 @@ package struct ActivityMCPCaller: Hashable, Sendable {
     /// The checkout's folder, standardized as the tabs' facts say it; nil
     /// when the tab works in none — then only its own tab is inside.
     package let checkout: String?
+
+    package init(pane: String, tab: UUID, checkout: String?) {
+        self.pane = pane
+        self.tab = tab
+        self.checkout = checkout
+    }
 }
 
 /// One call, its arguments read and checked (8.2): what the pure answer is
@@ -120,6 +126,19 @@ package enum ActivityMCPAnswer {
         /// A test run lists only its own tabs' processes (9.9).
         package var isolated = false
         package var home = ActivityText.home
+
+        package init(
+            caller: ActivityMCPCaller, content: ActivityPageContent, snapshot: ActivitySnapshot, tabs: [UUID: ActivityTabFacts], containers: [ActivityContainer] = [], isolated: Bool = false,
+            home: String = ActivityText.home
+        ) {
+            self.caller = caller
+            self.content = content
+            self.snapshot = snapshot
+            self.tabs = tabs
+            self.containers = containers
+            self.isolated = isolated
+            self.home = home
+        }
     }
 
     /// The most entries a list gives; the rest counted.

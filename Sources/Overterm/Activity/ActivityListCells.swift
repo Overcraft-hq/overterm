@@ -74,10 +74,10 @@ package final class ActivityStripCell: ResourcePressCell {
         context.setFillColor(shown.track.withAlphaComponent(shown.track.alphaComponent * 0.08).cgColor)
         context.fill(rect)
         // One fill a colour, not one a cell: 60 cells, five colours.
-        var byLevel = [[CGRect]](repeating: [], count: KubeHeatStrip.Level.allCases.count)
+        var byLevel = [[CGRect]](repeating: [], count: HeatStripLevel.allCases.count)
         var gaps: [CGRect] = []
         // CPU capped at 100 for the colour, as the Canvas drew it.
-        for bar in KubeHeatStripView.bars(strip.map { $0.map { min($0, 100) } }, in: rect) {
+        for bar in HeatStripBars.bars(strip.map { $0.map { min($0, 100) } }, in: rect) {
             if let level = bar.level { byLevel[level.rawValue].append(bar.rect) } else { gaps.append(bar.rect) }
         }
         if !gaps.isEmpty {

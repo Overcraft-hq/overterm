@@ -13,6 +13,17 @@ package struct GroupSwitcherView: View {
     package let onMoveHere: (TabGroup) -> Void
     package let onDismiss: () -> Void
 
+    package init(
+        store: TabStore, theme: ChromeTheme, onChoose: @escaping (TabGroup) -> Void, onChooseTab: @escaping (Tab) -> Void, onMoveHere: @escaping (TabGroup) -> Void, onDismiss: @escaping () -> Void
+    ) {
+        self._store = ObservedObject(wrappedValue: store)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onChoose = onChoose
+        self.onChooseTab = onChooseTab
+        self.onMoveHere = onMoveHere
+        self.onDismiss = onDismiss
+    }
+
     private var groups: [TabGroup] {
         // Strip order, so the list reads as the strip does; stashed last.
         var seen: [TabGroup] = []

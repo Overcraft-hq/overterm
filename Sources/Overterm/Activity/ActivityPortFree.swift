@@ -183,11 +183,20 @@ package enum ActivityPortFree {
         package var detail: String
         package var button: String
         package var critical = false
+
+        package init(title: String, scope: String? = nil, production: Bool = false, detail: String, button: String, critical: Bool = false) {
+            self.title = title
+            self.scope = scope
+            self.production = production
+            self.detail = detail
+            self.button = button
+            self.critical = critical
+        }
     }
 
     /// Where the pane is, for a sheet's scope: "Tab “web” · feature-x · Claude".
     package static func scope(tab: String, checkout: String?, agent: Agent?) -> String {
-        (["Tab “\(DockerMCP.displayed(tab))”"] + [checkout, agent?.name].compactMap { $0 }).joined(separator: " · ")
+        (["Tab “\(VisibleText.displayed(tab))”"] + [checkout, agent?.name].compactMap { $0 }).joined(separator: " · ")
     }
 
     /// The question before `rule` acts on `holder`, which holds `port`; nil
@@ -197,14 +206,14 @@ package enum ActivityPortFree {
         _ rule: ActivityRule, holder: Holder, port: Int, scope: String?, tabTitle: String, isSplit: Bool, timeZone: TimeZone = .current
     ) -> Question? {
         let pid = holder.signal.identity.pid
-        let name = DockerMCP.displayed(holder.name)
+        let name = VisibleText.displayed(holder.name)
         var lines: [String] = []
-        let held = holder.holder.map { "It holds :\(port) under it: “\(DockerMCP.displayed($0.name))” (pid \($0.pid))." } ?? "It holds :\(port)."
+        let held = holder.holder.map { "It holds :\(port) under it: “\(VisibleText.displayed($0.name))” (pid \($0.pid))." } ?? "It holds :\(port)."
         switch rule {
         case .refused:
             return nil
         case .route(.closePane, _):
-            let title = isSplit ? "Close this pane?" : "Close tab “\(DockerMCP.displayed(tabTitle))”?"
+            let title = isSplit ? "Close this pane?" : "Close tab “\(VisibleText.displayed(tabTitle))”?"
             lines.append("“\(name)” (pid \(pid)) holds :\(port): the pane's shell, which ends with the pane — and whatever runs in it.")
             return Question(title: title, scope: scope, detail: lines.joined(separator: "\n"), button: isSplit ? "Close Pane" : "Close Tab")
         case .route:
@@ -243,14 +252,14 @@ package enum ActivityPortFree {
                 return nil
             }
             if let write = holder.target.terraformWrite {
-                lines.append("A running \(DockerMCP.displayed(write)): SIGTERM or SIGKILL could leave its state locked and half written.")
+                lines.append("A running \(VisibleText.displayed(write)): SIGTERM or SIGKILL could leave its state locked and half written.")
             }
             if let write = holder.target.releaseWrite {
-                lines.append("A running \(DockerMCP.displayed(write)): a release stopped mid-upgrade stays pending-upgrade.")
+                lines.append("A running \(VisibleText.displayed(write)): a release stopped mid-upgrade stays pending-upgrade.")
             }
             lines.append(executable(holder.signal.path))
             lines.append("pid \(pid), started \(started(holder.signal.identity.start, timeZone: timeZone))")
-            if let command = holder.command { lines.append("Command: \(DockerMCP.displayed(command))") }
+            if let command = holder.command { lines.append("Command: \(VisibleText.displayed(command))") }
             if holder.children > 0, action != .interruptPane {
                 lines.append(holder.children == 1 ? "Its child keeps running." : "Its \(holder.children) children keep running.")
             }
@@ -280,7 +289,7 @@ package enum ActivityPortFree {
     /// The executable the identity was listed with.
     package static func executable(_ path: String?) -> String {
         guard let path else { return "Its executable was deleted or replaced: it is named by its pid and start alone." }
-        return "Runs \(DockerMCP.displayed(path))"
+        return "Runs \(VisibleText.displayed(path))"
     }
 
     /// When it started, µs since 1970, to the second.
@@ -300,7 +309,7 @@ package enum ActivityPortFree {
     /// A container's port: its Stop, asked by Activity first — the Docker
     /// page's Stop acts at once (6.12).
     package static func containerQuestion(_ name: String, port: Int) -> Question {
-        let shown = DockerMCP.displayed(name)
+        let shown = VisibleText.displayed(name)
         return Question(
             title: "Stop container “\(shown)”?",
             detail: "It publishes :\(port); Docker's engine holds the socket. The engine stops it, as the Docker page's Stop does.\nThe command it equals: docker stop \(shown)",
@@ -311,8 +320,8 @@ package enum ActivityPortFree {
     /// Forwards' Stop acts at once (6.12).
     package static func forwardQuestion(_ forward: KubeForwardPill, port: Int) -> Question {
         Question(
-            title: "Stop the forward to \(DockerMCP.displayed(forward.target))?",
-            scope: "\(forward.production ? "PRODUCTION · " : "")\(DockerMCP.displayed(forward.context)) · namespace \(DockerMCP.displayed(forward.namespace))",
+            title: "Stop the forward to \(VisibleText.displayed(forward.target))?",
+            scope: "\(forward.production ? "PRODUCTION · " : "")\(VisibleText.displayed(forward.context)) · namespace \(VisibleText.displayed(forward.namespace))",
             production: forward.production,
             detail: "Overterm's own kubectl port-forward holds :\(port). Stop Forward ends it and frees the port; the pods aren't touched.",
             button: "Stop Forward")
@@ -326,7 +335,7 @@ package enum ActivityPortFree {
     package static func interruptRefusal(listed: ActivityProcessID, group: pid_t, now: ActivityProcess?, foregroundGroup: pid_t?, leader: String?) -> String? {
         guard let now, now.identity == listed, !now.isZombie else { return "It ended before ⌃C was typed: nothing was sent." }
         guard let foregroundGroup, foregroundGroup == group, now.group == group else {
-            if let leader { return "The pane now runs “\(DockerMCP.displayed(leader))”: nothing was typed." }
+            if let leader { return "The pane now runs “\(VisibleText.displayed(leader))”: nothing was typed." }
             return "It is no longer the pane's foreground job: nothing was typed."
         }
         return nil
@@ -349,9 +358,9 @@ package enum ActivityPortFree {
     package static func answer(_ answer: ActivitySignalAnswer, pid: pid_t) -> String? {
         switch answer {
         case .sent: nil
-        case .ended(let now): now.map { "It ended — pid \(pid) is now “\(DockerMCP.displayed($0))”. Nothing was sent." } ?? "It ended. Nothing was sent."
+        case .ended(let now): now.map { "It ended — pid \(pid) is now “\(VisibleText.displayed($0))”. Nothing was sent." } ?? "It ended. Nothing was sent."
         case .ranAnotherProgram(let path):
-            "It became “\(DockerMCP.displayed(path.map { ($0 as NSString).lastPathComponent } ?? "another program"))” since it was listed: nothing was sent — free it again to be asked about what it runs now."
+            "It became “\(VisibleText.displayed(path.map { ($0 as NSString).lastPathComponent } ?? "another program"))” since it was listed: nothing was sent — free it again to be asked about what it runs now."
         case .refused(let refusal): refusal.reason
         case .failed(let code): "macOS refused the signal: \(String(cString: strerror(code)))."
         }
@@ -386,6 +395,13 @@ package struct PortFreeing: Hashable, Sendable {
     package var port: Int
     package var proto: String
     package var state: State
+
+    package init(pane: ObjectIdentifier, port: Int, proto: String, state: State) {
+        self.pane = pane
+        self.port = port
+        self.proto = proto
+        self.state = state
+    }
 
     /// What the header says of it.
     package var label: String { Self.label(state, port: port) }

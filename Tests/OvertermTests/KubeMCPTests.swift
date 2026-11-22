@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Agents' `k8s_` tools (stage 1e; docs/design/kubernetes/analysis.md,
 /// 3.5) against `FakeKubeAPI` on a socket of the test's own, through a

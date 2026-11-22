@@ -8,6 +8,8 @@ import SwiftUI
 /// the controller gave their layers.
 @MainActor
 package final class TabPeekModel: ObservableObject {
+    package init() {}
+
     /// What a card's title bar shows. Taken from the tab, not from a
     /// process scan: the peek has to keep up with a finger.
     package struct Entry: Equatable {
@@ -16,6 +18,14 @@ package final class TabPeekModel: ObservableObject {
         package let activity: TabActivity
         package let agent: Agent?
         package let panes: Int
+
+        package init(title: String, color: TabColor?, activity: TabActivity, agent: Agent?, panes: Int) {
+            self.title = title
+            self.color = color
+            self.activity = activity
+            self.agent = agent
+            self.panes = panes
+        }
     }
 
     @Published package var cards: [TabPeek.Card] = []
@@ -33,6 +43,14 @@ package struct TabPeekView: View {
     package let onChoose: (Tab.ID) -> Void
     package let onClose: (Tab.ID) -> Void
     package let onDismiss: () -> Void
+
+    package init(model: TabPeekModel, theme: ChromeTheme, onChoose: @escaping (Tab.ID) -> Void, onClose: @escaping (Tab.ID) -> Void, onDismiss: @escaping () -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onChoose = onChoose
+        self.onClose = onClose
+        self.onDismiss = onDismiss
+    }
 
     /// 0 in the strip, 1 in the grid — the group title and the deeper dim
     /// belong to the second stage.

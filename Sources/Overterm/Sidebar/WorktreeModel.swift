@@ -3,6 +3,8 @@ import Foundation
 /// The worktrees of the repository the selected tab is in.
 @MainActor
 package final class WorktreeModel: ObservableObject {
+    package init() {}
+
     @Published package private(set) var worktrees: [Worktree] = []
     /// Branches of linked worktrees that are merged (see MergedWorktrees).
     @Published package private(set) var merged: [String: MergedWorktrees.Reason] = [:]

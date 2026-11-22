@@ -18,6 +18,12 @@ package struct NotesGraphView: View {
     @State private var generation = 0
     @State private var layout: Task<NotesGraph, Never>?
 
+    package init(model: NotesModel, theme: ChromeTheme, open: @escaping (URL) -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.open = open
+    }
+
     private var center: String? { local ? model.current.map(model.path(of:)) : nil }
 
     package var body: some View {

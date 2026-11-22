@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Ask an Agent about a process (docs/design/activity/analysis.md, 8.6,
 /// 9.3, 9.4): the brief's words — where it runs and why, its usage now,

@@ -10,6 +10,13 @@ package struct PaletteView: View {
     package let onChoose: (PaletteItem, Bool) -> Void
     package let onDismiss: () -> Void
 
+    package init(model: PaletteModel, theme: ChromeTheme, onChoose: @escaping (PaletteItem, Bool) -> Void, onDismiss: @escaping () -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onChoose = onChoose
+        self.onDismiss = onDismiss
+    }
+
     /// One size, whatever is selected: the card grew to 860 pt for an item
     /// with a detail and shrank to 580 for one without, and stepping
     /// through the list or the tabs made it jump.
@@ -254,6 +261,22 @@ package struct PaletteField: NSViewRepresentable {
     /// the palette's is given it by the window.
     package var focusesOnAppear = false
     package var fontSize: CGFloat = 16
+
+    package init(
+        text: Binding<String>, onMove: @escaping (Int) -> Void, onSubmit: @escaping (_ run: Bool) -> Void, onCancel: @escaping () -> Void, onTab: ((Int) -> Void)? = nil, backtabSteps: Bool = true,
+        placeholder: String = "Search tabs, worktrees, snippets, actions…", textColor: NSColor = .white, focusesOnAppear: Bool = false, fontSize: CGFloat = 16
+    ) {
+        self._text = text
+        self.onMove = onMove
+        self.onSubmit = onSubmit
+        self.onCancel = onCancel
+        self.onTab = onTab
+        self.backtabSteps = backtabSteps
+        self.placeholder = placeholder
+        self.textColor = textColor
+        self.focusesOnAppear = focusesOnAppear
+        self.fontSize = fontSize
+    }
 
     package func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()

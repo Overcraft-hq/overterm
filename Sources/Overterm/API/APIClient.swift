@@ -179,6 +179,12 @@ package final class APIClient: Sendable {
         package var timeout: TimeInterval = 30
         package var followRedirects = true
         package var verifyTLS = true
+
+        package init(timeout: TimeInterval = 30, followRedirects: Bool = true, verifyTLS: Bool = true) {
+            self.timeout = timeout
+            self.followRedirects = followRedirects
+            self.verifyTLS = verifyTLS
+        }
     }
 
     private let session: URLSession

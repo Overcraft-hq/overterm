@@ -106,7 +106,7 @@ package final class SuspendedCover: NSView {
         let detail = NSTextField(labelWithString: "Its processes are stopped where they were.")
         detail.font = .systemFont(ofSize: 12)
         detail.textColor = GhosttyRuntime.shared.foregroundColor.withAlphaComponent(0.6)
-        let button = NSButton(title: "Resume", target: nil, action: #selector(TerminalWindowController.resumeTabOfPane(_:)))
+        let button = NSButton(title: "Resume", target: nil, action: NSSelectorFromString("resumeTabOfPane:"))
         // No Return for it: key equivalents go to the whole window, and the
         // editor's Return would resume the tab.
         button.bezelStyle = .rounded
@@ -125,55 +125,6 @@ package final class SuspendedCover: NSView {
     package override func mouseDown(with event: NSEvent) {}
     package override func rightMouseDown(with event: NSEvent) {}
     package override func scrollWheel(with event: NSEvent) {}
-}
-
-extension TerminalWindowController {
-    /// Stops each of the tab's panes' sets, read at the press
-    /// (`TabSuspension.targets`). A pane not paired yet is paired first,
-    /// from a list of the app's children read off the main thread
-    /// (`pairWaiting`); the lookup runs off it too; a Resume in between
-    /// wins.
-    package func suspendTab(_ tab: Tab) {
-        suspendPanes(tab.terminals, of: tab)
-    }
-
-    /// Stops `panes` of `tab`, each with its whole set — the shell too, or
-    /// it takes the terminal back (Activity's Suspend of a pane's job,
-    /// docs/design/activity/analysis.md, 6.10). Resume Tab, or the cover's
-    /// Resume, continues them.
-    package func suspendPanes(_ chosen: [TerminalView], of tab: Tab) {
-        let panes = chosen.filter { !$0.isSuspended }
-        guard !panes.isEmpty else { return }
-        // A `.app` inside one of these stays the pane's: a dev build.
-        let checkouts = Array(Set(store.tabs.compactMap { $0.checkoutSource?.root.path }))
-        Task { @MainActor in
-            await SurfaceProcesses.shared.pairWaiting()
-            let roots = panes.map { (SurfaceProcesses.shared.pairedLoginPID(of: $0), $0.processTag) }
-            DispatchQueue.global(qos: .userInitiated).async { @Sendable in
-                let sets = roots.map { TabSuspension.targets(login: $0.0, tag: $0.1, checkouts: checkouts) }
-                Task { @MainActor in
-                    tab.objectWillChange.send()
-                    self.store.objectWillChange.send()
-                    for (pane, targets) in zip(panes, sets) { pane.suspend(targets) }
-                }
-            }
-        }
-    }
-
-    package func resumeTab(_ tab: Tab) {
-        tab.objectWillChange.send()
-        store.objectWillChange.send()
-        tab.terminals.forEach { $0.resume() }
-        if store.selected === tab { tab.terminal.window?.makeFirstResponder(tab.terminal) }
-    }
-
-    /// The cover's Resume: the tab of the pane it covers.
-    @objc package func resumeTabOfPane(_ sender: NSView) {
-        var view: NSView? = sender
-        while let current = view, !(current is TerminalView) { view = current.superview }
-        guard let tab = tab(containing: view as? TerminalView) else { return }
-        resumeTab(tab)
-    }
 }
 
 /// "2 suspended" in the strip, beside "need you": a stopped tab is easy to

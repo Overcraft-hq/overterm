@@ -66,6 +66,14 @@ package struct ActivityPageView: View {
 
     @FocusState private var filterFocused: Bool
 
+    package init(page: ActivityPageModel, theme: ChromeTheme, held: ActivityHeld = ActivityHeld.shared, copy: @escaping ([String]) -> Void, focusList: @escaping () -> Void = {}) {
+        self._page = ObservedObject(wrappedValue: page)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self._held = ObservedObject(wrappedValue: held)
+        self.copy = copy
+        self.focusList = focusList
+    }
+
     package var body: some View {
         HStack(spacing: 0) {
             sidebar.frame(width: 210).background(theme.panelGround)

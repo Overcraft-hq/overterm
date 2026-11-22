@@ -27,6 +27,14 @@ package struct TerraformPlanZip: Equatable, Sendable {
         package var compressedSize: Int
         package var size: Int
         package var localHeader: Int
+
+        package init(name: String, method: UInt16, compressedSize: Int, size: Int, localHeader: Int) {
+            self.name = name
+            self.method = method
+            self.compressedSize = compressedSize
+            self.size = size
+            self.localHeader = localHeader
+        }
     }
 
     package enum Failure: Error, Equatable { case notZip, tooLarge, unreadable }

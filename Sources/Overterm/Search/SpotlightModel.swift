@@ -5,6 +5,8 @@ import Foundation
 /// names and its file contents — and the notes vault's, when notes are on.
 @MainActor
 package final class SpotlightModel: ObservableObject {
+    package init() {}
+
     package enum Row: Identifiable, Equatable {
         /// Find in the terminal: its match count (nil while unknown).
         case terminal(total: Int?)

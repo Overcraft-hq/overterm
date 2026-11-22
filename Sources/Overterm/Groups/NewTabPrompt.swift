@@ -13,6 +13,13 @@ package struct NewTabPrompt: View {
     package let keepOut: () -> Void
     package let join: () -> Void
 
+    package init(group: TabGroup, theme: ChromeTheme, keepOut: @escaping () -> Void, join: @escaping () -> Void) {
+        self._group = ObservedObject(wrappedValue: group)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.keepOut = keepOut
+        self.join = join
+    }
+
     package var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Where does this tab belong?")

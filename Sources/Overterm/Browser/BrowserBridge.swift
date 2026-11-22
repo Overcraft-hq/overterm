@@ -299,6 +299,13 @@ package struct HTTPRequest: Equatable, Sendable {
     package let headers: [String: String]
     package let body: Data
 
+    package init(method: String, path: String, headers: [String: String], body: Data) {
+        self.method = method
+        self.path = path
+        self.headers = headers
+        self.body = body
+    }
+
     package enum Parsed: Equatable {
         case incomplete, invalid
         case complete(HTTPRequest)

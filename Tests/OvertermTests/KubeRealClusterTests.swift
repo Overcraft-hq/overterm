@@ -5,6 +5,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Overterm's own proxies and client against a real cluster: the kind
 /// cluster `Scripts/kube-test-cluster.sh` makes (cluster "fake", context

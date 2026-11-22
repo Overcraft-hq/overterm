@@ -25,6 +25,12 @@ package enum ProcessOpenFiles {
         package let kind: Kind
         /// A file's path, a socket's ends, a kind's name.
         package let text: String
+
+        package init(descriptor: Int32, kind: Kind, text: String) {
+            self.descriptor = descriptor
+            self.kind = kind
+            self.text = text
+        }
     }
 
     /// What one read found.

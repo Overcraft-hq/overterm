@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The user's processes' usage and its rates (docs/design/activity/
 /// analysis.md, 7.5): by the interval measured, over at least 250 ms and

@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Helm's writes (stage 2f): the lines — `--kube-context` and `-n` always,
 /// quoted for zsh, a ConfigMap-stored release's driver said —, the process

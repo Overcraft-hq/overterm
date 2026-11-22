@@ -37,6 +37,11 @@ package struct ResourceCardCaption: View {
     package let text: String
     @ObservedObject package var theme: ChromeTheme
 
+    package init(text: String, theme: ChromeTheme) {
+        self.text = text
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
+
     package var body: some View {
         Text(verbatim: text).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).tracking(0.4).foregroundStyle(theme.text3)
     }
@@ -49,6 +54,13 @@ package struct ResourcePill: View {
     package let colour: Color
     package var symbol: String?
     package var monospaced = false
+
+    package init(text: String, colour: Color, symbol: String? = nil, monospaced: Bool = false) {
+        self.text = text
+        self.colour = colour
+        self.symbol = symbol
+        self.monospaced = monospaced
+    }
 
     package var body: some View {
         HStack(spacing: 4) {
@@ -71,6 +83,13 @@ package struct ResourceCardRow<Content: View>: View {
     package let action: () -> Void
     @ViewBuilder package var content: () -> Content
     @State private var hovered = false
+
+    package init(theme: ChromeTheme, help: String, action: @escaping () -> Void, @ViewBuilder content: @escaping () -> Content) {
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.help = help
+        self.action = action
+        self.content = content
+    }
 
     package var body: some View {
         Button(action: action) {

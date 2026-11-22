@@ -16,6 +16,13 @@ package struct APIImport: Equatable {
         /// folder.bru beyond its name: headers, auth, scripts.
         package var settings: BruFile?
 
+        package init(name: String, folders: [Folder] = [], requests: [Request] = [], settings: BruFile? = nil) {
+            self.name = name
+            self.folders = folders
+            self.requests = requests
+            self.settings = settings
+        }
+
         package var allRequests: [Request] { requests + folders.flatMap(\.allRequests) }
     }
 

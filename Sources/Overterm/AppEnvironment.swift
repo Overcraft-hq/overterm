@@ -11,7 +11,7 @@ import Foundation
 /// (macOS keeps it in the standard defaults: the window opens at a fixed
 /// frame instead, `TerminalWindowController.placeIsolatedWindow`).
 package enum AppEnvironment {
-    private static let env = ProcessInfo.processInfo.environment
+    package static let env = ProcessInfo.processInfo.environment
 
     /// The app's bundle id (Scripts/make-app.sh writes the same one): its
     /// defaults domain, log subsystem, caches folder, pasteboards.
@@ -154,21 +154,6 @@ package enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude.json")
     }
 
-    /// Docker's engine: OVERTERM_DOCKER_HOST's (a scenario's fake engine),
-    /// else the one the user's `docker` reaches (or `docker.endpoint`'s, the
-    /// setting, when not empty). An isolated run without the variable
-    /// reaches none: a scenario must never list the user's containers, let
-    /// alone stop one.
-    package static func dockerEndpoint(setting: String = "", context: String = "") -> DockerEndpoint? {
-        if let host = env["OVERTERM_DOCKER_HOST"], !host.isEmpty {
-            return DockerEndpoint(address: DockerEndpoint.address(of: host), context: nil, source: "OVERTERM_DOCKER_HOST")
-        }
-        if isIsolated { return nil }
-        if !setting.isEmpty { return DockerEndpoint(address: DockerEndpoint.address(of: setting), context: nil, source: "docker.endpoint") }
-        if !context.isEmpty, let chosen = DockerEndpoint.chosen(context: context) { return chosen }
-        return DockerEndpoint.current()
-    }
-
     /// Whether this process is a unit test's (`isUnderTest`): isolated too,
     /// its support folder a temporary one.
     package static var isUnitTest: Bool { isUnderTest }
@@ -176,23 +161,6 @@ package enum AppEnvironment {
     /// Whether the user's own kubeconfig is out of bounds: an isolated run
     /// or a unit test. This Mac's current context is production.
     package static var guardsKubeconfig: Bool { isIsolated || isUnitTest }
-
-    /// The kubeconfig files Overterm reads, in kubectl's order: the shell's
-    /// KUBECONFIG list (else ~/.kube/config), then `extra`
-    /// (`kubernetes.kubeconfigs`). OVERTERM_KUBECONFIG — a scenario's fake
-    /// clusters — replaces them all. An isolated run or a unit test reads
-    /// only OVERTERM_KUBECONFIG's files, never one under ~/.kube, and
-    /// without it none: it never asks the shell, so an inherited KUBECONFIG
-    /// is never seen either. Blocking the first time (the shell is asked):
-    /// off the main thread.
-    package static func kubeconfigs(extra: [String]) -> [URL] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let overterm = env["OVERTERM_KUBECONFIG"]
-        let guarded = guardsKubeconfig
-        let hasOwn = !(overterm ?? "").trimmingCharacters(in: .whitespaces).isEmpty
-        let variable = guarded || hasOwn ? nil : ShellEnvironment.environment()["KUBECONFIG"]
-        return KubeconfigSources.paths(overterm: overterm, guarded: guarded, kubeconfig: variable, extra: extra, home: home)
-    }
 
     /// Whether Terraform must keep off the user's own — their terraform,
     /// shell environment, credentials, CLI config, plugin cache: an
@@ -274,18 +242,6 @@ package enum AppEnvironment {
     /// checkout and root, and the state identities seen production — names
     /// only, never a value. In the support directory, an isolated run's own.
     package static var terraformRootsFile: URL { supportDirectory.appendingPathComponent("terraform-roots.json") }
-
-    /// The environment Terraform's runs are built on (`TerraformEnvironment`):
-    /// the user's login shell's, so credential chains reach the providers
-    /// unchanged; in a guarded run, nothing of the user's — a scratch HOME
-    /// and CLI config, proxies at a dead port. Blocking the first time (the
-    /// shell is asked): off the main thread.
-    package static func terraformBaseEnvironment() throws -> [String: String] {
-        guard guardsTerraform else { return ShellEnvironment.environment() }
-        var environment = try TerraformGuards.prepareScratch(at: terraformScratchDirectory).environment
-        for (name, value) in TerraformCLI.scenarioEnvironment { environment[name] = value }
-        return environment
-    }
 
     /// Whether the user configures Terraform's CLI themselves, so the
     /// plugin cache isn't offered: `~/.terraformrc` checked for existence,

@@ -64,13 +64,13 @@ package final class Tab: ObservableObject, Identifiable {
 
     /// What its checkout deploys has failed (attention marks, 3.13): the
     /// newest first — Ask Why on the mark asks about the first.
-    @Published package var kubeAlerts: [KubeAttentionAlert] = []
+    @Published package var kubeAlertsStorage: [AnyHashable] = []
     /// Why its checkout's failures won't mark it now ("not watched");
     /// nil while they will, or nothing is bound.
     @Published package var kubeNotWatched: String?
     /// One of its panes asks for a Terraform write (TerraformPrompt, 3.3):
     /// its tab's mark and the Inbox's card; never answered by Overterm.
-    @Published package var terraformAsk: TerraformAsk?
+    @Published package var terraformAskStorage: Any?
     /// What an agent that sent no signal asks on one of its panes' screens
     /// (`AgentScreenCheck`), as last read; nil when nothing.
     package var screenAsk: String?
@@ -118,13 +118,16 @@ package final class Tab: ObservableObject, Identifiable {
             agent: agent, title: shellTitle, hasPort: !ports.isEmpty, pinned: kubeBadge != nil, terraform: terminals.contains { $0.terraformRoot != nil })
     }
 
-    /// The Kubernetes context the focused pane is pinned to — Terminal in
-    /// this context. A pane moved in from another tab keeps its own, so
-    /// the tab as a whole is `kubeBadge`.
-    package var kubePin: KubeTerminalPin? { terminal.kubePin }
+    /// What the strip says of the panes' contexts: one, `mixed`, or a lost
+    /// pin (Kubernetes' `Tab.kubeBadgeHook`).
+    package var kubeBadge: KubeTabBadge? { Tab.kubeBadgeOf?(self) }
 
-    /// What the strip says of the panes' contexts: one, `mixed`, or a lost pin.
-    package var kubeBadge: KubeTabBadge? { KubeTabBadge.of(terminals.map { KubeTabBadge.Pane(pin: $0.kubePin, lost: $0.kubePinLost) }) }
+    /// Kubernetes' reading of a tab's pins (`KubeTabBadge.of`).
+    package static var kubeBadgeOf: (@MainActor (Tab) -> KubeTabBadge?)? {
+        FeatureHooks.ensure()
+        return kubeBadgeHook
+    }
+    package nonisolated(unsafe) static var kubeBadgeHook: (@MainActor (Tab) -> KubeTabBadge?)?
 
     /// What the strip shows: the name you gave it, else the shell's title
     /// shortened to the folder itself. Shells (and themes) set the title to

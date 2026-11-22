@@ -23,6 +23,17 @@ package struct DiffPanelView: View {
     /// Commits whose message is shown.
     @State private var openCommits: Set<String> = []
 
+    package init(
+        model: DiffModel, theme: ChromeTheme, onClose: @escaping () -> Void, onDetach: @escaping () -> Void, onOpen: @escaping (URL) -> Void, onReview: @escaping (DiffModel.Scope) -> Void = { _ in }
+    ) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onClose = onClose
+        self.onDetach = onDetach
+        self.onOpen = onOpen
+        self.onReview = onReview
+    }
+
     /// Stage, discard and commit act on the index: only for uncommitted changes.
     private var editable: Bool { model.shownScope == .uncommitted }
     private var palette: DiffPalette { DiffPalette(text: theme.textNS) }

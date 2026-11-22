@@ -6,6 +6,12 @@ package struct Snippet: Codable, Identifiable, Equatable {
     package var name: String
     package var command: String
 
+    package init(id: UUID = UUID(), name: String, command: String) {
+        self.id = id
+        self.name = name
+        self.command = command
+    }
+
     /// Placeholder names in order of first appearance, without repeats.
     package var placeholders: [String] {
         var seen: [String] = []

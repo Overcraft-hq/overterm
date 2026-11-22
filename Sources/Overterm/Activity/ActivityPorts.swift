@@ -132,6 +132,48 @@ package struct ActivityPortRow: ResourceTableRow, Sendable {
     /// What a forward typed in a terminal reaches (6.8 rule 6, stage 4).
     package var target: String?
 
+    package init(
+        id: String, kind: Kind = Kind.listener, port: Int, proto: String, address: String, families: SocketRecord.Families, scope: ListeningPort.Scope, process: String, holder: ActivityProcessID?,
+        tab: UUID? = nil, tabTitle: String? = nil, url: URL? = nil, owner: String = "elsewhere", portOwner: ActivityPortOwner = ActivityPortOwner.elsewhere, ownerText: String = "",
+        whereText: String = "", coHolders: [ActivityProcessID] = [], since: Date? = nil, sinceText: String = "", clients: Int = 0, backlog: Int = 0, backlogLimit: Int = 0, forwardedBy: String? = nil,
+        note: String? = nil, collisions: [PortCollision.Kind] = [], bound: [ActivityAddress?] = [], sockets: Set<UInt64> = [], ephemeral: Bool = false, count: Int = 1, folded: Bool = false,
+        checkout: String? = nil, user: String? = nil, target: String? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.port = port
+        self.proto = proto
+        self.address = address
+        self.families = families
+        self.scope = scope
+        self.process = process
+        self.holder = holder
+        self.tab = tab
+        self.tabTitle = tabTitle
+        self.url = url
+        self.owner = owner
+        self.portOwner = portOwner
+        self.ownerText = ownerText
+        self.whereText = whereText
+        self.coHolders = coHolders
+        self.since = since
+        self.sinceText = sinceText
+        self.clients = clients
+        self.backlog = backlog
+        self.backlogLimit = backlogLimit
+        self.forwardedBy = forwardedBy
+        self.note = note
+        self.collisions = collisions
+        self.bound = bound
+        self.sockets = sockets
+        self.ephemeral = ephemeral
+        self.count = count
+        self.folded = folded
+        self.checkout = checkout
+        self.user = user
+        self.target = target
+    }
+
     package var height: CGFloat { 24 }
 
     /// A fold spans the columns.

@@ -120,6 +120,12 @@ package struct NotesIndex: Sendable {
         package var document: NoteDocument
         package var modified: Date
         package var isEvicted = false
+
+        package init(document: NoteDocument, modified: Date, isEvicted: Bool = false) {
+            self.document = document
+            self.modified = modified
+            self.isEvicted = isEvicted
+        }
     }
 
     /// A link into a note, from another.

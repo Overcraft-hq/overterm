@@ -94,8 +94,8 @@ package final class ChromeTheme: ObservableObject {
     // MARK: Charts
 
     /// The charts' ten categorical colours, the appearance's
-    /// (`KubeChartPalette`: each 3:1 at least against its card).
-    package var chartPalette: [Color] { (isDark ? KubeChartPalette.dark : KubeChartPalette.light).map(\.color) }
+    /// (`TimeChartPalette`: each 3:1 at least against its card).
+    package var chartPalette: [Color] { (isDark ? TimeChartPalette.dark : TimeChartPalette.light).map(\.color) }
 
     // MARK: Compatibility
     //
@@ -267,6 +267,10 @@ package final class ChromeTheme: ObservableObject {
 /// translucent window's ground. A view, so it follows the theme.
 package struct StripGround: View {
     @ObservedObject package var theme: ChromeTheme
+
+    package init(theme: ChromeTheme) {
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
 
     package var body: some View { theme.isTranslucent ? Color.clear : theme.strip }
 }

@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Settings ▸ About ▸ Acknowledgements says what this build ships: the list
 /// moves with the pins, or `Scripts/fetch-licenses.sh` is due.

@@ -22,6 +22,31 @@ package struct TabGroupActions {
     package var renameEnded: () -> Void = {}
     /// A press, drag or release on the chip (`StripPressView`).
     package var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
+
+    package init(
+        select: @escaping (TabGroup) -> Void, toggleCollapsed: @escaping (TabGroup) -> Void, rename: @escaping (TabGroup) -> Void, setColor: @escaping (TabGroup, TabColor) -> Void,
+        newTab: @escaping (TabGroup) -> Void, broadcast: @escaping (TabGroup) -> Void, closeIdle: @escaping (TabGroup) -> Void, focus: @escaping (TabGroup) -> Void,
+        stash: @escaping (TabGroup) -> Void, restore: @escaping (TabGroup) -> Void, ungroup: @escaping (TabGroup) -> Void, close: @escaping (TabGroup) -> Void,
+        setRestoresOnLaunch: @escaping (TabGroup, Bool) -> Void, peek: @escaping (TabGroup?) -> Void, renameEnded: @escaping () -> Void = {},
+        press: @escaping (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
+    ) {
+        self.select = select
+        self.toggleCollapsed = toggleCollapsed
+        self.rename = rename
+        self.setColor = setColor
+        self.newTab = newTab
+        self.broadcast = broadcast
+        self.closeIdle = closeIdle
+        self.focus = focus
+        self.stash = stash
+        self.restore = restore
+        self.ungroup = ungroup
+        self.close = close
+        self.setRestoresOnLaunch = setRestoresOnLaunch
+        self.peek = peek
+        self.renameEnded = renameEnded
+        self.press = press
+    }
 }
 
 /// One island: a chip with the group's name, then its tabs, all on a tint

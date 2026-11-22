@@ -4,6 +4,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The one signal path (docs/design/activity/analysis.md, 6.10, 9.6, 10.1,
 /// 10.2): the refusals made before any call that touches a process — an

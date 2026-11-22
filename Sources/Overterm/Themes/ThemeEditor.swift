@@ -10,6 +10,11 @@ package struct ThemeEditorView: View {
     package struct Target: Identifiable {
         package let entry: ThemeCatalog.Entry
         package let duplicate: Bool
+
+        package init(entry: ThemeCatalog.Entry, duplicate: Bool) {
+            self.entry = entry
+            self.duplicate = duplicate
+        }
         package var id: String { entry.id + (duplicate ? "+" : "") }
     }
 
@@ -21,6 +26,12 @@ package struct ThemeEditorView: View {
     @State private var name = ""
     @State private var colours: [String: Color] = [:]
     @State private var error: String?
+
+    package init(target: Target, theme: ChromeTheme, done: @escaping (String?) -> Void) {
+        self.target = target
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.done = done
+    }
 
     /// Each well: its key in the file and its label.
     package static let keys: [(key: String, label: String)] =

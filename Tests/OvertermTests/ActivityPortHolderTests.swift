@@ -4,6 +4,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Free :N on the page (docs/design/activity/analysis.md, 6.8, Free :N):
 /// each owner's own verb, its question, the command a service's stop or the

@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The meters' arithmetic (docs/design/activity/analysis.md, 3.8, 6.4): CPU
 /// a core between two reads — none for a first one, the counters' wrap at

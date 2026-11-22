@@ -4,6 +4,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The Activity page's keys, columns and live order (docs/design/activity/
 /// analysis.md, 6.3, 6.5, 6.7) over a fake Mac: the key table well formed,

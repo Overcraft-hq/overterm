@@ -11,6 +11,12 @@ package struct ActivityTerminalRequest: Equatable, Sendable {
     package var directory: String
     package var command: String?
     package var run = true
+
+    package init(directory: String, command: String? = nil, run: Bool = true) {
+        self.directory = directory
+        self.command = command
+        self.run = run
+    }
 }
 
 /// Where a link shows the page (6.12): Tab Info's header, the tab's menu
@@ -87,6 +93,36 @@ package struct ActivityPageActions {
     package var keep: @MainActor (ActivityProcessID) -> Void = { _ in }
     /// Stop All Certain in This Checkout… (6.9): one sheet listing each.
     package var stopAll: @MainActor (_ rows: [ActivityProcessRow], _ group: String) -> Void = { _, _ in }
+
+    package init(
+        goTo: @escaping @MainActor (UUID, String?) -> Void = { _, _ in }, open: @escaping @MainActor (URL, UUID?, Bool) -> Void = { _, _, _ in },
+        tabInfo: @escaping @MainActor (UUID) -> Void = { _ in }, overgit: @escaping @MainActor (UUID) -> Void = { _ in },
+        reveal: @escaping @MainActor (String) -> Void = { path in NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) },
+        sample: @escaping @MainActor (pid_t) -> Void = { _ in }, free: @escaping @MainActor (ActivityPortRow) -> Void = { _ in },
+        terminal: @escaping @MainActor (ActivityTerminalRequest) -> Void = { _ in }, act: @escaping @MainActor (ActivityVerb, ActivityProcessID) -> Void = { _, _ in },
+        chooseSignal: @escaping @MainActor (ActivityProcessID) -> Void = { _ in }, stop: @escaping @MainActor (ActivityProcessID) -> Void = { _ in },
+        lower: @escaping @MainActor (ActivityProcessID, ActivityNiceStep) -> Void = { _, _ in }, chooseLower: @escaping @MainActor (ActivityProcessID) -> Void = { _ in },
+        resumeAll: @escaping @MainActor () -> Void = {}, ask: @escaping @MainActor (ActivityBrief, UUID?) -> Void = { _, _ in }, keep: @escaping @MainActor (ActivityProcessID) -> Void = { _ in },
+        stopAll: @escaping @MainActor (_ rows: [ActivityProcessRow], _ group: String) -> Void = { _, _ in }
+    ) {
+        self.goTo = goTo
+        self.open = open
+        self.tabInfo = tabInfo
+        self.overgit = overgit
+        self.reveal = reveal
+        self.sample = sample
+        self.free = free
+        self.terminal = terminal
+        self.act = act
+        self.chooseSignal = chooseSignal
+        self.stop = stop
+        self.lower = lower
+        self.chooseLower = chooseLower
+        self.resumeAll = resumeAll
+        self.ask = ask
+        self.keep = keep
+        self.stopAll = stopAll
+    }
 }
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): its

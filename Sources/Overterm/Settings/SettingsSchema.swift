@@ -136,6 +136,12 @@ package struct SettingOption: Sendable {
     package let label: String
     /// For an `order`: the toggle that shows this one, if it can be hidden.
     package var toggle: String? = nil
+
+    package init(value: String, label: String, toggle: String? = nil) {
+        self.value = value
+        self.label = label
+        self.toggle = toggle
+    }
 }
 
 /// What a setting is, and so how Settings shows it and what the file may hold.
@@ -183,6 +189,13 @@ package struct SettingField: Sendable {
     package var help: String? = nil
     /// A record's field it must hold (`SettingKind.records`).
     package var required = false
+
+    package init(name: String, kind: SettingKind, help: String? = nil, required: Bool = false) {
+        self.name = name
+        self.kind = kind
+        self.help = help
+        self.required = required
+    }
 }
 
 package enum SettingSource: Sendable {
@@ -313,6 +326,19 @@ package struct SettingSpec: Identifiable, Sendable {
 
 /// Every setting, in the order Settings shows them.
 package enum SettingsSchema {
+    /// An entries setting's fields, its feature's to say
+    /// (`KubeContextSettings.fields`, `TerraformRootSettings.fields`): set
+    /// at install (`OvertermFeatures`).
+    package static func entryFields(_ key: String) -> [SettingField] {
+        FeatureHooks.ensure()
+        return entryFieldsStorage[key] ?? []
+    }
+    package nonisolated(unsafe) static var entryFieldsStorage: [String: [SettingField]] = [:]
+
+    /// The names that make a root production when its settings say
+    /// nothing (`TerraformClassifier.defaultPattern`).
+    package static let terraformDefaultProductionPattern = #"(^|[-_/.:@])(prod|prd|production|live)\d*([-_/.:@]|$)"#
+
     package static let all: [SettingSpec] =
         general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + terraform + activity + notifications
         + updates
@@ -818,7 +844,7 @@ package enum SettingsSchema {
             key: "kubernetes.contexts", section: .kubernetes, group: "Contexts", title: "Each context's own settings",
             help:
                 "By the context's name: its class (production, remote or local; unset, its name decides), writable (every class is unless it says false: writable false makes a context read-only, production included; production's changes are still asked, the destructive ones by name), its namespaces, and its saved queries (charts: your own Prometheus charts on a workload's Metrics tab).",
-            kind: .entries(SettingEntries(noun: "context", fields: KubeContextSettings.fields)), defaultValue: .entries([:]),
+            kind: .entries(SettingEntries(noun: "context", fields: entryFields("kubernetes.contexts"))), defaultValue: .entries([:]),
             requires: "kubernetes.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "kubernetes.pinnedContexts", section: .kubernetes, group: "Contexts", title: "Pinned contexts",
@@ -938,7 +964,7 @@ package enum SettingsSchema {
             key: "terraform.productionPattern", section: .terraform, group: "Production", title: "Production names",
             help:
                 "A regular expression matched against a root's workspace, path, backend bucket, key and organisation, var files, AWS_PROFILE and its providers' profile or project. Empty: prod, prd, production or live as a word, a number allowed after it. A state once production stays production.",
-            kind: .text(placeholder: TerraformClassifier.defaultPattern, monospaced: true), defaultValue: .string(""), requires: "terraform.enabled",
+            kind: .text(placeholder: terraformDefaultProductionPattern, monospaced: true), defaultValue: .string(""), requires: "terraform.enabled",
             heldWhenEditedOutside: true),
         SettingSpec(
             key: "terraform.productionAccounts", section: .terraform, group: "Production", title: "Production AWS accounts",
@@ -948,7 +974,7 @@ package enum SettingsSchema {
             key: "terraform.roots", section: .terraform, group: "Roots", title: "Each root's own settings",
             help:
                 "By the root's path in its repository (envs/prod): a display name; a class — production or remote — that can only raise what the names say, never lower it; writable — every root is unless it says false: writable false makes a root plan-only, production included (production's applies are still asked, with the root's name typed). An agent's test with real providers runs on a remote root only where writable is set true.",
-            kind: .entries(SettingEntries(noun: "root", fields: TerraformRootSettings.fields)), defaultValue: .entries([:]),
+            kind: .entries(SettingEntries(noun: "root", fields: entryFields("terraform.roots"))), defaultValue: .entries([:]),
             requires: "terraform.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "terraform.newWorktreeInit", section: .terraform, group: "Worktrees", title: "Initialise a new task's roots for validate",

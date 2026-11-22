@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Elasticsearch and OpenSearch: the console's requests, the checks, the
 /// answers as rows, the catalog, a pasted address — pure, always run.

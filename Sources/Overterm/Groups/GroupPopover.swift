@@ -18,6 +18,13 @@ package struct GroupPopover: View {
     package let folder: String?
     package let done: () -> Void
 
+    package init(group: TabGroup, theme: ChromeTheme, folder: String?, done: @escaping () -> Void) {
+        self._group = ObservedObject(wrappedValue: group)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.folder = folder
+        self.done = done
+    }
+
     private var folderName: String {
         folder.map { ($0 as NSString).abbreviatingWithTildeInPath } ?? ""
     }

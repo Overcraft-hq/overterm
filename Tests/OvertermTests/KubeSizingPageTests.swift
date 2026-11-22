@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Sizing on a pod's Metrics tab (docs/design/kubernetes/metrics.md 2.10;
 /// stage M10), the page over `FakeKubeAPI` and its fake Prometheus (the

@@ -4,6 +4,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Activity's agents' reads (docs/design/activity/analysis.md, 8.2–8.5,
 /// D-18) over a fake Mac: an agent in acme-web's first tab asks. Inside its

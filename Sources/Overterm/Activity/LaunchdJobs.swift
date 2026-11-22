@@ -21,6 +21,10 @@ package enum LaunchdJobs {
     package struct Job: Hashable, Sendable {
         package let label: String
 
+        package init(label: String) {
+            self.label = label
+        }
+
         /// `homebrew.mxcl.postgresql@16` → `postgresql@16`.
         package var formula: String? {
             let prefix = "homebrew.mxcl."

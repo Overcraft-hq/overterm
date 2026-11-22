@@ -9,6 +9,8 @@ import Foundation
 /// same way and submits on the same Return — which is why the bar says so.
 @MainActor
 package final class BroadcastModel: ObservableObject {
+    package init() {}
+
     @Published package private(set) var group: TabGroup?
     @Published package private(set) var targets: [Tab] = []
     @Published package var text: String = ""

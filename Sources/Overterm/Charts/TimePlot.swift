@@ -128,6 +128,13 @@ package struct TimeChartBand: Equatable, Sendable, Identifiable {
     package var title: String
     package var start: Date
     package var end: Date
+
+    package init(id: String, title: String, start: Date, end: Date) {
+        self.id = id
+        self.title = title
+        self.start = start
+        self.end = end
+    }
 }
 
 /// One point of a series: Kubernetes' answers' (`KubeSeriesPoint`) and
@@ -135,6 +142,11 @@ package struct TimeChartBand: Equatable, Sendable, Identifiable {
 package struct TimeChartPoint: Equatable, Sendable {
     package var time: Date
     package var value: Double
+
+    package init(time: Date, value: Double) {
+        self.time = time
+        self.value = value
+    }
 }
 
 /// One series: its points in time order, broken where they are more than
@@ -150,6 +162,15 @@ package struct TimeChartSeries: Equatable, Sendable, Identifiable {
     /// Hidden until its legend item is clicked (C2's RSS): never in the
     /// chart's totals.
     package var offByDefault = false
+
+    package init(id: String, name: String, role: TimeChartRole = .usage, points: [TimeChartPoint], breaks: Set<Date> = [], offByDefault: Bool = false) {
+        self.id = id
+        self.name = name
+        self.role = role
+        self.points = points
+        self.breaks = breaks
+        self.offByDefault = offByDefault
+    }
 }
 
 /// What one chart shows: its series over a window, in one unit.
@@ -191,6 +212,32 @@ package struct TimeChartData: Equatable, Sendable {
     /// `kubernetes`, `activity`.
     package var scope = "kubernetes"
 
+    package init(
+        id: String, title: String, unit: TimeChartUnit, series: [TimeChartSeries], start: Date, end: Date, step: TimeInterval, stacked: Bool = false, source: String = "", tier: String? = nil,
+        version: Int = 0, markers: [KubeChartMarker] = [], breaksMarked: Bool = false, bands: [TimeChartBand] = [], stepped: Bool = false, earlierMarkers: Int = 0, markerNote: String? = nil,
+        queries: [KubeChartQuery] = [], scope: String = "kubernetes"
+    ) {
+        self.id = id
+        self.title = title
+        self.unit = unit
+        self.series = series
+        self.start = start
+        self.end = end
+        self.step = step
+        self.stacked = stacked
+        self.source = source
+        self.tier = tier
+        self.version = version
+        self.markers = markers
+        self.breaksMarked = breaksMarked
+        self.bands = bands
+        self.stepped = stepped
+        self.earlierMarkers = earlierMarkers
+        self.markerNote = markerNote
+        self.queries = queries
+        self.scope = scope
+    }
+
     package var identifier: String { scope + ".chart." + id }
     /// The markers inside the window: the ones drawn.
     package var shownMarkers: [KubeChartMarker] { markers.filter { $0.time >= start && $0.time <= end } }
@@ -219,6 +266,14 @@ package struct TimePlot: Sendable {
         package var height: Int
         package var hidden: Set<String>
         package var hideReferences: Bool
+
+        package init(version: Int, width: Int, height: Int, hidden: Set<String>, hideReferences: Bool) {
+            self.version = version
+            self.width = width
+            self.height = height
+            self.hidden = hidden
+            self.hideReferences = hideReferences
+        }
     }
 
     package struct Line: Sendable {

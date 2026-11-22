@@ -4,6 +4,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Stage 3b's tab context and kubectl helpers (docs/design/kubernetes/analysis.md,
 /// 3.11, 2.8, 2.11, decision 18): the pane-header warning's context resolution

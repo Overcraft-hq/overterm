@@ -9,6 +9,8 @@ import Foundation
 /// and the context around it across in one step.
 @MainActor
 package final class AskAgentModel: ObservableObject {
+    package init() {}
+
     /// Where the text can go.
     package struct Target: Identifiable, Equatable {
         /// Nil means "a new agent tab in this folder".
@@ -17,6 +19,14 @@ package final class AskAgentModel: ObservableObject {
         package let detail: String
         package let color: TabColor?
         package let agent: Agent?
+
+        package init(id: Tab.ID?, title: String, detail: String, color: TabColor?, agent: Agent?) {
+            self.id = id
+            self.title = title
+            self.detail = detail
+            self.color = color
+            self.agent = agent
+        }
     }
 
     /// What goes along with the selection. Each is only offered when there
@@ -34,6 +44,12 @@ package final class AskAgentModel: ObservableObject {
         package let title: String
         package let text: String
         package var on = true
+
+        package init(title: String, text: String, on: Bool = true) {
+            self.title = title
+            self.text = text
+            self.on = on
+        }
 
         package var id: String { title }
     }

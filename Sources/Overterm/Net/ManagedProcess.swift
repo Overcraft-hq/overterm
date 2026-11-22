@@ -36,6 +36,20 @@ package final class ManagedProcess: @unchecked Sendable {
         /// run's `OVERTERM_RUN` (docs/design/activity/analysis.md, D-15).
         package var helper: OvertermRun.Helper = .managed
 
+        package init(
+            executable: URL, arguments: [String], environment: [String: String]? = nil, directory: URL? = nil, readiness: Readiness, timeout: TimeInterval = 20, removing: [String] = [],
+            helper: OvertermRun.Helper = .managed
+        ) {
+            self.executable = executable
+            self.arguments = arguments
+            self.environment = environment
+            self.directory = directory
+            self.readiness = readiness
+            self.timeout = timeout
+            self.removing = removing
+            self.helper = helper
+        }
+
         /// The environment it is started with: the launch's, or this
         /// process's, marked as this run's `helper`.
         package var markedEnvironment: [String: String] {

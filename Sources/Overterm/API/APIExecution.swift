@@ -45,6 +45,23 @@ package enum APIExecution {
         package var stop = false
         package var skipped = false
 
+        package init(
+            plan: APIRequestPlan? = nil, response: APIResponse? = nil, error: String? = nil, tests: [APITestResult] = [], logs: [APILogLine] = [], runtime: [String: String] = [:],
+            runtimeJSON: [String: String] = [:], environment: [String: String] = [:], nextRequest: String? = nil, stop: Bool = false, skipped: Bool = false
+        ) {
+            self.plan = plan
+            self.response = response
+            self.error = error
+            self.tests = tests
+            self.logs = logs
+            self.runtime = runtime
+            self.runtimeJSON = runtimeJSON
+            self.environment = environment
+            self.nextRequest = nextRequest
+            self.stop = stop
+            self.skipped = skipped
+        }
+
         package var passed: Int { tests.filter(\.passed).count }
         package var failed: Int { tests.count - passed }
         /// Sent, answered below 400, and every test passed.

@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Drain, rollback and debug in a tab (stage 2a, part 3): the commands'
 /// lines — `--context` and `-n` always, quoted for zsh —, the process

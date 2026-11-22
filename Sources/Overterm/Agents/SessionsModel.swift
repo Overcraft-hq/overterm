@@ -4,6 +4,8 @@ import Foundation
 /// worktrees, newest first, and which of them are running in a tab now.
 @MainActor
 package final class SessionsModel: ObservableObject {
+    package init() {}
+
     @Published package private(set) var sessions: [ClaudeSession] = []
     /// Session id → the tab it is running in.
     @Published package private(set) var running: [String: Tab.ID] = [:]

@@ -28,6 +28,22 @@ package struct ResourceVerb: Identifiable {
     package var note: String?
     package var perform: @MainActor () -> Void = {}
 
+    package init(
+        title: String, label: String? = nil, symbol: String, place: Place = .more, key: String? = nil, unavailable: String? = nil, group: Int = 0, children: [ResourceVerb] = [], note: String? = nil,
+        perform: @escaping @MainActor () -> Void = {}
+    ) {
+        self.title = title
+        self.label = label
+        self.symbol = symbol
+        self.place = place
+        self.key = key
+        self.unavailable = unavailable
+        self.group = group
+        self.children = children
+        self.note = note
+        self.perform = perform
+    }
+
     package var id: String { title }
 
     package var help: String {
@@ -50,6 +66,13 @@ package struct ResourceActionBar: View {
 
     /// What the accessibility tree calls the bar; its ⋯ is `<this>.more`.
     package var identifier = "docker.actions"
+
+    package init(verbs: [ResourceVerb], theme: ChromeTheme, words: Int? = nil, identifier: String = "docker.actions") {
+        self.verbs = verbs
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.words = words
+        self.identifier = identifier
+    }
 
     package var body: some View {
         Group {
@@ -142,6 +165,10 @@ package struct ResourceActionBar: View {
 package struct ResourceVerbMenu: View {
     package let verbs: [ResourceVerb]
 
+    package init(verbs: [ResourceVerb]) {
+        self.verbs = verbs
+    }
+
     package var body: some View {
         ResourceVerbItems(verbs: verbs.filter { $0.place == .button })
         let more = verbs.filter { $0.place == .more }
@@ -229,6 +256,10 @@ package final class ResourceVerbMenuItem: NSMenuItem {
 /// pointer's hover and tooltips go through to the view under it.
 package struct ResourceVerbMenuArea: NSViewRepresentable {
     package let verbs: @MainActor () -> [ResourceVerb]
+
+    package init(verbs: @escaping @MainActor () -> [ResourceVerb]) {
+        self.verbs = verbs
+    }
 
     package func makeNSView(context: Context) -> ResourceVerbMenuView { ResourceVerbMenuView(verbs: verbs) }
 

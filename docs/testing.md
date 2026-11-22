@@ -133,7 +133,7 @@ which skips itself when nothing answers there.
 ### Docker
 
 `DockerTransportTests`, `DockerModelTests` and the `docker` scenario talk to `FakeDockerEngine`
-(`Sources/Overterm/Docker/`): Docker's Engine API on a unix socket of its
+(`Sources/OvertermDocker/`): Docker's Engine API on a unix socket of its
 own in `/tmp` (a socket's path must stay under 104 bytes), with containers,
 images, volumes and networks held as values, events sent as the engine
 sends them, logs framed, files as tar. Nothing touches your Docker.
@@ -235,7 +235,7 @@ does: without them a namespace's chart grouped its pods by their names
 until the rows came and by pod after — the check passed or not by timing.
 
 The unit tests and the `kubernetes` scenarios talk to `FakeKubeAPI`
-(`Sources/Overterm/Kubernetes/`), with the real kubectl as its proxy where
+(`Sources/OvertermKubernetes/`), with the real kubectl as its proxy where
 one is installed, through kubeconfigs of their own. This Mac's
 `~/.kube/config` has real clusters and its current context is production:
 no test reads it, and an isolated run sees no kubeconfig but
@@ -810,7 +810,7 @@ and `task_name_for_pid` answer under that signing — and `OVERTERM_E2E=
 splits`, whose `E2E INFO` line counts netstat's rows in a pane, 0 under ad
 hoc signing.
 
-## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
+## End-to-end — `Sources/OvertermShell/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
 scenario inside the app and prints `E2E PASS|FAIL <check>` lines, then

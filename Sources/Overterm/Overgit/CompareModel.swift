@@ -7,6 +7,8 @@ import Foundation
 /// against the merge base, so `base` moving on doesn't show as removals.
 @MainActor
 package final class CompareModel: ObservableObject {
+    package init() {}
+
     package enum Phase: Equatable {
         case idle, loading, loaded
         case failed(String)

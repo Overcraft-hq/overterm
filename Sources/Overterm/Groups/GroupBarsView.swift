@@ -12,6 +12,18 @@ package struct GroupBarsView: View {
     package let onStopBroadcast: () -> Void
     package let onLeaveFocus: () -> Void
 
+    package init(
+        broadcast: BroadcastModel, focus: GroupFocus, store: TabStore, theme: ChromeTheme, onSend: @escaping () -> Void, onStopBroadcast: @escaping () -> Void, onLeaveFocus: @escaping () -> Void
+    ) {
+        self._broadcast = ObservedObject(wrappedValue: broadcast)
+        self._focus = ObservedObject(wrappedValue: focus)
+        self._store = ObservedObject(wrappedValue: store)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onSend = onSend
+        self.onStopBroadcast = onStopBroadcast
+        self.onLeaveFocus = onLeaveFocus
+    }
+
     /// The host fills the terminal column (it must not get a say in how
     /// wide that column is); the bars sit at its bottom, and the space
     /// above them stays out of the way of the terminal.

@@ -4,6 +4,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The light tick's consumers from a fake census (docs/design/activity/
 /// analysis.md, 7.8's agent-poll row): what a tab's panes listen on, each

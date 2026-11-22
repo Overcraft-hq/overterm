@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 final class RefsTests: XCTestCase {
     private func line(_ refname: String, _ sha: String, _ upstream: String, _ track: String, _ at: String, _ subject: String) -> String {

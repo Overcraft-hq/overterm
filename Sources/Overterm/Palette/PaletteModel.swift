@@ -34,11 +34,28 @@ package struct PaletteItem: Identifiable {
     package var placeholders: [String] = []
     /// `run`: Return (true) vs ⌥Return (false). Snippets and history care.
     package let perform: @MainActor (_ run: Bool, _ values: [String: String]) -> Void
+
+    package init(
+        id: String, group: Group, title: String, subtitle: String?, symbol: String, detail: String? = nil, failed: Bool? = nil, placeholders: [String] = [],
+        perform: @escaping @MainActor (_ run: Bool, _ values: [String: String]) -> Void
+    ) {
+        self.id = id
+        self.group = group
+        self.title = title
+        self.subtitle = subtitle
+        self.symbol = symbol
+        self.detail = detail
+        self.failed = failed
+        self.placeholders = placeholders
+        self.perform = perform
+    }
 }
 
 /// The palette's query, its ranked results and the highlighted one.
 @MainActor
 package final class PaletteModel: ObservableObject {
+    package init() {}
+
     @Published package var query = "" {
         didSet { rank() }
     }

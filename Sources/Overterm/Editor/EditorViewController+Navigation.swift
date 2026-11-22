@@ -5,6 +5,11 @@ package struct NavigationHistory {
     package struct Entry: Equatable {
         package let url: URL
         package let location: Int
+
+        package init(url: URL, location: Int) {
+            self.url = url
+            self.location = location
+        }
     }
 
     package private(set) var back: [Entry] = []
@@ -40,6 +45,14 @@ package struct EditorSymbol {
     package let range: NSRange
     package let selection: NSRange
     package let depth: Int
+
+    package init(name: String, kind: String, range: NSRange, selection: NSRange, depth: Int) {
+        self.name = name
+        self.kind = kind
+        self.range = range
+        self.selection = selection
+        self.depth = depth
+    }
 }
 
 extension EditorViewController {
@@ -192,8 +205,7 @@ extension EditorViewController {
     }
 
     private func loadTags(_ buffer: EditorBuffer, _ done: @escaping ([EditorSymbol]) -> Void) {
-        if buffer.terraform != nil {
-            let symbols = terraformSymbols(buffer)
+        if let symbols = Self.hooks.symbols.firstAnswer({ $0(self, buffer) }) {
             if buffer === active { currentSymbols = symbols }
             return done(symbols)
         }
@@ -250,7 +262,7 @@ extension EditorViewController {
 
     package func goToDefinition(at index: Int) {
         // Terraform without terraform-ls: the module's own index.
-        if let buffer = active, buffer.terraform != nil, server(for: buffer) == nil { return terraformDefinition(at: index) }
+        if let buffer = active, server(for: buffer) == nil, Self.hooks.definition.contains(where: { $0(self, buffer, index) }) { return }
         guard let buffer = active, let server = server(for: buffer), let url = buffer.url else { return NSSound.beep() }
         flushServerChange(buffer)
         let position = lspPosition(of: index)
@@ -354,23 +366,12 @@ extension EditorViewController {
             popover.show(relativeTo: rect, of: self.textView, preferredEdge: .maxY)
             self.hover = popover
         }
-        // A Kubernetes manifest's field: the cluster's own docs first (3.15).
-        if let manifest = buffer.kubeManifest, Settings.shared.kubernetesEnabled {
-            let version = buffer.version
-            let text = buffer.storage.string
-            Task { [weak self] in
-                // The mouse resting there asks nothing that signs in or closes a proxy.
-                let found = await manifest.fieldHover(at: index, in: text, unasked: !fromKeyboard)
-                guard let self, buffer.version == version, buffer === self.active else { return }
-                self.refreshKubeFieldMarks(buffer)
-                guard let found else {
-                    return self.serverHover(buffer, at: index, anchor: anchor, problems: problems, fromKeyboard: fromKeyboard, present: present)
-                }
-                guard fromKeyboard || self.mouseIsStill(over: anchor, index) else { return }
-                present(found.text)
-            }
-            return
+        // A feature's own answer first: a manifest's field, its cluster's docs (3.15).
+        let fallback: @MainActor () -> Void = { [weak self] in
+            self?.serverHover(buffer, at: index, anchor: anchor, problems: problems, fromKeyboard: fromKeyboard, present: present)
         }
+        let still: @MainActor () -> Bool = { [weak self] in fromKeyboard || self?.mouseIsStill(over: anchor, index) == true }
+        if Self.hooks.hover.contains(where: { $0(self, buffer, index, !fromKeyboard, fallback, still, present) }) { return }
         serverHover(buffer, at: index, anchor: anchor, problems: problems, fromKeyboard: fromKeyboard, present: present)
     }
 

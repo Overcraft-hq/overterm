@@ -203,6 +203,9 @@ extension ActivityKernel {
 package struct LiveActivityKernel: ActivityKernel {
     package let uid = getuid()
 
+    package init() {
+    }
+
     package func uptime() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
 
     package func continuousTime() -> UInt64 { clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) }
@@ -523,6 +526,27 @@ package final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         package var session: pid_t?
         /// The process macOS holds responsible for it (D-31); nil: its own.
         package var responsible: pid_t?
+
+        package init(
+            record: ActivityProcess, usage: ActivityUsage? = nil, name: String? = nil, path: String? = nil, codeSigning: ActivityCodeSigning? = nil, arguments: [UInt8]? = nil,
+            argumentsAfterExec: [UInt8]? = nil, descriptors: [proc_fdinfo] = [], sockets: [Int32: socket_fdinfo] = [:], folder: String? = nil, files: [Int32: String] = [:], image: UInt32 = 0,
+            session: pid_t? = nil, responsible: pid_t? = nil
+        ) {
+            self.record = record
+            self.usage = usage
+            self.name = name
+            self.path = path
+            self.codeSigning = codeSigning
+            self.arguments = arguments
+            self.argumentsAfterExec = argumentsAfterExec
+            self.descriptors = descriptors
+            self.sockets = sockets
+            self.folder = folder
+            self.files = files
+            self.image = image
+            self.session = session
+            self.responsible = responsible
+        }
     }
 
     /// A signal the fake was asked to send.

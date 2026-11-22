@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The Metrics tab of a workload, an HPA, a node and a namespace, sampled
 /// (docs/design/kubernetes/metrics.md, 2.5–2.8; stage M3b): what the

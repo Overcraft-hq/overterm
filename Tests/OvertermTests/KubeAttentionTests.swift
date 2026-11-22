@@ -3,6 +3,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Attention marks (docs/design/kubernetes/analysis.md, 3.13): what marks
 /// a bound checkout's tab and what clears it (`KubeAttention`, pure), the

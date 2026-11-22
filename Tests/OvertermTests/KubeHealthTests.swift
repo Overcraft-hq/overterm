@@ -4,6 +4,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Health checks (docs/design/kubernetes/analysis.md, 3.9), the pinned
 /// contexts' health view (decision 17) and diff across contexts (3.10):

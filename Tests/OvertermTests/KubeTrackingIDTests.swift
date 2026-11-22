@@ -2,6 +2,11 @@ import XCTest
 
 @testable import Overterm
 @testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Argo CD's tracking id read as Argo CD reads it, and counted only on the
 /// object it names (docs/design/kubernetes/gitops.md, 14.1, 14.6): its

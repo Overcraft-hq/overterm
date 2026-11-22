@@ -177,9 +177,6 @@ package enum AgentLaunchFiles {
         return facts
     }
 
-    /// Gemini's Terraform deny policy (`TerraformAgentGuard.geminiPolicy`).
-    package static func geminiPolicy() -> String? { write("gemini-terraform-deny.toml", TerraformAgentGuard.geminiPolicy) }
-
     /// Whether an administrator's Gemini policies are in place.
     package static func geminiAdminPoliciesDefined(at folder: String = geminiSystemPolicies) -> Bool {
         ((try? FileManager.default.contentsOfDirectory(atPath: folder)) ?? []).contains { $0.hasSuffix(".toml") }

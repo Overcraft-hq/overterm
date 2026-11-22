@@ -8,6 +8,9 @@ import AppKit
 /// button; what was typed goes back for the caller to check.
 @MainActor
 package struct WriteConfirmation {
+    /// How a production scope begins, wherever one is asked.
+    package nonisolated static let productionMark = "PRODUCTION · "
+
     package var title: String
     /// The context and namespace (or another scope) the write changes;
     /// nil when there is none to say.
@@ -27,6 +30,22 @@ package struct WriteConfirmation {
     /// the agent, "asked through MCP". `ask(on:)` fills it in for a call.
     package var asker: String? = nil
 
+    package init(
+        title: String, scope: String? = nil, production: Bool = false, detail: String, button: String, cancel: String = "Cancel", typedName: String? = nil, image: String? = nil,
+        critical: Bool = false, asker: String? = nil
+    ) {
+        self.title = title
+        self.scope = scope
+        self.production = production
+        self.detail = detail
+        self.button = button
+        self.cancel = cancel
+        self.typedName = typedName
+        self.image = image
+        self.critical = critical
+        self.asker = asker
+    }
+
     /// Production's colour, as the Kubernetes page draws it.
     package static let productionRed = NSColor(srgbRed: 0.86, green: 0.17, blue: 0.17, alpha: 1)
     /// The asker's line's identifier, for the scenario.
@@ -42,7 +61,7 @@ package struct WriteConfirmation {
     /// fake-prod · namespace shop"): that line as the scope, drawn red.
     package static func splittingProduction(title: String, detail: String, button: String) -> WriteConfirmation {
         let lines = detail.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
-        guard let first = lines.first, first.hasPrefix(KubeWriteConfirmation.productionMark) else {
+        guard let first = lines.first, first.hasPrefix(WriteConfirmation.productionMark) else {
             return WriteConfirmation(title: title, detail: detail, button: button)
         }
         return WriteConfirmation(
@@ -167,4 +186,19 @@ package struct WriteConfirmation {
         }
         return response == .alertFirstButtonReturn ? field?.stringValue ?? "" : nil
     }
+}
+
+/// What a write's confirmation answered, once its button was pressed: the
+/// name typed ("" when none was asked), and the image field's text where
+/// it had one. A string literal is a typed name alone.
+package struct KubeWriteAnswer: Equatable, Sendable, ExpressibleByStringLiteral {
+    package var typed: String
+    package var image: String?
+
+    package init(typed: String, image: String? = nil) {
+        self.typed = typed
+        self.image = image
+    }
+
+    package init(stringLiteral value: String) { self.init(typed: value) }
 }

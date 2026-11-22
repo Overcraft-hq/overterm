@@ -33,6 +33,15 @@ package struct ResourceColumn: Equatable, Sendable {
     /// Help over its title.
     package var help: String? = nil
 
+    package init(id: String, title: String, width: CGFloat = 120, minWidth: CGFloat = 40, sortable: Bool = true, help: String? = nil) {
+        self.id = id
+        self.title = title
+        self.width = width
+        self.minWidth = minWidth
+        self.sortable = sortable
+        self.help = help
+    }
+
     /// The one column of a list whose rows draw everything themselves.
     package static let row = ResourceColumn(id: "row", title: "", sortable: false)
 }
@@ -54,6 +63,11 @@ package enum ResourceTableInteraction: Equatable, Sendable {
 package struct ResourceSort: Equatable, Sendable {
     package var column: String
     package var ascending = true
+
+    package init(column: String, ascending: Bool = true) {
+        self.column = column
+        self.ascending = ascending
+    }
 
     /// The order after a click on `column`'s title: by it, ascending; the
     /// same column clicked again, the other way.

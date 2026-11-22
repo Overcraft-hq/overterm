@@ -422,6 +422,11 @@ package final class Keybindings: ObservableObject {
     package struct Entry: Equatable {
         package let key: String
         package let command: String
+
+        package init(key: String, command: String) {
+            self.key = key
+            self.command = command
+        }
     }
 
     package let url: URL

@@ -70,6 +70,8 @@ package enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
 /// What the Settings page shows.
 @MainActor
 package final class SettingsPageModel: ObservableObject {
+    package init() {}
+
     package enum Mode: String { case ui, json }
 
     @Published package var section: SettingsSection = .general
@@ -119,6 +121,13 @@ package struct SettingsPageView: View {
     @ObservedObject package var settings: Settings
     @ObservedObject package var keybindings: Keybindings
     @ObservedObject package var theme: ChromeTheme
+
+    package init(model: SettingsPageModel, settings: Settings, keybindings: Keybindings, theme: ChromeTheme) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._settings = ObservedObject(wrappedValue: settings)
+        self._keybindings = ObservedObject(wrappedValue: keybindings)
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
 
     package var body: some View {
         HStack(spacing: 0) {

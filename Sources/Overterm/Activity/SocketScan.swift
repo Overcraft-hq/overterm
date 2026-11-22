@@ -247,6 +247,14 @@ package struct SocketScan: Sendable {
         var passedAt = Int.min / 2
         /// The tick a bounded process's listeners were last read.
         var listenersReadAt = Int.min / 2
+
+        package init(descriptors: Int = -1, records: [Int32: SocketRecord] = [:], unixDescriptors: Set<Int32> = [], next: Int32 = 0, pending: Int = 0) {
+            self.descriptors = descriptors
+            self.records = records
+            self.unixDescriptors = unixDescriptors
+            self.next = next
+            self.pending = pending
+        }
     }
 
     private var states: [ActivityProcessID: State] = [:]

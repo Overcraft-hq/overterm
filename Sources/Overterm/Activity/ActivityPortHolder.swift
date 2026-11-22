@@ -170,31 +170,31 @@ package enum ActivityPortHolder {
     /// asks it; nil for a refusal, which asks nothing.
     package static func question(_ step: Step, row: ActivityPortRow, uid: uid_t = getuid()) -> ActivityPortFree.Question? {
         let port = row.port
-        let holder = row.holder.map { "\(DockerMCP.displayed(row.process)) (pid \($0.pid))" }
+        let holder = row.holder.map { "\(VisibleText.displayed(row.process)) (pid \($0.pid))" }
         switch step {
         case .stopContainer(let name, let project):
             var question = ActivityPortFree.containerQuestion(name, port: port)
             question.scope =
-                ([project.map { "compose project \(DockerMCP.displayed($0))" }, row.checkout.map { "checkout \(DockerMCP.displayed($0))" }]
+                ([project.map { "compose project \(VisibleText.displayed($0))" }, row.checkout.map { "checkout \(VisibleText.displayed($0))" }]
                 .compactMap { $0 }).joined(separator: " · ")
             if question.scope?.isEmpty == true { question.scope = nil }
             return question
         case .stopForward(let pid, let target):
             return ActivityPortFree.Question(
-                title: "Stop the forward to \(DockerMCP.displayed(target))?", scope: row.tabTitle.map { "from tab “\(DockerMCP.displayed($0))”" },
+                title: "Stop the forward to \(VisibleText.displayed(target))?", scope: row.tabTitle.map { "from tab “\(VisibleText.displayed($0))”" },
                 detail: "Overterm's own kubectl port-forward (pid \(pid)) holds :\(port). Stop Forward ends it and frees the port; the pods aren't touched.",
                 button: "Stop Forward")
         case .disconnect(let name, let pid):
             return ActivityPortFree.Question(
-                title: "Disconnect “\(DockerMCP.displayed(name))”?",
+                title: "Disconnect “\(VisibleText.displayed(name))”?",
                 detail: "Its ssh tunnel (pid \(pid)) holds :\(port). Disconnect closes the connection and its tunnel, as the Database's Disconnect does.",
                 button: "Disconnect")
         case .stopService(let job):
             let command = command(step, port: port, proto: row.proto, uid: uid) ?? ""
             return ActivityPortFree.Question(
-                title: "\(DockerMCP.displayed(job.label)) holds :\(port) — stop the service?", scope: holder,
+                title: "\(VisibleText.displayed(job.label)) holds :\(port) — stop the service?", scope: holder,
                 detail:
-                    "A service launchd keeps running: a SIGTERM would only see it started again. Its own stop is typed and run in a new tab:\n\(DockerMCP.displayed(command))",
+                    "A service launchd keeps running: a SIGTERM would only see it started again. Its own stop is typed and run in a new tab:\n\(VisibleText.displayed(command))",
                 button: "Stop the Service")
         case .airPlay:
             return ActivityPortFree.Question(
@@ -204,7 +204,7 @@ package enum ActivityPortHolder {
                 button: "Open System Settings")
         case .readRoute(let user):
             let command = command(step, port: port, proto: row.proto, uid: uid) ?? ""
-            let owner = user.isEmpty ? "another user" : DockerMCP.displayed(user)
+            let owner = user.isEmpty ? "another user" : VisibleText.displayed(user)
             return ActivityPortFree.Question(
                 title: "Owned by \(owner): Overterm doesn't signal it", scope: holder,
                 detail:
@@ -235,7 +235,7 @@ package enum ActivityPortHolder {
         if holders.contains(listed) { return nil }
         if let now = holders.min(by: { $0.start < $1.start }) {
             let name = snapshot.name(of: now) ?? snapshot.table.process(now)?.shortName ?? "a process"
-            return ":\(row.port) is now held by \(DockerMCP.displayed(name)) (pid \(now.pid)): nothing was asked — free it again to be asked about what it is now."
+            return ":\(row.port) is now held by \(VisibleText.displayed(name)) (pid \(now.pid)): nothing was asked — free it again to be asked about what it is now."
         }
         return ":\(row.port) is free now: nothing was asked, nothing done."
     }
@@ -346,14 +346,14 @@ extension ActivityPortHolder {
             lines.insert("It holds \(port).", at: 0)
         } else {
             lines.insert(
-                "It runs “\(DockerMCP.displayed(plan.holderName))” (pid \(plan.holder.pid)), which holds \(port): the write is interrupted, never what it runs.",
+                "It runs “\(VisibleText.displayed(plan.holderName))” (pid \(plan.holder.pid)), which holds \(port): the write is interrupted, never what it runs.",
                 at: 0)
         }
         if !plan.others.isEmpty {
             lines.append("Also holding \(port) — a Free ends none of them, and the port stays open until each has ended:")
             lines += plan.others.map { other in
                 let how = other.sharesSocket ? "the same socket, inherited" : "a socket of its own"
-                return "  pid \(other.identity.pid) \(DockerMCP.displayed(other.name)) — \(how)"
+                return "  pid \(other.identity.pid) \(VisibleText.displayed(other.name)) — \(how)"
             }
         }
         if let equals { lines.append(equals) }
