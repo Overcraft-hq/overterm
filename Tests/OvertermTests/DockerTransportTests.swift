@@ -167,7 +167,10 @@ final class DockerTransportTests: XCTestCase {
             task.cancel()
             _ = await task.result
         }
-        try await waitUntil { $0.openStreams == 0 }
+        // Each connection is closed whenever it arrives, which on a busy
+        // runner (three test processes on three cores) can be seconds
+        // after its task went: the count only has to come down.
+        try await waitUntil({ $0.openStreams == 0 }, timeout: .seconds(15))
         let containers = try await engine.containers()
         XCTAssertEqual(containers.count, 1)
     }
