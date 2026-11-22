@@ -1281,7 +1281,7 @@ package final class E2ERunner {
 
         // The fake server, for Go only: the problems, completions, symbols.
         let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .appendingPathComponent("../../../Tests/OvertermTests/Fixtures/fake-lsp.py").standardizedFileURL
+            .appendingPathComponent("../../Tests/OvertermTests/Fixtures/fake-lsp.py").standardizedFileURL
         let serverLog = scratch.appendingPathComponent("fake-lsp.log")
         LanguageServers.shared.discoveryOverride = { spec in
             spec.id == "go"
