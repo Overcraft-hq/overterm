@@ -142,6 +142,8 @@ final class ProcessFolders: @unchecked Sendable {
     /// not answering is that at once. Never from this queue.
     func folder(readSince since: UInt64, of identity: ActivityProcessID) -> Folder? {
         dispatchPrecondition(condition: .notOnQueue(queue))
+        // One begun since and answered is the answer: no read more.
+        if let entry = lock.withLock({ known[identity] }), entry.began >= since { return entry.folder }
         // Asked as an agent's is at each tick: queued unless it is being read.
         if folders([Request(identity: identity, everyTick: true)], now: kernel.uptime())[identity] == .notAnswering { return .notAnswering }
         let until = Date().addingTimeInterval(Double(Self.deadline) / 1e9)

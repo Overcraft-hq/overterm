@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.5 — 2026-11-22
+
+- activity: an agent's folder already read since its call is not read again
+
 ## 1.6.4 — 2026-11-22
 
 - make test-changed runs under macOS's bash 3.2 and picks every test a change can reach
