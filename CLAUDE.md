@@ -11,9 +11,9 @@ mise trust && mise install   # pinned Zig (only needed to build GhosttyKit)
 make ghosttykit              # Frameworks/GhosttyKit.xcframework + GhosttyResources (once; ~2 min)
 make treesitter              # Frameworks/TreeSitterKit.xcframework + the editor's queries (once; ~1 min)
 make hooks                   # .githooks: an app change goes into an unreleased version (once per clone)
-make test                    # unit + integration tests (~5 min)
+make test                    # unit + integration tests, several processes at once (~1 min; SERIAL=1)
 make test-changed            # only those this branch's changes reach (docs/testing.md, Choosing tests)
-make e2e                     # end-to-end scenarios in the real app (~15 s, opens windows)
+make e2e                     # end-to-end scenarios in the real app (~25 min, opens windows)
                              # both: run OUTSIDE the Bash sandbox — docs/testing.md
 make app                     # Overterm.app in the repo
 make install                 # …and copy it to /Applications, re-signed with

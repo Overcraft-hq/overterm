@@ -3,8 +3,8 @@
 Two layers. Run both before calling a change done.
 
 ```sh
-make test   # unit + integration: pure logic, real git in temp repos (~3 s)
-make e2e    # end-to-end: every scenario in the real, built app (~15 s, opens windows)
+make test   # unit + integration: pure logic, real git in temp repos (~1 min, several processes at once)
+make e2e    # end-to-end: every scenario in the real, built app (~25 min, opens windows)
 ```
 
 Both must run **outside the Bash tool's sandbox** (they spawn git, FSEvents,
@@ -50,8 +50,28 @@ failed two such tests there that never failed here.
 
 ### Choosing tests
 
-`make test` runs them all (~5 min here, ~9 on CI). `make test-changed` runs
-the ones this branch's changes reach, against `BASE` (`origin/main`), what
+`make test` builds, then runs them all several processes at once
+(`Scripts/unit-tests.sh`): the classes dealt round eight chunks a worker,
+each chunk one `xctest` process, handed to whichever worker is free — 4,350
+tests in ~45 s on a 10-core Mac (~1 min with the build), ~95 s four at
+once, against ~5 min in one process. They mostly wait (fakes, timers,
+git), so even CI's few cores run several. `TEST_WORKERS=N` runs N at once
+(one a core by default), `TEST_FILTER` only the tests whose
+`swift test --list-tests` names match a regex, and `SERIAL=1` one
+`swift test` as before, `TEST_ARGS` added to it. Not `swift test
+--parallel`: on macOS that starts a process a test, and four at once took
+378 s, longer than one process. Each chunk's log (every test's time in
+it) is left in a temporary folder, or in `UNIT_TEST_LOGS`.
+
+Tests run beside others, in other processes, in any grouping: nothing
+persistent may be shared. An isolated run's defaults are a plist in its
+own support directory, which a test process removes at exit
+(`AppEnvironment.defaults`; one suite name for all once let concurrent
+tests wipe each other's settings). A test that passes only after another
+in its process, or only with the machine idle, is broken — wait for the
+condition, never for the clock.
+
+`make test-changed` runs the ones this branch's changes reach, against `BASE` (`origin/main`), what
 isn't committed counted too: `Scripts/affected-tests.sh` reads the changed
 paths and picks a test class when its file changed or when it names a
 top-level type a changed source file declares or extends (`RabbitMQText.swift`
@@ -64,8 +84,10 @@ away can pass it. So it is for a pull request and for here, and **main
 runs every test**.
 
 CI (`.github/workflows/ci.yml`) is three jobs: `changes` says what a push or
-pull request needs, then `test` (lint and the unit tests; a pull request
-its reached classes) and `bundle` (the release build, only when the app's
+pull request needs, then `test` (lint, "Build for tests" — the debug build
+in a step of its own, ~15 min cold — and the unit tests four processes at
+once, their logs kept as the run's `unit-tests` artifact; a pull request
+its reached classes; a run started by hand can set `test_workers`) and `bundle` (the release build, only when the app's
 files change) run on two machines at once. The debug build's packages are
 cached like the release's — once per `Package.resolved`, saved by main —
 leaving Overterm's own modules, which the checkout's new mtimes rebuild
