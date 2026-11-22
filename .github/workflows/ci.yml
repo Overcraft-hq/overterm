@@ -195,19 +195,26 @@ jobs:
           path: Frameworks
           key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
-      # The debug build of the last run on main, its packages compiled once
-      # per Package.resolved. Overterm's own modules are left out: the
-      # checkout's fresh mtimes rebuild them anyway, and they are half its size.
+      # The debug build's packages, compiled once per Package.resolved and
+      # Xcode: the key has no commit, so main saves it only when it is
+      # missing — a key per commit added ≈1 GB a push and pushed the
+      # repository past its 10 GB, where eviction could take this one. A
+      # changed Package.resolved starts from the last one (restore-keys).
+      # Overterm's own modules are left out: the checkout's fresh mtimes
+      # rebuild them anyway, and they are half its size.
       # The layout is Swift Build's (.build/out; .build/debug a link into it).
       # An exclusion only drops a path the patterns above it listed — the
       # cache tars what is listed, folders whole — so each level is listed
       # with its globs before what leaves it out: `.build` with
       # `!.build/*/debug/…` kept everything (1.1 GB from main's run).
-      # Left out: Overterm's intermediates, its products (the app, the
-      # modules, OvertermTests.xctest, OvertermE2ETests.xctest), the
-      # testable object in ExecutableModules, the index store (out/v5), and
-      # Products/Release.
+      # Left out: Overterm's intermediates (OvertermTests' and
+      # OvertermE2ETests' are in Overterm.build too), its products (the app,
+      # the modules, OvertermTests.xctest, OvertermE2ETests.xctest), the
+      # testable object in ExecutableModules, the frameworks' libraries
+      # copied in from Frameworks/ (lib*.a, 167 MB), the index store
+      # (out/v5), and Products/Release.
       - name: Restore the debug build
+        id: debug-build
         uses: actions/cache/restore@v6
         with:
           path: |
@@ -222,9 +229,10 @@ jobs:
             .build/out/Products/Debug/*
             !.build/out/Products/Debug/Overterm*
             !.build/out/Products/Debug/ExecutableModules
-          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+            !.build/out/Products/Debug/lib*.a
+          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
+            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
 
       # A step of its own, so that the compile's time shows apart from the
       # tests'.
@@ -258,9 +266,10 @@ jobs:
           path: ${{ runner.temp }}/unit-tests
           if-no-files-found: ignore
 
-      # Main's only, as the release build's: a pull request's would be its own.
+      # Main's only, as the release build's: a pull request's would be its
+      # own. Only when the restore found no entry under this very key.
       - name: Save the debug build
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.debug-build.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v6
         with:
           path: |
@@ -275,7 +284,8 @@ jobs:
             .build/out/Products/Debug/*
             !.build/out/Products/Debug/Overterm*
             !.build/out/Products/Debug/ExecutableModules
-          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+            !.build/out/Products/Debug/lib*.a
+          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
 
   # The release path otherwise runs only when someone releases: assemble the
   # bundle on every run that changes the app and check what the release
