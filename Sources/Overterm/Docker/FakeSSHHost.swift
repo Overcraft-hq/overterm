@@ -95,6 +95,8 @@ final class FakeSSHHost {
             let pid = process.processIdentifier
             let gone = Date().addingTimeInterval(10)
             while process.isRunning, kill(pid, 0) == 0, Date() < gone { Thread.sleep(forTimeInterval: 0.02) }
+            // One that ignored SIGTERM would keep its port with its folder gone.
+            if process.isRunning, kill(pid, 0) == 0 { kill(pid, SIGKILL) }
         }
         try? FileManager.default.removeItem(at: folder)
     }
