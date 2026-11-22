@@ -2,7 +2,7 @@
 
 macOS terminal for agent-driven work — Swift/AppKit around libghostty
 (`GhosttyKit`), built for several worktrees at once, each with an agent
-(Claude Code, Codex, opencode, pi, Gemini CLI) in it. Repository: `Overcraft-hq/overterm` (private).
+(Claude Code, Codex, opencode, pi, Gemini CLI) in it. Repository: `Overcraft-hq/overterm` (public).
 
 ## Quick reference
 
