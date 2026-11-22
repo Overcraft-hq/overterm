@@ -291,8 +291,12 @@ struct UnixHTTPTransport: HTTPTransport {
                 try await connection.executeThenClose { inbound, outbound in
                     var head = requestHead(method, path, headers)
                     if method != .GET && method != .HEAD { head.headers.add(name: "Content-Length", value: "0") }
-                    try await outbound.write(.head(head))
-                    try await outbound.write(.end(nil))
+                    // One write, not two: the server answers at the head
+                    // (no body comes) and closes, and an `.end` written
+                    // after that — a busy machine's task resumed late —
+                    // failed on the closed channel with the answer already
+                    // in, and was asked again into the same race.
+                    try await outbound.write(contentsOf: [.head(head), .end(nil)])
                     var status = 0
                     var answerHeaders: [(String, String)] = []
                     var errorBody = Data()

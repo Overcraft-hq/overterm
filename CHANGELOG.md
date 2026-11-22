@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.6.3 — 2026-11-22
 
 - make test-changed runs under macOS's bash 3.2 and picks every test a change can reach
+- A read from Docker (a file copied out, a list) no longer fails with "ChannelError" on a busy Mac: the request goes out in one write
 
 ## 1.6.2 — 2026-11-19
 
