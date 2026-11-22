@@ -172,7 +172,9 @@ final class KubeHealthTests: XCTestCase {
     }
 
     func testRestartsWithinTheHour() {
-        let now = Date()
+        // A whole second: the stamps below are written to the second, and a
+        // fraction rounded up there made "5m ago" read "4m59s".
+        let now = Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))
         let recent = Self.pod(
             "web-1", owned: true,
             status: [

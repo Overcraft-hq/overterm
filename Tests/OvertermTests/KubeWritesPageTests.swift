@@ -126,7 +126,11 @@ final class KubeWritesPageTests: XCTestCase {
         try await until("reviewed as the pod was picked") {
             page.verbs(for: ["shop/api-1"]).first { $0.title == "Delete…" }?.unavailable == why
         }
-        XCTAssertNil(page.verbs(for: ["shop/api-1"]).first { $0.title == "Evict…" }?.unavailable, "another verb, another review")
+        // Another verb, another review — answered on its own time: while
+        // it is on its way the verb says so, then it is allowed.
+        try await until("another verb, another review") {
+            page.verbs(for: ["shop/api-1"]).first { $0.title == "Evict…" }.map { $0.unavailable == nil } ?? false
+        }
         XCTAssertTrue(page.press("\u{7F}"))
         try await until("said") { page.writeStatus == .failed(why) }
         XCTAssertTrue(box.confirmations.isEmpty, "not asked")

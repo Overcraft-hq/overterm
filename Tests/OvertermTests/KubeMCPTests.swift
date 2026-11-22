@@ -454,17 +454,27 @@ final class KubeMCPTests: XCTestCase {
     }
 
     func testTopSaysWhatPodsAndNodesUse() async throws {
-        api.setPodMetrics("web-1", namespace: "shop", [("app", "250m", "64Mi")], at: Date().addingTimeInterval(-20))
+        // The API stamps a sample to the second; its age is said as the tool
+        // reads it, somewhere between `before` and `after`. "20s" alone
+        // failed whenever the stamp's lost fraction and the call's time
+        // passed a second (one run in a few dozen, more under load).
+        let stamp = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 - 20).rounded(.down))
+        api.setPodMetrics("web-1", namespace: "shop", [("app", "250m", "64Mi")], at: stamp)
         api.setPodMetrics("worker-1", namespace: "shop", [("app", "1500m", "32Mi")])
         api.setPodMetrics("api-0", namespace: "payments", [("app", "5m", "16Mi")])
         api.add("nodes", "fake-node-1", values: ["Status": "Ready"], fields: ["status": ["allocatable": ["cpu": "4", "memory": "8Gi"]]])
         api.setNodeMetrics("fake-node-1", cpu: "2", memory: "1Gi")
+        let before = Date()
         let pods = try await text("k8s_top")
+        let after = Date()
+        let ages = (Int(before.timeIntervalSince(stamp))...Int(after.timeIntervalSince(stamp))).map {
+            "Sampled by metrics-server \(KubeMetricsFormat.age(TimeInterval($0))) ago over 15s."
+        }
         let lines = pods.components(separatedBy: "\n")
         XCTAssertTrue(lines.first?.hasPrefix("Context fake-dev") == true && lines.first?.contains("namespace shop") == true, pods)
         XCTAssertEqual(lines[1], "NAME       CPU(cores)   MEMORY(bytes)", pods)
         XCTAssertTrue(lines[2].hasPrefix("worker-1") && lines[2].contains("1500m") && lines[3].hasPrefix("web-1"), "by cpu, the most first:\n\(pods)")
-        XCTAssertTrue(pods.contains("Sampled by metrics-server 20s ago over 15s."), pods)
+        XCTAssertTrue(ages.contains { pods.contains($0) }, "the sample's age when read, \(ages):\n\(pods)")
         XCTAssertFalse(pods.contains("api-0"), "the page's namespace only")
         XCTAssertTrue(pods.contains(KubeChartEmpty.topSharesNeedSpecs.sentence), "a namespace's shares need the specs:\n\(pods)")
         XCTAssertFalse(pods.contains("%CPU/R"), pods)

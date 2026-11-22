@@ -656,6 +656,9 @@ final class KubePodCommandsPageTests: XCTestCase {
             page.model.load = { _ in plain }
             page.model.reloadContexts()
             try await until("as it was") { page.model.contexts.context(named: "fake-dev")?.settings == KubeContextSettings() }
+            // Its settings changed back, so its list is read again from
+            // nothing: the pod is pressed on once it is listed again.
+            try await until("listed again") { page.model.rows.count == 2 }
             let choices = box.recorded.choices.count
             page.selection = ["shop/api-1"]
             XCTAssertTrue(page.press("e"))

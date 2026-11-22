@@ -3,9 +3,11 @@
 Two layers. Run both before calling a change done.
 
 ```sh
-make test   # unit + integration: pure logic, real git in temp repos (~3 s)
-make e2e    # end-to-end: every scenario in the real, built app (~15 s, opens windows)
+make test   # unit + integration: pure logic, real git in temp repos (~1 min, several processes at once)
+make e2e    # end-to-end: every scenario in the real, built app (~25 min, opens windows)
 ```
+
+E2E also runs nightly on main in CI, against a debug build (Nightly in CI).
 
 Both must run **outside the Bash tool's sandbox** (they spawn git, FSEvents,
 and for E2E the app itself).
@@ -50,8 +52,28 @@ failed two such tests there that never failed here.
 
 ### Choosing tests
 
-`make test` runs them all (~5 min here, ~9 on CI). `make test-changed` runs
-the ones this branch's changes reach, against `BASE` (`origin/main`), what
+`make test` builds, then runs them all several processes at once
+(`Scripts/unit-tests.sh`): the classes dealt round eight chunks a worker,
+each chunk one `xctest` process, handed to whichever worker is free — 4,350
+tests in ~45 s on a 10-core Mac (~1 min with the build), ~95 s four at
+once, against ~5 min in one process. They mostly wait (fakes, timers,
+git), so even CI's few cores run several. `TEST_WORKERS=N` runs N at once
+(one a core by default), `TEST_FILTER` only the tests whose
+`swift test --list-tests` names match a regex, and `SERIAL=1` one
+`swift test` as before, `TEST_ARGS` added to it. Not `swift test
+--parallel`: on macOS that starts a process a test, and four at once took
+378 s, longer than one process. Each chunk's log (every test's time in
+it) is left in a temporary folder, or in `UNIT_TEST_LOGS`.
+
+Tests run beside others, in other processes, in any grouping: nothing
+persistent may be shared. An isolated run's defaults are a plist in its
+own support directory, which a test process removes at exit
+(`AppEnvironment.defaults`; one suite name for all once let concurrent
+tests wipe each other's settings). A test that passes only after another
+in its process, or only with the machine idle, is broken — wait for the
+condition, never for the clock.
+
+`make test-changed` runs the ones this branch's changes reach, against `BASE` (`origin/main`), what
 isn't committed counted too: `Scripts/affected-tests.sh` reads the changed
 paths and picks a test class when its file changed or when it names a
 top-level type a changed source file declares or extends (`RabbitMQText.swift`
@@ -64,8 +86,10 @@ away can pass it. So it is for a pull request and for here, and **main
 runs every test**.
 
 CI (`.github/workflows/ci.yml`) is three jobs: `changes` says what a push or
-pull request needs, then `test` (lint and the unit tests; a pull request
-its reached classes) and `bundle` (the release build, only when the app's
+pull request needs, then `test` (lint, "Build for tests" — the debug build
+in a step of its own, ~15 min cold — and the unit tests four processes at
+once, their logs kept as the run's `unit-tests` artifact; a pull request
+its reached classes; a run started by hand can set `test_workers`) and `bundle` (the release build, only when the app's
 files change) run on two machines at once. The debug build's packages are
 cached like the release's — once per `Package.resolved`, saved by main —
 leaving Overterm's own modules, which the checkout's new mtimes rebuild
@@ -995,6 +1019,67 @@ as it is.
 Every user-visible feature gets a scenario; every bug found by hand gets a
 check that would have caught it (the rename focus loss, the 0-wide editor,
 closing without asking, the no-HEAD diff all have one).
+
+### Nightly in CI
+
+`.github/workflows/e2e-nightly.yml` runs every scenario on main once a
+night (00:30 UTC, 03:30 in Istanbul), on CI's `xcode-27` runner with
+Xcode 27.2, and by hand (Actions → Nightly E2E → Run workflow; `filter`
+runs one, `OvertermE2ETests.E2ETests/testTerminal`). A scheduled run is
+skipped when main has no commit since the last scheduled nightly that
+passed (a manual run, perhaps of one scenario, never counts).
+
+- **A debug build's app.** `make app CONFIG=debug` assembles the same
+  bundle around the debug binary (`Scripts/make-app.sh`): nothing in the
+  bundling or the harness needs a release build, and the debug build
+  reuses CI's caches — the frameworks and the compiled packages
+  (`spm-debug-…`), restored only, never saved, so this workflow can't evict
+  CI's entries. Never shipped: releases, `make install` and `make dmg`
+  take the default, `CONFIG=release`.
+- **The harness's switches** (`E2ETests`, all off by default):
+  `OVERTERM_E2E_SKIP` (scenario names, comma separated, skipped),
+  `OVERTERM_E2E_TIMEOUT_SCALE` (each scenario's whole timeout multiplied;
+  2 at night — the `eventually` waits inside a scenario are not scaled),
+  `OVERTERM_E2E_LOGS` (a folder: `<scenario>.out.log`, `.stderr.log`).
+  `OVERTERM_E2E_READ_DIR` saves a picture of the window when a read of it
+  fails, never while a Secret's value may show.
+- **Skipped at night**: `activityPerf`, `dockerPerf`, `kubernetesPerf`,
+  `kubernetesScale`, `reviewPerf`, `terraformPerf`, `performance`,
+  `throughput`, `bigFiles` — their budgets (CPU, main-thread stalls, a
+  thousand objects timed) are a release build's on a 10-core Mac. They stay
+  in `make e2e` here. Skipped by themselves as on any Mac without them: the
+  terraform scenarios without a terraform, the database pages without
+  `Scripts/database-test-servers.sh`'s servers, redis without
+  `redis-server`.
+- **On a failure** the logs and pictures are the run's `e2e-logs`
+  artifact (14 days; the repository is public, so anyone can download
+  them — the scenarios' data is their own fixtures), and an issue "Nightly
+  E2E failed" names the failing scenarios and their first checks — opened,
+  or commented on while one is open. Close it once main passes.
+- **Run one as the nightly does**:
+  `make app CONFIG=debug && OVERTERM_E2E_TESTS=1 OVERTERM_E2E_TIMEOUT_SCALE=2 swift test --filter OvertermE2ETests.E2ETests/testDocker`.
+
+What only the runner can tell (it is a VM: a window server and a logged-in
+session, but its own display, 3 cores, no Retina), and so the first nights'
+suspects:
+
+- **The window read as text** (Vision over the window's picture,
+  `readWindow`/`shownPhrase`): `docker`, `kubernetes`, `kubernetesCharts`
+  and the Kubernetes scenarios that share their parts — at scale 1 the text has
+  half the pixels it has on a Retina screen, and a display smaller than
+  1400×880 makes the window the screen's visible area.
+- **Time budgets left in**: `kubernetesCharts` (its chart budget),
+  `activity` (its table and history), `docker`; and every scenario's
+  `eventually` deadlines under an unoptimised build.
+- **The window server's own**: `fullScreen` (a Space of its own, the
+  toolbar's window), `layout` (hit tests at the strip's places),
+  `appearance` and `themes` (the system appearance), `peek`.
+- **Typing into a fresh shell** on a slow machine: `clipboard` (the
+  flakiest here too, Typing into a shell), and the scenarios that wait for
+  `settledPrompt`.
+- **The system's services**: `simulator` (the image's simulator runtimes,
+  CoreSimulator), `openFromFinder` and `openWith` (LaunchServices on a
+  fresh machine), `imagePaste` (the pasteboard).
 
 ## Looking at the UI
 

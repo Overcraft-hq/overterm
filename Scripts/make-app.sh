@@ -1,9 +1,24 @@
 #!/usr/bin/env bash
 # Assemble Overterm.app from the SPM release build and ad-hoc sign it.
+# CONFIG=debug assembles it from the debug build instead: the same bundle
+# around an unoptimised binary, for the nightly end-to-end run in CI
+# (.github/workflows/e2e-nightly.yml), which reuses CI's debug build cache
+# rather than spend 35–60 min on a release build. Never shipped: releases,
+# make install and make dmg take the default.
 set -euo pipefail
 
+CONFIG="${CONFIG:-release}"
+case "$CONFIG" in
+  release | debug) ;;
+  *)
+    echo "error: CONFIG is release or debug, not '$CONFIG'" >&2
+    exit 1
+    ;;
+esac
+
 APP_NAME="Overterm"
-# The SPM target, which keeps the old name (Package.swift).
+# The SPM executable product (Package.swift: the OvertermApp target, its
+# binary named as it always was).
 PRODUCT="Overterm"
 # Where the settings, the session and the privacy grants live. It is not
 # the app's name and never was; renaming it would open a new, empty app.
@@ -35,10 +50,10 @@ fi
 BUILD_DATE="$(date +%Y-%m-%d)"
 echo "==> Overterm $VERSION ($BUILD), commit $COMMIT, $BUILD_DATE"
 
-echo "==> swift build -c release"
-swift build -c release
+echo "==> swift build -c $CONFIG"
+swift build -c "$CONFIG"
 
-BIN_PATH="$(swift build -c release --show-bin-path)/${PRODUCT}"
+BIN_PATH="$(swift build -c "$CONFIG" --show-bin-path)/${PRODUCT}"
 if [[ ! -x "$BIN_PATH" ]]; then
   echo "error: built binary not found at $BIN_PATH" >&2
   exit 1
@@ -54,7 +69,7 @@ SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
 if [[ "$(recorded_sdk "$BIN_PATH")" != "$SDK_VERSION" ]]; then
   MIN_OS="$(sed -nE 's/.*\.macOS\(\.v([0-9]+)\).*/\1.0/p' Package.swift | head -1)"
   echo "==> linking again against the macOS $SDK_VERSION SDK (it said $(recorded_sdk "$BIN_PATH"))"
-  swift build -c release -Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_OS" -Xlinker "$SDK_VERSION"
+  swift build -c "$CONFIG" -Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_OS" -Xlinker "$SDK_VERSION"
   if [[ "$(recorded_sdk "$BIN_PATH")" != "$SDK_VERSION" ]]; then
     echo "error: $BIN_PATH says SDK $(recorded_sdk "$BIN_PATH"), not $SDK_VERSION" >&2
     exit 1
@@ -124,6 +139,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>${COMMIT}</string>
     <key>OvertermBuildDate</key>
     <string>${BUILD_DATE}</string>
+    <!-- release or debug: make-dmg.sh packs only a release one. -->
+    <key>OvertermBuildConfiguration</key>
+    <string>${CONFIG}</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleIconFile</key>

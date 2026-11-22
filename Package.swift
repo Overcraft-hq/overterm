@@ -6,6 +6,9 @@ let package = Package(
     platforms: [
         .macOS(.v13)
     ],
+    products: [
+        .executable(name: "Overterm", targets: ["OvertermApp"])
+    ],
     // The database client's wire protocols: PostgreSQL (and Redshift, which
     // speaks it) and MySQL — TLS, SCRAM and caching_sha2 included, which is
     // why they are packages and not ours. SQLite is the system's; ClickHouse
@@ -40,7 +43,11 @@ let package = Package(
             name: "TreeSitterKit",
             path: "Frameworks/TreeSitterKit.xcframework"
         ),
-        .executableTarget(
+        // The app's code, as a library: the executable below and the tests
+        // both link this one module, so a test build compiles it once (as an
+        // executable target the tests' build compiled it a second time, as
+        // a testable copy). `main` is the executable's.
+        .target(
             name: "Overterm",
             dependencies: [
                 "GhosttyKit", "TreeSitterKit",
@@ -71,6 +78,14 @@ let package = Package(
                 // SQLite: the system's.
                 .linkedLibrary("sqlite3"),
             ]
+        ),
+        // The app: Sources/OvertermApp/main.swift starts the library. Its
+        // product keeps the name the binary always had (make-app.sh, the
+        // docs' `.build/debug/Overterm`).
+        .executableTarget(
+            name: "OvertermApp",
+            dependencies: ["Overterm"],
+            path: "Sources/OvertermApp"
         ),
         .testTarget(
             name: "OvertermTests",

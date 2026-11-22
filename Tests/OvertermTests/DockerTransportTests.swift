@@ -167,7 +167,10 @@ final class DockerTransportTests: XCTestCase {
             task.cancel()
             _ = await task.result
         }
-        try await waitUntil { $0.openStreams == 0 }
+        // Each connection is closed whenever it arrives, which on a busy
+        // runner (three test processes on three cores) can be seconds
+        // after its task went: the count only has to come down.
+        try await waitUntil({ $0.openStreams == 0 }, timeout: .seconds(15))
         let containers = try await engine.containers()
         XCTAssertEqual(containers.count, 1)
     }
@@ -417,6 +420,38 @@ final class DockerTransportTests: XCTestCase {
             XCTFail("a dropped POST is the caller's to send again")
         } catch {}
         XCTAssertEqual(starts(), before, "never sent a second time")
+    }
+
+    /// A GET's request goes in one write: the engine answers at its head
+    /// and closes, so a task resumed late — the cooperative threads all
+    /// busy, as on a loaded CI runner — once wrote its `.end` onto the
+    /// closed channel and failed (ChannelError.ioOnClosedChannel) with the
+    /// answer already there, and again when asked once more.
+    func testAReadOnABusyMachineIsAnswered() async throws {
+        let id = fake.add(name: "nginx")
+        fake.setFile(id, "/etc/nginx/nginx.conf", Data("worker_processes 1;\n".utf8))
+        let engine = engine!
+        var failures: [String] = []
+        for _ in 0..<60 {
+            // Every cooperative thread held for a moment as the read goes.
+            let busy = (0..<ProcessInfo.processInfo.activeProcessorCount * 2).map { _ in
+                Task.detached {
+                    let end = Date().addingTimeInterval(0.01)
+                    var spins = 0
+                    while Date() < end { spins &+= 1 }
+                    return spins
+                }
+            }
+            do {
+                var taken = 0
+                try await engine.receive("/containers/\(id)/archive", ["path": "/etc/nginx/nginx.conf"]) { taken += $0.count }
+                XCTAssertGreaterThan(taken, 0)
+            } catch {
+                failures.append("\(error)")
+            }
+            for task in busy { _ = await task.value }
+        }
+        XCTAssertEqual(failures, [], "\(failures.count) of 60 reads failed")
     }
 
     func testAFileAndAFolderAreCopiedOut() async throws {

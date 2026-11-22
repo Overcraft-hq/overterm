@@ -9,10 +9,40 @@ import XCTest
 ///     make e2e      (= make app && OVERTERM_E2E_TESTS=1 swift test --filter OvertermE2ETests)
 /// The runs are isolated from the real app's state (AppEnvironment): own
 /// defaults suite, temp support dir, no notifications, never activated.
+///
+/// For a run away from the owner's Mac (the nightly in CI, docs/testing.md,
+/// Nightly in CI), three switches, all off by default:
+/// - `OVERTERM_E2E_SKIP`: scenario names (`kubernetesPerf,throughput`),
+///   skipped — the ones whose time budgets are a release build's on this
+///   Mac, meaningless on a debug build on a 3-core VM;
+/// - `OVERTERM_E2E_TIMEOUT_SCALE`: each scenario's timeout multiplied (≥ 1),
+///   for an unoptimised build on a slower machine;
+/// - `OVERTERM_E2E_LOGS`: a folder; each scenario's output and standard
+///   error are written there as `<scenario>.out.log` / `.stderr.log`.
 final class E2ETests: XCTestCase {
     private static let app = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Overterm.app/Contents/MacOS/Overterm")
+
+    /// `OVERTERM_E2E_SKIP`'s names, split at commas and white space.
+    private static let skipped: Set<String> = {
+        let named = ProcessInfo.processInfo.environment["OVERTERM_E2E_SKIP"] ?? ""
+        return Set(named.split(whereSeparator: { $0 == "," || $0.isWhitespace }).map(String.init))
+    }()
+
+    /// `OVERTERM_E2E_TIMEOUT_SCALE`, never below 1.
+    private static let timeoutScale: Double = {
+        guard let text = ProcessInfo.processInfo.environment["OVERTERM_E2E_TIMEOUT_SCALE"], let scale = Double(text), scale.isFinite else { return 1 }
+        return max(scale, 1)
+    }()
+
+    /// `OVERTERM_E2E_LOGS`' folder, made when first asked for.
+    private static let logs: URL? = {
+        guard let path = ProcessInfo.processInfo.environment["OVERTERM_E2E_LOGS"], !path.isEmpty else { return nil }
+        let folder = URL(fileURLWithPath: path, isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return folder
+    }()
 
     /// The display kept awake for the whole run: a full run takes about 14
     /// minutes, and on a Mac whose display sleeps after 10 every scenario
@@ -44,6 +74,11 @@ final class E2ETests: XCTestCase {
     private func run(_ scenario: String, env extra: [String: String] = [:], timeout: TimeInterval = 120, stderr: URL? = nil, attempt: Int = 0) throws
         -> String
     {
+        if Self.skipped.contains(scenario) { throw XCTSkip("\(scenario): skipped by OVERTERM_E2E_SKIP") }
+        let limit = timeout * Self.timeoutScale
+        // Its standard error kept beside its output when the logs are asked for.
+        let named = stderr
+        let stderr = stderr ?? Self.logs?.appendingPathComponent("\(scenario).stderr.log")
         let process = Process()
         process.executableURL = Self.app
         var env = ProcessInfo.processInfo.environment
@@ -96,7 +131,7 @@ final class E2ETests: XCTestCase {
         // compares every process's with — never its pid alone.
         let started = E2ELeftovers.kinfo(process.processIdentifier)?.start ?? 0
 
-        let deadline = Date().addingTimeInterval(timeout)
+        let deadline = Date().addingTimeInterval(limit)
         while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
         var left: [pid_t] = []
         if process.isRunning {
@@ -104,7 +139,7 @@ final class E2ETests: XCTestCase {
             // its own) outlives a terminated app: found first, by parent.
             left = Self.descendants(of: process.processIdentifier)
             process.terminate()
-            XCTFail("\(scenario): timed out after \(Int(timeout)) s")
+            XCTFail("\(scenario): timed out after \(Int(limit)) s")
         }
         process.waitUntilExit()
         // Then ended, each by its exact pid — never by a pattern.
@@ -112,6 +147,15 @@ final class E2ETests: XCTestCase {
         // A child of the app still holding the pipe would keep it open: bounded.
         if ended.wait(timeout: .now() + 10) == .timedOut { out.fileHandleForReading.readabilityHandler = nil }
         let printed = String(decoding: collected.data, as: UTF8.self)
+        if let logs = Self.logs {
+            try? collected.data.write(to: logs.appendingPathComponent("\(scenario).out.log"))
+            // A test's own file (kubernetes'), copied before its folder goes.
+            if let named {
+                let copy = logs.appendingPathComponent("\(scenario).stderr.log")
+                try? FileManager.default.removeItem(at: copy)
+                try? FileManager.default.copyItem(at: named, to: copy)
+            }
+        }
         // Once it has quit, nothing of its run is left running (10.5): what
         // is, is a failure, then ended by its exact identity.
         let identity = E2ERunIdentity.make(pid: process.processIdentifier, start: started, printed: printed)
@@ -134,7 +178,7 @@ final class E2ETests: XCTestCase {
         // Not a result: launched once more.
         if lines.isEmpty, process.terminationReason == .uncaughtSignal, attempt == 0 {
             Thread.sleep(forTimeInterval: 1)
-            return try run(scenario, env: extra, timeout: timeout, stderr: stderr, attempt: 1)
+            return try run(scenario, env: extra, timeout: timeout, stderr: named, attempt: 1)
         }
         let passed = lines.filter { $0.hasPrefix("E2E PASS") }
         let failed = lines.filter { $0.hasPrefix("E2E FAIL") }

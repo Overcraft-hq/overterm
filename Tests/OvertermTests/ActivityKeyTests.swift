@@ -544,7 +544,8 @@ final class ActivityKeyTests: XCTestCase {
         let asked = await eventually { page.content.processes.contains { $0.name == "acme-new" } }
         XCTAssertTrue(asked, "what the person asks for shows at once")
         page.setFilter("")
-        _ = await eventually { page.content.processes.contains { $0.name == "launchd" } }
+        let cleared = await eventually { page.content.processes.contains { $0.name == "launchd" } }
+        XCTAssertTrue(cleared, "the filter cleared: every row again")
         page.interacted(.exit)
         XCTAssertFalse(page.orderHeld, "the pointer left: it lets go")
         XCTAssertNil(page.waiting)

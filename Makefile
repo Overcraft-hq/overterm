@@ -26,29 +26,40 @@ themes:
 build:
 	swift build -c release
 
-## test: run the unit tests (E2E scenarios are skipped)
+## test: build, then run the unit tests several processes at once (E2E
+## scenarios are skipped; Scripts/unit-tests.sh). TEST_WORKERS=N runs N at
+## once (default: one a core), TEST_FILTER only the tests whose names match
+## the regex; SERIAL=1 runs them in one swift test, as before, TEST_ARGS
+## added to it.
+UNIT_TEST = $(if $(SERIAL),swift test --skip-build --skip OvertermE2ETests $(TEST_ARGS) $(if $(TEST_FILTER),--filter '$(TEST_FILTER)'),\
+	./Scripts/unit-tests.sh $(or $(TEST_WORKERS),$$(sysctl -n hw.ncpu)) '$(TEST_FILTER)')
 test:
-	swift test --skip OvertermE2ETests
+	swift build --build-tests
+	$(UNIT_TEST)
 
 ## test-changed: only the unit tests this branch's changes reach — against
 ## BASE (origin/main), what isn't committed yet too (Scripts/affected-tests.sh)
 BASE ?= origin/main
 test-changed:
-	@filter="$$( { git diff --name-only $(BASE)...HEAD; git diff --name-only HEAD; \
-		git ls-files --others --exclude-standard; } | sort -u | ./Scripts/affected-tests.sh )"; \
+	@filter="$$( { git diff --name-only --no-renames $(BASE)...HEAD; git diff --name-only --no-renames HEAD; \
+		git ls-files --others --exclude-standard; } | sort -u | ./Scripts/affected-tests.sh )" || exit 1; \
 	case "$$filter" in \
+		"") echo "Scripts/affected-tests.sh printed nothing." >&2; exit 1 ;; \
 		none) echo "No unit test is reached by the changes since $(BASE)." ;; \
-		all) swift test --skip OvertermE2ETests ;; \
-		*) echo "Running: $$filter"; swift test --skip OvertermE2ETests --filter "$$filter" ;; \
+		all) $(MAKE) test ;; \
+		*) echo "Running: $$filter"; $(MAKE) test TEST_FILTER="$$filter" ;; \
 	esac
 
 ## e2e: build the app, then run every end-to-end scenario in it (opens windows briefly)
+## (CONFIG=debug: against a debug build's app, as the nightly in CI does)
 e2e: app
 	OVERTERM_E2E_TESTS=1 swift test --filter OvertermE2ETests
 
-## app: assemble and ad-hoc sign $(APP)
+## app: assemble and ad-hoc sign $(APP) from the release build; CONFIG=debug
+## from the debug build (never shipped: the nightly E2E's, Scripts/make-app.sh)
+CONFIG ?= release
 app:
-	./Scripts/make-app.sh
+	CONFIG=$(CONFIG) ./Scripts/make-app.sh
 
 ## dmg: pack the built $(APP) as dist/Overterm-$(VERSION).dmg (VERSION as for make app)
 dmg:

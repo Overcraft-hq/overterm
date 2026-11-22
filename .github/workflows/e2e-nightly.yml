@@ -1,0 +1,263 @@
+# Nightly E2E: every end-to-end scenario (make e2e) on main, once a night,
+# in the real app on GitHub's macOS runner — until now they ran only on the
+# owner's Mac. docs/testing.md, Nightly in CI.
+#
+# Against a DEBUG build of the app (make app CONFIG=debug): a release build
+# is 35–60 min on the runner's 3 cores, and the debug build reuses what CI
+# saves on main — its packages compiled (spm-debug-…), the frameworks. The
+# caches are only restored here, never saved: an entry saved by this
+# workflow could evict one CI needs (the repository's 10 GB), and CI saves
+# them from main anyway.
+#
+# A debug build on a 3-core VM is not the owner's Mac: the scenarios that
+# time the app against a release build's budgets are skipped
+# (OVERTERM_E2E_SKIP below), every scenario's timeout is doubled, and the
+# rest are expected to need a few nights to settle (docs/testing.md lists
+# the ones at risk and why).
+#
+# Skipped when main has no commit since the last successful scheduled
+# nightly. On a failure: the logs and the pictures of failed reads kept as
+# an artifact, and an issue "Nightly E2E failed" opened, or commented on if one is open.
+name: Nightly E2E
+
+on:
+  schedule:
+    - cron: "30 0 * * *"  # 03:30 Istanbul, every night
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: "swift test --filter (one scenario: OvertermE2ETests.E2ETests/testTerminal)"
+        required: false
+        default: OvertermE2ETests
+      skip:
+        description: "Scenarios skipped (OVERTERM_E2E_SKIP), comma separated; empty keeps the default list"
+        required: false
+        default: ""
+
+# One at a time; a manual run waits for the nightly rather than cancel it.
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# CI's Xcode and so CI's cache keys (ci.yml).
+env:
+  XCODE: "27.2"
+  # The scenarios whose time budgets are a release build's on the owner's
+  # Mac: CPU, stalls and throughput, or thousands of fake objects timed.
+  # Their budgets mean nothing on a debug build on a 3-core VM.
+  E2E_SKIP_DEFAULT: >-
+    activityPerf,dockerPerf,kubernetesPerf,kubernetesScale,reviewPerf,terraformPerf,performance,throughput,bigFiles
+
+jobs:
+  # Has main moved since the last nightly that passed? A manual run always goes.
+  gate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.moved.outputs.run }}
+    steps:
+      - name: Compare main with the last successful nightly
+        id: moved
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT" != schedule ]]; then
+            echo "run=true" >>"$GITHUB_OUTPUT"; exit 0
+          fi
+          # Scheduled runs only: a manual one may have run one scenario
+          # (filter) or another skip list, and passed the commit for nothing.
+          last="$(gh run list -R "$REPO" --workflow e2e-nightly.yml --branch main --event schedule \
+            --status success --limit 1 --json headSha -q '.[0].headSha // empty')"
+          if [[ -n "$last" && "$last" == "$HEAD_SHA" ]]; then
+            echo "::notice::main is still ${HEAD_SHA:0:8}, which the last nightly passed: nothing to run"
+            echo "run=false" >>"$GITHUB_OUTPUT"
+          else
+            echo "main ${HEAD_SHA:0:8}, last passed ${last:0:8}"
+            echo "run=true" >>"$GITHUB_OUTPUT"
+          fi
+
+  e2e:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: xcode-27  # public preview (ci.yml)
+    # A cold GhosttyKit build (≈10 min, when its cache misses), the debug
+    # build (≈8 min with its packages cached, ≈14 cold), then the scenarios
+    # (≈23 min on the owner's 10 cores, a release build; longer here). The
+    # scenarios' step has a timeout of its own, so that the logs are kept
+    # and the issue opened when it runs out.
+    timeout-minutes: 240
+    outputs:
+      summary: ${{ steps.summary.outputs.summary }}
+    env:
+      E2E_LOGS: ${{ github.workspace }}/e2e-logs
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Use Xcode ${{ env.XCODE }}
+        run: |
+          ls -d /Applications/Xcode_*.app
+          sudo xcode-select -s "/Applications/Xcode_$XCODE.app"
+
+      # What the scenarios will draw on: its size and scale are the VM's.
+      - name: The display
+        continue-on-error: true
+        run: |
+          echo "$(sysctl -n hw.ncpu) cores"
+          system_profiler SPDisplaysDataType | sed -n '/Displays:/,$p'
+
+      - name: Restore GhosttyKit and TreeSitterKit
+        id: frameworks
+        uses: actions/cache/restore@v6
+        with:
+          path: Frameworks
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+
+      - uses: jdx/mise-action@v5
+        if: steps.frameworks.outputs.cache-hit != 'true'
+
+      # Built here when CI's entry is missing, and not saved (see the top).
+      - name: Build GhosttyKit and TreeSitterKit
+        if: steps.frameworks.outputs.cache-hit != 'true'
+        run: |
+          xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+          for attempt in 1 2 3; do
+            make ghosttykit treesitter && break
+            [[ $attempt == 3 ]] && exit 1
+            echo "::warning::the frameworks' build failed (attempt $attempt); trying again in 30 s"
+            sleep 30
+          done
+
+      # CI's debug build, its paths and key exactly (ci.yml, test): restored
+      # only.
+      - name: Restore the debug build
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            .build/*
+            !.build/out
+            .build/out/*
+            !.build/out/Intermediates.noindex
+            !.build/out/Products
+            !.build/out/v5
+            .build/out/Intermediates.noindex/*
+            !.build/out/Intermediates.noindex/Overterm.build
+            .build/out/Products/Debug/*
+            !.build/out/Products/Debug/Overterm*
+            !.build/out/Products/Debug/ExecutableModules
+            !.build/out/Products/Debug/lib*.a
+          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
+
+      - name: Assemble the app from the debug build
+        run: |
+          make app CONFIG=debug
+          test -x Overterm.app/Contents/MacOS/Overterm
+
+      # The test targets, apart, so the compile's time shows apart from the
+      # scenarios'.
+      - name: Build the tests
+        run: swift build --build-tests
+
+      - name: Run the scenarios
+        timeout-minutes: 180
+        env:
+          OVERTERM_E2E_TESTS: "1"
+          OVERTERM_E2E_SKIP: ${{ inputs.skip || env.E2E_SKIP_DEFAULT }}
+          OVERTERM_E2E_TIMEOUT_SCALE: "2"
+          OVERTERM_E2E_LOGS: ${{ env.E2E_LOGS }}
+          # A picture of the window when a read of it fails (never while a
+          # Secret's value may show: E2ERunner.pictureOfFailure).
+          OVERTERM_E2E_READ_DIR: ${{ env.E2E_LOGS }}/pictures
+          FILTER: ${{ inputs.filter || 'OvertermE2ETests' }}
+        run: |
+          set -o pipefail
+          mkdir -p "$E2E_LOGS"
+          echo "Skipped: $OVERTERM_E2E_SKIP"
+          swift test --skip-build --filter "$FILTER" 2>&1 | tee "$E2E_LOGS/swift-test.log"
+
+      # Which scenarios failed and their first failing checks, for the issue
+      # and the run's page. A failure before the scenarios says so.
+      - name: Summarize the failures
+        id: summary
+        if: failure()
+        run: |
+          log="$E2E_LOGS/swift-test.log"
+          {
+            echo "Commit ${GITHUB_SHA:0:8} — ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            if [[ ! -s "$log" ]]; then
+              echo "The run failed before the scenarios ran (the build or the frameworks): see the run's log."
+            else
+              failed="$(grep -oE "Test Case '-\[OvertermE2ETests\.E2ETests test[A-Za-z0-9]+\]' failed" "$log" \
+                | sed -E 's/.*E2ETests test([A-Za-z0-9]+)\].*/\1/' | sort -u || true)"
+              if [[ -z "$failed" ]]; then
+                echo "No scenario reported a failure; the step failed otherwise (a timeout of the whole step, or a crash of swift test): see the run's log."
+              else
+                echo "Failing scenarios (test names, without \`test\`):"
+                echo
+                while read -r name; do echo "- \`$name\`"; done <<<"$failed"
+                echo
+                echo "First failing checks:"
+                echo
+                echo '```'
+                grep -E ": error: -\[OvertermE2ETests\.E2ETests test" "$log" | sed -E 's/^.*: error: //' | cut -c1-300 | head -40 || true
+                echo '```'
+              fi
+            fi
+          } >"$RUNNER_TEMP/summary.md"
+          cat "$RUNNER_TEMP/summary.md" >>"$GITHUB_STEP_SUMMARY"
+          # A delimiter no line of the log can hold.
+          delim="SUMMARY_$(uuidgen)"
+          {
+            echo "summary<<$delim"
+            cat "$RUNNER_TEMP/summary.md"
+            echo "$delim"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Keep the logs and pictures
+        if: failure()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: ${{ env.E2E_LOGS }}
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # On its own machine and token: only this job may write issues.
+  report:
+    needs: e2e
+    if: failure() && needs.e2e.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or comment on "Nightly E2E failed"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SUMMARY: ${{ needs.e2e.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly E2E failed"
+          body="${SUMMARY:-The nightly E2E run failed: $RUN_URL}"
+          body+=$'\n\n'"Logs and pictures: the run's \`e2e-logs\` artifact (kept 14 days). Run one scenario as the nightly does: \`make app CONFIG=debug && OVERTERM_E2E_TESTS=1 swift test --filter OvertermE2ETests.E2ETests/test<Name>\` (docs/testing.md, Nightly in CI)."
+          existing="$(gh issue list -R "$REPO" --state open --search "in:title \"$title\"" --json number,title \
+            -q "map(select(.title == \"$title\")) | .[0].number // empty")"
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" -R "$REPO" --body "$body"
+            echo "Commented on #$existing"
+          else
+            gh issue create -R "$REPO" --title "$title" --body "$body"
+          fi

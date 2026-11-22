@@ -14,6 +14,12 @@ if [[ ! -d "$APP" ]]; then
   exit 1
 fi
 built="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+# A debug bundle (make app CONFIG=debug, the nightly's) is never shipped.
+config="$(/usr/libexec/PlistBuddy -c 'Print OvertermBuildConfiguration' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+if [[ "$config" != "release" ]]; then
+  echo "error: Overterm.app is a ${config:-unknown} build, not a release one — run: make app" >&2
+  exit 1
+fi
 if [[ "$built" != "$VERSION" ]]; then
   echo "error: Overterm.app is version $built, not $VERSION — run: VERSION=$VERSION make app" >&2
   exit 1

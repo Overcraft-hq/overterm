@@ -685,6 +685,10 @@ final class LanguageServerTests: XCTestCase {
         try Data("variable \"acme\" {}\n".utf8).write(to: tf)
         try Data("notes\n".utf8).write(to: dir.appendingPathComponent("README.md"))
         try await Self.eventually { logText().contains("watched \(LSP.uri(for: go)) 1") }
+        // Removed only once its creation is told: removed sooner, FSEvents
+        // can fold both into one event, and there is no create to tell
+        // (seen under load, three test processes at once).
+        try await Self.eventually { logText().contains("watched \(LSP.uri(for: tf)) 1") }
         try FileManager.default.removeItem(at: tf)
         try await Self.eventually { logText().contains("watched \(LSP.uri(for: tf)) 3") }
         let watched = logText().components(separatedBy: "\n").filter { $0.hasPrefix("watched ") }

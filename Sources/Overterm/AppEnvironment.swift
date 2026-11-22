@@ -38,6 +38,10 @@ enum AppEnvironment {
     static let supportDirectory: URL = {
         if let dir = env["OVERTERM_SUPPORT_DIR"] { return URL(fileURLWithPath: dir, isDirectory: true) }
         if isIsolated {
+            // A unit test process removes its own at exit: run in parallel,
+            // there is one a test. The app's isolated runs remove theirs as
+            // they end (TerminalWindowController, E2ERunner).
+            if isUnderTest, e2eScenario == nil { atexit { AppEnvironment.removeOwnSupportDirectory() } }
             return FileManager.default.temporaryDirectory.appendingPathComponent("overterm-isolated-\(UUID().uuidString)", isDirectory: true)
         }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -55,6 +59,11 @@ enum AppEnvironment {
     /// Whether the support directory is this run's own temporary one, to
     /// remove at its end — not one a test handed in.
     static var ownsSupportDirectory: Bool { isIsolated && env["OVERTERM_SUPPORT_DIR"] == nil }
+
+    private static func removeOwnSupportDirectory() {
+        guard ownsSupportDirectory else { return }
+        try? FileManager.default.removeItem(at: supportDirectory)
+    }
 
     /// Files dropped onto a terminal as promises (Photos, Safari, the
     /// screenshot thumbnail write theirs only when asked) land here, a
@@ -295,11 +304,23 @@ enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions", isDirectory: true)
     }
 
-    private static let isolatedSuite = "\(bundleIdentifier).isolated"
+    /// An isolated run's suite is a file in its own support directory (a
+    /// suite named by an absolute path is that plist), not a name in
+    /// ~/Library/Preferences. cfprefsd shares a named suite between
+    /// processes: with one name for every isolated run, each test process
+    /// `swift test --parallel` starts wiped the others' values mid-test (an
+    /// environment picked, then read back as none: APIMCPTests' "Undefined
+    /// variables"). Named one a process instead, each left an empty plist
+    /// behind in ~/Library/Preferences — cfprefsd writes it after a removed
+    /// domain, after the process is gone; this one goes with its directory.
+    private static var isolatedSuite: String { supportDirectory.appendingPathComponent("isolated-defaults").path }
 
-    /// UserDefaults.standard, or a throwaway suite for an isolated run.
+    /// UserDefaults.standard, or a throwaway suite for an isolated run,
+    /// wiped at launch.
     nonisolated(unsafe) static let defaults: UserDefaults = {
-        guard isIsolated, let suite = UserDefaults(suiteName: isolatedSuite) else { return .standard }
+        guard isIsolated else { return .standard }
+        try? FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
+        guard let suite = UserDefaults(suiteName: isolatedSuite) else { return .standard }
         suite.removePersistentDomain(forName: isolatedSuite)
         return suite
     }()

@@ -86,10 +86,17 @@ final class FakeSSHHost {
         try Data().write(to: folder.appendingPathComponent("authorized_keys"))
     }
 
+    /// Bounded, never `waitUntilExit`: should another wait in the process
+    /// reap sshd first, Foundation never hears it ended — a test process
+    /// hung here at SSHTunnelTests' end for 16 min, its sshd long gone.
     func stop() {
         if process.isRunning {
             process.terminate()
-            process.waitUntilExit()
+            let pid = process.processIdentifier
+            let gone = Date().addingTimeInterval(10)
+            while process.isRunning, kill(pid, 0) == 0, Date() < gone { Thread.sleep(forTimeInterval: 0.02) }
+            // One that ignored SIGTERM would keep its port with its folder gone.
+            if process.isRunning, kill(pid, 0) == 0 { kill(pid, SIGKILL) }
         }
         try? FileManager.default.removeItem(at: folder)
     }
