@@ -1642,11 +1642,25 @@ package final class FakeDockerEngine: @unchecked Sendable {
             Mounts: summary.Mounts, NetworkSettings: .init(Networks: ["bridge": .init(IPAddress: "172.17.0.2", Gateway: "172.17.0.1", MacAddress: nil)]))
     }
 
-    fileprivate func follow(_ id: String, _ channel: Channel) { locked { logFollowers[id, default: []].append(channel) } }
+    // A stream is counted only while its connection is open. Its request can
+    // be answered after the connection went (the client asked and left at
+    // once — a task cancelled while connecting): counted then, it was never
+    // forgotten, its inactivity long past, and stayed open for ever. Both
+    // run on the channel's event loop, so `isActive` here is the truth.
+    fileprivate func follow(_ id: String, _ channel: Channel) {
+        guard channel.isActive else { return }
+        locked { logFollowers[id, default: []].append(channel) }
+    }
 
-    fileprivate func listen(_ channel: Channel) { locked { eventStreams[ObjectIdentifier(channel)] = channel } }
+    fileprivate func listen(_ channel: Channel) {
+        guard channel.isActive else { return }
+        locked { eventStreams[ObjectIdentifier(channel)] = channel }
+    }
 
-    fileprivate func sample(_ channel: Channel) { locked { samplers[ObjectIdentifier(channel)] = channel } }
+    fileprivate func sample(_ channel: Channel) {
+        guard channel.isActive else { return }
+        locked { samplers[ObjectIdentifier(channel)] = channel }
+    }
 
     fileprivate func forget(_ channel: Channel) {
         locked {
@@ -1803,6 +1817,8 @@ private final class Handler: ChannelInboundHandler, @unchecked Sendable {
             let ticks = Ticks()
             let engine = engine
             engine.sample(channel)
+            // Its client already gone: no samples to nobody.
+            guard channel.isActive else { break }
             statsTask = channel.eventLoop.scheduleRepeatedTask(initialDelay: .zero, delay: .milliseconds(200)) { _ in
                 let sample = engine.statsSample(id, tick: ticks.next())
                 channel.writeAndFlush(HTTPServerResponsePart.body(.byteBuffer(ByteBuffer(bytes: sample))), promise: nil)
