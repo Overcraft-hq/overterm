@@ -16,6 +16,7 @@ import Combine
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class FileTreeTests: XCTestCase {
     private var dir: URL!

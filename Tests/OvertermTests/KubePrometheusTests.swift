@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Prometheus per context (stage 4; docs/design/kubernetes/analysis.md,
 /// 2.11, Section 4): the metrics proxy's `--accept-paths` (one Service's two

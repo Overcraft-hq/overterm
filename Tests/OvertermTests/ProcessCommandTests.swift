@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A process's command line as Tab Info's tooltip shows it: masked as the
 /// census reads it (`ProcessArguments`, docs/design/activity/analysis.md,

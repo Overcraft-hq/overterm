@@ -39,6 +39,28 @@ package struct SessionState: Codable, Equatable {
         /// when no pane is pinned.
         package var paneKubeContexts: [KubeTerminalPin?]? = nil
 
+        package init(
+            workingDirectory: String? = nil, customTitle: String? = nil, color: String? = nil, isPinned: Bool, agent: Agent? = nil, attachedCheckout: String? = nil, panes: PaneLayout? = nil,
+            focusedPane: Int? = nil, scrollback: String? = nil, group: Int? = nil, browserURL: String? = nil, browserPages: [String]? = nil, browserPage: Int? = nil,
+            kubeContext: KubeTerminalPin? = nil, paneKubeContexts: [KubeTerminalPin?]? = nil
+        ) {
+            self.workingDirectory = workingDirectory
+            self.customTitle = customTitle
+            self.color = color
+            self.isPinned = isPinned
+            self.agent = agent
+            self.attachedCheckout = attachedCheckout
+            self.panes = panes
+            self.focusedPane = focusedPane
+            self.scrollback = scrollback
+            self.group = group
+            self.browserURL = browserURL
+            self.browserPages = browserPages
+            self.browserPage = browserPage
+            self.kubeContext = kubeContext
+            self.paneKubeContexts = paneKubeContexts
+        }
+
         /// The pin pane `index` (reading order) had. A file from before
         /// panes had their own: the tab's, for every pane.
         package func kubeContext(ofPane index: Int) -> KubeTerminalPin? {
@@ -122,6 +144,12 @@ package struct SessionState: Codable, Equatable {
     /// The islands, in strip order; a tab points at one by index. Absent
     /// in session files written before groups existed.
     package var groups: [GroupState]?
+
+    package init(tabs: [TabState], selectedIndex: Int? = nil, groups: [GroupState]? = nil) {
+        self.tabs = tabs
+        self.selectedIndex = selectedIndex
+        self.groups = groups
+    }
 
     package static let empty = SessionState(tabs: [], selectedIndex: nil)
 

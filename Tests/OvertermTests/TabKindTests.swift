@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// What a tab's icon says it is. The rule decides a glyph people read
 /// without looking, so it has to be boring and predictable.

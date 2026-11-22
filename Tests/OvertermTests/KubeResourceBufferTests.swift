@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A cluster object's YAML in the editor (2.8), against `FakeKubeAPI` on a
 /// socket of the test's own — never ~/.kube, over fictional contexts on it

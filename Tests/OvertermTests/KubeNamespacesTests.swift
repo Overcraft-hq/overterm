@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Several namespaces at once: the scope's one spelling, the merge of a
 /// follow each, the cap (one watch across the cluster, filtered — refused

@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Finding and copying on the Kubernetes page: `field:` and `label:` sent
 /// to the server, Copy as kubectl and its quoting, the list as CSV, the

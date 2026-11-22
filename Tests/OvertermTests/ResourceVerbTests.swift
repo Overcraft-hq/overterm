@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A resource's verbs as an AppKit menu (`ResourceVerbMenuItem.items`):
 /// the order and dividers its SwiftUI menu has, the reason a verb is

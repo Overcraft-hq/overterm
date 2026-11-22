@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A collection run top to bottom, against a server on this machine: a
 /// variable one request sets reaching the next, setNextRequest, stop, and

@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Pod files (stage 4): `kubectl cp` out of and into a container — the
 /// lines (`-c`, `--context` and `-n` always, quoted for zsh, odd paths

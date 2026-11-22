@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Settings ▸ About ▸ Acknowledgements says what this build ships: the list
 /// moves with the pins, or `Scripts/fetch-licenses.sh` is due.

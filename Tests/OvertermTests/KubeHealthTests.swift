@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Health checks (docs/design/kubernetes/analysis.md, 3.9), the pinned
 /// contexts' health view (decision 17) and diff across contexts (3.10):

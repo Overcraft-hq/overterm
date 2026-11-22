@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Texts with their selections written in: `|` a caret, `«…»` a selection.
 /// (Not `[…]`: brackets are what half of these tests type.)

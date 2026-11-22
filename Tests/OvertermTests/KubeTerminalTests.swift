@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Terminal in this context (docs/design/kubernetes/analysis.md, 3.11): the
 /// pin's file — what it holds and doesn't, its permissions — the shell's

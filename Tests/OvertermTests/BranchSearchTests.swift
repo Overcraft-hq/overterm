@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Overgit ▸ Branches ▸ Filter branches.
 final class BranchSearchTests: XCTestCase {

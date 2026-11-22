@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The engine's pure parts: where it is, its frames and lines, its tar,
 /// what a stats sample means, ports once each, secrets hidden.

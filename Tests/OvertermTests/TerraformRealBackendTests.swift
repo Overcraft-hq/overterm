@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The real terraform against `FakeTerraformBackend`, through the recording
 /// wrapper, in a sandbox of its own: that the fake answers as Terraform's

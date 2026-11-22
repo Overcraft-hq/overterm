@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The opener against the isolated stand-in for LaunchServices (what E2E
 /// runs use): nothing is launched, every open is recorded.

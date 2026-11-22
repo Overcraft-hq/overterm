@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// In-place resize (stage 3b): what a pod's containers say, what is typed
 /// checked against it, the patch and the request it is, the kubectl it

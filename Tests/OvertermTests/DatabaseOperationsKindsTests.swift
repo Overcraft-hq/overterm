@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Oracle's, ClickHouse's and BigQuery's Server page, editing and users — the
 /// pure parts: quoting, the statements, the engines' answers read.

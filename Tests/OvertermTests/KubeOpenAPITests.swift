@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The cluster's own API docs (3.15), pure: `/openapi/v3`'s index and its
 /// documents read from fixtures in the server's shape — a core group's,

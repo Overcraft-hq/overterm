@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// SQL as text: its statements, what they do, what the caret is writing.
 final class SQLTextTests: XCTestCase {

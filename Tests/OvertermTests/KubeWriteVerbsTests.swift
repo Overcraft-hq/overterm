@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Stage 2a's other verbs, pure: rollout pause and resume, a CronJob
 /// triggered, suspended and resumed, a node cordoned and uncordoned, a

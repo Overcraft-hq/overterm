@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The window's API client: secrets kept out of the committed file, and a
 /// path compared the same whether or not it exists yet.

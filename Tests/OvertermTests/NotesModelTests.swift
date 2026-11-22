@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// What the Notes panel makes and shows: templates filled, today's note
 /// where Obsidian's settings put it, new notes named as Obsidian names them.

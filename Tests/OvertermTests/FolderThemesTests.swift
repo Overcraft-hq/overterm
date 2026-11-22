@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Settings ▸ Themes ▸ Themes by folder: which theme a tab's folder takes.
 final class FolderThemesTests: XCTestCase {

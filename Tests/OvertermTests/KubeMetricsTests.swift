@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Usage from metrics.k8s.io (stage 2d; docs/design/kubernetes/analysis.md,
 /// 2.11): quantities read as the API writes them, metrics-server's lists

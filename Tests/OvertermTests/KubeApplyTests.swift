@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Stage 2b, pure (docs/design/kubernetes/analysis.md, 2.8 and 3.3): a
 /// manifest read, the server-side apply's requests (dry run, apply, force),

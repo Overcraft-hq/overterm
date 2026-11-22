@@ -6,8 +6,8 @@ import Foundation
 /// the databases', Docker's, Kubernetes', Terraform's, Activity's). Sets storage only — reading a hook from here
 /// would wait on itself.
 @objc(OvertermFeatures)
-final class OvertermFeatures: NSObject {
-    @objc static func install() {
+package final class OvertermFeatures: NSObject {
+    @objc package static func install() {
         APIFeature.install()
         NotesFeature.install()
         DatabaseFeature.install()

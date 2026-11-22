@@ -4,6 +4,10 @@ import UserNotifications
 
 @MainActor
 package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    /// Starts an end-to-end scenario: set by the app's `main.swift` where the
+    /// build has them (`OvertermE2E`), nil in a shipped app.
+    package static var e2eStart: (@MainActor (String, TerminalWindowController) -> Void)?
+
     private var windowController: TerminalWindowController?
     /// The census's context from the app's windows (`wireActivityCensus`).
     private var activityCensus: AnyCancellable?
@@ -66,14 +70,14 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         windowController = controller
         controller.dumpLayoutIfRequested()
         if let scenario = AppEnvironment.e2eScenario {
-            #if E2E
-            E2ERunner.start(scenario, app: controller)
-            #else
-            // A release build without the E2E trait has no scenarios: said
-            // and quit at once, rather than a window the run waits on.
-            FileHandle.standardError.write(Data("error: this build has no end-to-end scenarios (\(scenario)) — build with CONFIG=debug, or --traits E2E\n".utf8))
-            exit(2)
-            #endif
+            if let start = Self.e2eStart {
+                start(scenario, controller)
+            } else {
+                // A release build without the E2E trait has no scenarios: said
+                // and quit at once, rather than a window the run waits on.
+                FileHandle.standardError.write(Data("error: this build has no end-to-end scenarios (\(scenario)) — build with CONFIG=debug, or --traits E2E\n".utf8))
+                exit(2)
+            }
         }
         // What Activity kept and stopped before the last quit or crash (D-29).
         ActivityPersistence.shared.start()

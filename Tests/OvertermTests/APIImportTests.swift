@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// OpenAPI, Postman, .http and cURL made into Bruno's files — checked as
 /// written to disk and read back as a collection, the way Bruno would.

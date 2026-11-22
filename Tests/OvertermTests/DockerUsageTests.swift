@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The list's CPU and memory against the fake engine: each running
 /// container read once a round, a few at a time, set against its read

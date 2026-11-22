@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A node's disks and network from node-exporter (docs/design/kubernetes/
 /// metrics.md 2.8's K6 and K7, 4.6, decision 6; stage M8b): their queries

@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Collisions on Listening (docs/design/activity/analysis.md, 6.8): one
 /// port split across IPv4 and IPv6 by two holders, a specific address

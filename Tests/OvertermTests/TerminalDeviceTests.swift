@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A pane's pty as the census compares it (docs/design/activity/
 /// analysis.md, 7.10): the device of the path libghostty names, what

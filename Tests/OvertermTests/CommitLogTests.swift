@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class CommitLogTests: XCTestCase {
     private let sha1 = String(repeating: "1", count: 40)

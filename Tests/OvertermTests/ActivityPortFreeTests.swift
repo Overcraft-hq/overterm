@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The pane pill's Free… over a fake Mac (docs/design/activity/analysis.md,
 /// 6.10, 6.12, 10.1): what holds a pill's port is read at the press and

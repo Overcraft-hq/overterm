@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Reading a big transcript holds a chunk at a time, not the file: each
 /// chunk's autoreleased buffer used to live until the whole read ended.

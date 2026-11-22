@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class ClipboardConfirmationTests: XCTestCase {
     /// libghostty asks again about a request completed unconfirmed — Overterm

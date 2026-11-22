@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class SurfaceProcessesTests: XCTestCase {
     /// A git the app runs is its child too, and may start between two

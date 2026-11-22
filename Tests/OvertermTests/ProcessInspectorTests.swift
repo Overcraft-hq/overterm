@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A tab's processes, looked up in the census (docs/design/activity/
 /// analysis.md, 7.8): over a fake Mac, a split tab's two panes read in

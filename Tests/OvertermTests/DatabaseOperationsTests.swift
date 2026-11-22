@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The database client's Server page, editing and users — the pure parts:
 /// quoting, which results can be edited, pending changes and the statements

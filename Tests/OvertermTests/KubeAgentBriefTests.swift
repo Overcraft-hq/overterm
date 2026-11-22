@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Ask Why (stage 1e; docs/design/kubernetes/analysis.md, 3.4): what is
 /// wrong with a pod or a Deployment, the brief's words for each failure —

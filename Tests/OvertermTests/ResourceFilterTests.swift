@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A page's filter field (`ResourceFilter`): words split and lowercased,
 /// `key:value` by a page's own keys and aliases, `-` negating, unknown

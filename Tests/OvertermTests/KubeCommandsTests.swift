@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A pod's commands in a tab — a shell, attach, a log followed: the lines
 /// built (`--context` and `-n` always, quoted for zsh), the process class

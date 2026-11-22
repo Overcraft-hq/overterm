@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Scripts/affected-tests.sh, which picks the unit tests a change reaches
 /// (`make test-changed`, CI's `changes` job). It runs for real with macOS's

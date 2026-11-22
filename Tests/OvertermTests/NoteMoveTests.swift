@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A drop in the Notes panel: what moves where.
 final class NoteMoveTests: XCTestCase {

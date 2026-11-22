@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Activity's history (docs/design/activity/analysis.md, 6.11, 10.1): the
 /// strip's cells — highest, lowest, a gap never zero —, the detail's

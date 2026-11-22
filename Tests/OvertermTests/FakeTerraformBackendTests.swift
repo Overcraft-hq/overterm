@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// `FakeTerraformBackend` answers as Terraform's http backend client
 /// expects (its `client.go`): GET 404 for no state, writes refused without

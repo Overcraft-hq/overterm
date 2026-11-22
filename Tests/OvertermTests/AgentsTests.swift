@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The agents Overterm knows (`Agent`), how each is started for one launch
 /// (`AgentLaunch`), recognised, guarded, and read off the screen.

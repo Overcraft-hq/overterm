@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Listening's rows (docs/design/activity/analysis.md, 6.8) over a fake Mac:
 /// a holder's v4 and v6 as one row, UDP, the URL by the bound families; the

@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The page's verbs over a fake Mac (docs/design/activity/analysis.md,
 /// 6.10, 10.1): a row's process read as the policy sees it — its class by

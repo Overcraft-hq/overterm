@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// D-7 (docs/design/terraform/analysis.md 5.8): any agent can write
 /// settings.json, so a security setting changed there outside the Settings

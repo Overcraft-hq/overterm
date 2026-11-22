@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A context's settings in one sheet: read from `kubernetes.contexts` and
 /// `kubernetes.agentWrites`, written back with the entry's other fields and

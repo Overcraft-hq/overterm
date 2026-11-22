@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class CommitGraphTests: XCTestCase {
     /// A commit is only its sha and its parents here — the rest of it says

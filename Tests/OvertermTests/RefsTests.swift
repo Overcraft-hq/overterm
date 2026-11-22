@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class RefsTests: XCTestCase {
     private func line(_ refname: String, _ sha: String, _ upstream: String, _ track: String, _ at: String, _ subject: String) -> String {

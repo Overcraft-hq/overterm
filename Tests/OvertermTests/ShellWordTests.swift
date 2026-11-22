@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A line Overterm types into a tab never carries a raw control character
 /// (`ShellWord`): ^U there erases the opening quote — in the tty and in

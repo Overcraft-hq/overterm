@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Oracle: SQL and PL/SQL split as SQL*Plus does, the checks, an Easy
 /// Connect string, values from their bytes — offline; the driver against

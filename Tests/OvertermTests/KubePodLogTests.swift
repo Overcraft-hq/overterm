@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A pod's log (stage 1c): the default container, the queries built, the
 /// pure pieces (lines out of bytes, older lines, the file's name, what an

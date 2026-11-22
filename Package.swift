@@ -41,7 +41,7 @@ let package = Package(
     products: [
         .executable(name: "Overterm", targets: ["OvertermApp"])
     ],
-    // The end-to-end scenarios (Sources/Overterm/E2E) and the tests' fake
+    // The end-to-end scenarios (Sources/OvertermE2E) and the tests' fake
     // servers (Fake*.swift) are `#if E2E`: in every debug build, and in a
     // release build only with `--traits E2E` — a shipped app carries none
     // of them (45,000 lines the release build no longer optimises).
@@ -150,7 +150,7 @@ let package = Package(
         feature("OvertermTerraform", over: ["OvertermKubernetes"]),
         // OvertermShell: the window and what holds the features together —
         // TerminalWindowController and its extensions, the app delegate, the
-        // menus, the right slot and the sidebar — and the E2E scenarios.
+        // menus, the right slot and the sidebar.
         // OvertermOvergit: the git panel (⌥⌘G), beside the features: only
         // the window shows it.
         feature("OvertermOvergit", over: ["Overterm"]),
@@ -176,14 +176,17 @@ let package = Package(
         // The app: Sources/OvertermApp/main.swift starts the library. Its
         // product keeps the name the binary always had (make-app.sh, the
         // docs' `.build/debug/Overterm`).
+        // OvertermE2E: the end-to-end scenarios and their servers, over the
+        // shell; every file `#if E2E`, so a shipped app's is empty.
+        feature("OvertermE2E", over: ["OvertermShell"]),
         .executableTarget(
             name: "OvertermApp",
-            dependencies: ["OvertermShell"],
+            dependencies: ["OvertermE2E"],
             path: "Sources/OvertermApp"
         ),
         .testTarget(
             name: "OvertermTests",
-            dependencies: ["OvertermShell"],
+            dependencies: ["OvertermE2E"],
             path: "Tests/OvertermTests"
         ),
         // Launches the built app per scenario; opt-in (make e2e).

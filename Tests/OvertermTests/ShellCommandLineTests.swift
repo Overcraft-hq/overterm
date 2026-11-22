@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The one command-line splitter Kubernetes' pane header, a tab's kind and
 /// Terraform's read a pane's command through.

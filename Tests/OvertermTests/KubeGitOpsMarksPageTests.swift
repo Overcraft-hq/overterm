@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The GitOps section on a spoke, through the page (docs/design/
 /// kubernetes/gitops.md, 14.2, stages D3 and D4) against the fake API server —

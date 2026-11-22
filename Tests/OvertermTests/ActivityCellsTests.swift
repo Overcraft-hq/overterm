@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The list's plain cells as words (`ActivityCells`): which columns are
 /// AppKit text, what each says, its tint — what the table compares to skip

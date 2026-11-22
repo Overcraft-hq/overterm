@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// `TerraformRun.short` against stand-ins behind the recording wrapper:
 /// what it passes, what it refuses before starting, its bounds.

@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The pure half of the Kubernetes client: Tables read (columns and their
 /// priorities, rows known by namespace and name, the List fallback), a

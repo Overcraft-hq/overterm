@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// gh's JSON, in the shapes it really returns (sampled from gh 2.87).
 final class PullRequestTests: XCTestCase {

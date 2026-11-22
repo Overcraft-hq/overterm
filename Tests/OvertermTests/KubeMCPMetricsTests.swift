@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// `k8s_metrics` (docs/design/kubernetes/metrics.md 7; stage M11) against
 /// `FakeKubeAPI` and its fake Prometheus and metrics-server, never a

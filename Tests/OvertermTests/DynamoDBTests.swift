@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// DynamoDB: PartiQL's checks, typed values as text, items as rows, the
 /// catalog's columns, signing — offline; the driver against DynamoDB Local

@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Where a tab dragged over a pane lands. Five targets in one rectangle
 /// with no modifier to remember, which only works if the thresholds are

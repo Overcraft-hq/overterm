@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The GitOps section's reads against `FakeKubeAPI` on a socket of the
 /// tests' own (docs/design/kubernetes/gitops.md, 3, 8.2), never a real

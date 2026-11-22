@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Stage 2c (analysis 2.4, 5.6, 5.10): a state's JSON through the
 /// allow-list, masked at decode — a sensitive output never valued, its value

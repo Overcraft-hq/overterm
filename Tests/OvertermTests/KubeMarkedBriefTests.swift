@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Ask Why on an Argo CD app read from the marks on its objects (docs/
 /// design/kubernetes/gitops.md, 14.2.6, D6): the brief's words — the

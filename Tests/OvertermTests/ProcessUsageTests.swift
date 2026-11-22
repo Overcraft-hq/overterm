@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The user's processes' usage and its rates (docs/design/activity/
 /// analysis.md, 7.5): by the interval measured, over at least 250 ms and

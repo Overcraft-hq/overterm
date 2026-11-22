@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class UsageMeterTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_792_000_000)

@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The rail's Kubernetes panel (docs/design/kubernetes/analysis.md,
 /// Section 6, 3.1–3.2) against `FakeKubeAPI` on a socket of the test's

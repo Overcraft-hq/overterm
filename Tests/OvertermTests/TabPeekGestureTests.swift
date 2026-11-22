@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class TabPeekGestureTests: XCTestCase {
     /// Fingers on the trackpad: normalized y, 1 at the top. Swiping down

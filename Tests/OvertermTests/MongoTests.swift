@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// MongoDB's pure parts: BSON both ways, the shell's values and statements,
 /// what reads and what destroys, answers as rows, connection strings, SCRAM

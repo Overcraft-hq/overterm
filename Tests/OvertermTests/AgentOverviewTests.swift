@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class AgentOverviewTests: XCTestCase {
     private func lines(_ objects: [String]) -> [Data] { objects.map { Data($0.utf8) } }

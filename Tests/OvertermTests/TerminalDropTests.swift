@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// What a drop onto a terminal types in. The Claude Code forms follow its
 /// CLI (2.1.282): a pasted image path is split off at " /", unquoted or

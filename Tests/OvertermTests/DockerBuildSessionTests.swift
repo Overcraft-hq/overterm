@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A build followed while its detail shows, through a stub `docker` that
 /// answers as buildx would: no test runs buildx.

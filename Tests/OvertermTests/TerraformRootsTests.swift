@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Stage 1b's pure parts (analysis 4.11, 4.12, 5.1, 3.2): what a folder's
 /// files say, the backends' identities, the classes, the roots and

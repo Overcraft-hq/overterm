@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Force unlock (analysis 2.5, 4.10, D-10, stage 2e): the two lines it
 /// runs and nothing like them, the probe's answer read against the lock

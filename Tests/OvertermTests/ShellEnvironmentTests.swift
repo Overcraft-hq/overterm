@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class ShellEnvironmentTests: XCTestCase {
     private func output(_ fields: [String]) -> Data {

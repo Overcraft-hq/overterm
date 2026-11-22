@@ -18,6 +18,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The dependency tree in a detail's Overview (docs/design/kubernetes/
 /// analysis.md, 3.7, stage 3b) and Argo CD's and Flux's trees: which kinds

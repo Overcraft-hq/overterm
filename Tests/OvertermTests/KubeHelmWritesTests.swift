@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Helm's writes (stage 2f): the lines — `--kube-context` and `-n` always,
 /// quoted for zsh, a ConfigMap-stored release's driver said —, the process

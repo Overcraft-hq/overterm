@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A chart said as text for an agent (docs/design/kubernetes/metrics.md 7;
 /// stage M11, `KubeMetricsText`): the figures by nearest rank, gaps left

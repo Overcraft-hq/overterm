@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Tab Info over the census's light slice for its tab (docs/design/activity/
 /// analysis.md, 6.12), on a fake Mac: a split tab one group per pane, each

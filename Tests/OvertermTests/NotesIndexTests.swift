@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Links resolved as Obsidian resolves them, and what the index answers.
 final class NotesIndexTests: XCTestCase {

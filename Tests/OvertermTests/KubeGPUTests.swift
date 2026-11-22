@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// GPUs (docs/design/kubernetes/metrics.md, decision 12; stage M8c): what
 /// the objects say — a node's GPU resources and the pods that hold them, a

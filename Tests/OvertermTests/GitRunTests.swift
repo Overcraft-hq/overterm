@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The process runner itself: a hung tool, a chatty one, a burst, and a
 /// child left holding the pipes.

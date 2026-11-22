@@ -19,6 +19,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The shared transport over a real unix socket, against a small server of
 /// the test's own that checks the Host header as `kubectl proxy` does:

@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A tab's agent from a fake census (docs/design/activity/analysis.md,
 /// 7.8): the readers that walked every pane's tree with a scan of their own

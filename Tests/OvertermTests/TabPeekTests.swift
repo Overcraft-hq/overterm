@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class TabPeekTests: XCTestCase {
     private let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)

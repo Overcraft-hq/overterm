@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A text view stand-in: NSMutableString, a selection, and undo by whole
 /// snapshots per outermost group, the cursor at the change like NSTextView's.

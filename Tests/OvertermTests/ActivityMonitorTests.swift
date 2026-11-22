@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The census's readers (docs/design/activity/analysis.md, 7.1, 7.3, 7.9)
 /// over a fake Mac: wants counted by owner, one tick for every reader at

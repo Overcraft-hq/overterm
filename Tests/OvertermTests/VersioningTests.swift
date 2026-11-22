@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The app's version: VERSION and CHANGELOG.md, Scripts/bump-version.sh, and
 /// the git hooks that keep them in step with the code (.githooks; CLAUDE.md,

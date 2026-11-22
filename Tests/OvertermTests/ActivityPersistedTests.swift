@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// D-29 (docs/design/activity/analysis.md, 6.9): the kept and stopped
 /// identities across a crash — pid and start only, 0600, never through a

@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Suspend Tab over a fake Mac (docs/design/activity/analysis.md, 6.5,
 /// 6.10, 10.1): what it stops is the pane's set, its sends go through

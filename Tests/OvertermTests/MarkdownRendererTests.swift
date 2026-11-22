@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 final class MarkdownRendererTests: XCTestCase {
     private let theme = EditorTheme(dark: true, background: .black)

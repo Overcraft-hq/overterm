@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A manifest's keys for the cluster's docs (3.15): each key's path, the
 /// document's kind, where a key typed at the caret goes, and the unknown

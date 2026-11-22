@@ -25,7 +25,8 @@ module, each its own) and a change rebuilds what is above it only:
 | `OvertermSettingsPage` | ⌘,'s page, the themes' gallery, preview and editor (the settings store, the schema and the theme catalog are the shell's) |
 | `OvertermAgents` | the agents' overview (⇧⌘A) and the Sessions panel (a tab's agent, `PaneAgent`, is the shell's) |
 | `OvertermActivity` | the Activity page (⌥⌘A): its rows, filters, ports' holders, verbs' questions, and agents' `port_`/`proc_` tools (`ActivityFeature`); the census, `ProcessSignals` and a pill's port freeing are the shell's |
-| `OvertermShell` | the window and what holds the features together: `TerminalWindowController` and its extensions, the app delegate, the menus, the right slot, the sidebar, Tab Info, the Inbox's view, the review page, the E2E scenarios; `OvertermFeatures` |
+| `OvertermShell` | the window and what holds the features together: `TerminalWindowController` and its extensions, the app delegate, the menus, the right slot, the sidebar, Tab Info, the Inbox's view, the review page; `OvertermFeatures` |
+| `OvertermE2E` | the end-to-end scenarios and their servers (`E2ERunner`, `E2E*Server`), over the shell: every file `#if E2E`, so a shipped app's module is empty; the app's `main.swift` hands the shell its start (`AppDelegate.e2eStart`) |
 
 `OvertermApp` (`Sources/OvertermApp/main.swift`) calls `AppMain.run()`; its
 product keeps the binary's name, `Overterm` (`.build/debug/Overterm`, what
@@ -59,7 +60,7 @@ the feature's extension (`Tab+Kubernetes.swift`, `DatabaseEditor.swift`); a
 window the shell reaches is a `TerminalWindowHost`. Resources are the
 bundle's (`Bundle.main`): no module has SwiftPM's.
 
-The end-to-end scenarios (`Sources/OvertermShell/E2E`) and the tests' fake servers
+The end-to-end scenarios (`Sources/OvertermE2E`, the `OvertermE2E` module over the shell — `main.swift` sets `AppDelegate.e2eStart` where the build has them) and the tests' fake servers
 (every `Fake*.swift`: `FakeDockerEngine`, `FakeSSHHost`, `FakeKubeAPI` and its
 parts, `FakeTerraformBackend`) are `#if E2E`, about 45,000 lines a shipped app
 never runs. Package.swift defines `E2E` in every debug build, and in a release

@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// Agents' `k8s_` tools (stage 1e; docs/design/kubernetes/analysis.md,
 /// 3.5) against `FakeKubeAPI` on a socket of the test's own, through a

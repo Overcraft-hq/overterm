@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The rail down the sidebar's edge: what it holds, in what order, and the
 /// width it leaves the panel beside it.

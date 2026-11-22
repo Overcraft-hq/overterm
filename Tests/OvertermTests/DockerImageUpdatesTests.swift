@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 private func digest(_ character: Character) -> String { "sha256:" + String(repeating: character, count: 64) }
 

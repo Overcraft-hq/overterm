@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The simulator pane's pure halves: what `simctl list` says there is, and
 /// the screenshot a polled frame is cut down to.

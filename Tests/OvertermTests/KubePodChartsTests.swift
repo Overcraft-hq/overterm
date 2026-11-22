@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
 @testable import OvertermActivity
+@testable import OvertermE2E
 
 /// A pod's Metrics tab, sampled (docs/design/kubernetes/metrics.md 2.3,
 /// 2.4, stage M3a): the containers in the Logs tab's order, references
