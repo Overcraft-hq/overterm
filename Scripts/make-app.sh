@@ -218,5 +218,10 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# Swift's back-deployment libraries the binary loads by @rpath (Xcode 26
+# and later): in the bundle, or no bundle — 1.6.2 opened on no macOS
+# before 26 without them.
+"$ROOT/Scripts/bundle-swift-libs.sh" "$APP_DIR"
+
 codesign --force --deep --sign - "$APP_DIR"
 echo "==> done: $APP_DIR"

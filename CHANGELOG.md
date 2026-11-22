@@ -6,11 +6,15 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
-## 1.6.3 — 2026-11-22
+## 1.6.4 — 2026-11-22
 
 - make test-changed runs under macOS's bash 3.2 and picks every test a change can reach
 - A read from Docker (a file copied out, a list) no longer fails with "ChannelError" on a busy Mac: the request goes out in one write
 - make app CONFIG=debug bundles the debug build, for the nightly end-to-end run in CI
+
+## 1.6.3 — 2026-11-22
+
+- build: Overterm opens again on macOS 13–15 — 1.6.2 was killed at launch there, built by Xcode 27 without the Swift library (libswiftCompatibilitySpan) macOS before 26 lacks; the app now carries it, and a bundle without it fails to build
 
 ## 1.6.2 — 2026-11-19
 
