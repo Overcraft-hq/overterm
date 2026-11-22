@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Testcontainers' containers found by their labels, as each library
 /// writes them, and put in a run each. Pure.

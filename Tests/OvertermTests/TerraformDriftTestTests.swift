@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Stage 2d (analysis 2.6, 2.9, 5.3, 5.10, D-19): drift — the
 /// refresh-only plan, its age and staleness, Accept into State as the

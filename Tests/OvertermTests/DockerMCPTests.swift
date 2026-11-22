@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Docker's MCP tools, as an agent calls them, against the fake engine:
 /// what they say, and that a secret never leaves in an answer. The writes

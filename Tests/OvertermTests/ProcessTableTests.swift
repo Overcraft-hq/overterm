@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Every process from one `KERN_PROC_ALL` (docs/design/activity/analysis.md,
 /// 7.2, 6.5): sized with headroom and read again when full, parents linked

@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Change markers on every chart (docs/design/kubernetes/metrics.md 3.2,
 /// 8; stage M4): a workload's History, the detail's events, the pods'

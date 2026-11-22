@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 final class SyntaxDocumentTests: XCTestCase {
     private func spans(_ text: String, _ file: String) -> [(String, String)] {

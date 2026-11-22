@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A context's saved queries (docs/design/kubernetes/metrics.md, decision
 /// 11; stage M8d): read from `kubernetes.contexts`' `charts`, checked

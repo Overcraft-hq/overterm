@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Another app's colours as a Ghostty theme file, read back by the gallery.
 final class ThemeImportTests: XCTestCase {

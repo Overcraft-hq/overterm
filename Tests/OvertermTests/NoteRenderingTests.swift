@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// What the reading view is handed: links resolved, embeds cut to their
 /// heading or block, properties in order — and a ticked task's place.

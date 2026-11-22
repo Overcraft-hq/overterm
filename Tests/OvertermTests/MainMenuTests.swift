@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The menu bar as it is built. A command whose key never reaches its item
 /// is a shortcut that does nothing, and that is invisible from the model

@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A collection on disk: found, its tree in Bruno's order, its environments;
 /// and the variables a request sees, layered as Bruno layers them.

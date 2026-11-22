@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Settings ▸ Editor ▸ Colours ▸ The terminal theme's: the syntax in the
 /// terminal's own sixteen.

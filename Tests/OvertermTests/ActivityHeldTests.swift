@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// What Activity stopped and put in the background (docs/design/activity/
 /// analysis.md, 6.10, 3.9): kept by identity, resumed only as kept — a

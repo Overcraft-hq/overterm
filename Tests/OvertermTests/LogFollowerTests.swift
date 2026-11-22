@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The follower over any source (Docker's, a pod's): what it asks for,
 /// what it keeps once, and when it follows again.

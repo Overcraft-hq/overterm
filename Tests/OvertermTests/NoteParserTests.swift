@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A note read as Obsidian reads it: properties, links, tags, headings,
 /// tasks — and nothing taken from code.

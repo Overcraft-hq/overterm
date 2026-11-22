@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// What the Overview's cards say (`KubeOverviewCards`): the header's
 /// pills, a kind's line and bar, what needs attention worst first with

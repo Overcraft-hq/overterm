@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A whole patch cut into files, as `gh pr diff` gives one.
 final class ReviewPatchTests: XCTestCase {

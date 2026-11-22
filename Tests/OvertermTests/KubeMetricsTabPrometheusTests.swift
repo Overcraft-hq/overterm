@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A Metrics tab over Prometheus (docs/design/kubernetes/metrics.md, 3.3–3.5,
 /// 6.1, 6.2; stage M6), the page over `FakeKubeAPI` and its fake Prometheus

@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The page's guard path against the fake API server, over three fictional
 /// contexts on it: `kind-fake` (local, writable), `fake-dev` (remote, set

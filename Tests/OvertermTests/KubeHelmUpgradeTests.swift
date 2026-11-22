@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A bound release upgraded from the checkout's chart (stage 3a): the
 /// chart found, `helm template`'s inputs — arguments, no kube setting

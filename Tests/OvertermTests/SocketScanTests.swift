@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The census's sockets (docs/design/activity/analysis.md, 7.6): the
 /// classification from fixtures, real sockets of the test's own children,

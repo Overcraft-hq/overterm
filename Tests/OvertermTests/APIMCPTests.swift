@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The API client's MCP tools, as an agent calls them: on a collection on
 /// disk, against a server on this machine.

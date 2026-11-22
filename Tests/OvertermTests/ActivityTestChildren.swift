@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A process a census test started (docs/design/activity/analysis.md,
 /// 10.2, 10.6): in a process group of its own, never the runner's; its

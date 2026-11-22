@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// YAML through tree-sitter's grammar, into JSONSerialization's shapes —
 /// what an OpenAPI document in YAML needs.

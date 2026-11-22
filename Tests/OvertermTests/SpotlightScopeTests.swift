@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// ⌘F's tabs: All shows a few of each kind, the others one kind in full.
 final class SpotlightScopeTests: XCTestCase {

@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// An agent's folder's checkout, walked off the main thread (docs/design/
 /// activity/analysis.md, 7.2): the main thread is answered from what was

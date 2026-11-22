@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Elasticsearch and OpenSearch: the console's requests, the checks, the
 /// answers as rows, the catalog, a pasted address — pure, always run.

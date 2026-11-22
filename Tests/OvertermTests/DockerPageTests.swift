@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Docker page's pure parts: the filter, the commands it types, its
 /// keys, how the list is grouped and what a selection means.

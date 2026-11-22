@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A workload's merged logs (stage 2e, stern's way): the plan — the cap,
 /// streams kept in place, a pod joining, the include and exclude

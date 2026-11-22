@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The strip in the title bar: what its buttons cost in width, and who
 /// answers for the space around them.

@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The plan in the right slot as a model (analysis 6.3, Section 7): rows
 /// kept, not built in a body; the list's keys; a long string and JSON in a

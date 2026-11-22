@@ -1273,21 +1273,8 @@ package enum ActivityRows {
         return fixed(amount, digits: unit == 0 || amount >= 100 ? 0 : 1) + " " + units[unit]
     }
 
-    private static let users = NSLock()
-    nonisolated(unsafe) private static var userNames: [uid_t: String] = [:]
-
-    /// A uid's login name (`getpwuid_r`), kept for the app's life; its
-    /// number where it has none.
-    package static func userName(_ uid: uid_t) -> String {
-        if let known = users.withLock({ userNames[uid] }) { return known }
-        var entry = passwd()
-        var result: UnsafeMutablePointer<passwd>?
-        var buffer = [CChar](repeating: 0, count: 1024)
-        let name: String =
-            getpwuid_r(uid, &entry, &buffer, buffer.count, &result) == 0 && result != nil ? String(cString: entry.pw_name) : String(uid)
-        users.withLock { userNames[uid] = name }
-        return name
-    }
+    /// A uid's login name, its number where it has none (`ProcessRole.userName`).
+    package static func userName(_ uid: uid_t) -> String { ProcessRole.userName(uid) }
 }
 
 /// What Listening knows of every user's listeners (D-25), said under the

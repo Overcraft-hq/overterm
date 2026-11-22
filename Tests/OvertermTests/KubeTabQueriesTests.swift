@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The pod `shop/web-1` the tests' Metrics tabs ask about, and its plans.
 enum KubeTabTesting {

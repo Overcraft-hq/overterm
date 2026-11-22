@@ -164,11 +164,14 @@ let package = Package(
         feature("OvertermSettingsPage", over: ["Overterm"]),
         // OvertermAgents: the agents' overview (⇧⌘A) and the Sessions panel.
         feature("OvertermAgents", over: ["Overterm"]),
+        // OvertermActivity: the Activity page (⌥⌘A) and its agents' tools;
+        // what the rest reads of processes and ports stays in the shell.
+        feature("OvertermActivity", over: ["Overterm"]),
         feature(
             "OvertermShell",
             over: [
                 "OvertermTerraform", "OvertermOvergit", "OvertermNotes", "OvertermSimulator", "OvertermUsage", "OvertermSettingsPage",
-                "OvertermAgents",
+                "OvertermAgents", "OvertermActivity",
             ]),
         // The app: Sources/OvertermApp/main.swift starts the library. Its
         // product keeps the name the binary always had (make-app.sh, the

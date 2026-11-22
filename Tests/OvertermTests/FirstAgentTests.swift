@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Finding a tab's agent among its panes' process trees. A tree is read
 /// from the live process table, so it can answer differently from one read

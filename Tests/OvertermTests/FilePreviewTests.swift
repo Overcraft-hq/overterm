@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A stored file's preview, from its name and first bytes.
 final class FilePreviewTests: XCTestCase {

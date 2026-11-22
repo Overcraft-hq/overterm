@@ -87,18 +87,6 @@ package enum BrowserMCP {
                     return reply(errorResult(provider.said(error)))
                 }
             }
-            if ActivityMCP.handles(name) {
-                guard settings.activityAgentAccess else {
-                    return reply(errorResult("Processes and ports aren't available to agents — Settings ▸ Activity."))
-                }
-                do {
-                    return reply(try await ActivityMCP.call(name, arguments, pane: pane))
-                } catch let error as ToolError {
-                    return failure(-32602, error.message)
-                } catch {
-                    return reply(errorResult(ActivityMCP.scrubbed(error.localizedDescription)))
-                }
-            }
             guard settings.browserAgentControl, let browser = browser() else {
                 return reply(errorResult(BrowserError.noBrowser.localizedDescription))
             }
@@ -190,7 +178,6 @@ package enum BrowserMCP {
         var offered: [[String: Any]] = []
         if settings.browserAgentControl { offered += tools }
         for provider in features where provider.enabled(settings) { offered += provider.tools }
-        if settings.activityAgentAccess { offered += ActivityMCP.tools }
         return offered
     }
 
@@ -204,12 +191,11 @@ package enum BrowserMCP {
             )
         }
         for provider in features where provider.enabled(settings) { parts.append(provider.instructionText(settings)) }
-        if settings.activityAgentAccess { parts.append(ActivityMCP.instructions) }
         return parts.joined(separator: " ")
     }
 
     /// A feature's agent tools (the databases', Docker's, Kubernetes',
-    /// Terraform's), in the order they are offered and asked: each its own
+    /// Terraform's, Activity's), in the order they are offered and asked: each its own
     /// prefix, its setting, its words. Set at install (`OvertermFeatures`).
     package struct Provider: Sendable {
         package var handles: @MainActor @Sendable (String) -> Bool

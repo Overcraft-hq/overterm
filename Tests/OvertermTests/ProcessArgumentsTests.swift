@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// `KERN_PROCARGS2` as the census reads it (docs/design/activity/analysis.md,
 /// 9.2, 9.3): argv masked at the read over its first 64 KB, the environment

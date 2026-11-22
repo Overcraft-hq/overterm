@@ -7,6 +7,7 @@
 @_exported import OvertermUsage
 @_exported import OvertermSettingsPage
 @_exported import OvertermAgents
+@_exported import OvertermActivity
 
 /// The app's settings, not SwiftUI's scene of that name: imported from
 /// two modules here, the name needs saying once.

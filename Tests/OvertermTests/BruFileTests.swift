@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Bruno's file format, read and written — the promise being that the
 /// same file opens in Bruno, in `bru run` and here, and that an edit made

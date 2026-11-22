@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// What Compose says of a checkout's compose files, read for the project
 /// before it runs: kept without its secrets, its errors in its own words,

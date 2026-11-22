@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Server page, editing and users against real databases: SQLite
 /// always; PostgreSQL, MySQL and MariaDB when OVERTERM_DB_TESTS=1 and

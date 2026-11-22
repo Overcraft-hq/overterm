@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The pane pill's Free… by the class table (docs/design/activity/
 /// analysis.md, 6.10, 6.12, 10.1): every class a pill can name, and what

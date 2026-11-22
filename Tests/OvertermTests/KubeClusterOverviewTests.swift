@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Overview section (stage 2d): workload counts and pods by phase
 /// (the server's phases, by field selector), what fails first, the

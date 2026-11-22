@@ -591,7 +591,7 @@ package struct ActivityAttribution: Sendable {
             if let macOS = macOS(process, facts, words) { return macOS }
             // 15. Another user's.
             if !process.isOwn(by: snapshot.uid) {
-                return ActivityOwner(place: .system, rule: 15, reason: ActivityRows.userName(process.effectiveUID))
+                return ActivityOwner(place: .system, rule: 15, reason: ProcessRole.userName(process.effectiveUID))
             }
             // 16. Yours elsewhere.
             return ActivityOwner(place: .elsewhere, rule: 16, reason: elsewhereReason(process))

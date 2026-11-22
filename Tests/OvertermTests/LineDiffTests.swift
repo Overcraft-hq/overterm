@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 final class LineDiffTests: XCTestCase {
     private func hunks(_ base: [String], _ current: [String]) -> [GutterHunk] {

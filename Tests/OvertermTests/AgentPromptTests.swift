@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Reading an agent's question off the screen. The inbox answers these by
 /// typing a number, so a wrong parse is a wrong answer sent to a running

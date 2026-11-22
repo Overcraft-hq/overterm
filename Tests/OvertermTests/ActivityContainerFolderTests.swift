@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A compose project's folder in its checkout's spelling: the checkout
 /// scope compares paths as strings (6.5).

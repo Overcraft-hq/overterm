@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Files and folders into and out of a container: the archive a drop
 /// becomes, read back in any cut, written to the Mac without leaving its

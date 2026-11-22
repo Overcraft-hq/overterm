@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// New Task's Terraform (analysis 2.1, 2.8, 3.7, stage 2b): a new
 /// worktree's roots read against the repository's other worktrees — the

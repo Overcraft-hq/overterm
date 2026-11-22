@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// launchd's socket jobs (docs/design/activity/analysis.md, 6.8 rule 9):
 /// fixture plists in folders the test hands over — as `AppEnvironment`

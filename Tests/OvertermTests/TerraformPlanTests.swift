@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Stage 1d's pure parts: the plan's command line and what it can never
 /// say (5.13 rule 1), its environment, the workspace and process checks,

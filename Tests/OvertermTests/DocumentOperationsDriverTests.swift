@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Server page, editing and users against real servers, with
 /// OVERTERM_DB_TESTS=1: Scripts/database-test-servers.sh's MongoDB 7 (with

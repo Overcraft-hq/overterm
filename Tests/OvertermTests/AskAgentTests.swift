@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// What actually gets typed into an agent. The sheet's job is to build one
 /// string; everything else about it is layout.

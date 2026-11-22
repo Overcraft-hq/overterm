@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A Kubernetes object's detail: the rollout read as `kubectl rollout
 /// status` reads it, the YAML as kubectl writes it and stripped as the tab

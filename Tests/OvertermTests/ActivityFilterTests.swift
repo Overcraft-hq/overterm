@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Activity page's filter (docs/design/activity/analysis.md, 6.6) over a
 /// fake Mac: `ResourceFilter`'s words with Activity's keys, quantities with

@@ -16,6 +16,7 @@ import os
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Kubernetes page: the app's model against `FakeKubeAPI` on a socket
 /// of the test's own — contexts chosen, the pods followed while a page

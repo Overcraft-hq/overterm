@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Revisions as Argo CD and Flux write them (docs/design/kubernetes/
 /// gitops.md, 2.6), and what reaches git from the cluster (5.4): paths

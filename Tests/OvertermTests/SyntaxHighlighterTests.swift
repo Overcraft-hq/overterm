@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 final class SyntaxHighlighterTests: XCTestCase {
     private func tokens(_ text: String, _ file: String) -> [(String, SyntaxHighlighter.Kind)] {

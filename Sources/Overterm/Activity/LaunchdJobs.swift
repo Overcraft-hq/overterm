@@ -114,7 +114,7 @@ package enum LaunchdJobs {
     /// up is never asked about. An isolated run or a unit test asks
     /// `standInPID` alone, never this Mac's launchd (9.9).
     package static func runningPID(of label: String, uid: uid_t = getuid()) -> pid_t? {
-        guard ActivityPortHolder.launchdLabel(label) else { return nil }
+        guard LaunchdJobs.plainLabel(label) else { return nil }
         guard !AppEnvironment.isIsolated, !AppEnvironment.isUnitTest else { return standInPID?(label) }
         let result = KubeProcessRun.run(
             URL(fileURLWithPath: "/bin/launchctl"), ["print", "gui/\(uid)/\(label)"], environment: ["PATH": "/usr/bin:/bin", "LC_ALL": "C"],
@@ -176,5 +176,15 @@ package enum LaunchdJobs {
         let agents = agents(in: folder)
         lock.withLock { cached = (folder, modified, agents) }
         return agents
+    }
+}
+
+extension LaunchdJobs {
+    /// Whether a launchd label is plain enough to type (`ActivityPortHolder.launchdLabel` says why).
+    package static func plainLabel(_ label: String) -> Bool {
+        !label.isEmpty && label.utf8.count <= 255
+            && label.unicodeScalars.allSatisfy { scalar in
+                scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar) || "._@+-".unicodeScalars.contains(scalar))
+            }
     }
 }

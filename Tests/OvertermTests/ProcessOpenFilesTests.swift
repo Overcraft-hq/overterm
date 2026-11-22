@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The detail's Files (docs/design/activity/analysis.md, 6.4, `l`) over a
 /// fake Mac: files by path, sockets as the census decodes them, pipes and

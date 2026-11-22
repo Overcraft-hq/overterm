@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Agents' write tools (stage 2a; docs/design/kubernetes/analysis.md, 3.5
 /// and rule 10) against `FakeKubeAPI` on a socket of the test's own, over

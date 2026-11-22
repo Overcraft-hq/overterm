@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Prometheus, Loki and Tempo as the client reads them — the answers'
 /// shapes, a console's queries, the levels and trace ids in log lines.

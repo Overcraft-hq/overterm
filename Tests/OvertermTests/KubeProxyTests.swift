@@ -19,6 +19,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// What a context's `kubectl proxy` is told and given: the flags per class,
 /// the socket's folder and path, the environment (never the user's

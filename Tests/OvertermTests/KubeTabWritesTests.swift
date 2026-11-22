@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Drain, rollback and debug in a tab (stage 2a, part 3): the commands'
 /// lines — `--context` and `-n` always, quoted for zsh —, the process

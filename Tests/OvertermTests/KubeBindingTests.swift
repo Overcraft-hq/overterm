@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A checkout tied to what it deploys (docs/design/kubernetes/analysis.md,
 /// 3.1): the guess read from fixture checkouts' files — a chart's name as

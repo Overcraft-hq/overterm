@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Kubeconfigs as kubectl reads them, the contexts' classes, and the guard
 /// that keeps tests and isolated runs off the user's own kubeconfig — whose

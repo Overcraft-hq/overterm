@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Stage 2a's other verbs through the page's one guard path, against the
 /// fake API server: `kind-fake` (local, writable), `fake-dev` (remote,

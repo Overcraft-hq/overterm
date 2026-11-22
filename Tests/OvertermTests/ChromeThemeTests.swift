@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The chrome's colour vocabulary. Every token is derived from the
 /// terminal's own background and foreground, so the only way to know a

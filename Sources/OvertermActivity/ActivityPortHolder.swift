@@ -152,12 +152,7 @@ package enum ActivityPortHolder {
     /// a command typed into a shell reaches its line editor as keys: a
     /// control character inside quotes still acts (^C or ^U drops the
     /// line, a return accepts it, ESC runs a widget).
-    package static func launchdLabel(_ label: String) -> Bool {
-        !label.isEmpty && label.utf8.count <= 255
-            && label.unicodeScalars.allSatisfy { scalar in
-                scalar.isASCII && (CharacterSet.alphanumerics.contains(scalar) || "._@+-".unicodeScalars.contains(scalar))
-            }
-    }
+    package static func launchdLabel(_ label: String) -> Bool { LaunchdJobs.plainLabel(label) }
 
     /// A word for a shell, single-quoted when it needs to be.
     package static func quoted(_ word: String) -> String {

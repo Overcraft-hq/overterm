@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 final class DiffHighlightTests: XCTestCase {
     /// `git diff` output for `path` with these hunk lines, as loadDiffs reads it.

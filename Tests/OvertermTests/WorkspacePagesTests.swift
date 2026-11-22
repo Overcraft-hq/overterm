@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The pages over the body as declared (`WorkspacePage`) and made
 /// (`WorkspacePages`): no window, plain views.

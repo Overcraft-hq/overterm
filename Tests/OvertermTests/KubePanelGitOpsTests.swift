@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The rail's GitOps part (docs/design/kubernetes/gitops.md, 4, 8.2)
 /// against `FakeKubeAPI` on a socket of the test's own, with Argo CD's

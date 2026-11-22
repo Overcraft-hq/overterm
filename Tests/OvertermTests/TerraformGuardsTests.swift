@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// What keeps Terraform off the user's own in isolated runs and unit tests
 /// (analysis 4.5, 5.13 rule 8).

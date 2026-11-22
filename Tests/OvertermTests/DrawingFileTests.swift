@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Obsidian Excalidraw's file, read and written: a drawing made here opens
 /// there and the other way, and nothing but the scene and its texts is

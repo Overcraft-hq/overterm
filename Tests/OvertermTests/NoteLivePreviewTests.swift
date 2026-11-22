@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Live Preview's attributes: markup hidden but on the line being edited,
 /// the text styled, nothing styled inside code.

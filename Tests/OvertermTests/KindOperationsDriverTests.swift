@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Server page's reads, node editing and users of Neo4j, InfluxDB and
 /// RabbitMQ against Scripts/database-test-servers.sh's servers (and

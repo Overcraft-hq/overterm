@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A Secret's values (docs/design/kubernetes/analysis.md, rule 9): taken
 /// apart as Show reads them — masked, lengths only, `tls.key` never

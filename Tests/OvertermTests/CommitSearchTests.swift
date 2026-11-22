@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Overgit's commit search: the query read, git asked, a commit matched.
 final class CommitSearchTests: XCTestCase {

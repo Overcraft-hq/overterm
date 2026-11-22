@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Docker Scout's SARIF, read: Scout 1.17's shape (Fixtures/scout-cves.sarif.json,
 /// written after real reports), 0.6's, and what isn't a report at all; its

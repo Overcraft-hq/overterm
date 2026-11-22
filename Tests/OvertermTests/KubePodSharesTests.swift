@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Pods list's shares of request and limit (metrics.md 2.1, stage
 /// M5b): kube-state-metrics' one union a namespace, read by pod; a pod

@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 final class OpenWithTests: XCTestCase {
     private static func app(_ bundleID: String, _ name: String, at path: String? = nil) -> ExternalApp {

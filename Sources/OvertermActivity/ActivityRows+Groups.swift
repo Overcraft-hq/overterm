@@ -220,10 +220,7 @@ extension ActivityRows {
     }
 
     /// A folder's name: what a checkout is called.
-    package static func folderName(_ path: String) -> String {
-        let name = (path as NSString).lastPathComponent
-        return name.isEmpty ? path : name
-    }
+    package static func folderName(_ path: String) -> String { LeftBehind.folderName(path) }
 
     /// What an owner outside the tabs is called.
     package static func ownerLabel(_ owner: ActivityOwner) -> String? {

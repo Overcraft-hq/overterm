@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Ask an Agent about a process (docs/design/activity/analysis.md, 8.6,
 /// 9.3, 9.4): the brief's words — where it runs and why, its usage now,

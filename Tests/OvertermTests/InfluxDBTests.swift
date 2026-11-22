@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// InfluxDB: the console's statements and checks, InfluxQL's JSON and
 /// Flux's annotated CSV as rows, the version from `/ping` — offline; the

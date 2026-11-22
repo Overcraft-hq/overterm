@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 final class DirectoryWatcherTests: XCTestCase {
     /// End to end through FSEvents: the C callback, the unretained context

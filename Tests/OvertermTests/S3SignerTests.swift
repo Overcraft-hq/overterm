@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// SigV4 against AWS's own documented examples (Signature Version 4,
 /// "Examples: Signature Calculations in AWS Signature Version 4").

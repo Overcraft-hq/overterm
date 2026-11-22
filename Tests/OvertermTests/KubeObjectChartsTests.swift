@@ -15,6 +15,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Metrics tab of a workload, an HPA, a node and a namespace, sampled
 /// (docs/design/kubernetes/metrics.md, 2.5–2.8; stage M3b): what the

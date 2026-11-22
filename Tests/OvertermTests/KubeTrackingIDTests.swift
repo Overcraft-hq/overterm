@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Argo CD's tracking id read as Argo CD reads it, and counted only on the
 /// object it names (docs/design/kubernetes/gitops.md, 14.1, 14.6): its

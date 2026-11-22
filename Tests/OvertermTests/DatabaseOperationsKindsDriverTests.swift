@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Oracle's and ClickHouse's Server page, editing and users against real
 /// servers, when OVERTERM_DB_TESTS=1: ClickHouse from

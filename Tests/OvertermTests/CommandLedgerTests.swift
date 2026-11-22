@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The command ledger. libghostty gives no command boundaries, so these
 /// are inferred from the title, the finish event and the scrollbar — which

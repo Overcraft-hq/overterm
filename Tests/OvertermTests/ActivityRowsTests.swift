@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Activity page's rows and its want (docs/design/activity/analysis.md,
 /// 6.4, 7.9, 9.9) over a fake Mac: every process, other users' named only,

@@ -785,21 +785,6 @@ extension ActivityPorts {
     }
 }
 
-extension ActivityAddress {
-    /// An address as Docker's `HostIp` writes it, IPv4 or IPv6 (a v4-mapped
-    /// one taken as the IPv4 it maps); nil for anything else. Pure.
-    package init?(text: String) {
-        var v4 = in_addr()
-        if inet_pton(AF_INET, text, &v4) == 1 {
-            self.init(v4: v4)
-            return
-        }
-        var v6 = in6_addr()
-        guard inet_pton(AF_INET6, text.hasPrefix("[") && text.hasSuffix("]") ? String(text.dropFirst().dropLast()) : text, &v6) == 1 else { return nil }
-        self.init(v6: v6)
-    }
-}
-
 // MARK: Every user's listeners (D-25) and unix sockets (D-32)
 
 extension ActivityPorts {

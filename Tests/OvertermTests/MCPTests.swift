@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Where MCP servers are found — the agents' configs, read never written —
 /// and the client against servers of the tests' own (E2EMCPServer).

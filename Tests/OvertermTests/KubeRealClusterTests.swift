@@ -17,6 +17,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Overterm's own proxies and client against a real cluster: the kind
 /// cluster `Scripts/kube-test-cluster.sh` makes (cluster "fake", context

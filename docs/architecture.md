@@ -12,7 +12,7 @@ module, each its own) and a change rebuilds what is above it only:
 | Module | What |
 |---|---|
 | `OvertermCore` | what depends on nothing else of the app: the parsers and pure models (BruFile, Protobuf, TerraformPlan and its kin, EditCommands, Vim, LSPGlob, BSON, SQLText…), git's readers, the shell's words, the transport, `Secrets` |
-| `Overterm` | the shell under the features: tabs, terminals and Ghostty, splits, the editor, settings, the sidebar's panels, Activity, the API client, notes, the browser — and the few pieces of a feature it holds itself (`Sources/Overterm/Kubernetes/`: `KubeForwardPill`, `KubeLogScrub`…) |
+| `Overterm` | the shell under the features: tabs, terminals and Ghostty, splits, the editor, settings, the sidebar's panels, Activity's census, the API client, notes, the browser — and the few pieces of a feature it holds itself (`Sources/Overterm/Kubernetes/`: `KubeForwardPill`, `KubeLogScrub`…) |
 | `OvertermAPI` | the API client (Kubernetes reads a forward's API through it) |
 | `OvertermDatabase` | the database client |
 | `OvertermDocker` | Docker (over the databases: its containers' clients) |
@@ -24,6 +24,7 @@ module, each its own) and a change rebuilds what is above it only:
 | `OvertermUsage` | what the agents have spent: the pane, and the strip's chip the window hands the tab bar (`TabBarView.usageChip`) |
 | `OvertermSettingsPage` | ⌘,'s page, the themes' gallery, preview and editor (the settings store, the schema and the theme catalog are the shell's) |
 | `OvertermAgents` | the agents' overview (⇧⌘A) and the Sessions panel (a tab's agent, `PaneAgent`, is the shell's) |
+| `OvertermActivity` | the Activity page (⌥⌘A): its rows, filters, ports' holders, verbs' questions, and agents' `port_`/`proc_` tools (`ActivityFeature`); the census, `ProcessSignals` and a pill's port freeing are the shell's |
 | `OvertermShell` | the window and what holds the features together: `TerminalWindowController` and its extensions, the app delegate, the menus, the right slot, the sidebar, Tab Info, the Inbox's view, the review page, the E2E scenarios; `OvertermFeatures` |
 
 `OvertermApp` (`Sources/OvertermApp/main.swift`) calls `AppMain.run()`; its

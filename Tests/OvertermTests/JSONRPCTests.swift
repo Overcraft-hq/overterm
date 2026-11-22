@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Content-Length framing, as a pipe delivers it: in pieces, several at once.
 final class JSONRPCTests: XCTestCase {

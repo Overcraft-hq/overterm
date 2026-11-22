@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// Protocol Buffers by descriptor — the shop.proto fixture's, as protoc made
 /// them — and gRPC calls against a server of the tests' own.

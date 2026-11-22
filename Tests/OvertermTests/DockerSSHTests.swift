@@ -16,6 +16,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A remote engine (`ssh://`): its URL, the forward's ssh arguments and
 /// what ssh says back, always; a real forward through a throwaway sshd on

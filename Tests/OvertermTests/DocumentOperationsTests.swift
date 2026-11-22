@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// The Server page, editing and users for the kinds whose rows are
 /// documents or items — MongoDB and DocumentDB, Elasticsearch and

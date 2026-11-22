@@ -14,6 +14,7 @@ import XCTest
 @testable import OvertermUsage
 @testable import OvertermSettingsPage
 @testable import OvertermAgents
+@testable import OvertermActivity
 
 /// A GraphQL schema read from introspection, and what a query completes to
 /// at each place — read from the text alone.
