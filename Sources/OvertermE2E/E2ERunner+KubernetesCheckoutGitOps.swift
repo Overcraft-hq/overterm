@@ -241,6 +241,7 @@ extension E2ERunner {
                 "rail \(String(describing: gitOps.status)), page \(String(describing: page.writeStatus))")
             // Read off the screen line by line, the rail narrow: its first two words.
             let said = (gitOps.status?.text ?? "—").split(separator: " ").prefix(2).joined(separator: " ")
+            // The rail is drawn again after the page was opened and closed over it.
             check("and drawn", await shownText(15) { $0.contains(said) } != nil, said)
         } else {
             check("Reconcile asks in the window", false, "no acme-apps")
