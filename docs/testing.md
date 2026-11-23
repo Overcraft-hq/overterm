@@ -1072,8 +1072,15 @@ session, but its own display, 3 cores, no Retina), and so the first nights'
 suspects:
 
 - **The window read as text** (Vision over the window's picture,
-  `readWindow`/`shownPhrase`): `docker`, `kubernetes`, `kubernetesCharts`
-  and the Kubernetes scenarios that share their parts — at scale 1 the text has
+  `readWindow`/`shownPhrase`): the runner can't build Vision's accurate
+  text model (`e5rt_e5_compiler_compile call failed` — before the build,
+  after it, in a process of its own; measured on the runner, Nov 2026),
+  and its fast level misreads ("2/3 ready" as "213 ready"). So a read
+  whose accurate request throws is made fast, and a check that fails after
+  such a read is said `E2E UNVERIFIED`, not failed: the other checks of
+  `docker` and the Kubernetes scenarios still count. Those reads are
+  verified here, where the accurate model works;
+  `OVERTERM_E2E_VISION_FAST=1` reads as CI does. At scale 1 the text has
   half the pixels it has on a Retina screen, and a display smaller than
   1400×880 makes the window the screen's visible area.
 - **Time budgets left in**: `kubernetesCharts` (its chart budget),

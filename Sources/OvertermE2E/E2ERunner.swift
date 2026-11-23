@@ -129,6 +129,13 @@ package final class E2ERunner {
     /// (`pictureOfFailure`): not when the read was made while a Secret's
     /// value may show.
     package var unreadPicture = false
+    /// Whether that read was made at Vision's fast level because this Mac
+    /// can't build the accurate model (CI's virtual Mac): a check that
+    /// fails after it is unverified, not failed — the fast level misreads
+    /// too much to say text isn't drawn ("2/3 ready" as "213 ready").
+    package var unreadFast = false
+    /// Checks a fast read couldn't verify (`unreadFast`).
+    private var unverified = 0
     /// While a part may draw a Secret's value: a read that found nothing
     /// says none of what it read, and no picture of the window is saved.
     package var withholdPictures = false
@@ -167,6 +174,9 @@ package final class E2ERunner {
             }
             await runner.endRun()
             try? FileManager.default.removeItem(at: runner.scratch)
+            if runner.unverified > 0 {
+                runner.note("\(runner.unverified) checks unverified: Vision's accurate model can't be built on this Mac, and its fast level misreads")
+            }
             print("E2E DONE \(runner.failures)")
             fflush(stdout)
             exit(Int32(min(runner.failures, 100)))
@@ -207,6 +217,15 @@ package final class E2ERunner {
     }
 
     package func check(_ name: String, _ ok: Bool, _ detail: @autoclosure () -> String = "") {
+        if !ok, let unread, unreadFast {
+            unverified += 1
+            self.unread = nil
+            unreadPicture = false
+            unreadFast = false
+            print("E2E UNVERIFIED \(name) — \(unread), at Vision's fast level")
+            fflush(stdout)
+            return
+        }
         if !ok { failures += 1 }
         var said = ok ? "" : detail()
         if !ok, var unread {
@@ -215,6 +234,7 @@ package final class E2ERunner {
         }
         unread = nil
         unreadPicture = false
+        unreadFast = false
         let suffix = ok ? "" : " — \(said)"
         print("E2E \(ok ? "PASS" : "FAIL") \(name)\(suffix)")
         fflush(stdout)

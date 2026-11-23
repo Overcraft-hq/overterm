@@ -1916,6 +1916,8 @@ extension E2ERunner {
         /// Whether the accurate level has failed in this process: once it
         /// has, reads go fast at once (the model's build fails every time).
         package var accurateFailed: Bool {
+            // OVERTERM_E2E_VISION_FAST=1: as on CI, here (docs/testing.md).
+            if ProcessInfo.processInfo.environment["OVERTERM_E2E_VISION_FAST"] == "1" { return true }
             lock.lock()
             defer { lock.unlock() }
             return kinds.contains(false)
@@ -2108,6 +2110,7 @@ extension E2ERunner {
         if ProcessInfo.processInfo.environment["OVERTERM_E2E_READ"] == "1", !withholdPictures { said += ": \(read.joined(separator: " | "))" }
         unread = said
         unreadPicture = !withholdPictures
+        unreadFast = Self.visionFailure.accurateFailed
     }
 
     /// A picture of the window beside a failure that followed a read which
