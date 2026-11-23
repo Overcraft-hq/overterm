@@ -1,13 +1,13 @@
 {
-  "originHash" : "bc579ea25f94d85c8dd1b33c7107d4d4c829d1638ead9f1b9d511fdcc9aba830",
+  "originHash" : "f37bff0b0593b185409981f8100963b46d5780daa227f73e66c39eec8800e7e4",
   "pins" : [
     {
       "identity" : "mysql-nio",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/vapor/mysql-nio.git",
       "state" : {
-        "revision" : "57fec3f24169ed65365def42e516e579a03172ee",
-        "version" : "1.9.2"
+        "revision" : "3cd7153792ab259a217507b775c14d9ddba3f79f",
+        "version" : "1.9.3"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/vapor/postgres-nio.git",
       "state" : {
-        "revision" : "649adba966158859f4fb1767e4d11802966d3fb4",
-        "version" : "1.33.2"
+        "revision" : "c7320acff7ba4034d8eb7acac2daf200855996d3",
+        "version" : "1.33.3"
       }
     },
     {
@@ -105,8 +105,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-nio.git",
       "state" : {
-        "revision" : "6db9d9abd92ad7399b8a564cafbb87d3507245fa",
-        "version" : "2.104.0"
+        "revision" : "ae78c343cde1fad5aad88f0bf59cc7a91dfec0e5",
+        "version" : "2.105.1"
       }
     },
     {
@@ -123,8 +123,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-nio-ssl.git",
       "state" : {
-        "revision" : "15e0b9e495786807272dd4891fa4bac76aa43034",
-        "version" : "2.37.6"
+        "revision" : "2a439aff650ba63077cf7bed86677c739f76d782",
+        "version" : "2.37.7"
       }
     },
     {
