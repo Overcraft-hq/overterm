@@ -2087,11 +2087,15 @@ extension E2ERunner {
 
     /// Whether `phrase` is drawn, on one line or wrapped onto the next: a
     /// narrow column wraps a sentence where its width says, and the two
-    /// lines Vision reads are next to each other in what it gives.
+    /// lines Vision reads are next to each other in what it gives. A line
+    /// broken at a hyphen ("shop-" then "api") is read joined without a space.
     package func shownPhrase(_ phrase: String, _ timeout: TimeInterval = 15, file: StaticString = #fileID, line: UInt = #line) async -> Bool {
         func found(_ lines: [(text: String, frame: CGRect)]) -> Bool {
             let texts = lines.map(\.text)
-            return texts.contains { $0.contains(phrase) } || zip(texts, texts.dropFirst()).contains { ($0 + " " + $1).contains(phrase) }
+            return texts.contains { $0.contains(phrase) }
+                || zip(texts, texts.dropFirst()).contains { first, next in
+                    (first + " " + next).contains(phrase) || (first.hasSuffix("-") && (first + next).contains(phrase))
+                }
         }
         let deadline = Date().addingTimeInterval(timeout)
         var read: [String] = []
