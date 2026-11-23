@@ -378,7 +378,7 @@
  {
   "group": "Swift packages",
   "name": "mysql-nio",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "license": "MIT",
   "url": "https://github.com/vapor/mysql-nio",
   "file": "licenses/mysql-nio.txt"
@@ -394,7 +394,7 @@
  {
   "group": "Swift packages",
   "name": "postgres-nio",
-  "version": "1.33.2",
+  "version": "1.33.3",
   "license": "MIT",
   "url": "https://github.com/vapor/postgres-nio",
   "file": "licenses/postgres-nio.txt"
@@ -466,7 +466,7 @@
  {
   "group": "Swift packages",
   "name": "swift-nio",
-  "version": "2.104.0",
+  "version": "2.105.1",
   "license": "Apache-2.0",
   "url": "https://github.com/apple/swift-nio",
   "file": "licenses/swift-nio.txt"
@@ -482,7 +482,7 @@
  {
   "group": "Swift packages",
   "name": "swift-nio-ssl",
-  "version": "2.37.6",
+  "version": "2.37.7",
   "license": "Apache-2.0",
   "url": "https://github.com/apple/swift-nio-ssl",
   "file": "licenses/swift-nio-ssl.txt"
@@ -546,7 +546,7 @@
  {
   "group": "Notes",
   "name": "dompurify",
-  "version": "3.4.17",
+  "version": "3.5.0",
   "license": "MPL-2.0 OR Apache-2.0",
   "url": "https://github.com/cure53/DOMPurify",
   "file": "notes/vendor/licenses/dompurify.txt"
@@ -570,7 +570,7 @@
  {
   "group": "Notes",
   "name": "mermaid",
-  "version": "12.2.0",
+  "version": "12.3.0",
   "license": "MIT",
   "url": "https://mermaid.js.org",
   "file": "notes/vendor/licenses/mermaid.txt"
