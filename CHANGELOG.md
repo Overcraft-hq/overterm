@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.7 — 2026-11-23
+
+- Kubernetes lists sort a little faster: 5,000 rows by CPU in 25 ms, from 28–30
+
 ## 1.6.6 — 2026-11-22
 
 - build: the API client, the git panel, the notes, the simulator, the agents' usage, the settings page, the agents' overview, the Activity page and the end-to-end scenarios are modules of their own

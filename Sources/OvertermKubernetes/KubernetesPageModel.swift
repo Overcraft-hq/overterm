@@ -1465,7 +1465,7 @@ package final class KubernetesPageModel: ObservableObject {
         .filter { Self.matches($0, filter, columns: columns) }
         guard let sort else { return rows }
         let now = Date()
-        return sort.sorted(rows) { sortKey($0, sort.column, now: now) }
+        return KubeSortOrder.sorted(rows, sort) { sortKey($0, sort.column, now: now) }
     }
 
     /// Every pod that fails, with why — whatever the filter shows.
