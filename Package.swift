@@ -1,4 +1,4 @@
-// swift-tools-version:6.1
+// swift-tools-version:6.2
 import PackageDescription
 
 // `#if E2E` (the scenarios, the fakes): every debug build, a release build
