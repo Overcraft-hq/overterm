@@ -1905,7 +1905,7 @@ extension E2ERunner {
         package let image: CGImage
     }
 
-    /// Vision's error, said once a kind (on the GPU, on the CPU) to the
+    /// Vision's error, said once a level (accurate, then fast) to the
     /// scenario's stderr: a read that fails is otherwise only "read 0 lines".
     package nonisolated static let visionFailure = VisionFailure()
 
@@ -1913,12 +1913,20 @@ extension E2ERunner {
         private let lock = NSLock()
         private var kinds: Set<Bool> = []
 
-        package func said(_ error: Error, cpu: Bool) {
+        /// Whether the accurate level has failed in this process: once it
+        /// has, reads go fast at once (the model's build fails every time).
+        package var accurateFailed: Bool {
             lock.lock()
-            let first = kinds.insert(cpu).inserted
+            defer { lock.unlock() }
+            return kinds.contains(false)
+        }
+
+        package func said(_ error: Error, fast: Bool) {
+            lock.lock()
+            let first = kinds.insert(fast).inserted
             lock.unlock()
             guard first else { return }
-            FileHandle.standardError.write(Data("E2E INFO Vision failed\(cpu ? " on the CPU" : ""): \(error)\n".utf8))
+            FileHandle.standardError.write(Data("E2E INFO Vision failed\(fast ? " at the fast level too" : ", reading fast instead"): \(error)\n".utf8))
         }
     }
 
@@ -1968,26 +1976,26 @@ extension E2ERunner {
     /// on a laptop's own screen the whole read leaves out small text — a
     /// severity chip, a list row's chip — that a tile reads.
     package nonisolated static func recognized(_ image: CGImage, tiled: Bool = false, halves: Bool = false) -> [(RecognizedLine, (CGRect) -> CGRect)] {
-        // On CI's virtual Mac, Vision read nothing of a window that it read
-        // whole from the same picture here (every read of the Kubernetes
-        // scenarios, none of Docker's): a read that throws or comes back
-        // empty is made again on the CPU, and its error said once.
+        // On CI's virtual Mac the accurate model can't be built
+        // (`e5rt_e5_compiler_compile call failed`; the older API throws a
+        // nil error) — in the app and in a process of its own alike, at
+        // every revision, on the CPU too — while the fast one reads. A read
+        // whose accurate request throws is made fast, and the error said
+        // once.
         func read(_ image: CGImage) -> [RecognizedLine] {
-            func attempt(cpu: Bool) -> [VNRecognizedTextObservation]? {
+            func attempt(_ level: VNRequestTextRecognitionLevel) -> [VNRecognizedTextObservation]? {
                 let request = VNRecognizeTextRequest()
-                request.recognitionLevel = .accurate
+                request.recognitionLevel = level
                 request.usesLanguageCorrection = false
-                if cpu { request.usesCPUOnly = true }
                 do {
                     try VNImageRequestHandler(cgImage: image).perform([request])
                 } catch {
-                    visionFailure.said(error, cpu: cpu)
+                    visionFailure.said(error, fast: level == .fast)
                     return nil
                 }
                 return request.results
             }
-            var observations = attempt(cpu: false) ?? []
-            if observations.isEmpty { observations = attempt(cpu: true) ?? [] }
+            let observations = (visionFailure.accurateFailed ? nil : attempt(.accurate)) ?? attempt(.fast) ?? []
             return observations.compactMap { observation in
                 observation.topCandidates(1).first.map { RecognizedLine(candidate: $0, boundingBox: observation.boundingBox) }
             }
