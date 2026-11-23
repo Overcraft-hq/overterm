@@ -182,7 +182,11 @@ let package = Package(
         .executableTarget(
             name: "OvertermApp",
             dependencies: ["OvertermE2E"],
-            path: "Sources/OvertermApp"
+            path: "Sources/OvertermApp",
+            // `main.swift` installs the scenarios under `#if E2E`: without
+            // these a debug build (the nightly's) had none — only a build
+            // with the E2E trait, which defines it everywhere, did.
+            swiftSettings: e2eSettings
         ),
         .testTarget(
             name: "OvertermTests",
