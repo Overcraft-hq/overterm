@@ -546,7 +546,7 @@
  {
   "group": "Notes",
   "name": "dompurify",
-  "version": "3.4.17",
+  "version": "3.5.0",
   "license": "MPL-2.0 OR Apache-2.0",
   "url": "https://github.com/cure53/DOMPurify",
   "file": "notes/vendor/licenses/dompurify.txt"
@@ -570,7 +570,7 @@
  {
   "group": "Notes",
   "name": "mermaid",
-  "version": "12.2.0",
+  "version": "12.3.0",
   "license": "MIT",
   "url": "https://mermaid.js.org",
   "file": "notes/vendor/licenses/mermaid.txt"
