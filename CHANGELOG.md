@@ -10,6 +10,7 @@ version is tagged `v<version>`.
 
 - Kubernetes lists sort a little faster: 5,000 rows by CPU in 25 ms, from 28–30
 - The Kubernetes rail is drawn again after the page was opened over it; it stayed blank
+- The rail's GitOps buttons go one under another when they don't fit, instead of breaking every title
 
 ## 1.6.6 — 2026-11-22
 
