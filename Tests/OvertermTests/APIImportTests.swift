@@ -7,6 +7,15 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
+@testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
+@testable import OvertermActivity
+@testable import OvertermE2E
 
 /// OpenAPI, Postman, .http and cURL made into Bruno's files — checked as
 /// written to disk and read back as a collection, the way Bruno would.

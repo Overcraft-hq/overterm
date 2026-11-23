@@ -8,6 +8,15 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
+@testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
+@testable import OvertermActivity
+@testable import OvertermE2E
 
 /// What runs emulated: an image's platform against the engine's, the words
 /// for it, and the commands that run it natively. Pure.

@@ -7,6 +7,15 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
+@testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
+@testable import OvertermActivity
+@testable import OvertermE2E
 
 /// What a plan checks between the click and the process (analysis 2.8,
 /// 4.9, 5.5, 5.10, D-12, D-20): HCP's roots aren't planned here; the root

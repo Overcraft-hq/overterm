@@ -164,7 +164,7 @@ package enum LeftBehindSign: Hashable, Sendable {
         case .testRun:
             return "left by a test run"
         case .deadLeader(let checkout):
-            return "its group’s leader is gone; it runs in \(ActivityRows.folderName(checkout)), which no tab shows"
+            return "its group’s leader is gone; it runs in \(LeftBehind.folderName(checkout)), which no tab shows"
         }
     }
 
@@ -399,5 +399,14 @@ package struct LeftBehindAtLaunch: Hashable, Sendable {
         }
         lines.append("Nothing is stopped unless you say so; Activity ▸ Left Behind (3) lists each with its reason.")
         return lines.joined(separator: "\n")
+    }
+}
+
+extension LeftBehind {
+    /// A folder's name: what a checkout is called (the page's rows say it
+    /// the same way, `ActivityRows.folderName`).
+    package static func folderName(_ path: String) -> String {
+        let name = (path as NSString).lastPathComponent
+        return name.isEmpty ? path : name
     }
 }

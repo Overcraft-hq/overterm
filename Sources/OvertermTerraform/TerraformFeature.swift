@@ -9,8 +9,8 @@ package enum TerraformFeature {
             BrowserMCP.Provider(
                 handles: { $0.hasPrefix(TerraformMCP.prefix) }, enabled: { $0.terraformAgentAccess },
                 unavailable: "Terraform isn't available to agents — Settings ▸ Terraform.",
-                tools: { TerraformMCP.tools }, instructions: { TerraformMCP.instructions },
-                call: { name, arguments, pane, _ in try await TerraformMCP.call(name, arguments, pane: pane) },
+                tools: { TerraformMCP.tools }, instructions: { _ in TerraformMCP.instructions },
+                call: { name, arguments, context in try await TerraformMCP.call(name, arguments, pane: context.pane) },
                 said: { error in TerraformMCP.scrubbed(error.localizedDescription) }))
     }
 }

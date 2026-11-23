@@ -236,12 +236,12 @@ extension EditorViewController: CodeTextViewHost {
     }
 
     package func codeTextView(_ view: CodeTextView, liveClickAt index: Int) -> Bool {
-        liveClick(at: index)
+        Self.notes?.liveClick(at: index, in: self) ?? false
     }
 
     package func codeTextView(_ view: CodeTextView, paste pasteboard: NSPasteboard) -> Bool {
         guard let buffer = active, buffer.isNote else { return false }
-        return pasteIntoNote(from: pasteboard)
+        return Self.notes?.paste(pasteboard, in: self) ?? false
     }
 
     package func codeTextView(_ view: CodeTextView, hoverAt index: Int?) {
@@ -268,7 +268,7 @@ extension EditorViewController: CodeTextViewHost {
             index += 1
         }
         menu.insertItem(.separator(), at: index)
-        addTemplateItems(to: menu)
+        Self.notes?.addTemplateItems(to: menu, in: self)
         return menu
     }
 
@@ -285,7 +285,7 @@ extension EditorViewController: CodeTextViewHost {
         // nothing else: the file's words, offered two letters into every
         // word of prose, took the Return that ended a line.
         if buffer.isNote {
-            if !updateNoteCompletion() { dismissCompletion() }
+            if Self.notes?.updateCompletion(in: self) != true { dismissCompletion() }
             return
         }
         if completion?.isNote == true { dismissCompletion() }
@@ -371,7 +371,7 @@ extension EditorViewController: CodeTextViewHost {
     package func refilterCompletion(manual: Bool = false) {
         guard var state = completion else { return }
         if state.isNote {
-            if !updateNoteCompletion() { dismissCompletion() }
+            if Self.notes?.updateCompletion(in: self) != true { dismissCompletion() }
             return
         }
         if Self.hooks.refilter.contains(where: { $0(self, state) }) { return }
@@ -439,7 +439,7 @@ extension EditorViewController: CodeTextViewHost {
         guard let state = completion, state.shown.indices.contains(index), active != nil else { return dismissCompletion() }
         let candidate = state.candidates[state.shown[index]]
         dismissCompletion()
-        if state.isNote { return acceptNoteCompletion(candidate, anchor: state.anchor) }
+        if state.isNote { return Self.notes?.acceptCompletion(candidate, anchor: state.anchor, in: self) ?? () }
         let caret = textView.selectedRange().location
         var start = state.anchor
         var end = caret
@@ -701,6 +701,91 @@ extension EditorViewController: VimBuffer {
         set {
             NSPasteboard.general.clearContents()
             if let newValue { NSPasteboard.general.setString(newValue, forType: .string) }
+        }
+    }
+}
+
+extension EditorViewController {
+    /// Replaces what changed between the buffer's text and `text` — only
+    /// that range, through the text view when the buffer is the one showing,
+    /// so undo, the dirty mark and the git gutter see an ordinary edit.
+    package func replaceText(of buffer: EditorBuffer, with text: String) {
+        let old = buffer.storage.string as NSString
+        let new = text as NSString
+        guard old as String != text else { return }
+        var prefix = 0
+        let shorter = min(old.length, new.length)
+        while prefix < shorter, old.character(at: prefix) == new.character(at: prefix) { prefix += 1 }
+        var suffix = 0
+        while suffix < shorter - prefix, old.character(at: old.length - 1 - suffix) == new.character(at: new.length - 1 - suffix) {
+            suffix += 1
+        }
+        let range = NSRange(location: prefix, length: old.length - prefix - suffix)
+        let replacement = new.substring(with: NSRange(location: prefix, length: new.length - prefix - suffix))
+        if buffer === active, textView.shouldChangeText(in: range, replacementString: replacement) {
+            buffer.storage.replaceCharacters(in: range, with: NSAttributedString(string: replacement, attributes: baseAttributes))
+            textView.didChangeText()
+        } else {
+            buffer.storage.replaceCharacters(in: range, with: NSAttributedString(string: replacement, attributes: baseAttributes))
+            buffer.document.markEdited()
+            refreshChrome()
+        }
+    }
+}
+
+extension EditorViewController {
+    /// `styled` into the storage at `location` — only the runs whose
+    /// attributes differ. Setting the same ones again still lays the text out
+    /// again, and with lines of every height (headings, markup laid out as
+    /// nothing) the lines above the screen were estimated anew on every
+    /// keystroke: a long note jumped while its last lines were typed.
+    package static func write(_ styled: NSAttributedString, at location: Int, into storage: NSTextStorage) {
+        var refont: NSRange?
+        styled.enumerateAttributes(in: NSRange(location: 0, length: styled.length)) { attributes, run, _ in
+            let target = NSRange(location: run.location + location, length: run.length)
+            var position = target.location
+            while position < NSMaxRange(target) {
+                var current = NSRange()
+                let existing = storage.attributes(at: position, longestEffectiveRange: &current, in: target)
+                let end = min(NSMaxRange(current), NSMaxRange(target))
+                if !sameAttributes(existing, attributes) {
+                    let range = NSRange(location: position, length: end - position)
+                    if !sameFont(existing[.font], attributes[.font]) { refont = refont.map { NSUnionRange($0, range) } ?? range }
+                    storage.setAttributes(attributes, range: range)
+                }
+                position = end
+            }
+        }
+        // A font changed under glyphs made for the old one: made again.
+        // Left to the layout manager, a character typed in the code font and
+        // restyled in the note's kept the code font's glyph — the number of
+        // ".", drawn in the system font, was an "e" until the next keystroke.
+        if let refont {
+            for layout in storage.layoutManagers {
+                layout.invalidateGlyphs(forCharacterRange: refont, changeInLength: 0, actualCharacterRange: nil)
+                layout.invalidateLayout(forCharacterRange: refont, actualCharacterRange: nil)
+            }
+        }
+    }
+
+    package static func sameAttributes(_ a: [NSAttributedString.Key: Any], _ b: [NSAttributedString.Key: Any]) -> Bool {
+        guard a.count == b.count else { return false }
+        for (key, value) in a {
+            guard let other = b[key] else { return false }
+            // A Swift enum boxed for Objective-C compares by identity there.
+            if let left = value as? NoteDecoration {
+                guard let right = other as? NoteDecoration, left == right else { return false }
+                continue
+            }
+            guard (value as AnyObject).isEqual(other) else { return false }
+        }
+        return true
+    }
+    package static func sameFont(_ a: Any?, _ b: Any?) -> Bool {
+        switch (a as? NSFont, b as? NSFont) {
+        case (nil, nil): true
+        case (let x?, let y?): x == y
+        default: false
         }
     }
 }

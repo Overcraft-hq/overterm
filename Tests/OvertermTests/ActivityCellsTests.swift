@@ -8,6 +8,15 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
+@testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
+@testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The list's plain cells as words (`ActivityCells`): which columns are
 /// AppKit text, what each says, its tint — what the table compares to skip
@@ -88,6 +97,25 @@ final class ActivityCellsTests: XCTestCase {
         let rows = [process(1, cpu: 1.24), process(2, cpu: 1.21), process(3, cpu: 1.26), process(4, cpu: 0)]
         XCTAssertEqual(ActivityRows.sorted(rows, by: busiest).map(\.identity.pid), [3, 1, 2, 4], "1.2 and 1.2 keep their order; 1.3 goes first")
         XCTAssertEqual(ActivityRows.sorted([rows[1], rows[0]], by: busiest).map(\.identity.pid), [2, 1], "whichever came first")
+        // The page's own sort (made in its module, to be specialized there)
+        // orders as every list's does, either way, rows with no value last.
+        let named = [process(5, cpu: 0), process(2, cpu: 3), process(9, cpu: 1), process(7, cpu: 3)]
+        for column in ["name", "pid", "cpu", "nice", "tty"] {
+            for ascending in [true, false] {
+                let sort = ResourceSort(column: column, ascending: ascending)
+                let key: (ActivityProcessRow) -> String? = { row in
+                    switch column {
+                    case "name": row.name.lowercased()
+                    case "pid": String(format: "%08d", row.identity.pid)
+                    case "cpu": row.cpu.map { String(format: "%08d", ActivityRows.Shown.percent($0)) }
+                    case "nice": String(format: "%08d", Int(row.nice) + 100)
+                    default: row.terminal
+                    }
+                }
+                XCTAssertEqual(
+                    ActivityRows.sorted(named, by: sort).map(\.identity.pid), sort.sorted(named, by: key).map(\.identity.pid), "\(column) \(ascending)")
+            }
+        }
         XCTAssertEqual(ActivityRows.Shown.percent(1.24), ActivityRows.Shown.percent(1.21))
         XCTAssertLessThan(ActivityRows.Shown.percent(1.21), ActivityRows.Shown.percent(1.26))
 

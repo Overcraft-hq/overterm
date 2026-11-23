@@ -54,7 +54,7 @@ package enum LaunchdSockets {
             if let mine = sharedWith {
                 return held + " or your job \(Self.shown(mine)) — both name it, so neither is stopped from here"
             }
-            let plain = ActivityPortHolder.launchdLabel(label)
+            let plain = LaunchdJobs.plainLabel(label)
             let unusual = ": its label isn't one a command can carry safely, so stop it where its plist is defined"
             switch domain {
             case .user:

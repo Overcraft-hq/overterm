@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// What the editor asks of the features it sits under (the SQL console,
 /// a Kubernetes manifest, Terraform): each sets its own at install
@@ -15,6 +16,14 @@ package struct EditorHooks {
     /// The buffer shown again: its part bound to this editor; `requireResource`,
     /// only where the buffer is a cluster object's YAML.
     package var rebind: [@MainActor (EditorViewController, EditorBuffer, _ requireResource: Bool) -> Void] = []
+    /// A buffer's preview of its own in the editor's place (a request's
+    /// form); nil when it has none.
+    package var requestView: [@MainActor (EditorViewController, EditorBuffer) -> AnyView?] = []
+    /// A save of a buffer that is no file yet (a new request): true when the
+    /// feature took it, then calling `done` (nil: none waits).
+    package var draft: [@MainActor (EditorViewController, EditorBuffer, _ done: ((Bool) -> Void)?) -> Bool] = []
+    /// The buffer's tab closed (its document already closed).
+    package var closed: [@MainActor (EditorViewController, EditorBuffer) -> Void] = []
     /// The buffer showing changed (nil: none): a panel under it shown or hidden.
     package var show: [@MainActor (EditorViewController, EditorBuffer?) -> Void] = []
     /// The buffer has no console: true when the feature's bar takes its place
@@ -108,4 +117,47 @@ package protocol EditorConsole: AnyObject {
 package protocol EditorManifest: AnyObject {
     func say(_ text: String)
     func close()
+}
+
+/// A request open in the editor (`APIRequestModel`): what the editor tells it.
+@MainActor
+package protocol EditorRequestPart: AnyObject {
+    func textChanged(_ text: String)
+}
+
+/// The notes' part in the editor (`OvertermNotes`): a note's Live Preview,
+/// its reading view, a drawing, a note's completion, paste and templates.
+/// One object, set at install; nil, the editor is the notes' nowhere.
+@MainActor
+package protocol EditorNotes: AnyObject {
+    /// Only iCloud's placeholder is there: true when it is fetched first and
+    /// the open asked again (`then` once it arrives, or false).
+    func opensLater(_ url: URL, in editor: EditorViewController, then done: @escaping (Bool) -> Void) -> Bool
+    func attach(_ buffer: EditorBuffer, in editor: EditorViewController)
+    func activated(_ buffer: EditorBuffer, in editor: EditorViewController)
+    func closing(_ buffer: EditorBuffer, in editor: EditorViewController)
+    func textChanged(_ buffer: EditorBuffer, in editor: EditorViewController)
+    func selectionChanged(in editor: EditorViewController)
+    func themeChanged(dark: Bool, in editor: EditorViewController)
+    /// The reading view is showing: redrawn in the new theme.
+    func invalidateReader(in editor: EditorViewController) -> Bool
+    func hideReader(in editor: EditorViewController)
+    /// A drawing in the preview's place (nil: none shown).
+    func showDrawing(of buffer: EditorBuffer?, in editor: EditorViewController)
+    func showNote(_ buffer: EditorBuffer, in editor: EditorViewController)
+    func styleLive(_ target: NSMutableAttributedString, at location: Int, in buffer: EditorBuffer, editor: EditorViewController)
+    func liveTypingAttributes(in editor: EditorViewController) -> [NSAttributedString.Key: Any]
+    func liveClick(at index: Int, in editor: EditorViewController) -> Bool
+    func paste(_ pasteboard: NSPasteboard, in editor: EditorViewController) -> Bool
+    func addTemplateItems(to menu: NSMenu, in editor: EditorViewController)
+    func updateCompletion(in editor: EditorViewController) -> Bool
+    func acceptCompletion(_ candidate: CompletionState.Candidate, anchor: Int, in editor: EditorViewController)
+}
+
+extension EditorViewController {
+    package static var notes: (any EditorNotes)? {
+        FeatureHooks.ensure()
+        return notesStorage
+    }
+    package nonisolated(unsafe) static var notesStorage: (any EditorNotes)?
 }

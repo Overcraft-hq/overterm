@@ -18,6 +18,16 @@ package struct ResourceTextCellValue: Equatable {
     package var alpha: CGFloat = 1
     /// A fill behind the words (a new row's tint); nil for none.
     package var ground: NSColor? = nil
+
+    package init(text: String, color: NSColor, size: CGFloat, number: Bool = false, help: String? = nil, alpha: CGFloat = 1, ground: NSColor? = nil) {
+        self.text = text
+        self.color = color
+        self.size = size
+        self.number = number
+        self.help = help
+        self.alpha = alpha
+        self.ground = ground
+    }
 }
 
 /// A cell of the page's own AppKit view (`ResourceTable.drawnCell`): its
@@ -27,6 +37,12 @@ package struct ResourceDrawnCell {
     package let kind: String
     package let make: () -> ResourcePressCell
     package let show: (ResourcePressCell) -> Bool
+
+    package init(kind: String, make: @escaping () -> ResourcePressCell, show: @escaping (ResourcePressCell) -> Bool) {
+        self.kind = kind
+        self.make = make
+        self.show = show
+    }
 }
 
 /// A cell that takes a row's press as `ResourceRowHostingView` does: on
@@ -35,11 +51,12 @@ package struct ResourceDrawnCell {
 /// select nothing; and the table hits a cell only when it says the cell
 /// may (`ResourceTableView.validateProposedFirstResponder`) —, the first
 /// click in a window behind others too, and a right-click as the table's
-/// menu for the row clicked.
-package class ResourcePressCell: NSTableCellView {
+/// menu for the row clicked. Open, not package: the Activity page's cells
+/// (`OvertermActivity`) are its subclasses.
+open class ResourcePressCell: NSTableCellView {
     private var down: NSEvent?
 
-    package override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     package var table: ResourceTableView? {
         var view = superview
@@ -48,17 +65,17 @@ package class ResourcePressCell: NSTableCellView {
     }
 
     /// Every press inside is the cell's: none reaches the words.
-    package override func hitTest(_ point: NSPoint) -> NSView? {
+    open override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden, frame.contains(point) else { return nil }
         return self
     }
 
-    package override func mouseDown(with event: NSEvent) {
+    public override func mouseDown(with event: NSEvent) {
         down = event
         table?.interaction?(.pressBegan)
     }
 
-    package override func mouseUp(with event: NSEvent) {
+    public override func mouseUp(with event: NSEvent) {
         if let down {
             self.down = nil
             table?.pressRow(down)
@@ -66,7 +83,7 @@ package class ResourcePressCell: NSTableCellView {
         }
     }
 
-    package override func rightMouseDown(with event: NSEvent) {
+    public override func rightMouseDown(with event: NSEvent) {
         if let table { table.rightMouseDown(with: event) } else { super.rightMouseDown(with: event) }
     }
 }

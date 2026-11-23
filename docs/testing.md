@@ -810,7 +810,7 @@ and `task_name_for_pid` answer under that signing — and `OVERTERM_E2E=
 splits`, whose `E2E INFO` line counts netstat's rows in a pane, 0 under ad
 hoc signing.
 
-## End-to-end — `Sources/OvertermShell/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
+## End-to-end — `Sources/OvertermE2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
 scenario inside the app and prints `E2E PASS|FAIL <check>` lines, then

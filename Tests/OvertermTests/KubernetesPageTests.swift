@@ -9,6 +9,15 @@ import os
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
+@testable import OvertermNotes
+@testable import OvertermSimulator
+@testable import OvertermUsage
+@testable import OvertermSettingsPage
+@testable import OvertermAgents
+@testable import OvertermActivity
+@testable import OvertermE2E
 
 /// The Kubernetes page: the app's model against `FakeKubeAPI` on a socket
 /// of the test's own — contexts chosen, the pods followed while a page

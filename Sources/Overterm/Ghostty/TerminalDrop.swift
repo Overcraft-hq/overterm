@@ -270,7 +270,7 @@ package enum TerminalDrop {
     /// process group — not one left running in the background. Without a
     /// foreground group to go by, any Claude process counts.
     package nonisolated static func program(among nodes: [ProcessNode], foreground: pid_t?, groupOf: (pid_t) -> pid_t?) -> Program {
-        let claudes = nodes.filter { AgentOverviewModel.agent(of: $0) == .claude }
+        let claudes = nodes.filter { Agent.of(name: $0.name, argv: $0.argvAgent, command: $0.maskedCommand) == .claude }
         let claude = foreground.map { group in claudes.first { groupOf($0.pid) == group } } ?? claudes.first
         return claude.map { .claude(directory: $0.workingDirectory) } ?? .other
     }

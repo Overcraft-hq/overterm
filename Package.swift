@@ -41,7 +41,7 @@ let package = Package(
     products: [
         .executable(name: "Overterm", targets: ["OvertermApp"])
     ],
-    // The end-to-end scenarios (Sources/Overterm/E2E) and the tests' fake
+    // The end-to-end scenarios (Sources/OvertermE2E) and the tests' fake
     // servers (Fake*.swift) are `#if E2E`: in every debug build, and in a
     // release build only with `--traits E2E` — a shipped app carries none
     // of them (45,000 lines the release build no longer optimises).
@@ -143,23 +143,50 @@ let package = Package(
         // (Docker's images and CLI), Terraform (a context's class).
         feature("OvertermDatabase", over: ["Overterm"]),
         feature("OvertermDocker", over: ["OvertermDatabase"]),
-        feature("OvertermKubernetes", over: ["OvertermDocker"]),
+        // OvertermAPI: the API client (⌥⌘R), under Kubernetes (a forward's
+        // API docs, its discovery).
+        feature("OvertermAPI", over: ["Overterm"]),
+        feature("OvertermKubernetes", over: ["OvertermDocker", "OvertermAPI"]),
         feature("OvertermTerraform", over: ["OvertermKubernetes"]),
         // OvertermShell: the window and what holds the features together —
         // TerminalWindowController and its extensions, the app delegate, the
-        // menus, the right slot and the sidebar — and the E2E scenarios.
-        feature("OvertermShell", over: ["OvertermTerraform"]),
+        // menus, the right slot and the sidebar.
+        // OvertermOvergit: the git panel (⌥⌘G), beside the features: only
+        // the window shows it.
+        feature("OvertermOvergit", over: ["Overterm"]),
+        // OvertermNotes: the notes vault (⌥⌘N), beside the features.
+        feature("OvertermNotes", over: ["Overterm"]),
+        // OvertermSimulator: the iOS simulator in the browser's column.
+        feature("OvertermSimulator", over: ["Overterm"]),
+        // OvertermUsage: what the agents have spent, the strip's chip and pane.
+        feature("OvertermUsage", over: ["Overterm"]),
+        // OvertermSettingsPage: ⌘, — the page, the themes' gallery and editor.
+        feature("OvertermSettingsPage", over: ["Overterm"]),
+        // OvertermAgents: the agents' overview (⇧⌘A) and the Sessions panel.
+        feature("OvertermAgents", over: ["Overterm"]),
+        // OvertermActivity: the Activity page (⌥⌘A) and its agents' tools;
+        // what the rest reads of processes and ports stays in the shell.
+        feature("OvertermActivity", over: ["Overterm"]),
+        feature(
+            "OvertermShell",
+            over: [
+                "OvertermTerraform", "OvertermOvergit", "OvertermNotes", "OvertermSimulator", "OvertermUsage", "OvertermSettingsPage",
+                "OvertermAgents", "OvertermActivity",
+            ]),
         // The app: Sources/OvertermApp/main.swift starts the library. Its
         // product keeps the name the binary always had (make-app.sh, the
         // docs' `.build/debug/Overterm`).
+        // OvertermE2E: the end-to-end scenarios and their servers, over the
+        // shell; every file `#if E2E`, so a shipped app's is empty.
+        feature("OvertermE2E", over: ["OvertermShell"]),
         .executableTarget(
             name: "OvertermApp",
-            dependencies: ["OvertermShell"],
+            dependencies: ["OvertermE2E"],
             path: "Sources/OvertermApp"
         ),
         .testTarget(
             name: "OvertermTests",
-            dependencies: ["OvertermShell"],
+            dependencies: ["OvertermE2E"],
             path: "Tests/OvertermTests"
         ),
         // Launches the built app per scenario; opt-in (make e2e).

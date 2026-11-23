@@ -34,7 +34,7 @@ package final class BrowserBridge {
     /// The browser of the tab a pane is in — the window answers.
     package var resolve: ((String) -> AgentBrowser?)?
     /// The API client of the checkout a pane's tab is in — the window answers.
-    package var resolveAPI: ((String) -> AgentAPI?)?
+    package var resolveAPI: ((String) -> AnyObject?)?
 
     /// Agents get the browser, the API client, the notes, the databases,
     /// Docker, Kubernetes, Terraform, Activity — any of them: the server serves

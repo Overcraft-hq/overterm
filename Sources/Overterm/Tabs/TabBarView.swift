@@ -91,7 +91,9 @@ package struct TabBarView: View {
     @ObservedObject package var worktrees: WorktreeModel
     /// A newer release, as a chip.
     @ObservedObject package var updates: UpdateChecker
-    @ObservedObject package var usage: UsageModel
+    /// The agents' spend at the strip's end (`UsageChip`, the usage
+    /// module's), made by the window with the action it is given.
+    package let usageChip: (@escaping () -> Void) -> AnyView
     @ObservedObject package var theme: ChromeTheme
     /// The globe beside the ± badge.
     @ObservedObject package var browser: BrowserButtonState
@@ -99,14 +101,15 @@ package struct TabBarView: View {
     package let groupActions: TabGroupActions
 
     package init(
-        store: TabStore, diff: DiffModel, worktrees: WorktreeModel, updates: UpdateChecker, usage: UsageModel, theme: ChromeTheme, browser: BrowserButtonState, actions: TabBarActions,
+        store: TabStore, diff: DiffModel, worktrees: WorktreeModel, updates: UpdateChecker, usageChip: @escaping (@escaping () -> Void) -> AnyView, theme: ChromeTheme, browser: BrowserButtonState,
+        actions: TabBarActions,
         groupActions: TabGroupActions
     ) {
         self._store = ObservedObject(wrappedValue: store)
         self._diff = ObservedObject(wrappedValue: diff)
         self._worktrees = ObservedObject(wrappedValue: worktrees)
         self._updates = ObservedObject(wrappedValue: updates)
-        self._usage = ObservedObject(wrappedValue: usage)
+        self.usageChip = usageChip
         self._theme = ObservedObject(wrappedValue: theme)
         self._browser = ObservedObject(wrappedValue: browser)
         self.actions = actions
@@ -272,7 +275,7 @@ package struct TabBarView: View {
                 DiffBadge(badge: badge, theme: theme, action: actions.toggleDiff)
                     .padding(.trailing, 6)
             }
-            UsageChip(model: usage, theme: theme, action: actions.showUsage)
+            usageChip(actions.showUsage)
         }
         .fixedSize()
         .frame(maxHeight: .infinity)

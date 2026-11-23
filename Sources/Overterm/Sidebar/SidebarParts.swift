@@ -255,6 +255,19 @@ package struct WorktreeRowView: View {
     package let actions: WorktreeActions
     @State private var hovering = false
 
+    package init(
+        worktree: Worktree, isCurrent: Bool, tabs: [Tab], reason: CheckoutReason?, merged: MergedWorktrees.Reason?, pullRequest: PullRequestSummary?, theme: ChromeTheme, actions: WorktreeActions
+    ) {
+        self.worktree = worktree
+        self.isCurrent = isCurrent
+        self.tabs = tabs
+        self.reason = reason
+        self.merged = merged
+        self.pullRequest = pullRequest
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.actions = actions
+    }
+
     private var mergedHelp: String {
         switch merged {
         case .upstreamGone: "Merged — its branch was deleted on the remote"

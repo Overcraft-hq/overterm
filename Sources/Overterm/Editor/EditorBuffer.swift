@@ -32,11 +32,11 @@ package final class EditorBuffer {
     /// shown as one (APIRequestView).
     package var showsPreview = false
     /// A `.bru` request's model, while the file is one.
-    package var request: APIRequestModel?
+    package var requestPart: (any EditorRequestPart)?
     /// A note of the vault: its preview is the reading view (NoteReaderView).
     package var isNote = false
     /// An Excalidraw drawing: shown as its canvas (DrawingView) over its text.
-    package var drawing: DrawingModel?
+    package var drawingPart: AnyObject?
     /// A `.sql` file: the console under it (connection, results).
     package var consolePart: (any EditorConsole)?
     /// A Kubernetes manifest — a cluster object's copy (`y`), a checkout's

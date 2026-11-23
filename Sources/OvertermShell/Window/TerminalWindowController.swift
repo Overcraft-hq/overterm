@@ -371,7 +371,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 diff: diff,
                 worktrees: worktrees,
                 updates: .shared,
-                usage: usage,
+                usageChip: { [usage] action in AnyView(UsageChip(model: usage, theme: theme, action: action)) },
                 theme: theme,
                 browser: browserButton,
                 actions: TabBarActions(

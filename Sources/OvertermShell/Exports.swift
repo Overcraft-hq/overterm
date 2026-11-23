@@ -1,6 +1,13 @@
 // The modules below this one, seen by every file of it and by whatever
 // imports it: Package.swift's stack.
 @_exported import OvertermTerraform
+@_exported import OvertermOvergit
+@_exported import OvertermNotes
+@_exported import OvertermSimulator
+@_exported import OvertermUsage
+@_exported import OvertermSettingsPage
+@_exported import OvertermAgents
+@_exported import OvertermActivity
 
 /// The app's settings, not SwiftUI's scene of that name: imported from
 /// two modules here, the name needs saying once.
