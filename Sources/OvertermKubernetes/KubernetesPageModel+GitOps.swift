@@ -158,7 +158,7 @@ extension KubernetesPageModel {
         var shown = KubeGitOpsSection.visible(
             rows, chip: view.chip, hideReady: gitOpsHidesReady, tool: view.tool, notPlaced: view.notPlaced, beside: view.beside && !rows.beside.isEmpty,
             text: filter)
-        if let sort = view.sort { shown = sort.sorted(shown) { Self.gitOpsSortKey($0, sort.column) } }
+        if let sort = view.sort { shown = KubeSortOrder.sorted(shown, sort) { Self.gitOpsSortKey($0, sort.column) } }
         return shown
     }
 

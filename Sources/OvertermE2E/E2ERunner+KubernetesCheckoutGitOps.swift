@@ -160,6 +160,8 @@ extension E2ERunner {
             match("Application", "acme-shop-dev")?.why ?? "none")
         // Where the rail has it, as a person scrolls to it; wrapped where its width says.
         check("the part drawn", await railShowsPhrase("owns Deployment/shop-api"))
+        // Its verbs one under another where four don't fit, never a title broken a letter or two a line.
+        check("its verbs drawn whole", await railShows { $0 == "Open on Page" })
         check("with what it tracks", match("Kustomization", "acme-apps")?.tracks == "tracks main; this branch is fix/orders", match("Kustomization", "acme-apps")?.tracks ?? "none")
         check("no token said", !gitOps.matches.contains { "\($0.why) \($0.object?.sources.map(\.repoURL) ?? [])".contains("ghp_fake") })
 
@@ -241,6 +243,7 @@ extension E2ERunner {
                 "rail \(String(describing: gitOps.status)), page \(String(describing: page.writeStatus))")
             // Read off the screen line by line, the rail narrow: its first two words.
             let said = (gitOps.status?.text ?? "—").split(separator: " ").prefix(2).joined(separator: " ")
+            // The rail is drawn again after the page was opened and closed over it.
             check("and drawn", await shownText(15) { $0.contains(said) } != nil, said)
         } else {
             check("Reconcile asks in the window", false, "no acme-apps")

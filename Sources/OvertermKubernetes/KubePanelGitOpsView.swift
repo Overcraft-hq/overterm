@@ -202,6 +202,18 @@ package struct KubePanelGitOpsView: View {
         if let id { view.accessibilityIdentifier(id) } else { view }
     }
 
+    /// A matched object's verbs, laid out by `row`.
+    @ViewBuilder private func verbs(_ match: KubePanelGitOps.Match) -> some View {
+        Button("Open on Page") { gitOps.openOnPage(match) }
+        Button(match.key.kind == "Application" ? "Refresh" : "Reconcile") { gitOps.reconcile(match) }
+            .help("Asked in the window first, through the page's checks")
+            .accessibilityIdentifier("kubernetes.panel.gitops.reconcile")
+        if match.key.kind == "Application" || match.key.kind == "Kustomization" || match.key.kind == "HelmRelease" {
+            Button(match.key.kind == "Application" ? "Sync in a Tab…" : "With Source in a Tab…") { gitOps.syncInTab(match) }
+        }
+        if match.isProblem { Button("Ask Why") { gitOps.askWhy(match) } }
+    }
+
     private func row(_ match: KubePanelGitOps.Match) -> some View {
         let now = Date()
         let object = match.object
@@ -222,15 +234,12 @@ package struct KubePanelGitOpsView: View {
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             if let reach = match.reach { reachLines(match, reach) }
             if object != nil {
-                HStack(spacing: 10) {
-                    Button("Open on Page") { gitOps.openOnPage(match) }
-                    Button(match.key.kind == "Application" ? "Refresh" : "Reconcile") { gitOps.reconcile(match) }
-                        .help("Asked in the window first, through the page's checks")
-                        .accessibilityIdentifier("kubernetes.panel.gitops.reconcile")
-                    if match.key.kind == "Application" || match.key.kind == "Kustomization" || match.key.kind == "HelmRelease" {
-                        Button(match.key.kind == "Application" ? "Sync in a Tab…" : "With Source in a Tab…") { gitOps.syncInTab(match) }
-                    }
-                    if match.isProblem { Button("Ask Why") { gitOps.askWhy(match) } }
+                // In a row while they fit, else one under another: squeezed
+                // into the rail's width, a row of four broke each title a
+                // letter or two to a line.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { verbs(match) }
+                    VStack(alignment: .leading, spacing: 3) { verbs(match) }
                 }
                 .buttonStyle(.link)
                 .font(.system(size: ChromeMetrics.text(11)))

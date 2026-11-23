@@ -105,8 +105,12 @@ package struct KubernetesPanelView: View {
     // MARK: Bound
 
     private func bound(_ binding: KubeBinding) -> some View {
+        // A plain stack: what it holds is bounded (pods past `podLimit` are
+        // the page's), and a lazy one, whose GitOps part is one tall child
+        // that keeps changing height, was left drawing nothing at all after
+        // the page had been opened and closed over it.
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
                 scope(binding)
                 if let release = binding.release { helmLine(release) }
                 switch panel.state {
