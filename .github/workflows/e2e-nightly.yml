@@ -120,6 +120,15 @@ jobs:
           echo "$(sysctl -n hw.ncpu) cores"
           system_profiler SPDisplaysDataType | sed -n '/Displays:/,$p'
 
+      # The scenarios' panes are a login zsh, as a Mac's are: the runner's
+      # user has bash, which has no Ghostty integration here — no prompt
+      # mark, no OSC 7, no command's exit — and every check that waits for
+      # a shell failed ("as a login zsh — shell = -/bin/bash").
+      - name: zsh as the login shell
+        run: |
+          sudo dscl . -create "/Users/$USER" UserShell /bin/zsh
+          dscl . -read "/Users/$USER" UserShell
+
       - name: Restore GhosttyKit and TreeSitterKit
         id: frameworks
         uses: actions/cache/restore@v6

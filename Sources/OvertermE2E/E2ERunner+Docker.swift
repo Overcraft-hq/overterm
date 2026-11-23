@@ -1905,6 +1905,23 @@ extension E2ERunner {
         package let image: CGImage
     }
 
+    /// Vision's error, said once a kind (on the GPU, on the CPU) to the
+    /// scenario's stderr: a read that fails is otherwise only "read 0 lines".
+    package nonisolated static let visionFailure = VisionFailure()
+
+    package final class VisionFailure: @unchecked Sendable {
+        private let lock = NSLock()
+        private var kinds: Set<Bool> = []
+
+        package func said(_ error: Error, cpu: Bool) {
+            lock.lock()
+            let first = kinds.insert(cpu).inserted
+            lock.unlock()
+            guard first else { return }
+            FileHandle.standardError.write(Data("E2E INFO Vision failed\(cpu ? " on the CPU" : ""): \(error)\n".utf8))
+        }
+    }
+
     package nonisolated static func recognize(_ pixels: WindowPixels, size: CGSize, tiled: Bool = false, halves: Bool = false) -> [(text: String, frame: CGRect)] {
         recognized(pixels.image, tiled: tiled, halves: halves).map { candidate, place in
             let box = place(candidate.boundingBox)
@@ -1951,12 +1968,27 @@ extension E2ERunner {
     /// on a laptop's own screen the whole read leaves out small text — a
     /// severity chip, a list row's chip — that a tile reads.
     package nonisolated static func recognized(_ image: CGImage, tiled: Bool = false, halves: Bool = false) -> [(RecognizedLine, (CGRect) -> CGRect)] {
+        // On CI's virtual Mac, Vision read nothing of a window that it read
+        // whole from the same picture here (every read of the Kubernetes
+        // scenarios, none of Docker's): a read that throws or comes back
+        // empty is made again on the CPU, and its error said once.
         func read(_ image: CGImage) -> [RecognizedLine] {
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = false
-            try? VNImageRequestHandler(cgImage: image).perform([request])
-            return (request.results ?? []).compactMap { observation in
+            func attempt(cpu: Bool) -> [VNRecognizedTextObservation]? {
+                let request = VNRecognizeTextRequest()
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = false
+                if cpu { request.usesCPUOnly = true }
+                do {
+                    try VNImageRequestHandler(cgImage: image).perform([request])
+                } catch {
+                    visionFailure.said(error, cpu: cpu)
+                    return nil
+                }
+                return request.results
+            }
+            var observations = attempt(cpu: false) ?? []
+            if observations.isEmpty { observations = attempt(cpu: true) ?? [] }
+            return observations.compactMap { observation in
                 observation.topCandidates(1).first.map { RecognizedLine(candidate: $0, boundingBox: observation.boundingBox) }
             }
         }
