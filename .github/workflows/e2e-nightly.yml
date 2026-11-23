@@ -231,7 +231,7 @@ jobs:
       - name: Keep the logs and pictures
         if: failure()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-logs
           path: ${{ env.E2E_LOGS }}
