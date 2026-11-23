@@ -183,6 +183,9 @@ final class E2ETests: XCTestCase {
         let passed = lines.filter { $0.hasPrefix("E2E PASS") }
         let failed = lines.filter { $0.hasPrefix("E2E FAIL") }
         for failure in failed { XCTFail("\(scenario): \(failure.dropFirst("E2E FAIL ".count))") }
+        // Checks a read couldn't verify on a Mac without Vision's accurate
+        // model (CI's): said, not failed.
+        for line in lines where line.hasPrefix("E2E UNVERIFIED") { print("\(scenario): \(line.dropFirst("E2E ".count))") }
         XCTAssertTrue(lines.contains { $0.hasPrefix("E2E DONE") }, "\(scenario): never finished — crashed? exit \(process.terminationStatus)")
         // A scenario that needs something this machine hasn't got (a test
         // server) says so, and is skipped rather than failed.
