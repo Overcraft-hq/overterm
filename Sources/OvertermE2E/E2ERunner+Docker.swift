@@ -2053,7 +2053,6 @@ extension E2ERunner {
     /// Vision's fast level the check that needed it is unverified.
     package func wordFrame(_ word: String, timeout: TimeInterval = 15, file: StaticString = #fileID, line: UInt = #line) async -> CGRect? {
         let deadline = Date().addingTimeInterval(timeout)
-        defer { if Date() >= deadline { sawInstead([], at: "\(file):\(line)") } }
         repeat {
             if let image = app.windowImage(window) {
                 let pixels = WindowPixels(image: image)
@@ -2062,6 +2061,7 @@ extension E2ERunner {
             }
             await pause(0.3)
         } while Date() < deadline
+        sawInstead([], at: "\(file):\(line)")
         return nil
     }
 

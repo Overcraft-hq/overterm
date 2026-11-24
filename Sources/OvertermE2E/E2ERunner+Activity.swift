@@ -35,8 +35,12 @@ extension E2ERunner {
         s.bind(("127.0.0.1", 0))
         s.listen()
         open("\(portFile.path)", "w").write(str(s.getsockname()[1]))
-        time.sleep(150)
+        time.sleep(900)
         """.write(to: script, atomically: true, encoding: .utf8)
+        // 900 s, not 150: the switcher's checks near the end look for this
+        // server's port, and on CI (245 s) and a busy Mac (185 s) the run
+        // outlived a 150 s server — its port gone, ⌃⌘A's checks failed in
+        // a chain. The tab's close ends it with the run.
         // …and a stand-in agent: argv[0] claude, a sleep its child.
         pane.insertText("python3 \(script.path) & sleep 150 & (exec -a claude /bin/sh -c 'sleep 150 & wait') &")
         pane.pressReturn()

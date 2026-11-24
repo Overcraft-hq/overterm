@@ -173,7 +173,7 @@ extension E2ERunner {
         let id = process.id
         for (column, what, dx) in [("pid", "a text cell", CGFloat?.none), ("name", "the name cell", CGFloat?.none), ("cpu15", "the strip cell", CGFloat?.none)] {
             await clear()
-            guard let row = at(id) else { return check("the process's row, to press", false) }
+            guard var row = at(id) else { return check("the process's row, to press", false) }
             let name = column == "name" ? table.frameOfCell(atColumn: table.column(withIdentifier: .init("name")), row: row).width - 8 : dx
             var press = await pressListRow(table, row: row, column: column, dx: name)
             var chosen = await eventually(2) { page.selection == [id] }
@@ -185,6 +185,7 @@ extension E2ERunner {
                 await clear()
                 press = await pressListRow(table, row: now, column: column, dx: name)
                 chosen = await eventually(2) { page.selection == [id] }
+                row = now
             }
             check(
                 "a press on a process's row, on \(what), selects it", chosen,
