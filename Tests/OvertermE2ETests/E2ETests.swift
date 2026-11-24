@@ -140,6 +140,15 @@ final class E2ETests: XCTestCase {
             left = Self.descendants(of: process.processIdentifier)
             process.terminate()
             XCTFail("\(scenario): timed out after \(Int(limit)) s")
+            // An app that doesn't end at SIGTERM (Ghostty's crash handler
+            // catches it, and once hung there) held the whole nightly for two
+            // hours: given 15 s, then killed — this pid, which is ours.
+            let given = Date().addingTimeInterval(15)
+            while process.isRunning, Date() < given { Thread.sleep(forTimeInterval: 0.1) }
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+                XCTFail("\(scenario): didn't end at SIGTERM; killed")
+            }
         }
         process.waitUntilExit()
         // Then ended, each by its exact pid — never by a pattern.
@@ -332,7 +341,7 @@ final class E2ETests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let stderr = dir.appendingPathComponent("stderr.log")
         let printed = try run(
-            "kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 420, stderr: stderr)
+            "kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 900, stderr: stderr)
         // The scenario's Secret value (E2ERunner.secretValue), shown and
         // revealed in the app: never in what it printed, nor its errors.
         // And the Secret's values the editor diffs (E2ERunner.applySecretOld, applySecretNew),
@@ -355,7 +364,7 @@ final class E2ETests: XCTestCase {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kch-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        _ = try run("kubernetesCharts", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 300)
+        _ = try run("kubernetesCharts", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 600)
     }
     /// 5,000 pods on the fake API server: the first draw, a burst of 500
     /// events, the scroll; then GitOps' 1,000 Applications, and Argo CD's

@@ -187,6 +187,11 @@ jobs:
           OVERTERM_E2E_TESTS: "1"
           OVERTERM_E2E_SKIP: ${{ inputs.skip || env.E2E_SKIP_DEFAULT }}
           OVERTERM_E2E_TIMEOUT_SCALE: "2"
+          # Ghostty's crash handler off (CLAUDE.md, Rules): with it on, the
+          # app ended at a signal with that signal's number — docker's
+          # scenario exited 1 midway, every night — and a real crash left no
+          # report. A plain file where its cache folder would be.
+          XDG_CACHE_HOME: ${{ runner.temp }}/no-crash-handler
           OVERTERM_E2E_LOGS: ${{ env.E2E_LOGS }}
           # A picture of the window when a read of it fails (never while a
           # Secret's value may show: E2ERunner.pictureOfFailure).
@@ -194,9 +199,18 @@ jobs:
           FILTER: ${{ inputs.filter || 'OvertermE2ETests' }}
         run: |
           set -o pipefail
+          : >"$XDG_CACHE_HOME"
           mkdir -p "$E2E_LOGS"
           echo "Skipped: $OVERTERM_E2E_SKIP"
           swift test --skip-build --filter "$FILTER" 2>&1 | tee "$E2E_LOGS/swift-test.log"
+
+      # macOS's reports of the app's crashes, written now the handler is off.
+      - name: Crash reports
+        if: failure()
+        run: |
+          mkdir -p "$E2E_LOGS/crash"
+          find ~/Library/Logs/DiagnosticReports -name 'Overterm*' -mmin -200 -exec cp {} "$E2E_LOGS/crash/" \; 2>/dev/null || true
+          ls "$E2E_LOGS/crash"
 
       # Which scenarios failed and their first failing checks, for the issue
       # and the run's page. A failure before the scenarios says so.
