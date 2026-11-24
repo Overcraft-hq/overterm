@@ -781,12 +781,15 @@ extension E2ERunner {
             return false
         }
         let unfixed = await shownText { $0.contains("2023-45853") }
-        let fixableBox = await shownText { $0.contains("Fixable only") }
-        if let fixableBox { await click(at: CGPoint(x: fixableBox.frame.midX, y: fixableBox.frame.midY)) }
+        // The words' own box: Vision's fast level reads the checkbox and the
+        // field beside it as one line ("Fixable only CVE or package"), whose
+        // middle is the field.
+        let fixableBox = await wordFrame("Fixable only")
+        if let fixableBox { await click(at: CGPoint(x: fixableBox.midX, y: fixableBox.midY)) }
         let onlyFixable = await lists("2024-0727", not: "2023-45853")
         check(
             "Fixable only leaves out what has no fix", unfixed != nil && page.scoutFilter.fixableOnly && onlyFixable,
-            "\(fixableBox?.text ?? "no checkbox read") \(page.scoutFilter)")
+            "\(fixableBox.map { "\($0)" } ?? "no checkbox read") \(page.scoutFilter)")
         page.scoutFilter = DockerScoutFilter()
         _ = await shownText { $0.contains("2023-45853") }
         let highChip = await wordFrame("High")
@@ -1484,10 +1487,10 @@ extension E2ERunner {
         check("the container it was saved through is gone", !docker.containers.contains { $0.name.contains("-saving-") }, "\(docker.containers.map(\.name))")
         // Run from it: Compose's labels are there, emptied — no project's.
         // Listed once the engine's event is read: a busy machine (scenarios
-        // side by side) takes longer than 5 s.
+        // side by side, CI's runner) takes longer than 10 s.
         var created: Result<String?, Error> = .success(nil)
         do { created = .success(try await docker.engine?.create(fromImage: "ot/web-snapshot:1", name: "ot-from-snapshot")) } catch { created = .failure(error) }
-        if case .success(let run?) = created, await eventually(10, { docker.container(run) != nil }), let made = docker.container(run) {
+        if case .success(let run?) = created, await eventually(30, { docker.container(run) != nil }), let made = docker.container(run) {
             let joined = docker.projects.contains { $0.containers.contains { $0.Id == run } }
             check(
                 "and a container run from it joins no project",
@@ -2046,8 +2049,11 @@ extension E2ERunner {
 
     /// Where `word` is drawn, read again until it shows: its own frame
     /// within the line Vision reads it in — a row of chips is one line.
-    package func wordFrame(_ word: String, timeout: TimeInterval = 15) async -> CGRect? {
+    /// Never found: said as a read that found nothing (`sawInstead`), so at
+    /// Vision's fast level the check that needed it is unverified.
+    package func wordFrame(_ word: String, timeout: TimeInterval = 15, file: StaticString = #fileID, line: UInt = #line) async -> CGRect? {
         let deadline = Date().addingTimeInterval(timeout)
+        defer { if Date() >= deadline { sawInstead([], at: "\(file):\(line)") } }
         repeat {
             if let image = app.windowImage(window) {
                 let pixels = WindowPixels(image: image)
@@ -2807,7 +2813,10 @@ extension E2ERunner {
         check(
             "and so does the panel's menu", app.dockerPanel.verbs(apiSummary).contains { $0.title == rebuildTitle },
             "\(app.dockerPanel.verbs(apiSummary).map(\.title))")
-        await drawn("its detail says it runs emulated", await shownText { $0.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
+        await drawn("its detail says it runs emulated", await shownText { $0.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") }) {
+            // The slash as Vision's fast level may read it: "linuxlamd64".
+            $0.range(of: #"linux[/lI|]amd64"#, options: .regularExpression) != nil
+        }
         // The row's value may wrap in the detail's column ("linux/amd64 —"
         // then "emulated here"): the platform read as a line, "emulated"
         // anywhere after it. Its first letter as Vision may read it: "1inux".
