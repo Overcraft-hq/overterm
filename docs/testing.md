@@ -1065,7 +1065,8 @@ passed (a manual run, perhaps of one scenario, never counts).
   E2E failed" names the failing scenarios and their first checks — opened,
   or commented on while one is open. Close it once main passes.
 - **Run one as the nightly does**:
-  `make app CONFIG=debug && OVERTERM_E2E_TESTS=1 OVERTERM_E2E_TIMEOUT_SCALE=2 swift test --filter OvertermE2ETests.E2ETests/testDocker`.
+  `make app CONFIG=debug && : >/tmp/no-crash-handler && XDG_CACHE_HOME=/tmp/no-crash-handler OVERTERM_E2E_TESTS=1 OVERTERM_E2E_TIMEOUT_SCALE=2 swift test --filter OvertermE2ETests.E2ETests/testDocker`
+  (the crash handler off, as below).
 
 What only the runner can tell (it is a VM: a window server and a logged-in
 session, but its own display, 3 cores, no Retina), and so the first nights'
@@ -1083,6 +1084,13 @@ suspects:
   `OVERTERM_E2E_VISION_FAST=1` reads as CI does. At scale 1 the text has
   half the pixels it has on a Retina screen, and a display smaller than
   1400×880 makes the window the screen's visible area.
+- **Ghostty's crash handler is off** (`XDG_CACHE_HOME` a plain file): with
+  it on, the app ended at a signal with the signal's number and no report —
+  `docker` exited 1 at the same check every night — and a SIGTERM at a
+  scenario's timeout once never ended it, holding the step for two hours
+  until its 180 minutes ran out (21 scenarios never ran). A real crash is
+  now macOS's `.ips`, in the artifact's `crash` folder; and an app that
+  outlives SIGTERM by 15 s is killed, by its pid, and failed.
 - **Time budgets left in**: `kubernetesCharts` (its chart budget),
   `activity` (its table and history), `docker`; and every scenario's
   `eventually` deadlines under an unoptimised build.
