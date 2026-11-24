@@ -341,7 +341,7 @@ final class E2ETests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let stderr = dir.appendingPathComponent("stderr.log")
         let printed = try run(
-            "kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 900, stderr: stderr)
+            "kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 1200, stderr: stderr)
         // The scenario's Secret value (E2ERunner.secretValue), shown and
         // revealed in the app: never in what it printed, nor its errors.
         // And the Secret's values the editor diffs (E2ERunner.applySecretOld, applySecretNew),

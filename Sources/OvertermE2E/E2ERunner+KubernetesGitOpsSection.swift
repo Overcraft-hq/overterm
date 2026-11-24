@@ -122,7 +122,14 @@ extension E2ERunner {
                 check("what its source fetched, and when", header.text.contains("by GitRepository acme-fleet"), header.text)
                 check("its chain names its source", chain.text.contains("GitRepository flux-system/acme-fleet"), chain.text)
                 check("never the sentinel or a token in it", !header.text.contains(FakeKubeAPI.gitOpsSentinel) && !header.text.contains("ghp_fake"), header.text)
-                check("the header inside the detail", detailFrame.frame.insetBy(dx: -1, dy: -1).contains(header.frame), "\(detailFrame.frame) \(header.frame)")
+                // Across, whole; down, from its top: the detail scrolls, and
+                // on a short window (CI's, 708 pt) the header's foot runs past
+                // the fold — window coordinates, origin bottom left.
+                let inside = detailFrame.frame.insetBy(dx: -1, dy: -1)
+                check(
+                    "the header inside the detail",
+                    header.frame.minX >= inside.minX && header.frame.maxX <= inside.maxX && header.frame.maxY <= inside.maxY && header.frame.maxY > inside.minY,
+                    "\(detailFrame.frame) \(header.frame)")
                 check("its chain inside the header", header.frame.insetBy(dx: -1, dy: -1).contains(chain.frame), "\(header.frame) \(chain.frame)")
             } else {
                 check("the header's layout read", false, "\(header.debugDescription) \(chain.debugDescription)")

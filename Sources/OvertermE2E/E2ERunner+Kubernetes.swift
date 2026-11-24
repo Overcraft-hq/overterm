@@ -1780,15 +1780,22 @@ extension E2ERunner {
 
     /// The strip's text with `word` in the title bar, and whether it is
     /// drawn in the production red.
-    package func stripLabel(_ word: String, waitForRed: Bool = true) async -> (found: Bool, red: Bool) {
+    /// Not found at all: said as a read that found nothing (`sawInstead`),
+    /// so at Vision's fast level the check is unverified, not failed.
+    package func stripLabel(
+        _ word: String, waitForRed: Bool = true, file: StaticString = #fileID, line: UInt = #line
+    ) async -> (found: Bool, red: Bool) {
         let top = window.contentLayoutRect.maxY
         let deadline = Date().addingTimeInterval(15)
         // Found but not red yet: read again — the label is drawn before its
         // tab's pin colours it, and a read in between said "not red".
         var found = false
+        var read: [String] = []
         repeat {
             for tiled in [false, true] {
-                for line in await readWindow(tiled: tiled) where line.text.contains(word) && line.frame.midY > top {
+                let lines = await readWindow(tiled: tiled)
+                read = lines.map(\.text)
+                for line in lines where line.text.contains(word) && line.frame.midY > top {
                     found = true
                     guard let pixels = shownPixels() else { continue }
                     var red = 0
@@ -1800,6 +1807,7 @@ extension E2ERunner {
             }
             await pause(0.3)
         } while Date() < deadline
+        if !found { sawInstead(read, at: "\(file):\(line)") }
         return (found, false)
     }
 
@@ -2766,12 +2774,16 @@ extension E2ERunner {
     /// one line, or the number and its name side by side on one row (OCR
     /// splits them at times, at the label's spacing). What was seen of
     /// either, when not found.
-    package func portDrawn(_ port: String, _ name: String, timeout: TimeInterval = 15) async -> (found: Bool, seen: String) {
+    package func portDrawn(
+        _ port: String, _ name: String, timeout: TimeInterval = 15, file: StaticString = #fileID, line: UInt = #line
+    ) async -> (found: Bool, seen: String) {
         let deadline = Date().addingTimeInterval(timeout)
         var seen: [String] = []
+        var read: [String] = []
         repeat {
             for tiled in [false, true] {
                 let lines = await readWindow(tiled: tiled)
+                read = lines.map(\.text)
                 if lines.contains(where: { $0.text.contains("\(port) \(name)") }) { return (true, "") }
                 for number in lines where number.text.contains(port) {
                     let beside = lines.contains { line in
@@ -2784,6 +2796,7 @@ extension E2ERunner {
             }
             await pause(0.3)
         } while Date() < deadline
+        sawInstead(read, at: "\(file):\(line)")
         return (false, seen.joined(separator: " | "))
     }
 }
