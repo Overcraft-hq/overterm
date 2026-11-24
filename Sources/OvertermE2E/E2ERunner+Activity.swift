@@ -137,8 +137,10 @@ extension E2ERunner {
         check("⌃⌘A opens the switcher", app.paletteView?.isHidden == false && app.palette.scope == .activity)
         check("which holds the full level until it has rates", app.activitySwitcher.wanting && monitor.demand.full)
         let portItem = "activity.\(row?.id ?? "-")"
-        let offered = await eventually(10) { self.app.palette.results.contains { $0.id == portItem } }
-        check("the server's port first among its rows, as :N and its process", offered && app.palette.results.first?.title.hasPrefix(":") == true)
+        let offered = await eventually(20) { self.app.palette.results.contains { $0.id == portItem } }
+        check(
+            "the server's port first among its rows, as :N and its process", offered && app.palette.results.first?.title.hasPrefix(":") == true,
+            "\(portItem): \(app.palette.results.prefix(5).map { "\($0.id) \($0.title)" })")
         check(
             "once its rows have rates, it gives the full level back, its rows kept",
             await eventually(10) { !self.app.activitySwitcher.wanting && !monitor.demand.full } && app.activitySwitcher.holding
@@ -161,7 +163,9 @@ extension E2ERunner {
         check("⇥ onto Activity's tab holds the full level", app.activitySwitcher.wanting && monitor.demand.full)
         check("and stocks its rows", await eventually(10) { self.app.palette.results.contains { $0.id.hasPrefix("activity.") } })
         app.palette.cycleScope(1)
-        check("⇥ off it gives the hold back", app.paletteView?.isHidden == false && !app.activitySwitcher.holding && !monitor.demand.full)
+        check(
+            "⇥ off it gives the hold back", app.paletteView?.isHidden == false && !app.activitySwitcher.holding && !monitor.demand.full,
+            "shown \(app.paletteView?.isHidden == false), holding \(app.activitySwitcher.holding), full \(monitor.demand.full), page \(page.wanting)")
         app.hidePalette()
 
         // Off: no page; ⌥⌘A opens its settings.

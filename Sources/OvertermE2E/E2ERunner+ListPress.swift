@@ -175,11 +175,20 @@ extension E2ERunner {
             await clear()
             guard let row = at(id) else { return check("the process's row, to press", false) }
             let name = column == "name" ? table.frameOfCell(atColumn: table.column(withIdentifier: .init("name")), row: row).width - 8 : dx
-            let press = await pressListRow(table, row: row, column: column, dx: name)
-            let chosen = await eventually(2) { page.selection == [id] }
+            var press = await pressListRow(table, row: row, column: column, dx: name)
+            var chosen = await eventually(2) { page.selection == [id] }
+            var moved = ""
+            // A tick between reading its row and the press may move it (CI's
+            // slow Mac: another row selected): pressed again where it is now.
+            if !chosen, let now = at(id), now != row {
+                moved = ", moved to \(now) before the press"
+                await clear()
+                press = await pressListRow(table, row: now, column: column, dx: name)
+                chosen = await eventually(2) { page.selection == [id] }
+            }
             check(
                 "a press on a process's row, on \(what), selects it", chosen,
-                "hit \(press.hit), table \(press.selected), row \(row), page \(page.selection.count), detail \(page.detail?.row.id == id)")
+                "hit \(press.hit), table \(press.selected), row \(row)\(moved), page \(page.selection.count), detail \(page.detail?.row.id == id)")
             let cell = pressHitCell(press, in: table, row: row, column: column)
             check("\(what) took the press, not the table", cell.ok, "hit \(press.hit), expected \(cell.expected)")
         }
