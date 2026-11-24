@@ -399,6 +399,22 @@ final class ProcessSignalsTests: XCTestCase {
         XCTAssertEqual(kernel.sent.count - before, 2, "the parent and the leaf, not what 801 runs now")
     }
 
+    /// In an isolated run, a pane's tree is admitted whole before anything
+    /// is sent: the shell's TERM reparents its children to launchd as it
+    /// ends, and read after that they were no pane's — the gate refused
+    /// both, and on CI's slow Mac the sleeps outlived the Stop.
+    func testATreeIsAdmittedBeforeItsParentEnds() {
+        mac()
+        let shell = add(830, parent: 300, name: "sh")
+        let first = add(831, parent: 830, name: "sleep")
+        let second = add(832, parent: 830, name: "sleep")
+        kernel.endAtTerm(true)
+        defer { kernel.endAtTerm(false) }
+        let answers = sender(guards: true).sendTree(.term, to: [shell, first, second])
+        XCTAssertEqual(answers.map(\.answer), [.sent(pinned: true), .sent(pinned: true), .sent(pinned: true)])
+        XCTAssertEqual(kernel.sent.map(\.pid), [830, 831, 832])
+    }
+
     /// Without tokens a tree's members, and a Force Quit, are refused: only
     /// a single Stop or Interrupt falls back to its pid.
     func testATreeAndAForceQuitNeedTokens() {

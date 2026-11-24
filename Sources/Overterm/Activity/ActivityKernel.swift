@@ -595,8 +595,13 @@ package final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     private var meters: SystemMeterCounters?
     private var responsibility = true
     private var sleepHolds: [pid_t: ActivitySleepHold]? = [:]
+    private var endsAtTerm = false
 
     package init(uid: uid_t = 501) { self.uid = uid }
+
+    /// A TERM or a KILL ends the process at once, as a real one ends: gone
+    /// from the table, its children reparented to launchd.
+    package func endAtTerm(_ on: Bool) { lock.withLock { endsAtTerm = on } }
 
     // MARK: The test's side
 
@@ -1013,6 +1018,19 @@ package final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     /// Recorded; a stop and a continue change its state. Under the lock.
     private func deliver(_ signal: Int32, to process: Process, pinned: Bool) {
         sends.append(Sent(pid: process.record.pid, signal: signal, pinned: pinned))
+        if endsAtTerm, signal == SIGTERM || signal == SIGKILL {
+            let pid = process.record.pid
+            table.removeValue(forKey: pid)
+            for (child, var orphan) in table where orphan.record.parentPID == pid {
+                let r = orphan.record
+                orphan.record = ActivityProcess(
+                    identity: r.identity, parentPID: 1, group: r.group, terminal: r.terminal, terminalGroup: r.terminalGroup,
+                    effectiveUID: r.effectiveUID, realUID: r.realUID, savedUID: r.savedUID, status: r.status, flags: r.flags,
+                    ignoredSignals: r.ignoredSignals, caughtSignals: r.caughtSignals, nice: r.nice, shortName: r.shortName)
+                table[child] = orphan
+            }
+            return
+        }
         guard !process.record.isZombie, signal == SIGSTOP || signal == SIGCONT else { return }
         var changed = process
         changed.record = Self.record(process.record, status: signal == SIGSTOP ? SSTOP : SRUN)

@@ -325,7 +325,13 @@ package struct ProcessSignals: Sendable {
     /// its pid when no token can be had; a member of a tree, a group or a
     /// bulk never does.
     package func send(_ signal: ActivitySignal, to target: ActivitySignalTarget, alone: Bool) -> ActivitySignalAnswer {
-        let identity = target.identity
+        admission(of: target.identity) ?? deliver(signal, to: target, alone: alone)
+    }
+
+    /// What refuses `identity` before its token is taken — the refusals
+    /// before anything is read, its owner, Overterm's helpers and the gate
+    /// —, or that it ended: nil when a send may go on.
+    private func admission(of identity: ActivityProcessID) -> ActivitySignalAnswer? {
         if let refusal = Self.refusal(before: identity, app: app) { return .refused(refusal) }
         switch read(identity) {
         case .ended(let now): return .ended(now: now)
@@ -333,6 +339,13 @@ package struct ProcessSignals: Sendable {
             guard process.isWhollyOwn(by: kernel.uid) else { return .refused(.notYours) }
             if let refusal = refusal(for: process) { return .refused(refusal) }
         }
+        return nil
+    }
+
+    /// `send` once `target` is admitted: by its token, its identity
+    /// checked through it.
+    private func deliver(_ signal: ActivitySignal, to target: ActivitySignalTarget, alone: Bool) -> ActivitySignalAnswer {
+        let identity = target.identity
         // The token first: from here on, whatever holds the pid, the
         // signal can only reach the image the token names.
         guard kernel.signalsByToken, let token = kernel.auditToken(of: identity.pid) else {
@@ -541,9 +554,17 @@ package struct ProcessSignals: Sendable {
     /// member's answer is its own: one that ended or exec'd since the sheet
     /// is said, the rest still sent. The caller leaves out what the policy
     /// keeps out of a bulk (`ActivitySignalCheck.bulkRefusal`).
+    ///
+    /// Every member is admitted before any is sent to: where a member sits
+    /// is read while the tree is whole. A parent's TERM reparents its
+    /// children to launchd as it ends, and read after that a child was no
+    /// pane's any more — the isolated runs' gate refused it, and on a slow
+    /// Mac (CI's) the shell ended and both its sleeps were left running.
+    /// The token is still taken at each member's own send.
     package func sendTree(_ signal: ActivitySignal, to members: [ActivitySignalTarget]) -> [(target: ActivitySignalTarget, answer: ActivitySignalAnswer)] {
         let ordered = signal == .cont ? Array(members.reversed()) : members
-        return ordered.map { ($0, send(signal, to: $0, alone: false)) }
+        let admitted = ordered.map { admission(of: $0.identity) }
+        return zip(ordered, admitted).map { target, refused in (target, refused ?? deliver(signal, to: target, alone: false)) }
     }
 
     /// Whether `member`, read now, is what no group Stop may reach (6.10
