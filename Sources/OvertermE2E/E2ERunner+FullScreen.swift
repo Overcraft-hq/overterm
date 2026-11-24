@@ -14,8 +14,9 @@ extension E2ERunner {
         // the page's text read off the window no longer fit.
         let savedKey = "NSWindow Frame OvertermMainWindow"
         let saved = UserDefaults.standard.string(forKey: savedKey)
-        let area = (window.screen ?? NSScreen.main)?.visibleFrame ?? .zero
-        let expected = CGSize(width: min(1_400, area.width), height: min(880, area.height))
+        // Its own: 1400×880 or the visible area as it was when the window
+        // was placed — read now, CI's is smaller once its Dock has come.
+        let expected = TerminalWindowController.isolatedWindowSize ?? .zero
         check("an isolated run's window keeps no frame", window.frameAutosaveName.isEmpty, window.frameAutosaveName)
         check("and opens at its own, whatever the user's says", window.frame.size == expected, "\(window.frame) not \(expected); saved \(saved ?? "none")")
         // A screen with a camera housing when there is one: there the band

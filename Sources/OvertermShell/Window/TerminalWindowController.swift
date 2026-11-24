@@ -288,10 +288,14 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// window always did, its default size, centred: the autosave name is
     /// the first window's.
     private static var isolatedWindowPlaced = false
+    /// The size it was given, against the visible area of then: on CI's
+    /// virtual Mac the Dock comes later, and the area read again is smaller.
+    package private(set) static var isolatedWindowSize: CGSize?
     private static func placeIsolatedWindow(_ window: NSWindow) {
         guard !isolatedWindowPlaced, let area = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
         isolatedWindowPlaced = true
         let size = CGSize(width: min(1_400, area.width), height: min(880, area.height))
+        isolatedWindowSize = size
         window.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height), display: false)
     }
 
