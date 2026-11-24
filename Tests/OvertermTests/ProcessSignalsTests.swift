@@ -408,11 +408,22 @@ final class ProcessSignalsTests: XCTestCase {
         let shell = add(830, parent: 300, name: "sh")
         let first = add(831, parent: 830, name: "sleep")
         let second = add(832, parent: 830, name: "sleep")
+        // The kernel asks the gate again at its call, as the live one does.
+        let gate = ActivitySignalGate(guards: true)
         kernel.endAtTerm(true)
-        defer { kernel.endAtTerm(false) }
-        let answers = sender(guards: true).sendTree(.term, to: [shell, first, second])
+        kernel.checkGate(gate, app: app.pid)
+        defer {
+            kernel.endAtTerm(false)
+            kernel.checkGate(nil, app: 0)
+        }
+        let answers = sender(gate: gate).sendTree(.term, to: [shell, first, second])
         XCTAssertEqual(answers.map(\.answer), [.sent(pinned: true), .sent(pinned: true), .sent(pinned: true)])
         XCTAssertEqual(kernel.sent.map(\.pid), [830, 831, 832])
+        XCTAssertFalse(gate.isRegistered(first.identity), "let go after the sends")
+        // What the run doesn't own is still refused, by both gates.
+        let other = add(840, parent: 1, name: "globex-worker")
+        XCTAssertEqual(sender(gate: gate).sendTree(.term, to: [other]).map(\.answer), [.refused(.gate)])
+        XCTAssertEqual(kernel.signal(SIGTERM, by: ActivityAuditToken(pid: 840, effectiveUID: 501, version: 0)), EPERM)
     }
 
     /// Without tokens a tree's members, and a Force Quit, are refused: only

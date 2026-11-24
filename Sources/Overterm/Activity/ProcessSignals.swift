@@ -560,10 +560,19 @@ package struct ProcessSignals: Sendable {
     /// children to launchd as it ends, and read after that a child was no
     /// pane's any more — the isolated runs' gate refused it, and on a slow
     /// Mac (CI's) the shell ended and both its sleeps were left running.
-    /// The token is still taken at each member's own send.
+    /// The token is still taken at each member's own send. The kernel asks
+    /// the gate again at its call (`LiveActivityKernel.signal(_:by:)`), so
+    /// for the length of the sends an admitted member is registered with it
+    /// by its identity — pid and start, so nothing else that comes to hold
+    /// the pid — and let go after.
     package func sendTree(_ signal: ActivitySignal, to members: [ActivitySignalTarget]) -> [(target: ActivitySignalTarget, answer: ActivitySignalAnswer)] {
         let ordered = signal == .cont ? Array(members.reversed()) : members
         let admitted = ordered.map { admission(of: $0.identity) }
+        let held = zip(ordered, admitted).compactMap { target, refused in
+            refused == nil && gate.guards && !gate.isRegistered(target.identity) ? target.identity : nil
+        }
+        for identity in held { gate.register(identity) }
+        defer { for identity in held { gate.unregister(identity) } }
         return zip(ordered, admitted).map { target, refused in (target, refused ?? deliver(signal, to: target, alone: false)) }
     }
 

@@ -596,12 +596,17 @@ package final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     private var responsibility = true
     private var sleepHolds: [pid_t: ActivitySleepHold]? = [:]
     private var endsAtTerm = false
+    private var gateCheck: (gate: ActivitySignalGate, app: pid_t)?
 
     package init(uid: uid_t = 501) { self.uid = uid }
 
     /// A TERM or a KILL ends the process at once, as a real one ends: gone
     /// from the table, its children reparented to launchd.
     package func endAtTerm(_ on: Bool) { lock.withLock { endsAtTerm = on } }
+
+    /// Asks `gate` at each send by token, as `LiveActivityKernel` asks the
+    /// shared one, with `app` as this fake Mac's app. Nil: never asked.
+    package func checkGate(_ gate: ActivitySignalGate?, app: pid_t) { lock.withLock { gateCheck = gate.map { ($0, app) } } }
 
     // MARK: The test's side
 
@@ -945,7 +950,10 @@ package final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     package var signalsByToken: Bool { lock.withLock { tokenCall } }
 
     package func signal(_ signal: Int32, by token: ActivityAuditToken) -> Int32 {
-        asked("signal") {
+        if let check = lock.withLock({ gateCheck }), let refused = check.gate.refusal(of: token.pid, kernel: self, app: check.app) {
+            return refused
+        }
+        return asked("signal") {
             guard tokenCall else { return ENOSYS }
             guard let process = table[token.pid], process.image == token.version, !process.record.isZombie else { return ESRCH }
             deliver(signal, to: process, pinned: true)
