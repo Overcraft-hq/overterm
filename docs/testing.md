@@ -1065,7 +1065,8 @@ passed (a manual run, perhaps of one scenario, never counts).
   E2E failed" names the failing scenarios and their first checks — opened,
   or commented on while one is open. Close it once main passes.
 - **Run one as the nightly does**:
-  `make app CONFIG=debug && OVERTERM_E2E_TESTS=1 OVERTERM_E2E_TIMEOUT_SCALE=2 swift test --filter OvertermE2ETests.E2ETests/testDocker`.
+  `make app CONFIG=debug && : >/tmp/no-crash-handler && XDG_CACHE_HOME=/tmp/no-crash-handler OVERTERM_E2E_TESTS=1 OVERTERM_E2E_TIMEOUT_SCALE=2 swift test --filter OvertermE2ETests.E2ETests/testDocker`
+  (the crash handler off, as below).
 
 What only the runner can tell (it is a VM: a window server and a logged-in
 session, but its own display, 3 cores, no Retina), and so the first nights'
