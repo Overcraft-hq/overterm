@@ -87,6 +87,9 @@ package final class ActivityMonitor: ObservableObject {
     /// Full ticks that landed, a one-off's too: what the page's "reads
     /// nothing while hidden" is checked by (10.3, check 10).
     package private(set) var fullTicks = 0
+    /// One-off censuses that read (`census`): a close sheet's, an agent
+    /// run's end, a Stop's watch — theirs whether or not anything shows.
+    package private(set) var oneOffTicks = 0
 
     package init(sampler: ActivitySampler = ActivitySampler()) {
         self.sampler = sampler
@@ -243,6 +246,7 @@ package final class ActivityMonitor: ObservableObject {
             let served = await landed(running)
             if running.demand.full, let served { return served }
         }
+        oneOffTicks += 1
         return await sample(demand.merged(ActivityDemand(.full)))
     }
 

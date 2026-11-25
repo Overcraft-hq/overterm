@@ -128,12 +128,17 @@ extension E2ERunner {
             "its rows go with it: shown again, it reads before it shows numbers", !page.hasRead && page.content.processes.isEmpty && page.content.ports.isEmpty)
         // A tick already on its way may still land.
         _ = await eventually(3) { !monitor.isSampling }
+        // A one-off census is not the page's (a Stop's watch still going,
+        // an agent run's end): its full tick is counted out.
         let fullHidden = monitor.fullTicks
+        let oneOffs = monitor.oneOffTicks
         let builds = page.builds
         await pause(3)
+        let others = monitor.oneOffTicks - oneOffs
         check(
-            "hidden, it reads nothing: no full tick, no rows made, for 3 s", monitor.fullTicks == fullHidden && page.builds == builds,
-            "\(monitor.fullTicks - fullHidden) full ticks, \(page.builds - builds) builds")
+            "hidden, it reads nothing: no full tick, no rows made, for 3 s",
+            monitor.fullTicks - fullHidden <= others && !monitor.demand.full && page.builds == builds,
+            "\(monitor.fullTicks - fullHidden) full ticks, \(others) one-offs, \(page.builds - builds) builds")
 
         // ⌃⌘A, with no page showing: the palette on the ports and the
         // busiest, holding the full level while it shows.
