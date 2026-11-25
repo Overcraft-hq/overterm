@@ -27,7 +27,9 @@ extension E2ERunner {
             let was = window.frame
             window.setFrame(NSRect(x: was.minX, y: was.maxY - expected.height, width: was.width, height: expected.height), display: true)
             window.layoutIfNeeded()
-            own = window.frame.size == was.size
+            // Still taller than asked: its least height (708 pt one night,
+            // 740 the next — the layout's, settled after the window opened).
+            own = window.frame.width == was.width && window.frame.height > expected.height
             least = "; asked \(expected.height) again, got \(window.frame.height)"
             window.setFrame(was, display: true)
         }
