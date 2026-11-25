@@ -317,10 +317,11 @@ package final class ActivitySampler: @unchecked Sendable {
         // Stamped before the table is read: a process started while it was
         // being read, and not in it, is then after this snapshot — new at
         // the next one (the page's "started after what is shown").
+        // …with the continuous clock it is paired with (`date(of:)`).
         let date = Date()
+        let continuous = kernel.continuousTime()
         guard let table = ProcessTable.read(kernel) else { return nil }
         let now = kernel.uptime()
-        let continuous = kernel.continuousTime()
         ticks += 1
         let tick = ticks
         let uid = kernel.uid
