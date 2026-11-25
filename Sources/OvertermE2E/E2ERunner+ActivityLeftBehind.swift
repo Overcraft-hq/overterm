@@ -160,6 +160,9 @@ extension E2ERunner {
         persistence.flush()
         check("what still runs and was kept stays in the file", ActivityPersisted.load(from: persistence.url).keptIdentities.contains(kept))
         ActivityPersisted().save(to: persistence.url)
+        // Suspended and resumed by Activity: its shell won't hang it up.
+        gate.unregister(sleeper)
+        await endOwn([sleeper])
     }
 
     /// The close sheet's checkboxes.

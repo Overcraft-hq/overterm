@@ -45,10 +45,22 @@ extension E2ERunner {
     /// TERM, then KILL to what is still that process after 5 s — each by
     /// the identity found, through `ProcessSignals`, registered with the
     /// gate first: it is the run's own. True once every one has ended.
-    package nonisolated static func stop(_ left: [RunLeftover]) -> Bool {
+    package nonisolated static func stop(_ left: [RunLeftover]) -> Bool { stop(left.map(\.identity)) }
+
+    /// A scenario's own background job a pane's shell won't end at its
+    /// hangup: zsh sends no HUP to a job it saw stopped, and never hears
+    /// of a SIGCONT that wasn't its own — one stopped and continued from
+    /// outside (Activity's Suspend and Resume, a `kill -STOP`) outlives
+    /// its tab. Ended here, by the identity the scenario started.
+    package func endOwn(_ identities: [ActivityProcessID]) async {
+        guard !identities.isEmpty else { return }
+        _ = await Task.detached { Self.stop(identities) }.value
+    }
+
+    package nonisolated static func stop(_ identities: [ActivityProcessID]) -> Bool {
         let kernel = LiveActivityKernel()
         let signals = ProcessSignals(kernel: kernel)
-        let targets = left.map { ActivitySignalTarget($0.identity, path: kernel.path(of: $0.identity.pid)) }
+        let targets = identities.map { ActivitySignalTarget($0, path: kernel.path(of: $0.pid)) }
         for target in targets { ActivitySignalGate.shared.register(target.identity) }
         defer { for target in targets { ActivitySignalGate.shared.unregister(target.identity) } }
         func running(_ target: ActivitySignalTarget) -> Bool {
