@@ -27,6 +27,21 @@ extension E2ERunner {
         return (hit.isDescendant(of: cell) && !(hit is NSTableView), "within \(expected)")
     }
 
+    /// A page's list once it shows `rows` rows, waited for 10 s: the table
+    /// is made and loaded a turn after its model has them.
+    package func listTable(in view: @escaping @MainActor () -> NSView?, rows: @escaping @MainActor () -> Int) async -> ResourceTableView? {
+        func table() -> ResourceTableView? {
+            guard let view = view(), let table = WorkspacePages.firstTable(in: view) as? ResourceTableView else { return nil }
+            return table.numberOfRows == rows() ? table : nil
+        }
+        _ = await eventually(10) { table() != nil }
+        return table()
+    }
+
+    package func listTable(in view: @escaping @MainActor () -> NSView?, rows: Int) async -> ResourceTableView? {
+        await listTable(in: view, rows: { rows })
+    }
+
     /// Presses `row` of `table` in the column `column` (by identifier; the
     /// first when nil), `dx` points in from the cell's leading edge, and
     /// waits until the release has been handled.
@@ -313,10 +328,12 @@ extension E2ERunner {
     /// then ⌘ adding the first.
     package func dockerPressChecks() async {
         let page = app.dockerPage
-        guard let view = app.dockerView, let table = WorkspacePages.firstTable(in: view) as? ResourceTableView else {
-            return check("Docker's table, to press", false)
-        }
+        // The list is laid out a turn after its groups come (longer on
+        // CI's slow Mac): waited for, with its rows.
         let rows = DockerTableRow.rows(page.groups, collapsed: page.collapsed)
+        guard let table = await listTable(in: { self.app.dockerView }, rows: rows.count) else {
+            return check("Docker's table, to press", false, "\(rows.count) rows, \(app.dockerView == nil ? "no view" : "no table with them")")
+        }
         let containers = rows.indices.filter { if case .container = rows[$0] { true } else { false } }
         guard containers.count >= 2 else { return check("two containers' rows, to press", false, "\(containers.count)") }
         let saved = page.selection
@@ -342,8 +359,10 @@ extension E2ERunner {
     /// A Kubernetes list (any kind): `id`'s row pressed.
     package func kubernetesPressChecks(id: String) async {
         let page = app.kubernetesPage
-        guard let view = app.kubernetesView, let table = WorkspacePages.firstTable(in: view) as? ResourceTableView else {
-            return check("the Kubernetes table, to press", false)
+        // The table takes the rows a turn after the page has them.
+        guard let table = await listTable(in: { self.app.kubernetesView }, rows: { page.rows.count }) else {
+            let has = app.kubernetesView.flatMap { WorkspacePages.firstTable(in: $0) }?.numberOfRows
+            return check("the Kubernetes table, to press", false, "\(page.rows.count) rows, table \(has.map(String.init) ?? "none")")
         }
         let rows = page.rows
         guard let row = rows.firstIndex(where: { $0.id == id }), table.numberOfRows == rows.count else {
