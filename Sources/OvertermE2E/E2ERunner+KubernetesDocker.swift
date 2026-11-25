@@ -88,8 +88,14 @@ extension E2ERunner {
             "\(spec?.asked ?? [])")
         check("where it came from said", spec?.notes.first?.contains("pod shop/local-0, container app, in fake-dev · namespace shop") == true, "\(spec?.notes ?? [])")
         let sheet = await sheetLines(10) { $0.contains("Asked in the tab when it runs") }
-        check("the Run window shows them asked", sheet.contains { $0.contains("Asked in the tab when it runs") }, "\(sheet)")
-        check("naming the Secret", sheet.contains { $0.contains("db-auth") }, "\(sheet)")
+        // Read off pixels: a read that found neither is unverified where
+        // Vision's fast level is all there is (CI), as every other read.
+        let asked = sheet.contains { $0.contains("Asked in the tab when it runs") }
+        if !asked { sawInstead(sheet, at: "\(#fileID):\(#line)") }
+        check("the Run window shows them asked", asked, "\(sheet)")
+        let named = sheet.contains { $0.contains("db-auth") }
+        if !named { sawInstead(sheet, at: "\(#fileID):\(#line)") }
+        check("naming the Secret", named, "\(sheet)")
         check("no secret value drawn", !sheet.joined(separator: "\n").contains("tok-literal-e2e"), "\(sheet)")
         check(
             "the pod was read once, no Secret", fake.requests.filter { $0.path == "/api/v1/namespaces/shop/pods/local-0" }.count == 1 && !fake.requests.contains { $0.path.contains("/secrets") },
