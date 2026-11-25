@@ -5955,15 +5955,23 @@ package final class E2ERunner {
             "a click on a row still opens it in the editor",
             await eventually(3) { self.app.editor?.document.url?.lastPathComponent == "plain.txt" },
             app.editor?.document.url?.path ?? "nothing open")
-        await pause(0.3)
-        window.sendEvent(mouse(.leftMouseDown, clicks: 1))
-        window.sendEvent(mouse(.leftMouseUp, clicks: 1))
-        window.sendEvent(mouse(.leftMouseDown, clicks: 2))
-        window.sendEvent(mouse(.leftMouseUp, clicks: 2))
+        // A double-click of its own: past the interval in which the click
+        // above would count as its first, and each event in a turn of its
+        // own, as the window gets them — all four at once, 0.3 s after
+        // that click, were three taps to SwiftUI some of the time, and no
+        // double-click.
+        await pause(NSEvent.doubleClickInterval + 0.3)
+        for (type, clicks) in [(NSEvent.EventType.leftMouseDown, 1), (.leftMouseUp, 1), (.leftMouseDown, 2), (.leftMouseUp, 2)] {
+            window.sendEvent(mouse(type, clicks: clicks))
+            await pause(0.04)
+        }
         // Six seconds, not three: the sheet is put up after an async look
         // at what can open the file, and under a full parallel run that
         // has gone past three.
-        check("a double-click still opens it outside (asking which app first)", await eventually(6) { self.window.attachedSheet != nil })
+        // (20 s: CI's Mac took more than six once, its Launch Services cold.)
+        check(
+            "a double-click still opens it outside (asking which app first)", await eventually(20) { self.window.attachedSheet != nil },
+            "no sheet; open \(app.editor?.document.url?.lastPathComponent ?? "nothing")")
         clickSheetButton("Cancel")
         let menu = sidebar.menu(for: mouse(.rightMouseDown, clicks: 1))
         check(
