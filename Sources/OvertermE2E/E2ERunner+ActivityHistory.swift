@@ -86,9 +86,34 @@ extension E2ERunner {
         // sleep started and ended between two of them, never listed.
         pane.insertText("sleep 8 &")
         pane.pressReturn()
-        let fresh = await ticking(15) { started()?.isNew == true }
-        check("a process started a moment ago is tinted new", fresh, "\(earlier.count) earlier sleeps")
-        let newPID = started()?.identity
+        // Every rows published are watched, not only those standing at a
+        // look: what the sleep's row said the first time it was listed, and
+        // what was shown before it, are the check's words when it fails.
+        final class First {
+            var identity: ActivityProcessID?
+            var words = "never listed"
+            var tinted = false
+            var shown: Date?
+        }
+        let first = First()
+        first.shown = page.content.madeAt
+        let firstWatch = page.$content.sink { content in
+            let row = content.processes.first { $0.tab == tab.id && !$0.ended && $0.name == "sleep" && !earlier.contains($0.identity) }
+            if let row {
+                if first.identity == nil {
+                    first.identity = row.identity
+                    let after = first.shown.map { row.started.timeIntervalSince($0) }
+                    first.words = "first listed \(row.isNew ? "new" : "not new"), started \(after.map { String(format: "%+.3f s", $0) } ?? "?") from the rows shown before it"
+                }
+                if row.isNew { first.tinted = true }
+            } else if first.identity == nil {
+                first.shown = content.madeAt
+            }
+        }
+        let fresh = await ticking(15) { first.tinted }
+        check("a process started a moment ago is tinted new", fresh, "\(earlier.count) earlier sleeps; \(first.words)")
+        firstWatch.cancel()
+        let newPID = first.identity ?? started()?.identity
         // An ended row lasts one build, and two builds may land within one
         // look (the loop's tick and one asked here): every rows published
         // are watched, not only those standing at each look.
