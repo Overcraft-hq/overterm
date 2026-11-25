@@ -1955,19 +1955,18 @@ package final class E2ERunner {
             }
             defer { window.setFrame(restore, display: true) }
             window.layoutIfNeeded()
+            // Where its layout's least height is more than the screen shows
+            // (CI's 1024×768 with its Dock: 708 pt of 676) the zoomed frame
+            // is never the standard one, and `isZoomed` stays false: there
+            // the zoom is told by the frame it moved to.
             let visible = window.screen?.visibleFrame ?? .zero
-            if window.frame.height > visible.height {
-                // Its layout's least height is more than the screen shows
-                // (CI's 1024×768 with its Dock): no frame to zoom from or to.
-                note("the window can't be smaller than the visible area (\(window.frame.size) in \(visible.size)): the zoom is not checked here")
-            } else {
-                let zoomed = window.isZoomed
-                dragged.mouseDown(with: doubleClick)
-                check(
-                    "and a double-click on it zooms the window", await eventually(3) { self.window.isZoomed != zoomed },
-                    "still \(zoomed), \(window.frame) in \(visible)")
-                if window.isZoomed != zoomed { window.performZoom(nil) }
-            }
+            let zoomed = window.isZoomed
+            let before = window.frame
+            dragged.mouseDown(with: doubleClick)
+            check(
+                "and a double-click on it zooms the window", await eventually(3) { self.window.isZoomed != zoomed || self.window.frame != before },
+                "still \(zoomed), \(window.frame) from \(before) in \(visible)")
+            if window.isZoomed != zoomed { window.performZoom(nil) }
         } else {
             check("the strip's empty space is the drag area at all", false)
         }
