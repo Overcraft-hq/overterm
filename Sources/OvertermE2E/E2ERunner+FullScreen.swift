@@ -18,7 +18,22 @@ extension E2ERunner {
         // was placed — read now, CI's is smaller once its Dock has come.
         let expected = TerminalWindowController.isolatedWindowSize ?? .zero
         check("an isolated run's window keeps no frame", window.frameAutosaveName.isEmpty, window.frameAutosaveName)
-        check("and opens at its own, whatever the user's says", window.frame.size == expected, "\(window.frame) not \(expected); saved \(saved ?? "none")")
+        // …or taller, where its layout's least height is more than the area
+        // it was placed in (CI's 1024×768 with its Dock: 708 pt of 676) —
+        // told by asking for the placed height again and getting the same.
+        var own = window.frame.size == expected
+        var least = ""
+        if !own, window.frame.width == expected.width, window.frame.height > expected.height {
+            let was = window.frame
+            window.setFrame(NSRect(x: was.minX, y: was.maxY - expected.height, width: was.width, height: expected.height), display: true)
+            window.layoutIfNeeded()
+            own = window.frame.size == was.size
+            least = "; asked \(expected.height) again, got \(window.frame.height)"
+            window.setFrame(was, display: true)
+        }
+        check(
+            "and opens at its own, whatever the user's says", own,
+            "\(window.frame) not \(expected)\(least); visible \(window.screen?.visibleFrame ?? .zero); saved \(saved ?? "none")")
         // A screen with a camera housing when there is one: there the band
         // over the menu bar is the screen's, and the strip went under it.
         if let notched = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {

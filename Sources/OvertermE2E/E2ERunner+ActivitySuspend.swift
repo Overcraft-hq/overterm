@@ -243,6 +243,8 @@ extension E2ERunner {
         }
         await putAway()
         page.selection = []
+        // Stopped and continued from outside its shell: zsh won't hang it up.
+        await endOwn(["/bin/sleep 173", "/bin/sleep 174"].compactMap { row($0)?.identity })
     }
 }
 #endif
