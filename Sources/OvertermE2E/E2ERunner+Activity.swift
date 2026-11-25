@@ -35,8 +35,12 @@ extension E2ERunner {
         s.bind(("127.0.0.1", 0))
         s.listen()
         open("\(portFile.path)", "w").write(str(s.getsockname()[1]))
-        time.sleep(150)
+        time.sleep(900)
         """.write(to: script, atomically: true, encoding: .utf8)
+        // 900 s, not 150: the switcher's checks near the end look for this
+        // server's port, and on CI (245 s) and a busy Mac (185 s) the run
+        // outlived a 150 s server — its port gone, ⌃⌘A's checks failed in
+        // a chain. The tab's close ends it with the run.
         // …and a stand-in agent: argv[0] claude, a sleep its child.
         pane.insertText("python3 \(script.path) & sleep 150 & (exec -a claude /bin/sh -c 'sleep 150 & wait') &")
         pane.pressReturn()
@@ -137,8 +141,10 @@ extension E2ERunner {
         check("⌃⌘A opens the switcher", app.paletteView?.isHidden == false && app.palette.scope == .activity)
         check("which holds the full level until it has rates", app.activitySwitcher.wanting && monitor.demand.full)
         let portItem = "activity.\(row?.id ?? "-")"
-        let offered = await eventually(10) { self.app.palette.results.contains { $0.id == portItem } }
-        check("the server's port first among its rows, as :N and its process", offered && app.palette.results.first?.title.hasPrefix(":") == true)
+        let offered = await eventually(20) { self.app.palette.results.contains { $0.id == portItem } }
+        check(
+            "the server's port first among its rows, as :N and its process", offered && app.palette.results.first?.title.hasPrefix(":") == true,
+            "\(portItem): \(app.palette.results.prefix(5).map { "\($0.id) \($0.title)" })")
         check(
             "once its rows have rates, it gives the full level back, its rows kept",
             await eventually(10) { !self.app.activitySwitcher.wanting && !monitor.demand.full } && app.activitySwitcher.holding
@@ -161,7 +167,9 @@ extension E2ERunner {
         check("⇥ onto Activity's tab holds the full level", app.activitySwitcher.wanting && monitor.demand.full)
         check("and stocks its rows", await eventually(10) { self.app.palette.results.contains { $0.id.hasPrefix("activity.") } })
         app.palette.cycleScope(1)
-        check("⇥ off it gives the hold back", app.paletteView?.isHidden == false && !app.activitySwitcher.holding && !monitor.demand.full)
+        check(
+            "⇥ off it gives the hold back", app.paletteView?.isHidden == false && !app.activitySwitcher.holding && !monitor.demand.full,
+            "shown \(app.paletteView?.isHidden == false), holding \(app.activitySwitcher.holding), full \(monitor.demand.full), page \(page.wanting)")
         app.hidePalette()
 
         // Off: no page; ⌥⌘A opens its settings.

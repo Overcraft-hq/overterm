@@ -1945,11 +1945,15 @@ package final class E2ERunner {
         {
             // On a laptop's own screen the run's window can already fill
             // it, and zooming a zoomed window whose standard frame is the
-            // same changes nothing: start from a frame smaller than the
-            // screen, so the double-click has something to zoom to.
-            if window.isZoomed, let visible = window.screen?.visibleFrame {
+            // same changes nothing; on CI's virtual Mac it is taller than the
+            // visible area once the Dock has come (708 pt of 677), and zoom
+            // left it so. Start from a frame inside the screen, smaller, so
+            // the double-click has something to zoom to.
+            let restore = window.frame
+            if let visible = window.screen?.visibleFrame {
                 window.setFrame(visible.insetBy(dx: visible.width * 0.1, dy: visible.height * 0.1), display: true)
             }
+            defer { window.setFrame(restore, display: true) }
             let zoomed = window.isZoomed
             dragged.mouseDown(with: doubleClick)
             check("and a double-click on it zooms the window", await eventually(3) { self.window.isZoomed != zoomed }, "still \(zoomed)")

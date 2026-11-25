@@ -82,9 +82,11 @@ extension E2ERunner {
         let earlier = Set(ownRows().filter { $0.name == "sleep" }.map(\.identity))
         func started() -> ActivityProcessRow? { ownRows().first { $0.name == "sleep" && !earlier.contains($0.identity) } }
         let pane = tab.terminal
-        pane.insertText("sleep 4 &")
+        // 8 s: a full tick on a busy Mac (CI's) takes seconds, and a 4 s
+        // sleep started and ended between two of them, never listed.
+        pane.insertText("sleep 8 &")
         pane.pressReturn()
-        let fresh = await ticking(10) { started()?.isNew == true }
+        let fresh = await ticking(15) { started()?.isNew == true }
         check("a process started a moment ago is tinted new", fresh, "\(earlier.count) earlier sleeps")
         let newPID = started()?.identity
         // An ended row lasts one build, and two builds may land within one
@@ -95,7 +97,7 @@ extension E2ERunner {
         let watch = page.$content.sink { content in
             if content.processes.contains(where: { $0.identity == newPID && $0.ended }) { seen.ended = true }
         }
-        let ended = await ticking(15) { seen.ended }
+        let ended = await ticking(20) { seen.ended }
         watch.cancel()
         let last = page.content.processes.first { $0.identity == newPID }
         check(

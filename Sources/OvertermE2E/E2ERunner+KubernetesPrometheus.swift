@@ -190,8 +190,14 @@ extension E2ERunner {
         fake.forgetRequests()
         let showRaw = await shownText(15) { $0.contains("Show 6h") }
         check("Show 6h is drawn as a button", showRaw != nil)
-        if let showRaw { await click(at: CGPoint(x: showRaw.frame.midX, y: showRaw.frame.midY)) }
-        check("and the range is 6h", await eventually(15) { page.chartRange == .sixHours }, "\(page.chartRange)")
+        if let showRaw {
+            await click(at: CGPoint(x: showRaw.frame.midX, y: showRaw.frame.midY))
+            check("and the range is 6h", await eventually(15) { page.chartRange == .sixHours }, "\(page.chartRange)")
+        } else {
+            // Not read (CI's fast level: unverified above): its action, so
+            // what it asks Prometheus is still checked.
+            page.chartRange = KubeChartRange.rawClusterLimit
+        }
         check(
             "6h: the cluster's lines asked with its step",
             await eventually(15) {
