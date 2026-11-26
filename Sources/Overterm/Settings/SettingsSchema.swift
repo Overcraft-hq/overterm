@@ -700,7 +700,7 @@ package enum SettingsSchema {
             key: "browser.agentControl", section: .browser, group: "Agents", title: "Agents can use the browser",
             help:
                 "Claude Code started from Overterm gets an MCP server for its tab's browser: open a page, read it, click, type, take a screenshot, read the console.",
-            kind: .toggle, defaultValue: .bool(true), requires: "browser.enabled"),
+            kind: .toggle, defaultValue: .bool(true), requires: "browser.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "browser.simulator", section: .browser, group: "Simulator", title: "An iOS simulator beside the terminal",
             help: "The phone in the title bar: a simulator you can see and click, in the browser's column. Off: the phone goes from the title bar.",
@@ -731,7 +731,7 @@ package enum SettingsSchema {
             key: "api.agentControl", section: .api, group: "Agents", title: "Agents can use the API client",
             help:
                 "Claude Code started from Overterm gets MCP tools for its checkout's collection: list the requests, send one with its tests, send a one-off, run the collection.",
-            kind: .toggle, defaultValue: .bool(true), requires: "api.enabled"),
+            kind: .toggle, defaultValue: .bool(true), requires: "api.enabled", heldWhenEditedOutside: true),
     ]
 
     private static let notes: [SettingSpec] = [
@@ -749,13 +749,18 @@ package enum SettingsSchema {
             help: "Notes open as Obsidian's Live Preview: headings, emphasis, links and tasks as they read, their markup shown only on the line you edit. Off: the Markdown as written.",
             kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled"),
         SettingSpec(
+            key: "notes.remoteImages", section: .notes, group: "Reading", title: "Load remote images",
+            help:
+                "A note's image on another server shows as a Load button: its server learns your address and when you read the note. On: each is fetched as the note shows — by Overterm, with no cookies. Video and audio elsewhere open in the browser.",
+            kind: .toggle, defaultValue: .bool(false), requires: "notes.enabled"),
+        SettingSpec(
             key: "notes.agentAccess", section: .notes, group: "Agents", title: "Agents can read the notes",
             help: "Claude Code started from Overterm gets MCP tools to search the vault and read a note. They never change a note.",
-            kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled"),
+            kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "notes.agentDrawings", section: .notes, group: "Agents", title: "Agents can add drawings",
             help: "notes_draw: an agent draws boxes, arrows and text into a new Excalidraw drawing, in the vault's Excalidraw folder. Only new files.",
-            kind: .toggle, defaultValue: .bool(true), requires: "notes.agentAccess"),
+            kind: .toggle, defaultValue: .bool(true), requires: "notes.agentAccess", heldWhenEditedOutside: true),
     ]
 
     private static let database: [SettingSpec] = [
@@ -775,11 +780,11 @@ package enum SettingsSchema {
             key: "database.agentAccess", section: .database, group: "Agents", title: "Agents can read the databases and buckets",
             help:
                 "Claude Code started from Overterm gets MCP tools to list your connections, read a schema, run a query that reads, and browse a bucket and read a file in it. Never a password or a key.",
-            kind: .toggle, defaultValue: .bool(true), requires: "database.enabled"),
+            kind: .toggle, defaultValue: .bool(true), requires: "database.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "database.agentWrites", section: .database, group: "Agents", title: "Agents can ask to write",
             help: "A statement that writes is shown to you in the window, and runs only if you say so. Read-only connections refuse it anyway.",
-            kind: .toggle, defaultValue: .bool(false), requires: "database.agentAccess"),
+            kind: .toggle, defaultValue: .bool(false), requires: "database.agentAccess", heldWhenEditedOutside: true),
     ]
 
     private static let docker: [SettingSpec] = [
@@ -816,12 +821,12 @@ package enum SettingsSchema {
             key: "docker.agentAccess", section: .docker, group: "Agents", title: "Agents can see Docker",
             help:
                 "Claude Code started from Overterm gets MCP tools to list the containers and compose projects, read a container's logs, inspect data and use. Env values that look like secrets are masked, and taken out of logs.",
-            kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "docker.agentWrites", section: .docker, group: "Agents", title: "Agents can ask to act",
             help:
                 "Start, stop, restart or remove a container, change its memory, CPUs or restart policy, run compose, exec in a container — each asked about in the window first, and run only if you say so.",
-            kind: .toggle, defaultValue: .bool(true), requires: "docker.agentAccess"),
+            kind: .toggle, defaultValue: .bool(true), requires: "docker.agentAccess", heldWhenEditedOutside: true),
         SettingSpec(
             key: "docker.showAllContainers", section: .docker, group: "Panel", title: "The panel lists what runs elsewhere too",
             help:

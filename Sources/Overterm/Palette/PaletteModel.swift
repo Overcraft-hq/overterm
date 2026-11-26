@@ -34,6 +34,8 @@ package struct PaletteItem: Identifiable {
     package var placeholders: [String] = []
     /// `run`: Return (true) vs ⌥Return (false). Snippets and history care.
     package let perform: @MainActor (_ run: Bool, _ values: [String: String]) -> Void
+    /// A history row's Forget: out of the history.
+    package var forget: (@MainActor () -> Void)?
 
     package init(
         id: String, group: Group, title: String, subtitle: String?, symbol: String, detail: String? = nil, failed: Bool? = nil, placeholders: [String] = [],
@@ -86,6 +88,12 @@ package final class PaletteModel: ObservableObject {
         self.items = items
         rank()
         if let wanted, let at = results.firstIndex(where: { $0.id == wanted }) { selectedIndex = at }
+    }
+
+    /// A row gone from what it lists (a history entry forgotten).
+    package func forget(id: String) {
+        items.removeAll { $0.id == id }
+        rank()
     }
 
     /// Best matches first; with no query, the given order (actions, tabs,

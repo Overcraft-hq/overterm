@@ -48,12 +48,8 @@ package enum AgentScreenCheck {
     ///   Reject buttons (no numbers: nothing to answer with, only to say).
     /// pi asks nothing (no approvals, by design).
     package static func question(in text: String) -> String? {
-        let lines = text.components(separatedBy: "\n").suffix(window)
-        let tail = lines.joined(separator: "\n")
-        if let prompt = AgentPrompt.parse(tail), prompt.isApproval {
-            return prompt.question
-        }
-        return opencodePermission(in: Array(lines))
+        if let prompt = AgentPrompt.approval(in: text, window: window) { return prompt.question }
+        return opencodePermission(in: Array(text.components(separatedBy: "\n").suffix(window)))
     }
 
     /// opencode's permission dialog: the header, and its buttons below it.

@@ -2217,9 +2217,9 @@ package final class E2ERunner {
              41 +   const event = verifySignature(body, headers)
 
             Do you want to make this edit?
-            1. Yes
-            2. Yes, and don't ask again this session
-            3. No, and tell Claude what to do differently
+            ❯ 1. Yes
+              2. Yes, and don't ask again this session
+              3. No, and tell Claude what to do differently
             """
         try? question.write(to: out("prompt.txt"), atomically: true, encoding: .utf8)
         type("cat \(out("prompt.txt").path)")
@@ -2256,6 +2256,27 @@ package final class E2ERunner {
                 return text.contains("command not found: 1") || text.contains("no such entry in dir stack")
             },
             String((agent.terminal.visibleText ?? "").suffix(60)).debugDescription)
+
+        // An answer that ends in a numbered list, then a notification: no
+        // question, so no button that would type "1" into its prompt (AGT-G1).
+        let answer = """
+            Three ways to fix it:
+            1. Verify the signature first.
+            2. Reject an event older than five minutes.
+            3. Log the raw body.
+            """
+        try? answer.write(to: out("answer.txt"), atomically: true, encoding: .utf8)
+        agent.terminal.insertText("clear; cat \(out("answer.txt").path)")
+        agent.terminal.pressReturn()
+        let shown = await eventually(10) { (agent.terminal.visibleText ?? "").contains("3. Log the raw body.") }
+        check("the answer is on its screen", shown, String((agent.terminal.visibleText ?? "").suffix(300)).debugDescription)
+        _ = agent.activity.agentAnswered()
+        agent.activity.handle(.notification(title: "Claude", body: "is waiting for your input"), visible: false)
+        app.refreshInbox()
+        check(
+            "an answer's numbered list is no question: the card has no answers",
+            app.inbox.entries.first { $0.id == agent.id }.map { $0.prompt == nil } == true,
+            (app.inbox.entries.first?.prompt?.question ?? "no entry") + " / " + String((agent.terminal.visibleText ?? "").suffix(400)).debugDescription)
 
         app.toggleInbox(nil)
         check("⌘I closes it again", app.inboxItem?.isCollapsed == true)
@@ -2472,6 +2493,17 @@ package final class E2ERunner {
         check(
             "into every tab", await eventually(8) { contents(self.out("broadcast")) == "grouped" },
             contents(out("broadcast")) ?? "missing")
+        // A tab whose agent asks is left out, by name (TERM-G1): a Return
+        // there would take its marked answer.
+        _ = second.activity.agentAsked("Do you want to run this command?", visible: false)
+        app.broadcast.refresh()
+        check(
+            "a tab whose agent asks is left out, said by name",
+            app.broadcast.targets.map(\.title) == [first.title] && app.broadcast.summary.hasSuffix("— not to “\(second.title)” (its agent asks)"),
+            app.broadcast.summary)
+        _ = second.activity.agentAnswered()
+        app.broadcast.refresh()
+        check("answered, it is a target again", app.broadcast.targets.count == 2, app.broadcast.summary)
         app.stopBroadcast()
 
         // Stashing takes the island out of the strip and leaves it running.
@@ -4891,6 +4923,7 @@ package final class E2ERunner {
             "a hand edit applies at once (the pane dim)",
             await eventually(4) { abs((self.app.host(of: tab)?.dimColor.alphaComponent ?? 0) - 0.6) < 0.01 })
         await heldSettingsChecks()
+        await securityPatchSettingsChecks()
         settings.set("general.newTabDirectory", .string("home"))
         check(
             "the page edits the file in place, comments kept",

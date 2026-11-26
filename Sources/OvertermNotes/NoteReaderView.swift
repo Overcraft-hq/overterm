@@ -26,6 +26,15 @@ package final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessag
     /// Embedded drawings drawn as pictures — for the E2E run.
     package private(set) var drawingsDrawn = 0
 
+    /// Settings ▸ Notes ▸ Load remote images: each fetched as the note
+    /// draws, not only when its Load is pressed.
+    package var loadsRemoteImages = false
+    /// How a remote image is fetched: the app's own loader (`NoteRemoteImage`),
+    /// a test's stand-in.
+    package var fetchRemote: @Sendable (URL) async -> NoteRemoteImage? = { await NoteRemoteImage.fetch($0) }
+    /// Remote images fetched and handed to the page — for the E2E run.
+    package private(set) var remoteImagesShown = 0
+
     package let webView: WKWebView
     private let resources = NoteResources()
     private var ready = false
@@ -124,7 +133,12 @@ package final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessag
             } else {
                 renderCount += 1
                 scrollToPendingAnchor()
+                if loadsRemoteImages { webView.evaluateJavaScript("OT.loadRemoteImages()") }
             }
+            return
+        }
+        if let src = body["loadImage"] as? String {
+            loadRemoteImage(src)
             return
         }
         if let line = body["toggleTask"] as? Int { onToggleTask?(line) }
@@ -133,6 +147,18 @@ package final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessag
             onOpenLink?(target, body["anchor"] as? String, body["markdown"] as? Bool ?? false, body["newTab"] as? Bool ?? false)
         }
         if let external = body["external"] as? String, let url = URL(string: external) { onOpenURL?(url) }
+    }
+
+    /// A remote image asked for: fetched by the app, never by the page
+    /// (its policy allows no remote load), and handed to it as data.
+    private func loadRemoteImage(_ src: String) {
+        guard let url = URL(string: src), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        let fetch = fetchRemote
+        Task { [weak self] in
+            guard let image = await fetch(url), let self, let quotedSource = Self.jsString(src), let quotedData = Self.jsString(image.dataURL) else { return }
+            self.remoteImagesShown += 1
+            _ = try? await self.webView.evaluateJavaScript("OT.remoteImage(\(quotedSource), \(quotedData))")
+        }
     }
 
     /// Nothing navigates the page away: links are the app's to follow.
@@ -279,5 +305,41 @@ private final class NoteMessageProxy: NSObject, WKScriptMessageHandler {
 
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         target?.userContentController(controller, didReceive: message)
+    }
+}
+
+/// A remote image a note shows, fetched by the app when it is asked for:
+/// no cookies, no cache, nothing of the user's sent, an image only and 20 MB
+/// at most. An isolated run fetches only from this Mac.
+package struct NoteRemoteImage: Sendable, Equatable {
+    package let data: Data
+    package let mimeType: String
+
+    package static let limit = 20 << 20
+
+    package var dataURL: String { "data:\(mimeType);base64,\(data.base64EncodedString())" }
+
+    /// What a response gave, as an image: refused when it isn't one, or is
+    /// too large. Pure.
+    package static func accept(_ data: Data, mimeType: String?, status: Int) -> NoteRemoteImage? {
+        guard (200..<300).contains(status), let mimeType = mimeType?.lowercased(), mimeType.hasPrefix("image/"), data.count <= limit else { return nil }
+        return NoteRemoteImage(data: data, mimeType: mimeType)
+    }
+
+    package static func fetch(_ url: URL) async -> NoteRemoteImage? {
+        if AppEnvironment.isIsolated || AppEnvironment.isUnitTest {
+            guard let host = url.host, ["127.0.0.1", "localhost", "::1"].contains(host) else { return nil }
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCache = nil
+        configuration.timeoutIntervalForRequest = 15
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        var request = URLRequest(url: url)
+        request.setValue("image/*", forHTTPHeaderField: "Accept")
+        guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else { return nil }
+        return accept(data, mimeType: http.mimeType, status: http.statusCode)
     }
 }

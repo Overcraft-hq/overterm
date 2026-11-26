@@ -314,6 +314,8 @@ extension TerminalWindowController {
     }
 
     package func beginBroadcast(to group: TabGroup) {
+        broadcast.members = { [weak self] group in self?.store.tabs(in: group) ?? [] }
+        broadcast.hold = { tab in Self.broadcastHold(tab) }
         broadcast.begin(group: group, tabs: store.tabs(in: group))
         updateGroupBars()
         focusBroadcastField()
@@ -322,6 +324,32 @@ extension TerminalWindowController {
     /// The bars take room only while one of them is on.
     package func updateGroupBars() {
         groupBars?.isHidden = !(broadcast.isOpen || focus.isFocusing)
+    }
+
+    /// Why a broadcast leaves `tab` out (TERM-G1): its focused pane
+    /// suspended or pinned to production, a question on its screen —
+    /// terraform's or its agent's.
+    package static func broadcastHold(_ tab: Tab) -> BroadcastModel.Held? {
+        let pane = tab.terminal
+        if pane.isSuspended { return .suspended }
+        if tab.terraformAsk != nil { return .terraform }
+        if tab.activity.mark == .waiting { return .asking }
+        if let pin = pane.kubePin, pin.isProduction { return .production(context: pin.context) }
+        return nil
+    }
+
+    /// The bar's Include…: a production context's panes in this broadcast,
+    /// its name typed first.
+    package func includeBroadcastProduction(_ context: String) {
+        guard let window else { return }
+        let confirmation = WriteConfirmation(
+            title: "Broadcast into production too?", scope: WriteConfirmation.productionMark + context, production: true,
+            detail: "Every line you send goes to this island's panes pinned to \(context), with a Return after it.", button: "Include",
+            typedName: context, critical: true)
+        Task { @MainActor [weak self] in
+            guard let typed = await confirmation.ask(on: window), typed == context else { return }
+            self?.broadcast.includeProduction(context)
+        }
     }
 
     package func stopBroadcast() {

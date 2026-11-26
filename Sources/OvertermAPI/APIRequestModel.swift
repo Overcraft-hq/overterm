@@ -186,7 +186,9 @@ package final class APIRequestModel: ObservableObject {
     package func askAgent() {
         guard let workspace, let result else { return }
         let collection = workspace.collection(containing: url)
-        let text = "Request: \(file.name) — \(url.path)\n\n" + APIMCP.report(result, limit: 8000)
+        // What the agent's own tools would be told: the keychain's secrets
+        // and secret headers and query values out (API-G2).
+        let text = "Request: \(file.name) — \(url.path)\n\n" + APIMCP.forAgent(result, secrets: workspace.allSecretValues(), limit: 8000)
         workspace.askAgent?(text, collection?.root)
     }
 
