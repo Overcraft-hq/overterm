@@ -19,6 +19,36 @@ package final class PullRequestModel: ObservableObject {
     @Published package private(set) var postError: String?
     @Published package private(set) var posting = false
 
+    /// A failed check's log, as asked for (GIT-G5): read once a check, the
+    /// failed step's tail, masked (`CILog.tail`).
+    package enum CheckLog: Equatable {
+        case loading
+        case loaded(String)
+        case failed(String)
+    }
+    /// By the check's name; forgotten with the pull request shown.
+    @Published package private(set) var logs: [String: CheckLog] = [:]
+
+    /// `check`'s failed step's log, read now unless it is already there.
+    package func loadLog(of check: Check) async {
+        guard let root, logs[check.name] == nil || logs[check.name].map({ if case .failed = $0 { true } else { false } }) == true else { return }
+        guard let job = check.actionsJob else {
+            logs[check.name] = .failed("Not a GitHub Actions job: its log is on its own page.")
+            return
+        }
+        logs[check.name] = .loading
+        do {
+            let data = try await GitHub.run(CILog.arguments(run: job.run, job: job.job), in: root, timeout: 30)
+            let text = CILog.tail(String(decoding: data, as: UTF8.self))
+            logs[check.name] = .loaded(text.isEmpty ? "(no output from the failed steps)" : text)
+        } catch {
+            logs[check.name] = .failed(error.localizedDescription)
+        }
+    }
+
+    /// Its log hidden again.
+    package func closeLog(of check: Check) { logs[check.name] = nil }
+
     package private(set) var root: URL?
     package private(set) var branch: String?
     /// A pull request picked in Overgit — not the checkout's branch's:
@@ -60,6 +90,7 @@ package final class PullRequestModel: ObservableObject {
     private func reset() {
         detail = nil
         threads = []
+        logs = [:]
         postError = nil
         phase = .idle
         if visible { Task { await refresh() } }

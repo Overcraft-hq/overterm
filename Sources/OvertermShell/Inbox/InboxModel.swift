@@ -34,6 +34,9 @@ package final class InboxModel: ObservableObject {
         /// An agent run left processes running (6.9, D-17): Show opens
         /// Activity's Left Behind.
         package var leftBehind = false
+        /// Its branch's CI failed (GIT-G5): Show Log and Ask Agent to Fix,
+        /// kept until CI is green again, looked at or not.
+        package var ci: CIFailure? = nil
 
         /// What the card is called: the tab, and what it is asking for.
         package var headline: String {
@@ -44,7 +47,7 @@ package final class InboxModel: ObservableObject {
 
         package static func == (a: Entry, b: Entry) -> Bool {
             a.id == b.id && a.mark == b.mark && a.note == b.note && a.prompt == b.prompt && a.asksWhy == b.asksWhy && a.terraform == b.terraform
-                && a.leftBehind == b.leftBehind
+                && a.leftBehind == b.leftBehind && a.ci == b.ci
         }
     }
 
@@ -71,17 +74,20 @@ package final class InboxModel: ObservableObject {
     /// ask marked, whatever their mark says now. `screen` reads a pane's
     /// visible text — passed in so the model stays testable.
     package func refresh(tabs: [Tab], group: (Tab) -> TabGroup?, screen: (Tab) -> String?, now: Date = Date()) {
-        let wanting = tabs.filter { $0.activity.needsAttention || $0.terraformAsk != nil }
+        let wanting = tabs.filter { $0.activity.needsAttention || $0.terraformAsk != nil || $0.ciFailure != nil }
         let built = Self.ordered(wanting).map { tab in
-            Entry(
-                id: tab.id, title: tab.title, group: group(tab), mark: tab.activity.mark, note: tab.activity.note,
+            // CI's card says CI's words unless another mark is up over it.
+            let ciSays = tab.ciFailure != nil && (tab.activity.fromCI || tab.activity.mark == .none)
+            return Entry(
+                id: tab.id, title: tab.title, group: group(tab), mark: ciSays ? .failed : tab.activity.mark,
+                note: ciSays ? tab.ciFailure?.note : tab.activity.note,
                 // Only a blocked agent is being asked anything; a finished
                 // one has a prompt on screen that is nobody's question. A
                 // Terraform write's is never offered as choices (3.3).
                 prompt: tab.activity.mark == .waiting && tab.terraformAsk == nil
                     ? screen(tab).flatMap { TerraformPrompt.parse($0) == nil ? AgentPrompt.parse($0) : nil } : nil,
                 since: tab.activity.mark == .waiting ? now : nil, asksWhy: !tab.kubeAlerts.isEmpty, terraform: tab.terraformAsk,
-                leftBehind: tab.activity.fromLeftBehind)
+                leftBehind: tab.activity.fromLeftBehind, ci: tab.ciFailure)
         }
         if built != entries { entries = built }
         if highlighted == nil || !built.contains(where: { $0.id == highlighted }) { highlighted = built.first?.id }
@@ -96,7 +102,7 @@ package final class InboxModel: ObservableObject {
             case .waiting: 0
             case .failed: 1
             case .done: 2
-            case .none: 3
+            case .none: tab.ciFailure != nil ? 1 : 3
             }
         }
         return tabs.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)

@@ -21,6 +21,8 @@ package struct OvergitOverview: View {
     package var onCommand: (OvergitCommand) -> Void = { _ in }
     /// Opens the Changes section, where the message and Commit are.
     package var onCommit: () -> Void = {}
+    /// Create Pull Request…, for a branch that has none.
+    package var onCreatePullRequest: () -> Void = {}
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -62,6 +64,13 @@ package struct OvergitOverview: View {
                     }
                     .buttonStyle(.plain)
                     .help(pullRequest.title)
+                } else if branch != nil {
+                    Button("Create PR…", action: onCreatePullRequest)
+                        .buttonStyle(.plain)
+                        .font(.system(size: ChromeMetrics.text(11)))
+                        .foregroundStyle(theme.accentText)
+                        .help("Create Pull Request… — this branch's commits, opened on GitHub, asked first")
+                        .accessibilityIdentifier("overgit.createPullRequest")
                 }
                 Spacer(minLength: 0)
                 if let upstream = ref?.upstream {

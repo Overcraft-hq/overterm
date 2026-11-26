@@ -208,6 +208,13 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// A scenario's: a Docker link (a port pill's) handed here instead of
     /// the browser.
     package var dockerLinkRecorder: ((URL) -> Void)?
+    /// The pull requests as the last poll said them, by branch (`applyCI`).
+    package var ciSeen: [String: PullRequestSummary] = [:]
+    /// A scenario's: a pull request write's question answered here, not in
+    /// a sheet; a pull request opened, by its number; a write GitHub refused.
+    package var pullRequestWriteRecorder: ((PullRequestWrite) -> Bool)?
+    package var pullRequestCreatedRecorder: ((Int) -> Void)?
+    package var pullRequestProblemRecorder: ((String) -> Void)?
     /// A scenario's: a link `openLink` would open — a pane pill's, Tab
     /// Info's — handed here with whether Settings ▸ Browser opens it in
     /// the browser column, instead of either browser.
@@ -488,7 +495,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     reviewCommits: { [weak self] from, to in self?.reviewCommits(from: from, to: to) },
                     reviewBranch: { [weak self] in self?.reviewBranchRef($0) },
                     reviewPullRequest: { [weak self] in self?.reviewPullRequest($0) },
-                    git: { [weak self] command in Task { await self?.overgit(command) } }
+                    git: { [weak self] command in Task { await self?.overgit(command) } },
+                    createPullRequest: { [weak self] in self?.createPullRequest(nil) }
                 ),
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
@@ -671,7 +679,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                         guard let self, let root = self.diff.root else { return }
                         self.openInEditor(root.appendingPathComponent(path), line: line)
                     },
-                    onReview: { [weak self] in self?.reviewPullRequest($0) }),
+                    onReview: { [weak self] in self?.reviewPullRequest($0) },
+                    onCreate: { [weak self] in self?.createPullRequest(nil) },
+                    onWrite: { [weak self] write in Task { @MainActor in await self?.performPullRequestWrite(write) } }),
                 usage: UsageView(
                     model: usage, theme: theme, settings: .shared, onClose: { [weak self] in self?.toggleDiff(nil) }),
                 commit: CommitDetailView(
@@ -727,6 +737,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             self.updateRightPaneVisibility()
         }
         watchPullRequests()
+        wireCIAttention()
 
         // Everything waiting on you, to the right of the terminal and left
         // of the changes pane: it is about the tabs, not about this one.
@@ -741,6 +752,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                         self.askWhy(onMarkOf: tab)
                     },
                     showLeftBehind: { [weak self] id in self?.showLeftBehind(of: id) },
+                    showCILog: { [weak self] id in self?.showCILog(on: id) },
+                    fixCI: { [weak self] id in self?.askAgentToFixCI(on: id) },
                     close: { [weak self] in self?.toggleInbox(nil) })))
         inboxView.onKey = { [weak self] key in self?.inboxKey(key) ?? false }
         let inboxPanel = NSViewController()
@@ -3307,6 +3320,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             PaletteItem(id: "a.pullRequest", group: .action, title: "Show Pull Request", subtitle: "Checks, comments, review threads", symbol: "arrow.triangle.pull") {
                 [weak self] _, _ in self?.showPullRequest(nil)
             },
+            PaletteItem(
+                id: "a.createPullRequest", group: .action, title: "Create Pull Request…", subtitle: "This branch's commits, opened on GitHub — asked first",
+                symbol: "arrow.triangle.pull"
+            ) { [weak self] _, _ in self?.createPullRequest(nil) },
             PaletteItem(
                 id: "a.reviewBranch", group: .action, title: "Review Branch", subtitle: "This branch's changes in a tab, side by side  ⇧⌘R",
                 symbol: "rectangle.split.2x1"

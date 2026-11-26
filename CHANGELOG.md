@@ -6,6 +6,11 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.8 — 2026-11-27
+
+- Create Pull Request… from the pane, Overgit and ⌘K; Mark Ready, Approve, Request Changes and Merge on a pull request, each asked first
+- A failed CI check's log opens in the Pull Request pane, with Re-run Failed Jobs; CI going red on a branch with a tab open marks the tab and puts a "CI failed" card in the Inbox, with Ask Agent to Fix
+
 ## 1.6.7 — 2026-11-23
 
 - Kubernetes lists sort a little faster: 5,000 rows by CPU in 25 ms, from 28–30

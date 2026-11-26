@@ -347,6 +347,8 @@ package enum KeyCommands {
         .init("notes.graph", "Graph View", group: "Panels", key: "alt+cmd+k"),
         .init("changes.toggle", "Changes", group: "Panels", key: "alt+cmd+d"),
         .init("review.branch", "Review Branch", group: "Panels", key: "shift+cmd+r"),
+        // No key by default: it opens a pull request (asked), bindable.
+        .init("pullRequest.create", "Create Pull Request…", group: "Panels"),
         .init("browser.toggle", "Browser", group: "Panels", key: "shift+cmd+b"),
         .init("usage.show", "Usage", group: "Panels", key: "alt+cmd+u"),
         .init("search.terminal", "Search Terminal & Files", group: "Panels", ghostty: "start_search", menu: false),

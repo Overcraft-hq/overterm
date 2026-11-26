@@ -4225,6 +4225,7 @@ package final class E2ERunner {
         check("outside a repository, no pull request error", app.worktrees.pullRequestError == nil, app.worktrees.pullRequestError ?? "")
         app.worktrees.setAnchor(repo)
         check("and the repository's list is back", await eventually(5) { self.app.worktrees.pullRequests["feat/pr"] != nil })
+        await pullRequestLoopChecks(repo: repo, feature: feature, log: log)
         GitHub.executableOverride = nil
     }
 
@@ -4241,9 +4242,18 @@ package final class E2ERunner {
                 return [l.rstrip("\n").split(" ", 2) for l in open(LOG)]
             except FileNotFoundError:
                 return []
-        def run(name, conclusion):
-            return {"__typename": "CheckRun", "name": name, "status": "COMPLETED", "conclusion": conclusion, "detailsUrl": "https://ci/" + name}
-        CHECKS = [run("Go", "SUCCESS"), run("Lint", "FAILURE")]
+        def run(name, conclusion, url=None):
+            item = {"__typename": "CheckRun", "name": name, "status": "COMPLETED" if conclusion else "IN_PROGRESS", "conclusion": conclusion,
+                    "detailsUrl": url or "https://ci/" + name}
+            if url: item["workflowName"] = "CI"
+            return item
+        LINT = "https://github.com/o/r/actions/runs/11/job/22"
+        try:
+            CHECKS = [run(n, c, LINT if n == "Lint" else None) for n, c in json.load(open(LOG + ".checks"))]
+        except FileNotFoundError:
+            CHECKS = [run("Go", "SUCCESS"), run("Lint", "FAILURE", LINT)]
+        def write(line):
+            open(LOG, "a").write("write " + line + "\n")
         if args[:2] == ["pr", "list"]:
             print(json.dumps([
                 {"number": 7, "title": "Add the thing", "headRefName": "feat/pr", "headRefOid": "x", "state": "OPEN", "isDraft": False,
@@ -4275,6 +4285,18 @@ package final class E2ERunner {
             thread += [{"id": 200 + i, "in_reply_to_id": int(p[1]), "path": "app.swift", "line": 2, "body": p[2], "user": {"login": "me"},
                         "created_at": "2026-09-21T10:00:%02dZ" % i} for i, p in enumerate(posted()) if p[0] == "reply"]
             print(json.dumps(thread))
+        elif args[:2] == ["pr", "create"]:
+            write("create " + " ".join(args[2:]))
+            print("https://github.com/o/r/pull/8")
+        elif args[:2] in (["pr", "ready"], ["pr", "review"], ["pr", "merge"]) or args[:2] == ["run", "rerun"]:
+            write(" ".join(args[1:]))
+        elif args[:2] == ["run", "view"] and "--log-failed" in args:
+            write("log " + " ".join(args[2:]))
+            print("lint\tSet up job\t2026-11-27T10:00:00.0000000Z Runner ready")
+            print("lint\tRun golangci-lint\t2026-11-27T10:00:01.0000000Z \x1b[31merror: lint failed in app.swift:2\x1b[0m")
+            print("lint\tRun golangci-lint\t2026-11-27T10:00:02.0000000Z token=ghp_e2eFakeTokenValue0123456789abcdefABCD")
+        elif args[0] == "api" and args[1].endswith("/actions/runs/11"):
+            print(".github/workflows/ci.yml")
         else:
             sys.stderr.write("fake gh: unexpected %s\n" % args)
             sys.exit(2)

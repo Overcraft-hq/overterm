@@ -67,6 +67,9 @@ package struct TabActivity: Equatable {
     /// The mark is the screen check's (`agentAsked`, `AgentScreenCheck`):
     /// it goes once the question has left the screen (`agentAnswered`).
     package private(set) var fromScreen = false
+    /// The mark is CI's (`ciFailed`): the tab's branch's pull request went
+    /// red; it goes once CI is green again (`ciRecovered`).
+    package private(set) var fromCI = false
 
     package init(waitingSince: Date? = nil, note: String? = nil) {
         self.waitingSince = waitingSince
@@ -124,6 +127,7 @@ package struct TabActivity: Equatable {
         fromTerraform = false
         fromLeftBehind = false
         fromScreen = false
+        fromCI = false
         return true
     }
 
@@ -142,7 +146,9 @@ package struct TabActivity: Equatable {
         fromCluster = false
         fromTerraform = false
         fromLeftBehind = true
+        fromCI = false
         fromScreen = false
+        fromCI = false
         return changed && !visible
     }
 
@@ -158,8 +164,10 @@ package struct TabActivity: Equatable {
         note = text
         fromCluster = false
         fromTerraform = true
+        fromCI = false
         fromLeftBehind = false
         fromScreen = false
+        fromCI = false
         return changed && !visible
     }
 
@@ -185,6 +193,7 @@ package struct TabActivity: Equatable {
         fromTerraform = false
         fromLeftBehind = false
         fromScreen = true
+        fromCI = false
         return true
     }
 
@@ -209,6 +218,7 @@ package struct TabActivity: Equatable {
         fromTerraform = false
         fromLeftBehind = false
         fromScreen = false
+        fromCI = false
         return true
     }
 
@@ -223,9 +233,11 @@ package struct TabActivity: Equatable {
         mark = .failed
         note = text
         fromCluster = true
+        fromCI = false
         fromTerraform = false
         fromLeftBehind = false
         fromScreen = false
+        fromCI = false
         return true
     }
 
@@ -247,6 +259,32 @@ package struct TabActivity: Equatable {
         return true
     }
 
+    /// The tab's branch's pull request went red (GIT-G5): a failure, as a
+    /// container's is — a newer one says itself over the last CI mark.
+    /// Returns true when the mark just went up (or said something new).
+    @discardableResult
+    package mutating func ciFailed(_ text: String, visible: Bool) -> Bool {
+        guard !visible else { return false }
+        guard Mark.failed > mark || (mark == .failed && fromCI && note != text) else { return false }
+        mark = .failed
+        note = text
+        fromCluster = false
+        fromTerraform = false
+        fromLeftBehind = false
+        fromScreen = false
+        fromCI = true
+        return true
+    }
+
+    /// Its CI is green again: the mark goes, unless something else has
+    /// marked the tab since.
+    @discardableResult
+    package mutating func ciRecovered() -> Bool {
+        guard fromCI, mark == .failed else { return false }
+        seen()
+        return true
+    }
+
     /// You looked at the tab.
     package mutating func seen() {
         mark = .none
@@ -255,5 +293,6 @@ package struct TabActivity: Equatable {
         fromTerraform = false
         fromLeftBehind = false
         fromScreen = false
+        fromCI = false
     }
 }
