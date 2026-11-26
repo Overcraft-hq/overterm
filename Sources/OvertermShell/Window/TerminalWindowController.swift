@@ -3497,7 +3497,14 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         if let kubeContext { checked = try await kubernetesTaskPin(kubeContext, repo: repo) }
         let path = try await TaskCreator.create(repo: repo, branch: branch, base: base, location: Settings.shared.worktreeLocation)
         // Its untracked files before anything runs in it (D-7 (a)): copied, never read.
-        let copied = setup.copy.isEmpty ? nil : TaskSetupCopy.copy(setup.copy, from: repo, into: path)
+        // Off the main thread (a folder may be large), awaited before the tab: nothing starts before it is copied.
+        let copied: TaskSetupCopy.Report? =
+            setup.copy.isEmpty
+            ? nil
+            : await withCheckedContinuation { continuation in
+                let paths = setup.copy
+                DispatchQueue.global(qos: .utility).async { continuation.resume(returning: TaskSetupCopy.copy(paths, from: repo, into: path)) }
+            }
         // Its roots read before its agent starts: a production one denies it Terraform's writes (3.4).
         if agent != nil, Settings.shared.terraformAgentWriteGuard { await TerraformAgentGuards.shared.decide(path) }
         var pinned: (environment: [String: String], pin: KubeTerminalPin)?
