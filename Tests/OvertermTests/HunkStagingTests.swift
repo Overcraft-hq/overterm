@@ -259,4 +259,28 @@ final class HunkStagingTests: XCTestCase {
         XCTAssertEqual(try read("src/f.txt"), Self.twenty, "its own file went back")
         XCTAssertEqual(try read("f.txt"), edited, "the root's file is untouched")
     }
+
+    /// A Discard is asked; while it is, the panel moves to another
+    /// checkout: the answer discards nothing there.
+    @MainActor
+    func testADiscardAskedInOneCheckoutIsNotAppliedInAnother() async throws {
+        try await git("init", "-q", "-b", "main")
+        try write("f.txt", Self.twenty)
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "init")
+        let edited = Self.twenty.replacingOccurrences(of: "line 2\n", with: "line two\n")
+        try write("f.txt", edited)
+
+        let model = try await model("f.txt")
+        let diff = try XCTUnwrap(model.diffs["f.txt"])
+        let hunk = try XCTUnwrap(diff.lines.compactMap { diff.hunks[$0.id] }.first)
+        let elsewhere = repo.appendingPathComponent("other", isDirectory: true)
+        let applied = await model.apply(hunk, .discard, in: elsewhere)
+        XCTAssertFalse(applied)
+        XCTAssertNotNil(model.actionError)
+        XCTAssertEqual(try read("f.txt"), edited, "nothing discarded")
+        let here = await model.apply(hunk, .discard, in: model.root)
+        XCTAssertTrue(here, model.actionError ?? "")
+        XCTAssertEqual(try read("f.txt"), Self.twenty)
+    }
 }

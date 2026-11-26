@@ -20,7 +20,8 @@ package struct DiffPanelView: View {
     /// The file whose Discard is awaiting confirmation.
     @State private var discarding: ChangedFile?
     /// A hunk's Discard, asked first: its file's name, the hunk.
-    @State private var discardingHunk: (path: String, hunk: DiffModel.DiffHunk)?
+    /// The hunk a Discard asks about, with the checkout it was chosen in.
+    @State private var discardingHunk: (path: String, hunk: DiffModel.DiffHunk, root: URL?)?
     @State private var composing = false
     /// Commits whose message is shown.
     @State private var openCommits: Set<String> = []
@@ -87,7 +88,9 @@ package struct DiffPanelView: View {
             isPresented: Binding(get: { discardingHunk != nil }, set: { if !$0 { discardingHunk = nil } })
         ) {
             Button("Discard", role: .destructive) {
-                if let hunk = discardingHunk?.hunk { Task { await model.apply(hunk, .discard) } }
+                if let asked = discardingHunk, let root = asked.root {
+                    Task { await model.apply(asked.hunk, .discard, in: root) }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -128,7 +131,7 @@ package struct DiffPanelView: View {
                         onHunk: editable
                             ? { hunk, action in
                                 if action == .discard {
-                                    discardingHunk = (file.path, hunk)
+                                    discardingHunk = (file.path, hunk, model.root)
                                 } else {
                                     Task { await model.apply(hunk, action) }
                                 }

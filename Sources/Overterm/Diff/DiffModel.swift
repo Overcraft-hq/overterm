@@ -839,8 +839,14 @@ package final class DiffModel: ObservableObject {
     /// asked first by the pane): its own patch applied — to the index, or
     /// reversed (GIT-G1). The patch is written to a file of its own:
     /// `Git.run` hands no input.
+    /// `checkout`: where it was chosen — a Discard asked in one checkout is
+    /// never applied in the one the panel moved to while it was asked.
     @discardableResult
-    package func apply(_ hunk: DiffHunk, _ action: HunkAction) async -> Bool {
+    package func apply(_ hunk: DiffHunk, _ action: HunkAction, in checkout: URL? = nil) async -> Bool {
+        if let checkout, checkout != root {
+            actionError = "The checkout changed while it was asked; nothing was discarded."
+            return false
+        }
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-hunk-\(UUID().uuidString).patch")
         do {
             try Data(hunk.patch.utf8).write(to: file)
