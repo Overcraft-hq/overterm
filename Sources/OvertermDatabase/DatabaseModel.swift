@@ -293,17 +293,36 @@ package final class DatabaseModel: ObservableObject {
         AppEnvironment.supportDirectory.appendingPathComponent("Database", isDirectory: true).appendingPathComponent("history.json")
     }
 
+    /// The history as kept — one an earlier version wrote, its passwords
+    /// masked now and the file written again.
     private static func loadHistory() -> [HistoryItem] {
         guard let data = try? Data(contentsOf: historyFile) else { return [] }
-        return (try? JSONDecoder().decode([HistoryItem].self, from: data)) ?? []
+        let items = (try? JSONDecoder().decode([HistoryItem].self, from: data)) ?? []
+        let masked = items.map { item in
+            var item = item
+            item.sql = OpsText.maskSecrets(item.sql)
+            return item
+        }
+        if masked.map(\.sql) != items.map(\.sql) { write(masked, to: historyFile) }
+        return masked
     }
 
+    /// What ran, kept — its password literals masked first, whoever ran
+    /// it (the console, a saved edit, an agent): a database secret is never
+    /// written to disk, the history included (DB-G1). The file is the
+    /// user's alone.
     package func record(_ sql: String, on connection: UUID, rows: Int?, error: String?) {
-        history.insert(HistoryItem(connection: connection, sql: sql, date: Date(), rows: rows, error: error), at: 0)
+        history.insert(HistoryItem(connection: connection, sql: OpsText.maskSecrets(sql), date: Date(), rows: rows, error: error), at: 0)
         if history.count > 500 { history.removeLast(history.count - 500) }
-        let items = history
-        try? FileManager.default.createDirectory(at: Self.historyFile.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? JSONEncoder().encode(items).write(to: Self.historyFile, options: .atomic)
+        Self.write(history, to: Self.historyFile)
+    }
+
+    /// The history as a file: 0600, written whole.
+    package static func write(_ items: [HistoryItem], to file: URL) {
+        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(items) else { return }
+        try? data.write(to: file, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
 
     // MARK: Saved queries
