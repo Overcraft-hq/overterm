@@ -16,7 +16,7 @@ extension EditorViewController {
             buffer.document.unavailable == nil
         else { return }
         let console = SQLConsole(file: url, model: DatabaseModel.shared)
-        console.confirm = { [weak self] sql, why in await self?.confirmDestructive(sql, why: why) ?? false }
+        console.confirm = { [weak self, weak console] sql, why in await self?.confirmDestructive(sql, why: why, on: console?.connection) ?? false }
         console.confirmWrite = { [weak self] confirmation in
             guard let window = self?.view.window else { return false }
             return await confirmation.ask(on: window) != nil
@@ -128,15 +128,14 @@ extension EditorViewController {
     }
 
     /// DROP, TRUNCATE, an UPDATE or DELETE with no WHERE: asked first.
-    package func confirmDestructive(_ sql: String, why: String) async -> Bool {
+    /// A DROP's or TRUNCATE's question: the shared sheet, the connection
+    /// it runs on as its scope, Return on Cancel (D-1).
+    package func confirmDestructive(_ sql: String, why: String, on connection: DatabaseConnection? = nil) async -> Bool {
         guard let window = view.window else { return false }
-        let alert = NSAlert()
-        alert.messageText = "Run this statement?"
-        alert.informativeText = "\(why)\n\n\(sql.prefix(400))"
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Run")
-        alert.addButton(withTitle: "Cancel")
-        return await alert.beginSheetModal(for: window) == .alertFirstButtonReturn
+        let scope = connection.map { "\($0.kind.title) · \($0.name)" }
+        let asked = WriteConfirmation(
+            title: "Run this statement?", scope: scope, detail: "\(why)\n\n\(sql.prefix(400))", button: "Run", destroys: true)
+        return await asked.ask(on: window) != nil
     }
 }
 

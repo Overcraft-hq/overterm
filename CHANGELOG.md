@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.6.8 — 2026-11-27
 
 - Sheets that delete leave Return on Cancel: the button that deletes takes a click, and where a name is typed, Return deletes once it matches
+- Docker's, Redis', the SQL console's, Files' and Overgit's questions that delete use the same sheet and say what they reach: the engine, the connection, the folder, the repository and branch. Docker's Clean Up leaves Return on Cancel too
 
 ## 1.6.7 — 2026-11-23
 

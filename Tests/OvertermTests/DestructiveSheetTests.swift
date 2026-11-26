@@ -2,7 +2,9 @@ import AppKit
 import XCTest
 
 @testable import Overterm
+@testable import OvertermDocker
 @testable import OvertermKubernetes
+@testable import OvertermShell
 
 /// P04 (Overcraft-hq/issue-tracker#14), D-1 (b): on a sheet that deletes,
 /// Return is Cancel's and the action takes a click; a typed name arms
@@ -81,5 +83,16 @@ final class DestructiveSheetTests: XCTestCase {
         XCTAssertEqual(
             Set(KubeWriteVerb.allCases.filter(\.destroys)), [.delete, .recreate, .forceDelete, .removeFinalizers, .evict],
             "a restart, a scale, a cordon can be set back")
+    }
+
+    func testEachAskSaysWhatItReaches() {
+        let local = DockerEndpoint(address: .unix("/Users/someone/.orbstack/run/docker.sock"), context: "orbstack", source: "context orbstack")
+        XCTAssertEqual(local.confirmationScope(runtime: .orbStack), "OrbStack on this Mac · context orbstack")
+        let remote = DockerEndpoint(address: .tcp(host: "build-box", port: 2376), source: "DOCKER_HOST")
+        XCTAssertEqual(remote.confirmationScope(runtime: .engine), "Remote engine on build-box · DOCKER_HOST")
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        XCTAssertEqual(
+            TerminalWindowController.gitScope(root: home.appendingPathComponent("src/shop"), branch: "feature/cart"), "~/src/shop · on feature/cart")
+        XCTAssertEqual(TerminalWindowController.gitScope(root: URL(fileURLWithPath: "/tmp/repo"), branch: nil), "/tmp/repo")
     }
 }

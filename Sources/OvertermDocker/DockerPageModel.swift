@@ -6,8 +6,20 @@ import Foundation
 package struct DockerActions {
     /// A command typed into a new terminal tab in `folder` (home when nil).
     package var run: (_ command: String, _ folder: URL?) -> Void
-    /// Asks — what, why, the button's word — then does it.
-    package var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void
+    /// Asks — what, why, the button's word — then does it. Replaced after
+    /// it was made (a scenario answering for the person), it answers for
+    /// the deletes too: `destroy` is dropped with the old one.
+    package var confirm: (_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void {
+        didSet { destroy = nil }
+    }
+    /// The same for what deletes (D-1): the window's says which engine and
+    /// leaves Return on Cancel. Unset, `confirm` asks.
+    package var destroy: ((_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) -> Void)? = nil
+
+    /// Asks before something that deletes: `destroy`, else `confirm`.
+    package func confirmDestroying(_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) {
+        if let destroy { destroy(title, detail, button, then) } else { confirm(title, detail, button, then) }
+    }
     /// A published port, in the browser.
     package var open: (URL) -> Void
     package var copy: (String) -> Void
@@ -931,7 +943,7 @@ package final class DockerPageModel: ObservableObject {
         case "stop": act(.stop, on: lasting.filter { $0.state.isUp })
         case "restart": act(.restart, on: lasting)
         case "down":
-            actions?.confirm(
+            actions?.confirmDestroying(
                 "Take “\(project.name)” down?",
                 "docker compose down stops and removes its containers and networks, in a terminal tab. Its volumes stay.", "Down"
             ) { [weak self] in self?.actions?.run(DockerCommands.compose(project, "down", endpoint: endpoint), folder) }
@@ -964,7 +976,7 @@ package final class DockerPageModel: ObservableObject {
     package func confirmRemove(_ containers: [ContainerSummary]) {
         guard !containers.isEmpty else { return }
         let running = containers.filter { $0.state.isUp }.count
-        actions?.confirm(
+        actions?.confirmDestroying(
             containers.count == 1 ? "Remove “\(containers[0].name)”?" : "Remove \(containers.count) containers?",
             (running > 0 ? "Running ones are stopped first. " : "") + "Their volumes stay.", "Remove"
         ) { [weak self] in self?.remove(containers) }
