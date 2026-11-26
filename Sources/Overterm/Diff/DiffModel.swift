@@ -564,10 +564,15 @@ package final class DiffModel: ObservableObject {
         let open = shownFiles.filter { !isFolded($0.path) }
         var loaded: [String: FileDiff] = [:]
         for file in open {
+            // Hidden mid-batch: no more git for cards nobody sees; showing
+            // the panel again refreshes them.
+            guard panelVisible else { break }
             guard let diff = await readDiff(of: file) else { continue }
             loaded[file.path] = diff
         }
         guard ticket == generation else { return }
+        // A batch cut short by a hide keeps what it read; showing the panel
+        // refreshes (`panelVisible`), which reads the rest.
         diffs = loaded
     }
 
