@@ -184,6 +184,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var browserWorkspaces: [UUID: BrowserWorkspace] = [:]
     /// A restored tab's pages, loaded when its browser is first shown.
     package var pendingBrowserPages: [UUID: (urls: [URL], active: Int)] = [:]
+    /// What a restored pane's agent would have been started with, in an
+    /// isolated run — recorded there, never typed: a session file of a
+    /// scenario must not start the real `claude` or `codex` on this Mac.
+    package var restoredAgentCommands: [ObjectIdentifier: String] = [:]
     package var browserObservers: Set<AnyCancellable> = []
     /// The title bar's globe.
     package let browserButton = BrowserButtonState()
@@ -1638,7 +1642,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     browserPage: browserPages(of: tab)?.active,
                     kubeContext: tab.isSplit ? nil : Self.savedKubePin(tab.terminal),
                     paneKubeContexts: tab.isSplit && tab.terminals.contains { Self.savedKubePin($0) != nil }
-                        ? tab.terminals.map(Self.savedKubePin) : nil)
+                        ? tab.terminals.map(Self.savedKubePin) : nil,
+                    paneAgents: Self.savedPaneAgents(tab))
             },
             selectedIndex: store.selectedIndex,
             groups: ordered.isEmpty
@@ -1651,12 +1656,23 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 })
     }
 
+    /// Each pane's agent as the session keeps it, in reading order — nil
+    /// when the light tick read none in any (a file then says what older
+    /// ones said: the tab's agent, in its first pane).
+    package static func savedPaneAgents(_ tab: Tab) -> [AgentResume?]? {
+        let agents = tab.terminals.map { tab.resume(of: $0) }
+        return agents.contains { $0 != nil } ? agents : nil
+    }
+
     /// The panes whose text the last save keeps: Settings ▸ General's
     /// reopening tabs and their text, shell tabs only — and never a pane
     /// that printed what Terraform keeps secret (5.6 rule 6).
     package func scrollbackPanes() -> [TerminalView] {
         guard Settings.shared.restoreTabs, Settings.shared.restoreScrollback else { return [] }
-        return store.tabs.filter { $0.agent == nil }.flatMap { tab in tab.terminals.filter { !terraformSensitive($0) } }
+        // A pane resuming an agent isn't a shell's: its conversation comes back instead.
+        return store.tabs.filter { $0.agent == nil }.flatMap { tab in
+            tab.terminals.filter { !terraformSensitive($0) && tab.resume(of: $0) == nil }
+        }
     }
 
     /// The last save, at quit or when the window closes (whichever comes
@@ -1682,10 +1698,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package func restore(_ state: SessionState) {
         func existing(_ path: String?) -> String? { path.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } }
         // A resumed agent is started as a new one is: Terraform's writes denied where they apply (3.4).
-        func resuming(_ agent: Agent?, in path: String?) -> (input: String?, launch: TerraformAgentGuard.Launch) {
-            guard let agent else { return (nil, .none) }
+        func resuming(_ resume: AgentResume?, in path: String?) -> (input: String?, launch: TerraformAgentGuard.Launch) {
+            guard let resume else { return (nil, .none) }
+            let agent = resume.agent
             let folder = URL(fileURLWithPath: path ?? FileManager.default.homeDirectoryForCurrentUser.path, isDirectory: true)
-            let made = agentCommand(agent, base: agent.resumeCommand(Settings.shared.launch(for: agent)), in: folder)
+            let made = agentCommand(agent, base: resume.command(Settings.shared.launch(for: agent)), in: folder)
             return (made.command + "\n", made.launch)
         }
         // The islands first, so each tab can point at one as it is made.
@@ -1720,32 +1737,36 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             // Settings ▸ the group's own switch: an island marked not to
             // come back brings none of its tabs with it.
             if let i = saved.group, groups.indices.contains(i), !groups[i].restoresOnLaunch { continue }
-            // A split tab's panes, the first resuming the agent; else one terminal.
+            // A split tab's panes, each resuming its own agent; else one terminal.
             var made: [TerminalView] = []
             let layout = saved.panes?.tree { directory, scrollback -> TerminalView in
                 let kube = pinned(saved.kubeContext(ofPane: made.count))
-                let start = made.isEmpty ? resuming(saved.agent, in: existing(directory)) : (nil, .none)
+                let start = resuming(saved.resume(ofPane: made.count), in: existing(directory))
                 let pane = TerminalView(
-                    workingDirectory: existing(directory), initialInput: start.input,
+                    workingDirectory: existing(directory), initialInput: AppEnvironment.isIsolated ? nil : start.input,
                     restoring: Scrollback.file(named: scrollback), environment: kube?.environment ?? [:], kubePin: kube?.pin, kubePinLost: kube?.lost)
                 pane.terraformAgentGuard = start.launch
+                if AppEnvironment.isIsolated, let input = start.input { restoredAgentCommands[ObjectIdentifier(pane)] = input }
                 made.append(pane)
                 return pane
             }
             let single = made.isEmpty ? pinned(saved.kubeContext) : nil
-            let start = made.isEmpty ? resuming(saved.agent, in: existing(saved.workingDirectory)) : (nil, .none)
+            let start = made.isEmpty ? resuming(saved.resume(ofPane: 0), in: existing(saved.workingDirectory)) : (nil, .none)
             let terminal =
                 made.first
                 ?? TerminalView(
-                    workingDirectory: existing(saved.workingDirectory), initialInput: start.input,
+                    workingDirectory: existing(saved.workingDirectory), initialInput: AppEnvironment.isIsolated ? nil : start.input,
                     restoring: Scrollback.file(named: saved.scrollback), environment: single?.environment ?? [:], kubePin: single?.pin,
                     kubePinLost: single?.lost)
-            if made.isEmpty { terminal.terraformAgentGuard = start.launch }
+            if made.isEmpty {
+                terminal.terraformAgentGuard = start.launch
+                if AppEnvironment.isIsolated, let input = start.input { restoredAgentCommands[ObjectIdentifier(terminal)] = input }
+            }
             // The island is the one the session saved — never a decision
             // taken again at launch (NewTabGroup would ask).
             let island = saved.group.flatMap { groups.indices.contains($0) ? groups[$0].id : nil }
             addTab(
-                terminal, agent: saved.agent, after: store.tabs.last,
+                terminal, agent: saved.agent ?? saved.paneAgents?.lazy.compactMap({ $0?.agent }).first, after: store.tabs.last,
                 joining: island.map { NewTabGroup.Placement.join($0) } ?? .loose)
             guard let tab = store.tabs.last else { continue }
             if let layout, made.count > 1 {
@@ -1759,6 +1780,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     // first pane took it as the tab was added.
                     if store.selectedID == tab.id { window?.makeFirstResponder(made[i]) }
                 }
+            }
+            // Until the light tick reads them running, each pane keeps what it resumes.
+            for (index, pane) in (made.isEmpty ? [terminal] : made).enumerated() {
+                if let resume = saved.resume(ofPane: index) { tab.paneResumes[ObjectIdentifier(pane)] = resume }
             }
             tab.customTitle = saved.customTitle
             tab.color = saved.color.flatMap(TabColor.init(rawValue:))

@@ -38,11 +38,15 @@ package struct SessionState: Codable, Equatable {
         /// a pane moved in from another tab keeps its own, or none. Absent
         /// when no pane is pinned.
         package var paneKubeContexts: [KubeTerminalPin?]? = nil
+        /// Each pane's agent, in reading order (one for a one-pane tab),
+        /// and Claude's conversation: every pane resumes its own. Absent
+        /// in older session files — then the first pane resumes `agent`.
+        package var paneAgents: [AgentResume?]? = nil
 
         package init(
             workingDirectory: String? = nil, customTitle: String? = nil, color: String? = nil, isPinned: Bool, agent: Agent? = nil, attachedCheckout: String? = nil, panes: PaneLayout? = nil,
             focusedPane: Int? = nil, scrollback: String? = nil, group: Int? = nil, browserURL: String? = nil, browserPages: [String]? = nil, browserPage: Int? = nil,
-            kubeContext: KubeTerminalPin? = nil, paneKubeContexts: [KubeTerminalPin?]? = nil
+            kubeContext: KubeTerminalPin? = nil, paneKubeContexts: [KubeTerminalPin?]? = nil, paneAgents: [AgentResume?]? = nil
         ) {
             self.workingDirectory = workingDirectory
             self.customTitle = customTitle
@@ -59,6 +63,15 @@ package struct SessionState: Codable, Equatable {
             self.browserPage = browserPage
             self.kubeContext = kubeContext
             self.paneKubeContexts = paneKubeContexts
+            self.paneAgents = paneAgents
+        }
+
+        /// What pane `index` (reading order) resumes. A file from before
+        /// panes had their own: the tab's agent, in the first pane alone,
+        /// its folder's last conversation.
+        package func resume(ofPane index: Int) -> AgentResume? {
+            guard let agents = paneAgents else { return index == 0 ? agent.map { AgentResume(agent: $0) } : nil }
+            return agents.indices.contains(index) ? agents[index] : nil
         }
 
         /// The pin pane `index` (reading order) had. A file from before

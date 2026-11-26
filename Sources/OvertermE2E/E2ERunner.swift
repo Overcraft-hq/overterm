@@ -2571,8 +2571,9 @@ package final class E2ERunner {
     /// A prepared session comes back; changes are autosaved.
     private func session() async {
         let tabs = app.store.tabs
-        check("both saved tabs restored", tabs.count == 2, "\(tabs.count)")
-        guard tabs.count == 2 else { return }
+        check("every saved tab restored", tabs.count == 6, "\(tabs.count)")
+        guard tabs.count == 6 else { return }
+        resumedAgents(Array(tabs[2...]))
         check("pinned first, with its colour and name", tabs[0].isPinned && tabs[0].color == .green && tabs[0].title == "pinned one")
         check("the selection is restored", app.store.selectedIndex == 1)
         let cwd = ProcessInfo.processInfo.environment["OVERTERM_E2E_CWD"]
@@ -2587,9 +2588,9 @@ package final class E2ERunner {
             check("at the saved size", abs(share - 0.3) < 0.02, "\(share)")
         }
         tabs[1].customTitle = "renamed"
-        let saved = await eventually(4) { SessionState.load()?.tabs.last?.customTitle == "renamed" }
+        let saved = await eventually(4) { SessionState.load()?.tabs[1].customTitle == "renamed" }
         check("a change is autosaved", saved)
-        check("with the panes", SessionState.load()?.tabs.last?.panes != nil && SessionState.load()?.tabs.last?.focusedPane == 1)
+        check("with the panes", SessionState.load()?.tabs[1].panes != nil && SessionState.load()?.tabs[1].focusedPane == 1)
 
         // A working agent changes its tab many times a second; a change
         // elsewhere must still be saved meanwhile, not after a quiet second.
@@ -2602,8 +2603,37 @@ package final class E2ERunner {
         tabs[1].customTitle = "renamed while busy"
         check(
             "a change is saved while another tab keeps changing",
-            await eventually(4) { SessionState.load()?.tabs.last?.customTitle == "renamed while busy" })
+            await eventually(4) { SessionState.load()?.tabs[1].customTitle == "renamed while busy" })
         churn.cancel()
+    }
+
+    /// Each pane comes back with its own agent, Claude with its own
+    /// conversation (TERM-G2): two Claudes in one folder are two, a
+    /// split's second pane resumes too, and an older file's tab its
+    /// agent's last conversation. Recorded, never typed — no real agent
+    /// starts from a scenario.
+    private func resumedAgents(_ tabs: [Tab]) {
+        func command(_ pane: TerminalView) -> String {
+            (app.restoredAgentCommands[ObjectIdentifier(pane)] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func resumes(_ pane: TerminalView, _ words: String) -> Bool { command(pane).contains(words) }
+        let a = "--resume 00000000-0000-4000-8000-0000000000a1"
+        let b = "--resume 00000000-0000-4000-8000-0000000000b2"
+        check("a Claude tab resumes its own conversation", resumes(tabs[0].terminal, a), command(tabs[0].terminal))
+        check(
+            "and the other Claude in the same folder its own, not the newest",
+            resumes(tabs[1].terminal, b) && !resumes(tabs[1].terminal, a), command(tabs[1].terminal))
+        let split = tabs[2].terminals
+        check("the split's panes come back", split.count == 2, "\(split.count)")
+        if split.count == 2 {
+            check("its first pane resumes Claude's conversation", resumes(split[0], "--resume 00000000-0000-4000-8000-0000000000c3"), command(split[0]))
+            check("its second pane resumes its own agent", resumes(split[1], "codex resume --last"), command(split[1]))
+            check(
+                "each pane keeps what it resumes for the next save",
+                tabs[2].resume(of: split[1]) == AgentResume(agent: .codex))
+        }
+        check("an older file's agent tab resumes its last conversation", resumes(tabs[3].terminal, "codex resume --last"), command(tabs[3].terminal))
+        check("nothing was typed into a shell", tabs.allSatisfy { !($0.terminal.visibleText ?? "").contains("resume") })
     }
 
     /// New Task: a worktree on a new branch next to the repo, a tab in it.

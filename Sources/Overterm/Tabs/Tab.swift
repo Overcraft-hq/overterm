@@ -100,6 +100,16 @@ package final class Tab: ObservableObject, Identifiable {
     @Published package var panePorts: [ObjectIdentifier: [ListeningPort]] = [:]
 
     package func ports(of pane: TerminalView) -> [ListeningPort] { panePorts[ObjectIdentifier(pane)] ?? [] }
+    /// Each pane's agent and the conversation it would pick back up, as
+    /// the light tick last read it (`notePaneAgents`): what the session
+    /// saves, so every pane comes back with its own agent and Claude its
+    /// own conversation — not the tab's first pane, `--continue`'s newest.
+    @Published package var paneResumes: [ObjectIdentifier: AgentResume] = [:]
+    /// The process each pane's record was read from, and when its session
+    /// file was last read: read again only for a new one, or now and then.
+    package var paneAgentReads: [ObjectIdentifier: (identity: ActivityProcessID, readAt: Date)] = [:]
+
+    package func resume(of pane: TerminalView) -> AgentResume? { paneResumes[ObjectIdentifier(pane)] }
     /// What the compose projects of its checkout publish (DockerModel).
     /// Apart from `ports`: they don't make the tab a server.
     @Published package var containerPorts: [ListeningPort] = []

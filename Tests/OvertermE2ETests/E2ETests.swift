@@ -491,7 +491,16 @@ final class E2ETests: XCTestCase {
             {"selectedIndex":1,"tabs":[
               {"workingDirectory":"\(support.path)","customTitle":"pinned one","color":"green","isPinned":true},
               {"workingDirectory":"\(dir.path)","isPinned":false,"focusedPane":1,"panes":{"split":{"axis":"horizontal","ratio":0.3,
-                "first":{"pane":{"directory":"\(support.path)"}},"second":{"pane":{"directory":"\(dir.path)"}}}}}
+                "first":{"pane":{"directory":"\(support.path)"}},"second":{"pane":{"directory":"\(dir.path)"}}}}},
+              {"workingDirectory":"\(dir.path)","isPinned":false,"agent":"claude",
+                "paneAgents":[{"agent":"claude","session":"00000000-0000-4000-8000-0000000000a1"}]},
+              {"workingDirectory":"\(dir.path)","isPinned":false,"agent":"claude",
+                "paneAgents":[{"agent":"claude","session":"00000000-0000-4000-8000-0000000000b2"}]},
+              {"workingDirectory":"\(dir.path)","isPinned":false,"agent":"claude",
+                "paneAgents":[{"agent":"claude","session":"00000000-0000-4000-8000-0000000000c3"},{"agent":"codex"}],
+                "panes":{"split":{"axis":"horizontal","ratio":0.5,
+                "first":{"pane":{"directory":"\(dir.path)"}},"second":{"pane":{"directory":"\(dir.path)"}}}}},
+              {"workingDirectory":"\(dir.path)","isPinned":false,"agent":"codex"}
             ]}
             """
         try Data(session.utf8).write(to: support.appendingPathComponent("session.json"))
