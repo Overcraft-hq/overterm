@@ -79,8 +79,11 @@ package enum AppleContainers {
 
     /// One image, as `container image list --format json` lists it.
     package struct Image: Identifiable, Equatable, Sendable {
+        /// A row a tag: two tags of one image share its digest, and
+        /// selecting or removing one must not take the other.
+        package var id: String { reference }
         /// Its digest without the algorithm, as the tool's own `id`.
-        package var id: String
+        package var digestID: String
         /// As the tool keeps it: `docker.io/library/alpine:3.20`.
         package var reference: String
         package var digest: String?
@@ -209,7 +212,7 @@ package enum AppleContainers {
         let platforms = variants.compactMap { platform($0["platform"]) }.filter { $0 != "unknown/unknown" }
         let sizes = variants.compactMap { int($0["size"]) }
         return Image(
-            id: string(object["id"]) ?? digest.map { String($0.split(separator: ":").last ?? Substring($0)) } ?? reference,
+            digestID: string(object["id"]) ?? digest.map { String($0.split(separator: ":").last ?? Substring($0)) } ?? reference,
             reference: reference, digest: digest,
             size: sizes.isEmpty ? int(descriptor?["size"]).map(Int64.init) : Int64(sizes.reduce(0, +)),
             platforms: platforms, created: date(configuration["creationDate"]))

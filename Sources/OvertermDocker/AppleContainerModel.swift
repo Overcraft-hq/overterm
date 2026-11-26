@@ -122,18 +122,33 @@ package final class AppleContainerModel: ObservableObject {
 
     private var reading: Task<Void, Never>?
 
-    /// Reads what is wanted now; one read at a time, a second asked while
-    /// one runs waits for it.
     package func refresh() {
         Task { await readNow() }
     }
 
+    /// Asked while a read ran: that read may have started before what is
+    /// asked for now (an action's result, a part just wanted).
+    private var readAgain = false
+
+    /// Reads what is wanted now. One read at a time: asked while one runs,
+    /// it waits for that one and for one more, started after it was asked.
     package func readNow() async {
-        if let reading { return await reading.value }
-        let task = Task { await read(wanted) }
+        if let reading {
+            readAgain = true
+            return await reading.value
+        }
+        // The read lets go of itself as it ends — not its first caller once
+        // it resumes, after which a call could find it finished and read
+        // nothing.
+        let task = Task {
+            repeat {
+                readAgain = false
+                await read(wanted)
+            } while readAgain
+            reading = nil
+        }
         reading = task
         await task.value
-        reading = nil
     }
 
     private func read(_ parts: Set<Part>) async {

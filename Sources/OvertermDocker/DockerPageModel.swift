@@ -345,6 +345,8 @@ package final class DockerPageModel: ObservableObject {
         // when it starts again.
         appleStreams = Publishers.CombineLatest4($appleSelection, $appleDetailTab, $visible, $showDetail)
             .combineLatest($section, apple.$containers.map { $0.map { "\($0.id) \($0.state.rawValue)" } }.removeDuplicates())
+            // Images or Volumes shown, the Logs aren't: their follower stops.
+            .combineLatest($appleTab)
             .sink { [weak self] _ in
                 // @Published fires before the values land.
                 DispatchQueue.main.async { self?.updateAppleStream() }

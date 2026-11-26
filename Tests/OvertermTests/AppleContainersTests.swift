@@ -82,8 +82,9 @@ final class AppleContainersTests: XCTestCase {
         let images = AppleContainers.images(from: try fixture("images"))
         XCTAssertEqual(images.map(\.shortName), ["alpine:latest", "nginx:alpine"])
         let alpine = images[0]
-        XCTAssertEqual(alpine.id, "f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf")
-        XCTAssertEqual(alpine.digest, "sha256:" + alpine.id)
+        XCTAssertEqual(alpine.id, "docker.io/library/alpine:latest", "a row a tag")
+        XCTAssertEqual(alpine.digestID, "f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf")
+        XCTAssertEqual(alpine.digest, "sha256:" + alpine.digestID)
         XCTAssertEqual(alpine.platforms, ["linux/arm64/v8"])
         XCTAssertEqual(alpine.size, 4_192_247)
         XCTAssertNotNil(alpine.created)
@@ -163,16 +164,17 @@ final class AppleContainersTests: XCTestCase {
 
     /// A `container` that answers from the fixtures and writes down every
     /// call; `stopped` makes its service say it isn't running.
-    private func standIn(stopped: Bool = false) throws -> URL {
+    private func standIn(stopped: Bool = false, slowList: Bool = false) throws -> URL {
         let tool = folder.appendingPathComponent("container")
         let status = stopped ? #"echo '{"status":"not running"}'; exit 1"# : #"cat "$dir/status.json""#
+        let list = slowList ? #"sleep 0.4; cat "$dir/list.json""# : #"cat "$dir/list.json""#
         let script = """
             #!/bin/sh
             dir="$(dirname "$0")"
             echo "$*" >> "$dir/calls"
             case "$*" in
               "system status --format json") \(status) ;;
-              "list --all --format json") cat "$dir/list.json" ;;
+              "list --all --format json") \(list) ;;
               "image list --format json") cat "$dir/images.json" ;;
               "volume list --format json") cat "$dir/volumes.json" ;;
               "stop overterm-probe-web") ;;
@@ -234,6 +236,34 @@ final class AppleContainersTests: XCTestCase {
         XCTAssertTrue(model.wanted.isEmpty)
     }
 
+    /// Asked while a read runs — after an action, say — it waits for one
+    /// more read, started after it was asked: the one running may predate
+    /// what was done.
+    func testAReadAskedDuringOneReadsAgain() async throws {
+        let tool = try standIn(slowList: true)
+        let model = AppleContainerModel(locate: { tool }, interval: .seconds(60))
+        model.want(.containers)
+        let started = await until { self.calls().contains("list --all --format json") }
+        XCTAssertTrue(started)
+        await model.readNow()
+        XCTAssertEqual(calls().filter { $0 == "list --all --format json" }.count, 2, "\(calls())")
+        // Nothing overlapping: one read.
+        await model.readNow()
+        XCTAssertEqual(calls().filter { $0 == "list --all --format json" }.count, 3, "\(calls())")
+        model.unwant(.containers)
+    }
+
+    /// Two tags of one image share its digest: each its own row.
+    func testTwoTagsOfOneImageAreTwoRows() throws {
+        let json = #"""
+            [{"id":"f59a","configuration":{"name":"docker.io/library/alpine:latest","descriptor":{"digest":"sha256:f59a"}},"variants":[]},
+             {"id":"f59a","configuration":{"name":"docker.io/library/mine:1","descriptor":{"digest":"sha256:f59a"}},"variants":[]}]
+            """#
+        let images = AppleContainers.images(from: Data(json.utf8))
+        XCTAssertEqual(Set(images.map(\.id)).count, 2)
+        XCTAssertEqual(images.map(\.digestID), ["f59a", "f59a"])
+    }
+
     func testAStoppedServiceEmptiesTheLists() async throws {
         let tool = try standIn(stopped: true)
         let model = AppleContainerModel(locate: { tool }, interval: .seconds(60))
@@ -288,6 +318,30 @@ final class AppleContainersTests: XCTestCase {
         let without = DockerPageModel(docker: DockerModel(endpoint: { nil }), apple: AppleContainerModel(locate: { nil }, interval: .seconds(60)))
         XCTAssertFalse(without.press("7"))
         XCTAssertEqual(without.section, .containers)
+    }
+
+    /// Images or Volumes shown, the selected container's log isn't
+    /// followed any more; back on Containers, it is again.
+    func testLeavingContainersStopsTheLog() async throws {
+        let tool = try standIn()
+        let apple = AppleContainerModel(locate: { tool }, interval: .seconds(60))
+        let page = DockerPageModel(docker: DockerModel(endpoint: { nil }), apple: apple)
+        page.visible = true
+        page.section = .apple
+        let read = await until { apple.read.contains(.containers) }
+        XCTAssertTrue(read)
+        page.showDetail = true
+        page.appleSelection = ["overterm-probe-web"]
+        page.appleDetailTab = .logs
+        let following = await until { page.appleSession != nil && self.calls().contains("logs --follow -n 500 overterm-probe-web") }
+        XCTAssertTrue(following, "\(calls())")
+        page.appleTab = .images
+        let stopped = await until { page.appleSession == nil }
+        XCTAssertTrue(stopped)
+        page.appleTab = .containers
+        let again = await until { page.appleSession != nil }
+        XCTAssertTrue(again)
+        page.close()
     }
 
     func testRemovalIsAskedFirst() async throws {
