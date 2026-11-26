@@ -243,6 +243,12 @@ package enum AppEnvironment {
     /// only, never a value. In the support directory, an isolated run's own.
     package static var terraformRootsFile: URL { supportDirectory.appendingPathComponent("terraform-roots.json") }
 
+    /// `TaskSetupStore`'s file: each repository's New Task setup — the
+    /// untracked files copied into a new worktree, by path only, and the
+    /// command typed in its tab (D-7 (a): never in the repository). In the
+    /// support directory, an isolated run's own.
+    package static var taskSetupsFile: URL { supportDirectory.appendingPathComponent("task-setups.json") }
+
     /// Whether the user configures Terraform's CLI themselves, so the
     /// plugin cache isn't offered: `~/.terraformrc` checked for existence,
     /// never opened. A guarded run never looks.

@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.8 — 2026-11-27
+
+- New Task asks what the agent is to do and types it in once the agent is up; a repository's setup copies its untracked files (.env) into the new worktree and types a command before the agent
+
 ## 1.6.7 — 2026-11-23
 
 - Kubernetes lists sort a little faster: 5,000 rows by CPU in 25 ms, from 28–30
