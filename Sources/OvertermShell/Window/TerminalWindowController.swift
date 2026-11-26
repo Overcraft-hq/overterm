@@ -3304,6 +3304,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance  ⇧⌘A", symbol: "square.grid.2x2") {
                 [weak self] _, _ in self?.showAgentOverview(nil)
             },
+            PaletteItem(
+                id: "a.clearHistory", group: .action, title: "Clear Command History…", subtitle: "What ⌘K remembers you ran; the shell's own is left alone",
+                symbol: "clock.badge.xmark"
+            ) { [weak self] _, _ in self?.clearCommandHistory() },
             PaletteItem(id: "a.peek", group: .action, title: "Tab Peek", subtitle: "Every tab's terminal, live  ⇧⌘E", symbol: "rectangle.on.rectangle") {
                 [weak self] _, _ in self?.toggleTabPeek(nil)
             },
@@ -3457,10 +3461,33 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     private func historyItems(matching query: String) -> [PaletteItem] {
         let folder = store.selected?.terminal.workingDirectory ?? store.selected?.workingDirectory
         return history.ranked(query: query, folder: folder).map { entry in
-            PaletteItem(
+            var item = PaletteItem(
                 id: "h.\(entry.command)", group: .history, title: entry.command, subtitle: entry.ago(),
                 symbol: "clock", detail: detail(of: entry), failed: entry.failed
             ) { [weak self] run, _ in self?.type(entry.command, run: run) }
+            item.forget = { [weak self] in self?.forgetHistory(entry.command) }
+            return item
+        }
+    }
+
+    /// A history row forgotten: out of the history, and out of the palette
+    /// showing it.
+    package func forgetHistory(_ command: String) {
+        history.forget(command)
+        palette.forget(id: "h.\(command)")
+    }
+
+    /// ⌘K's Clear Command History…: asked, then all of it gone.
+    package func clearCommandHistory() {
+        guard let window, !history.entries.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = "Clear the command history?"
+        alert.informativeText = "The \(history.entries.count) commands ⌘K remembers are forgotten. Your shell's own history is left alone."
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.history.clear()
         }
     }
 
