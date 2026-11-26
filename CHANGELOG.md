@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.8 — 2026-11-26
+
+- Next and previous tab, ⌘1–9 and Close or Suspend Other Tabs go by the tabs the strip shows; a stashed, collapsed or unfocused island's are left alone, or named and asked about
+
 ## 1.6.7 — 2026-11-23
 
 - Kubernetes lists sort a little faster: 5,000 rows by CPU in 25 ms, from 28–30

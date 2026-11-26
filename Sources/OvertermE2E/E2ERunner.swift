@@ -2466,6 +2466,7 @@ package final class E2ERunner {
             "\(app.store.strip.map { $0.tabs.map(\.title) })")
         check("its tabs are still there", app.store.tabs(in: group).count == running)
         check("and it says how long ago", TabGroup.stashedAgo(Date()) == "just now")
+        await stripHiddenTabsChecks(group, loose: loose)
         app.restoreGroup(group)
         check(
             "restoring brings it back", app.store.strip.map(\.tabs.count) == [2, 1],

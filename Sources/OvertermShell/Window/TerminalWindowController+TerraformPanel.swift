@@ -175,7 +175,7 @@ extension TerminalWindowController {
                 PaletteItem(id: "tf.checkout.\(other)", group: .terraform, title: url.lastPathComponent, subtitle: "Another checkout's roots: \(other)", symbol: "folder") { [weak self] _, _ in
                     guard let self else { return }
                     if let tab = self.store.tabs.first(where: { $0.checkoutSource?.root.standardizedFileURL.path == other }) {
-                        self.store.select(tab)
+                        self.store.reveal(tab)
                     }
                     self.showTerraformPanel(nil)
                 })
