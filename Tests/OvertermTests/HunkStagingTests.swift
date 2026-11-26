@@ -201,4 +201,62 @@ final class HunkStagingTests: XCTestCase {
         XCTAssertEqual(model.diffs["f75.txt"]?.lines.filter { $0.kind == .added }.map(\.text), ["two"])
         XCTAssertEqual(model.diffs.count, 1)
     }
+
+    // MARK: The review's findings (pull request #56)
+
+    func testAnUncommittedDiffNamesItsFilesPlainlyWithItsPrefixes() {
+        XCTAssertEqual(
+            DiffModel.uncommittedDiffArguments(staged: true, paths: ["old.txt", "new.txt"]),
+            ["--literal-pathspecs", "diff", "--no-color", "--default-prefix", "--cached", "-M", "--", "old.txt", "new.txt"])
+        XCTAssertEqual(
+            DiffModel.uncommittedDiffArguments(staged: false, paths: ["page[1].txt"]),
+            ["--literal-pathspecs", "diff", "--no-color", "--default-prefix", "--", "page[1].txt"])
+    }
+
+    /// `page[1].txt` is a glob that matches `page1.txt`: read as one, the
+    /// card held both files' hunks under the first's header.
+    @MainActor
+    func testAFileNamedLikeAGlobIsOnlyItself() async throws {
+        try await git("init", "-q", "-b", "main")
+        try write("page[1].txt", Self.twenty)
+        try write("page1.txt", Self.twenty)
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "init")
+        try write("page[1].txt", Self.twenty.replacingOccurrences(of: "line 2\n", with: "line two\n"))
+        try write("page1.txt", Self.twenty.replacingOccurrences(of: "line 18\n", with: "line eighteen\n"))
+
+        let model = try await model("page[1].txt")
+        let diff = try XCTUnwrap(model.diffs["page[1].txt"])
+        let hunks = diff.lines.compactMap { diff.hunks[$0.id] }
+        XCTAssertEqual(hunks.count, 1, "only its own hunk")
+        let applied = await model.apply(try XCTUnwrap(hunks.first), .stage)
+        XCTAssertTrue(applied, model.actionError ?? "")
+        let cached = try await git("diff", "--cached", "--name-only")
+        XCTAssertEqual(cached.trimmingCharacters(in: .whitespacesAndNewlines), "page[1].txt")
+    }
+
+    /// With `diff.noprefix`, a hunk's header was `--- src/f.txt`: `git
+    /// apply` strips one component and patched the root's `f.txt`.
+    @MainActor
+    func testAHunkGoesToItsOwnFileWhateverThePrefixSetting() async throws {
+        try await git("init", "-q", "-b", "main")
+        try await git("config", "diff.noprefix", "true")
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent("src"), withIntermediateDirectories: true)
+        try write("src/f.txt", Self.twenty)
+        try write("f.txt", Self.twenty)
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "init")
+        let edited = Self.twenty.replacingOccurrences(of: "line 2\n", with: "line two\n")
+        try write("src/f.txt", edited)
+        try write("f.txt", edited)
+
+        let model = try await model("src/f.txt")
+        let diff = try XCTUnwrap(model.diffs["src/f.txt"])
+        let hunk = try XCTUnwrap(diff.lines.compactMap { diff.hunks[$0.id] }.first)
+        XCTAssertTrue(hunk.patch.contains("--- a/src/f.txt\n+++ b/src/f.txt\n"), hunk.patch)
+        let applied = await model.apply(hunk, .discard)
+        XCTAssertTrue(applied, model.actionError ?? "")
+        XCTAssertEqual(try read("src/f.txt"), Self.twenty, "its own file went back")
+        XCTAssertEqual(try read("f.txt"), edited, "the root's file is untouched")
+    }
 }

@@ -590,16 +590,28 @@ package final class DiffModel: ObservableObject {
         let paths = file.kind == .renamed ? [file.originalPath ?? file.path, file.path] : [file.path]
         if shownScope == .branch, let mergeBase = comparison?.mergeBase {
             let text = await diff(
-                file.kind == .untracked ? ["diff", "--no-color", "--no-index", "--", "/dev/null", file.path] : ["diff", "--no-color", "-M", mergeBase, "--"] + paths)
+                file.kind == .untracked
+                    ? ["diff", "--no-color", "--no-index", "--", "/dev/null", file.path]
+                    : [Git.literalPathspecs, "diff", "--no-color", "-M", mergeBase, "--"] + paths)
             return await Self.fileDiff(parsing: text, path: file.path)
         }
         if file.kind == .untracked {
             return await Self.fileDiff(parsing: await diff(["diff", "--no-color", "--no-index", "--", "/dev/null", file.path]), path: file.path)
         }
         // Before the first commit, --cached compares with the empty tree.
-        let staged = await diff(["diff", "--no-color", "--cached", "-M", "--"] + paths)
-        let unstaged = await diff(["diff", "--no-color", "--", file.path])
+        let staged = await diff(Self.uncommittedDiffArguments(staged: true, paths: paths))
+        let unstaged = await diff(Self.uncommittedDiffArguments(staged: false, paths: [file.path]))
         return await Self.fileDiff(staged: staged, unstaged: unstaged, path: file.path)
+    }
+
+    /// An uncommitted card's two diffs, whose hunks become patches `git
+    /// apply` takes back: each name a plain one (`page[1].txt` would match
+    /// `page1.txt` too, and the patch would carry the other file's hunks),
+    /// and `a/`/`b/` whatever `diff.noprefix` or `diff.mnemonicPrefix` say
+    /// (apply strips one component: without them it patches another
+    /// path). Pure.
+    package nonisolated static func uncommittedDiffArguments(staged: Bool, paths: [String]) -> [String] {
+        [Git.literalPathspecs, "diff", "--no-color", "--default-prefix"] + (staged ? ["--cached", "-M"] : []) + ["--"] + paths
     }
 
     /// Parses and styles a file's diff off the main thread: tokenizing a
