@@ -355,6 +355,23 @@ extension TerminalWindowController {
         toggleFocus(on: group)
     }
 
+    /// Focus left by anything but ⌃⌘F — `TabStore.reveal` bringing in a tab
+    /// of another island, a loose one, Tab Peek's choice: the window's
+    /// focus ends with it (held notices summarized, the bar hidden), so the
+    /// strip and what is held never disagree.
+    package func wireGroupFocus() {
+        // At once, by the emitted value (the store's still says the old
+        // one): a focus begun right after must not find these held.
+        store.$focusedGroupID
+            .filter { $0 == nil }
+            .sink { [weak self] _ in
+                guard let self, self.focus.isFocusing else { return }
+                self.summarizeHeldNotices()
+                self.updateGroupBars()
+            }
+            .store(in: &cancellables)
+    }
+
     /// Leaving focus: one line for everything that waited.
     package func summarizeHeldNotices() {
         let held = focus.end()

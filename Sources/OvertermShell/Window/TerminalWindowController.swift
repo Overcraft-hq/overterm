@@ -777,6 +777,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         wireBrowser()
         wireOvergit()
         wireTabThemes()
+        wireGroupFocus()
         wireAPI()
         wireNotes()
         wireDatabase()
