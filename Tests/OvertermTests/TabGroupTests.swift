@@ -434,6 +434,87 @@ final class TabGroupTests: XCTestCase {
         XCTAssertEqual(TabGroup.stashedAgo(now.addingTimeInterval(-30 * 3600), now: now), "yesterday")
         XCTAssertEqual(TabGroup.stashedAgo(now.addingTimeInterval(-4 * 86_400), now: now), "4 days ago")
     }
+
+    // MARK: What the strip draws (P02)
+
+    /// `shop-api` stashed, `web` collapsed, `docs` drawn, with a loose tab
+    /// and a pinned one: what each verb that goes by the strip sees.
+    private func shelved() -> (pinned: Tab, loose: Tab, shop: TabGroup, web: TabGroup, docs: TabGroup) {
+        let pinned = tab("pinned")
+        store.setPinned(pinned, true)
+        let loose = tab("loose")
+        let shop = store.addToNewGroup([tab("s1"), tab("s2"), tab("s3")], name: "shop-api")!
+        let web = store.addToNewGroup([tab("w1"), tab("w2")], name: "web")!
+        let docs = store.addToNewGroup([tab("d1")], name: "docs")!
+        store.select(loose)
+        store.stash(shop)
+        store.setCollapsed(web, true)
+        return (pinned, loose, shop, web, docs)
+    }
+
+    func testOnlyDrawnTabsAreWalked() {
+        let s = shelved()
+        XCTAssertEqual(store.drawnTabs.map(\.title), ["pinned", "loose", "d1"])
+        // Round the strip with next: never a hidden tab.
+        var seen: [String] = []
+        for _ in 0..<6 {
+            store.selectAdjacent(1)
+            seen.append(store.selected?.title ?? "")
+        }
+        XCTAssertEqual(seen, ["d1", "pinned", "loose", "d1", "pinned", "loose"])
+        store.selectAdjacent(-1)
+        XCTAssertEqual(store.selected?.title, "pinned")
+        // ⌘3 is the third tab drawn; past the end, the last.
+        store.select(drawnIndex: 2)
+        XCTAssertEqual(store.selected?.title, "d1")
+        store.select(drawnIndex: 8)
+        XCTAssertEqual(store.selected?.title, "d1")
+        // Focus narrows it to the island.
+        store.setFocused(s.docs)
+        XCTAssertEqual(store.drawnTabs.map(\.title), ["d1"])
+        store.select(drawnIndex: 0)
+        XCTAssertEqual(store.selected?.title, "d1")
+    }
+
+    func testRevealBringsATabIntoTheStrip() {
+        let s = shelved()
+        let s2 = store.tabs(in: s.shop)[1]
+        store.reveal(s2)
+        XCTAssertFalse(s.shop.isStashed)
+        XCTAssertTrue(store.isDrawn(s2))
+        XCTAssertTrue(store.selected === s2)
+
+        let w1 = store.tabs(in: s.web)[0]
+        store.reveal(w1)
+        XCTAssertFalse(s.web.isCollapsed)
+        XCTAssertTrue(store.selected === w1)
+
+        store.setFocused(s.docs)
+        store.reveal(s.loose)
+        XCTAssertNil(store.focusedGroupID, "focus is left for a tab outside it")
+        XCTAssertTrue(store.selected === s.loose)
+        XCTAssertTrue(store.isDrawn(s.loose))
+    }
+
+    func testWhatAQuestionSaysOfHiddenTabs() {
+        let s = shelved()
+        let hidden = store.tabs.filter { !store.isDrawn($0) }
+        XCTAssertEqual(store.hiddenSummary(hidden), ["“shop-api” (stashed)", "“web” (collapsed)"])
+        XCTAssertEqual(store.hiddenSummary(store.drawnTabs), [])
+        store.restore(s.shop)
+        store.setCollapsed(s.web, false)
+        store.setFocused(s.docs)
+        XCTAssertEqual(
+            store.hiddenSummary(store.tabs.filter { !store.isDrawn($0) }),
+            ["“shop-api”, “web”, 2 loose tabs (outside the focused “docs”)"])
+    }
+
+    func testSuspendOtherTabsNamesThem() {
+        let tabs = (1...10).map { tab("t\($0)") }
+        let said = TerminalWindowController.suspendQuestion(tabs)
+        XCTAssertTrue(said.contains("“t1”") && said.contains("“t8”") && !said.contains("“t9”"), said)
+        XCTAssertTrue(said.hasSuffix(", and 2 more."), said)
+    }
 }
 
 /// Dragging a tab into and out of an island. The rule is geometry, and the

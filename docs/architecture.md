@@ -194,6 +194,23 @@ inside a bound island is always the island's own folder — so reading the
 binding there sent every ⌘T straight back into the group, which is the thing
 this rule exists to undo.
 
+**What the strip hides is out of reach of anything that walks "the tabs".**
+A stashed island's tabs, a collapsed one's and, while an island is focused,
+every other — `TabStore.drawnTabs` is what the strip draws, and what moves
+between tabs or acts on "the others" goes by it: next and previous (⇧⌘] ⇧⌘[),
+⌘1–9, Close Other Tabs and Close Tabs to the Right (the menu's and
+Ghostty's keybindings, `closeScope`), Suspend Other Tabs. A tab nobody can
+see is never selected: stashing and collapsing move the selection out, and
+going to one on purpose — a notification, ⌥⌘↓, the palette, an agent's
+card, a session resumed, a worktree opened — goes through
+`TabStore.reveal`, which takes its island off the shelf, expands it and
+leaves focus first. Close Other Tabs and Close Tabs to the Right name what
+they would also reach (`hiddenSummary`: "“shop-api” (stashed)") with a box,
+unticked, and close those only when it is ticked — a terraform write among
+them still asks. Suspend Other Tabs asks once, listing the tabs (an action
+on several targets lists them, Activity's rule); Suspend Tab alone still
+acts at once.
+
 ## Splits
 
 A tab is a `SplitTree<TerminalView>` (`Sources/Overterm/Splits/`): a

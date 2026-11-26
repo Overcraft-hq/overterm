@@ -2448,6 +2448,22 @@ package final class E2ERunner {
         app.toggleFocus(on: group)
         check("and leaving focus brings them back", app.store.focusedStrip.count == 2, "\(app.store.focusedStrip.count)")
 
+        // A notification's tab outside the focused island leaves focus —
+        // the window's too: what waited is let go, the bar goes.
+        app.toggleFocus(on: group)
+        app.notifyUnlessHeld(loose, note: "done")
+        check("another island's notice waits while focused", app.focus.held.count == 1, "\(app.focus.held.count)")
+        app.reveal(tabID: loose.id)
+        check(
+            "revealing a tab outside the focus leaves it",
+            app.store.focusedGroupID == nil && !app.focus.isFocusing && app.focus.held.isEmpty,
+            "store \(app.store.focusedGroupID != nil), window \(app.focus.isFocusing), held \(app.focus.held.count)")
+        check("and its bar goes", app.groupBars?.isHidden == true)
+        app.toggleFocus(on: group)
+        check("focusing again starts clean", app.focus.isFocusing && app.focus.held.isEmpty)
+        app.toggleFocus(on: group)
+        app.store.select(loose)
+
         // Broadcast types one line into every tab of the island.
         app.beginBroadcast(to: group)
         check("broadcast names its targets", app.broadcast.summary == "Broadcasting to 2 tabs in \(group.name)", app.broadcast.summary)
@@ -2466,6 +2482,7 @@ package final class E2ERunner {
             "\(app.store.strip.map { $0.tabs.map(\.title) })")
         check("its tabs are still there", app.store.tabs(in: group).count == running)
         check("and it says how long ago", TabGroup.stashedAgo(Date()) == "just now")
+        await stripHiddenTabsChecks(group, loose: loose)
         app.restoreGroup(group)
         check(
             "restoring brings it back", app.store.strip.map(\.tabs.count) == [2, 1],

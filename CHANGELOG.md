@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.6.8 — 2026-11-26
 
 - The Docker page lists Apple's container tool's containers, images and volumes — a section of its own, when the tool is installed
+- Next and previous tab, ⌘1–9 and Close or Suspend Other Tabs go by the tabs the strip shows; a stashed, collapsed or unfocused island's are left alone, or named and asked about
 
 ## 1.6.7 — 2026-11-23
 
