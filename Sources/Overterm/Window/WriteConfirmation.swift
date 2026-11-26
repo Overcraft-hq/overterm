@@ -29,11 +29,16 @@ package struct WriteConfirmation {
     /// Who asks, when an agent's MCP call does (`MCPAsker`): the tab and
     /// the agent, "asked through MCP". `ask(on:)` fills it in for a call.
     package var asker: String? = nil
+    /// It deletes, or changes what can't be had back (D-1): Return is
+    /// Cancel's, the button marked destructive with no key — it takes a
+    /// click. With a name to type, Return does it once the name matches.
+    package var destroys = false
 
     package init(
         title: String, scope: String? = nil, production: Bool = false, detail: String, button: String, cancel: String = "Cancel", typedName: String? = nil, image: String? = nil,
-        critical: Bool = false, asker: String? = nil
+        critical: Bool = false, asker: String? = nil, destroys: Bool = false
     ) {
+        self.destroys = destroys
         self.title = title
         self.scope = scope
         self.production = production
@@ -156,6 +161,7 @@ package struct WriteConfirmation {
             alert.accessoryView = stack
             if let first = field ?? imageField { alert.window.initialFirstResponder = first }
         }
+        if destroys { DestructiveKeys.install(on: alert, field: field, name: typedName) }
         return (alert, field, imageField)
     }
 
@@ -185,6 +191,64 @@ package struct WriteConfirmation {
             alert.beginSheetModal(for: window) { continuation.resume(returning: $0) }
         }
         return response == .alertFirstButtonReturn ? field?.stringValue ?? "" : nil
+    }
+}
+
+/// The keys of a destructive sheet (D-1, CON-U2): Return is Cancel's and
+/// the action has none, so a Return meant for the terminal, or pressed out
+/// of habit after Delete, deletes nothing. AppKit gives Escape to the
+/// button titled Cancel and loses it when that button takes Return, so a
+/// zero-size button in the accessory keeps Escape on Cancel. A name to
+/// type arms Return once it matches (trimmed, as the callers check it).
+/// Set by hand, never left to AppKit: whether it gives Return to a button
+/// marked destructive is not something to rely on.
+@MainActor
+package final class DestructiveKeys: NSObject, NSTextFieldDelegate {
+    private weak var action: NSButton?
+    private weak var cancel: NSButton?
+    private let name: String?
+    private static var key = 0
+
+    private init(action: NSButton, cancel: NSButton, name: String?) {
+        self.action = action
+        self.cancel = cancel
+        self.name = name
+    }
+
+    /// The first button the action, the second Cancel — `alertWithImage`'s
+    /// order, which every caller's `alertFirstButtonReturn` reads.
+    package static func install(on alert: NSAlert, field: NSTextField?, name: String?) {
+        guard alert.buttons.count >= 2 else { return }
+        let keys = DestructiveKeys(action: alert.buttons[0], cancel: alert.buttons[1], name: name)
+        alert.buttons[0].hasDestructiveAction = true
+        let escape = NSButton(title: "", target: alert.buttons[1], action: #selector(NSButton.performClick(_:)))
+        escape.keyEquivalent = "\u{1b}"
+        escape.isBordered = false
+        escape.frame = .zero
+        escape.setAccessibilityElement(false)
+        escape.refusesFirstResponder = true
+        let holder = alert.accessoryView ?? NSView(frame: .zero)
+        holder.addSubview(escape)
+        alert.accessoryView = holder
+        if let field, name != nil { field.delegate = keys }
+        keys.update(field?.stringValue ?? "")
+        objc_setAssociatedObject(alert, &key, keys, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    }
+
+    /// Whether `typed` arms Return: only a name asked and matched. Pure.
+    package nonisolated static func arms(_ typed: String, name: String?) -> Bool {
+        guard let name else { return false }
+        return typed.trimmingCharacters(in: .whitespacesAndNewlines) == name
+    }
+
+    private func update(_ typed: String) {
+        let armed = Self.arms(typed, name: name)
+        action?.keyEquivalent = armed ? "\r" : ""
+        cancel?.keyEquivalent = armed ? "\u{1b}" : "\r"
+    }
+
+    package func controlTextDidChange(_ notification: Notification) {
+        update((notification.object as? NSTextField)?.stringValue ?? "")
     }
 }
 

@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.8 — 2026-11-27
+
+- Sheets that delete leave Return on Cancel: the button that deletes takes a click, and where a name is typed, Return deletes once it matches
+
 ## 1.6.7 — 2026-11-23
 
 - Kubernetes lists sort a little faster: 5,000 rows by CPU in 25 ms, from 28–30

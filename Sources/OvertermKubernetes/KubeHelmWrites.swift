@@ -260,7 +260,7 @@ package enum KubeHelmWrite: Equatable, Sendable, KubeTabCommand {
         if let typed { lines.append("Type \(typed) to confirm.") }
         return KubeWriteConfirmation(
             verb: nil, title: title, scope: place, detail: lines.joined(separator: "\n"), button: button, typedName: typed,
-            production: context.isProduction, kubectl: command)
+            production: context.isProduction, kubectl: command, destroys: { if case .uninstall = self { true } else { false } }())
     }
 
     /// What the page says once its tab is open.
