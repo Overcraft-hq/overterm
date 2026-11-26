@@ -23,6 +23,14 @@ extension E2ERunner {
         app.newTab(in: home, agent: nil, startAgent: false)
         guard let extra = app.store.selected, extra !== loose, extra.groupID == nil else { return check("a second loose tab", false) }
         extra.customTitle = "extra"
+        // A process a hidden tab would leave running: listed with the
+        // hidden tabs, for when they are ticked to close.
+        let survivor = hidden[0].terminal
+        survivor.insertText("nohup sleep 600 >/dev/null 2>&1 & echo $! > \(scratch.appendingPathComponent("hidden-survivor").path)")
+        survivor.pressReturn()
+        let pidFile = scratch.appendingPathComponent("hidden-survivor")
+        _ = await eventually(5) { FileManager.default.fileExists(atPath: pidFile.path) }
+        await pause(2.5)  // the census sees it
         app.store.select(loose)
         let scope = app.closeScope(.others, of: loose)
         check(
@@ -34,11 +42,23 @@ extension E2ERunner {
         let box = asked ? Self.find(NSButton.self, in: window.attachedSheet?.contentView) { $0.accessibilityIdentifier() == "close.hiddenTabs" } : nil
         check("its question names the hidden island", box?.title.contains("“\(group.name)” (stashed)") == true, box?.title ?? "no box")
         check("with its box unticked", box?.state == .off)
+        let survivorBox = Self.find(NSButton.self, in: window.attachedSheet?.contentView) {
+            ($0.accessibilityIdentifier() ?? "").hasPrefix("close.survivor.") && $0.title.contains("sleep")
+        }
+        check("what a hidden tab leaves running is listed too", survivorBox != nil, sheetTexts().joined(separator: " | "))
+        check("usable only once its tabs are ticked to close", survivorBox?.isEnabled == false)
+        box?.performClick(nil)
+        check("ticked: its box can be ticked", survivorBox?.isEnabled == true)
+        box?.performClick(nil)
+        check("unticked again: and back off, unticked", survivorBox?.isEnabled == false && survivorBox?.state == .off)
         answerActivitySheet(.alertFirstButtonReturn)
         check(
             "closing leaves the stashed island's tabs",
             await eventually(5) { !self.app.store.tabs.contains { $0 === extra } } && hidden.allSatisfy { tab in self.app.store.tabs.contains { $0 === tab } },
             "\(app.store.tabs.map(\.title))")
+        // The sleep stops with its own shell's kill, not left behind.
+        survivor.insertText("kill $(cat \(pidFile.path))")
+        survivor.pressReturn()
 
         // Suspend Other Tabs: the strip's only, asked once with their names.
         app.newTab(in: home, agent: nil, startAgent: false)

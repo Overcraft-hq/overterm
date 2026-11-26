@@ -3661,13 +3661,17 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         let panes = tabs.flatMap(\.terminals)
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let survivors = await self.closeSurvivors(panes)
+            // One census for both: what the hidden tabs leave running is
+            // listed too, for when they are ticked to close.
+            let survivors = await self.closeSurvivors(panes, hidden: hidden.flatMap(\.terminals))
             let alive = { (list: [Tab]) in list.filter { tab in self.store.tabs.contains { $0 === tab } } }
-            self.askToClose(alive(tabs), hidden: alive(hidden), survivors: survivors, on: window)
+            self.askToClose(alive(tabs), hidden: alive(hidden), survivors: survivors.shown, hiddenSurvivors: survivors.hidden, on: window)
         }
     }
 
-    private func askToClose(_ tabs: [Tab], hidden: [Tab] = [], survivors: ActivitySurvivors, on window: NSWindow) {
+    private func askToClose(
+        _ tabs: [Tab], hidden: [Tab] = [], survivors: ActivitySurvivors, hiddenSurvivors: ActivitySurvivors = ActivitySurvivors(), on window: NSWindow
+    ) {
         guard !tabs.isEmpty else { return }
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Close “\(tabs[0].title)”?" : "Close \(tabs.count) tabs?"
@@ -3679,17 +3683,32 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         let hiddenBox = hidden.isEmpty ? nil : NSButton(checkboxWithTitle: hiddenBoxTitle(hidden), target: nil, action: nil)
         hiddenBox?.state = .off
         hiddenBox?.setAccessibilityIdentifier("close.hiddenTabs")
-        alert.accessoryView = Self.stacked([hiddenBox, boxes?.0].compactMap { $0 })
+        // What the hidden tabs leave running: listed under their box, a
+        // box each, usable only while their tabs are ticked to close.
+        let hiddenBoxes = hidden.isEmpty ? nil : Self.survivorBoxes(hiddenSurvivors)
+        let follower = hiddenBoxes.map { SurvivorBoxesFollow(boxes: $0.1.map(\.0)) }
+        follower?.follow(on: false)
+        if let hiddenBox, let follower {
+            hiddenBox.target = follower
+            hiddenBox.action = #selector(SurvivorBoxesFollow.toggled(_:))
+            objc_setAssociatedObject(alert, &SurvivorBoxesFollow.key, follower, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+        alert.accessoryView = Self.stacked([hiddenBox, hiddenBoxes?.0, boxes?.0].compactMap { $0 })
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn, let self else { return }
             tabs.forEach { self.removeTab($0) }
             self.settleSurvivors(boxes?.1 ?? [])
             guard hiddenBox?.state == .on else { return }
             // Ticked: closed too, read again — and a terraform write among
-            // them still asks first (4.8).
+            // them still asks first (4.8). Their survivors are settled as
+            // the sheet said, only once their tabs have closed.
             let still = hidden.filter { tab in self.store.tabs.contains { $0 === tab } }
-            if self.terraformCloseGuard(tabs: still, path: .tabs, proceed: { [weak self] in still.forEach { self?.removeTab($0) } }) { return }
-            still.forEach { self.removeTab($0) }
+            let close: () -> Void = { [weak self] in
+                still.forEach { self?.removeTab($0) }
+                self?.settleSurvivors(hiddenBoxes?.1 ?? [])
+            }
+            if self.terraformCloseGuard(tabs: still, path: .tabs, proceed: close) { return }
+            close()
         }
     }
 
@@ -4520,4 +4539,24 @@ extension TerminalWindowController: NSPopoverDelegate {
         infoModel = nil
         infoPopover = nil
     }
+}
+
+/// The hidden tabs' survivor boxes follow their tabs' box: usable only
+/// while it is ticked, unticked again when it isn't — a process is never
+/// stopped for tabs that weren't closed.
+@MainActor
+final class SurvivorBoxesFollow: NSObject {
+    static var key = 0
+    private let boxes: [NSButton]
+
+    init(boxes: [NSButton]) { self.boxes = boxes }
+
+    func follow(on: Bool) {
+        for box in boxes {
+            box.isEnabled = on
+            if !on { box.state = .off }
+        }
+    }
+
+    @objc func toggled(_ sender: NSButton) { follow(on: sender.state == .on) }
 }
