@@ -4033,7 +4033,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// or another island's focus hides.
     package func gotoTab(_ value: Int32) -> Bool {
         let drawn = store.drawnTabs.count
-        guard drawn > 1 else { return false }
+        // One drawn tab is somewhere to go when the selected one is hidden
+        // (its island stashed, then the drawn one's collapsed).
+        guard drawn > 1 || (drawn == 1 && !(store.selected.map(store.isDrawn) ?? false)) else { return false }
         switch value {
         case GHOSTTY_GOTO_TAB_PREVIOUS.rawValue: store.selectAdjacent(-1)
         case GHOSTTY_GOTO_TAB_NEXT.rawValue: store.selectAdjacent(1)

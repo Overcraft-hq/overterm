@@ -1,5 +1,6 @@
 #if E2E
 import AppKit
+import GhosttyKit
 import Foundation
 
 /// What moves between tabs or acts on "the other tabs" goes by the tabs
@@ -56,6 +57,17 @@ extension E2ERunner {
         app.reveal(tabID: hidden[0].id)
         check("a notification's tab comes off the shelf", !group.isStashed && app.store.selected === hidden[0] && app.store.isDrawn(hidden[0]))
         app.stashGroup(group)
+
+        // The selected tab hidden and one tab drawn: ⌘1 and next still go
+        // to it; from it, nowhere else to go.
+        app.store.select(hidden[0])
+        check("a hidden tab selected, one drawn", !app.store.isDrawn(hidden[0]) && app.store.drawnTabs.map(\.title) == ["loose"], "\(app.store.drawnTabs.map(\.title))")
+        let numbered = app.gotoTab(1)
+        check("⌘1 goes to the one drawn tab", numbered && app.store.selected === loose, app.store.selected?.title ?? "none")
+        app.store.select(hidden[0])
+        let next = app.gotoTab(GHOSTTY_GOTO_TAB_NEXT.rawValue)
+        check("so does next", next && app.store.selected === loose, app.store.selected?.title ?? "none")
+        check("and from it, nowhere else", !app.gotoTab(GHOSTTY_GOTO_TAB_NEXT.rawValue) && app.store.selected === loose)
         app.store.select(loose)
     }
 }
