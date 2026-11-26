@@ -37,6 +37,18 @@ extension E2ERunner {
             _ = await diff.apply(second, .discard)
             let text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
             check("Discard takes only that part of the file back", text.contains("line two\n") && text.contains("line 18\n") && !text.contains("eighteen"), text)
+            // Its patch again, the part already gone: git refuses, and the
+            // pane says so with the commit composer closed.
+            let again = await diff.apply(second, .discard)
+            check("a hunk that no longer applies fails", !again && diff.actionError != nil)
+            // SwiftUI's accessibility tree, built only while asked for.
+            Self.accessibilityTree(true)
+            let said = await eventually(5) {
+                guard let root = self.window.contentView, let error = diff.actionError else { return false }
+                return Self.accessibilityElement("diff.actionError", in: root)?.text.contains(error) == true
+            }
+            Self.accessibilityTree(false)
+            check("and the pane shows why, the composer closed", said, diff.actionError ?? "no error")
         }
         // Back as it was, for the scenario's next checks.
         _ = try? await git(["checkout", "--", "h.txt"], in: repo)

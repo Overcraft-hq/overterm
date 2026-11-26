@@ -61,6 +61,18 @@ package struct DiffPanelView: View {
                 }
                 if composing, editable {
                     CommitComposer(model: model, theme: theme, onDone: { composing = false })
+                } else if let error = model.actionError {
+                    // A hunk's Stage, Unstage or Discard that failed, said
+                    // with the composer closed too (it says it itself).
+                    Text(verbatim: error)
+                        .font(.system(size: ChromeMetrics.text(11)))
+                        .foregroundStyle(DiffColors.removed)
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 6)
+                        .help(error)
+                        .accessibilityIdentifier("diff.actionError")
                 }
                 if model.shownFiles.isEmpty, editable || model.commits.isEmpty {
                     placeholder(editable ? "No uncommitted changes" : "No changes on this branch")
