@@ -110,6 +110,16 @@ package final class Tab: ObservableObject, Identifiable {
     package var paneAgentReads: [ObjectIdentifier: (identity: ActivityProcessID, readAt: Date)] = [:]
 
     package func resume(of pane: TerminalView) -> AgentResume? { paneResumes[ObjectIdentifier(pane)] }
+    /// The pane whose agent last asked for you — by its notification or
+    /// bell, or a question the screen check read there: what the Inbox
+    /// reads and answers into, whichever pane has the keyboard.
+    package weak var askingPane: TerminalView?
+
+    /// `askingPane` while it is still one of the tab's, else the focused one.
+    package var askingTerminal: TerminalView {
+        if let askingPane, terminals.contains(where: { $0 === askingPane }) { return askingPane }
+        return terminal
+    }
     /// What the compose projects of its checkout publish (DockerModel).
     /// Apart from `ports`: they don't make the tab a server.
     @Published package var containerPorts: [ListeningPort] = []

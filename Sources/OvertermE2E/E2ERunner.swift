@@ -2278,8 +2278,70 @@ package final class E2ERunner {
             app.inbox.entries.first { $0.id == agent.id }.map { $0.prompt == nil } == true,
             (app.inbox.entries.first?.prompt?.question ?? "no entry") + " / " + String((agent.terminal.visibleText ?? "").suffix(400)).debugDescription)
 
+        await askingPane(agent, shell: shell)
+
         app.toggleInbox(nil)
         check("⌘I closes it again", app.inboxItem?.isCollapsed == true)
+    }
+
+    /// The pane that asks is the one read and answered (AGT-G2): a split's
+    /// second pane asks while the first has the keyboard; its question is
+    /// the card's, the answer goes there, and a card whose question has
+    /// left the screen types nothing.
+    private func askingPane(_ agent: Tab, shell: Tab) async {
+        app.store.select(agent)
+        let first = agent.terminal
+        app.split(first, .right)
+        guard agent.terminals.count == 2, let second = agent.terminals.first(where: { $0 !== first }) else {
+            return check("the agent tab splits", false, "\(agent.terminals.count)")
+        }
+        app.window?.makeFirstResponder(first)
+        agent.focus(first)
+        await eventually(8) { (second.visibleText ?? "").contains("%") || (second.visibleText ?? "").contains("$") }
+        app.store.select(shell)
+        agent.activity.seen()
+        let question = """
+            Do you want to run this command?
+            $ make deploy
+            ❯ 1. Yes
+              2. No, and tell Claude what to do differently
+            """
+        try? question.write(to: out("pane-prompt.txt"), atomically: true, encoding: .utf8)
+        // The question, then the agent's notification (OSC 777), from the second pane.
+        second.insertText("clear; cat \(out("pane-prompt.txt").path); printf '\\033]777;notify;Claude;needs your permission\\a'")
+        second.pressReturn()
+        check(
+            "the second pane's notification marks the tab",
+            await eventually(10) { agent.activity.mark == .waiting && (second.visibleText ?? "").contains("2. No, and tell") },
+            "\(agent.activity.mark)")
+        check("it is the pane that asks", agent.askingPane === second && agent.terminal === first)
+        app.refreshInbox()
+        guard let entry = app.inbox.entries.first(where: { $0.id == agent.id }), let prompt = entry.prompt else {
+            return check("the card reads the asking pane's question", false, app.inbox.entries.map(\.headline).joined(separator: " | "))
+        }
+        check("the card reads the asking pane's question", prompt.question == "Do you want to run this command?", prompt.question)
+
+        func arrived(_ pane: TerminalView) -> Int {
+            let text = pane.visibleText ?? ""
+            return text.components(separatedBy: "command not found: 1").count - 1 + text.components(separatedBy: "no such entry in dir stack").count - 1
+        }
+        let before = arrived(first)
+        app.answer(prompt.choices[0], in: entry.id)
+        check(
+            "the answer goes to the pane that asked",
+            await eventually(8) { arrived(second) == 1 }, String((second.visibleText ?? "").suffix(80)).debugDescription)
+        check("not the one with the keyboard", arrived(first) == before, String((first.visibleText ?? "").suffix(80)).debugDescription)
+
+        // The card is stale once its question has left the screen.
+        second.insertText("clear")
+        second.pressReturn()
+        let gone = await eventually(8) { !(second.visibleText ?? "").contains("make deploy") }
+        check("the question has left the screen", gone, String((second.visibleText ?? "").suffix(80)).debugDescription)
+        app.answer(prompt.choices[0], in: entry.id)
+        await pause(1)
+        check(
+            "a card whose question has gone types nothing", arrived(second) == 0 && arrived(first) == before,
+            String((second.visibleText ?? "").suffix(80)).debugDescription)
     }
 
     /// The command ledger, against a real shell: libghostty gives no

@@ -1130,6 +1130,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             guard let self, let tab else { return }
             self.blocks(of: pane).handle(event)
             self.noteAttentionSignal(event, from: pane)
+            // The pane that asks is the one the Inbox reads and answers.
+            switch event {
+            case .bell, .notification: tab.askingPane = pane
+            default: break
+            }
             if tab.activity.handle(event, visible: self.isVisible(tab)) {
                 // While focusing on one island, another group's notice waits
                 // — unless its agent is blocked on you.
@@ -3205,9 +3210,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         inbox.refresh(
             tabs: store.tabs, group: { [weak self] in self?.store.group(of: $0) },
             screen: { tab in
-                // The focused pane's screen: the question is where the
-                // keyboard would go if you opened the tab.
-                tab.terminal.visibleText
+                // The pane that asked — its notification, its bell, or the
+                // screen check's question —, whichever has the keyboard.
+                tab.askingTerminal.visibleText
             })
     }
 
@@ -3236,10 +3241,26 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         // button, a key or anything automated — read again here, in case
         // the screen changed since the card was made.
         guard !terraformAsking(tab) else { return NSSound.beep() }
-        tab.terminal.insertText(choice.key)
+        let pane = tab.askingTerminal
+        // The screen read again: the card's question must still be the one
+        // there, with this choice — else nothing is typed, and the card is
+        // made again from what the screen asks now.
+        let card = inbox.entries.first { $0.id == id }?.prompt
+        guard Self.answerStands(choice, card: card, screen: pane.visibleText) else {
+            NSSound.beep()
+            return refreshInbox()
+        }
+        pane.insertText(choice.key)
         // Gemini CLI takes the digit alone; a Return would reach its prompt.
-        if !choice.confirmsOnKey { tab.terminal.pressReturn() }
+        if !choice.confirmsOnKey { pane.pressReturn() }
         refreshInbox()
+    }
+
+    /// Whether `choice` still answers what `screen` asks: the question the
+    /// card was made from, on it now, the choice among its own. Pure.
+    package nonisolated static func answerStands(_ choice: AgentPrompt.Choice, card: AgentPrompt?, screen: String?) -> Bool {
+        guard let card, let screen, TerraformPrompt.parse(screen) == nil, let now = AgentPrompt.question(in: screen) else { return false }
+        return now == card && now.choices.contains(choice)
     }
 
     /// In the menu bar while anything waits, and gone when nothing does —
