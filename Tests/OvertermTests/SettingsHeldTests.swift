@@ -54,6 +54,9 @@ final class SettingsHeldTests: XCTestCase {
                 "kubernetes.helmPath", "terraform.roots", "terraform.productionPattern", "terraform.productionAccounts", "terraform.path",
                 "terraform.enabled", "terraform.agentWriteGuard", "terraform.agentAccess", "activity.enabled",
                 "activity.agentAccess",
+                // P01 (MCP-G6): every feature's agent switches.
+                "browser.agentControl", "api.agentControl", "notes.agentAccess", "notes.agentDrawings", "database.agentAccess",
+                "database.agentWrites", "docker.agentAccess", "docker.agentWrites",
             ])
         // Agents' access anywhere, and the binaries Overterm runs with a cluster's credentials.
         for spec in SettingsSchema.all where spec.key.hasPrefix("kubernetes.agent") || spec.key.hasSuffix("Path") && spec.key.hasPrefix("kubernetes.") {
