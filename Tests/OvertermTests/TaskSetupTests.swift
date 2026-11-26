@@ -32,7 +32,10 @@ final class TaskSetupTests: XCTestCase {
 
     func testTheFieldsAreReadAsTheyAreMeant() {
         XCTAssertEqual(TaskSetup.paths(" .env, .env.local\nconfig/dev.json,, .env "), [".env", ".env.local", "config/dev.json"])
-        XCTAssertEqual(TaskSetup.firstLine(setup: "npm ci", agent: "claude"), "npm ci && claude", "the agent only once the setup succeeded")
+        XCTAssertEqual(TaskSetup.firstLine(setup: "npm ci", agent: "claude"), "{ npm ci; } && claude", "the agent only once the setup succeeded")
+        XCTAssertEqual(TaskSetup.firstLine(setup: "npm ci;", agent: "claude"), "{ npm ci; } && claude", "a trailing ; isn't doubled")
+        XCTAssertEqual(TaskSetup.firstLine(setup: "cd app; npm ci", agent: "claude"), "{ cd app; npm ci; } && claude", "one group, its cd kept")
+        XCTAssertEqual(TaskSetup.firstLine(setup: "npm run watch &", agent: "claude"), "{ npm run watch & } && claude")
         XCTAssertEqual(TaskSetup.firstLine(setup: "  ", agent: "claude"), "claude", "no setup: today's line")
         XCTAssertEqual(TaskSetup.firstLine(setup: "npm ci", agent: nil), "npm ci")
         XCTAssertNil(TaskSetup.firstLine(setup: "", agent: nil))

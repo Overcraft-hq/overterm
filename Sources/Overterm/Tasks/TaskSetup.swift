@@ -38,14 +38,21 @@ package struct TaskSetup: Codable, Equatable, Sendable {
     }
 
     /// What the task's tab types: the setup, then — only if it succeeded —
-    /// the agent. Nil when there is neither. Pure.
+    /// the agent. The setup is one group, `{ …; }`, so a line of its own
+    /// that ends `;` or holds several commands stays whole, and what it
+    /// changes (`cd`, `export`) stays in the shell the agent starts in. Nil
+    /// when there is neither. Pure.
     package static func firstLine(setup: String, agent: String?) -> String? {
-        let setup = setup.trimmingCharacters(in: .whitespaces)
+        var setup = setup.trimmingCharacters(in: .whitespaces)
+        while setup.hasSuffix(";") { setup = String(setup.dropLast()).trimmingCharacters(in: .whitespaces) }
         switch (setup.isEmpty, agent) {
         case (true, nil): return nil
         case (true, let agent?): return agent
         case (false, nil): return setup
-        case (false, let agent?): return "\(setup) && \(agent)"
+        case (false, let agent?):
+            // A trailing `&` ends a command in a group as `;` does.
+            let group = setup.hasSuffix("&") && !setup.hasSuffix("&&") ? "{ \(setup) }" : "{ \(setup); }"
+            return "\(group) && \(agent)"
         }
     }
 }
