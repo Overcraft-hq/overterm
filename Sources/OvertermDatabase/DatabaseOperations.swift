@@ -515,7 +515,45 @@ package enum OpsText {
     /// `IDENTIFIED BY '…'`, `IDENTIFIED WITH plugin AS '…'`, `USING '…'`,
     /// MariaDB's `PASSWORD('…')`: the literal is masked wherever a
     /// statement is shown or told to an agent.
+    /// Redis's and MongoDB's too, a line at a time (DB-G1): `AUTH [user]
+    /// pass`, `HELLO … AUTH user pass`, `MIGRATE … AUTH pass` / `AUTH2 user
+    /// pass`, `CONFIG SET requirepass|masterauth …`, `ACL SETUSER`'s `>pass`,
+    /// `<pass` and `#hash`, a document's `pwd:`/`password:` and
+    /// `db.auth(user, pass)`.
     package static func maskSecrets(_ text: String) -> String {
+        maskOtherEngines(maskSQL(text))
+    }
+
+    private static func maskOtherEngines(_ text: String) -> String {
+        let lines = text.components(separatedBy: "\n").map { line -> String in
+            var line = line
+            // AUTH alone on its line: its last word is the password.
+            line = line.replacingOccurrences(of: #"(?i)^(\s*AUTH\s+(?:\S+\s+)?)\S+\s*$"#, with: "$1••••", options: .regularExpression)
+            // HELLO's and MIGRATE's AUTH and AUTH2.
+            line = line.replacingOccurrences(of: #"(?i)(\bAUTH2\s+\S+\s+)\S+"#, with: "$1••••", options: .regularExpression)
+            if line.range(of: #"(?i)^\s*HELLO\b"#, options: .regularExpression) != nil {
+                line = line.replacingOccurrences(of: #"(?i)(\bAUTH\s+\S+\s+)\S+"#, with: "$1••••", options: .regularExpression)
+            } else if line.range(of: #"(?i)^\s*MIGRATE\b"#, options: .regularExpression) != nil {
+                line = line.replacingOccurrences(of: #"(?i)(\bAUTH\s+)\S+"#, with: "$1••••", options: .regularExpression)
+            }
+            line = line.replacingOccurrences(of: #"(?i)(\bCONFIG\s+SET\s+(?:requirepass|masterauth|masteruser)\s+)\S+"#, with: "$1••••", options: .regularExpression)
+            if line.range(of: #"(?i)^\s*ACL\s+SETUSER\b"#, options: .regularExpression) != nil {
+                line = line.replacingOccurrences(of: #"(\s)([<>#])\S+"#, with: "$1$2••••", options: .regularExpression)
+            }
+            return line
+        }
+        return lines.joined(separator: "\n")
+            // MongoDB: a document's password, quoted or a template.
+            .replacingOccurrences(
+                of: #"(?i)\b((?:pwd|password|newPassword)\s*["']?\s*:\s*)(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`[^`]*`)"#, with: "$1\"••••\"",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: #"(?i)(\bdb\s*\.\s*auth\s*\(\s*(?:"[^"]*"|'[^']*')\s*,\s*)(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')"#, with: "$1\"••••\"",
+                options: .regularExpression)
+    }
+
+    private static func maskSQL(_ text: String) -> String {
         text.replacingOccurrences(
             of: #"(?i)\b(PASSWORD|IDENTIFIED\s+BY|IDENTIFIED\s+WITH\s+\S+\s+(?:BY|AS)|USING)(\s*\(?\s*)(?:E|N)?'(?:[^'\\]|''|\\.)*'"#,
             with: "$1$2'••••'", options: .regularExpression

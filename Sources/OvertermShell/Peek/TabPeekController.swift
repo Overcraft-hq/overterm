@@ -171,7 +171,7 @@ package final class TabPeekController {
     package func choose(_ id: Tab.ID) {
         guard let tab = owner?.store.tabs.first(where: { $0.id == id }) else { return }
         close()
-        owner?.store.select(tab)
+        owner?.store.reveal(tab)
         owner?.focusSelectedTerminal()
     }
 

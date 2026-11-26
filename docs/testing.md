@@ -176,6 +176,17 @@ scenario's and `DockerBuildSessionTests`' `buildx history` is a stub
 test process reads builds from nothing else (`buildsCLI`). No test runs
 buildx.
 
+Apple's `container` (the Docker page's Apple Containers section) comes
+from recorded shapes too: `Fixtures/apple-container-*.json` are 1.7.1's
+own `--format json` output, a home folder renamed, read by
+`AppleContainersTests`; its model and the `docker` scenario's
+`appleContainersChecks` run a stand-in script that answers from them and
+writes down every call (`AppleContainerModel(locate:)`,
+`AppleContainerCLI.override`). A guarded run finds no other `container`:
+the installed one lists the user's containers. `OVERTERM_APPLE_CONTAINER_TESTS=1`
+lets `testTheRealToolReads` read the real tool — status and lists,
+nothing made, started or removed.
+
 What SwiftUI draws itself has no AppKit view to find: a bordered
 `Button`, a plain `Text`. A `Text` with `.textSelection(.enabled)` is an
 `NSTextField`, which `find` reads. In-process accessibility stays empty

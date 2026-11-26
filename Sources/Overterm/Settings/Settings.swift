@@ -494,6 +494,7 @@ package final class Settings: ObservableObject {
     package var notesEnabled: Bool { bool("notes.enabled") }
     package var notesVaultPath: String { string("notes.vaultPath") }
     package var notesAgentAccess: Bool { notesEnabled && bool("notes.agentAccess") }
+    package var notesRemoteImages: Bool { notesEnabled && bool("notes.remoteImages") }
     package var notesAgentDrawings: Bool { notesAgentAccess && bool("notes.agentDrawings") }
     package var databaseEnabled: Bool { bool("database.enabled") }
     package var sessionsEnabled: Bool { bool("general.sessions") }

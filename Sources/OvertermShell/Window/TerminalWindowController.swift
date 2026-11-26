@@ -611,7 +611,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 broadcast: broadcast, focus: focus, store: store, theme: theme,
                 onSend: { [weak self] in self?.broadcast.send() },
                 onStopBroadcast: { [weak self] in self?.stopBroadcast() },
-                onLeaveFocus: { [weak self] in self?.leaveFocus() }))
+                onLeaveFocus: { [weak self] in self?.leaveFocus() },
+                onIncludeProduction: { [weak self] context in self?.includeBroadcastProduction(context) }))
         groupBars.translatesAutoresizingMaskIntoConstraints = false
         // Out of the layout entirely while no group mode is on, so an empty
         // bar can never take part in sizing the column.
@@ -777,6 +778,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         wireBrowser()
         wireOvergit()
         wireTabThemes()
+        wireGroupFocus()
         wireAPI()
         wireNotes()
         wireDatabase()
@@ -1473,10 +1475,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         if inboxItem?.isCollapsed == false { refreshInbox() }
     }
 
-    /// Brings up a tab a notification was about.
+    /// Brings up a tab a notification was about — into the strip first:
+    /// its island off the shelf, expanded, focus left (`TabStore.reveal`).
     package func reveal(tabID: UUID) {
         guard let tab = store.tabs.first(where: { $0.id == tabID }) else { return }
-        store.select(tab)
+        store.reveal(tab)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -1520,7 +1523,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// opens the tab without typing it (the E2E scenarios; nothing else).
     package func resume(_ session: ClaudeSession, inNewTab: Bool = false, start: Bool = true) {
         if !inNewTab, let id = sessions.running[session.id], let tab = store.tabs.first(where: { $0.id == id }) {
-            store.select(tab)
+            store.reveal(tab)
             focusSelectedTerminal()
             return
         }
@@ -1589,7 +1592,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             let folder = url.deletingLastPathComponent()
             let checkout = FileTreeModel.treeRoot(for: folder.path).standardizedFileURL
             if let tab = store.tabs.first(where: { $0.checkoutSource?.root.standardizedFileURL == checkout }) {
-                store.select(tab)
+                store.reveal(tab)
             } else {
                 newTab(in: folder)
             }
@@ -1953,7 +1956,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// Selects the (first) tab already in `worktree`, else opens one there.
     package func openWorktree(_ worktree: Worktree) {
         if let tab = tabs(in: worktree).first {
-            store.select(tab)
+            store.reveal(tab)
         } else {
             newTab(in: worktree.path)
         }
@@ -2692,8 +2695,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             tab.isSuspended
                 ? ClosureMenuItem("Resume Tab") { [weak self] in self?.resumeTab(tab) }
                 : ClosureMenuItem("Suspend Tab") { [weak self] in self?.suspendTab(tab) })
-        let running = store.tabs.filter { $0.id != tab.id && !$0.isSuspended }
-        menu.addItem(ClosureMenuItem("Suspend Other Tabs", enabled: !running.isEmpty) { [weak self] in running.forEach { self?.suspendTab($0) } })
+        // The strip's other tabs, never one it hides: a stashed island's
+        // processes are meant to carry on.
+        let running = store.drawnTabs.filter { $0.id != tab.id && !$0.isSuspended }
+        menu.addItem(ClosureMenuItem("Suspend Other Tabs…", enabled: !running.isEmpty) { [weak self] in self?.confirmSuspend(running) })
         addWorkingDirectoryItems(to: menu, for: tab)
         menu.addItem(.separator())
         addGroupItems(to: menu, for: tab)
@@ -2721,10 +2726,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         menu.addItem(ClosureMenuItem("New Tab to the Right") { [weak self] in self?.newTab(from: tab.terminal) })
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem("Close Tab", enabled: !tab.isPinned) { [weak self] in self?.closeTab(tab) })
-        let others = store.tabs.filter { $0.id != tab.id && !$0.isPinned }
-        menu.addItem(ClosureMenuItem("Close Other Tabs", enabled: !others.isEmpty) { [weak self] in self?.closeTabs(others) })
-        let right = store.index(of: tab).map { Array(store.tabs[($0 + 1)...]).filter { !$0.isPinned } } ?? []
-        menu.addItem(ClosureMenuItem("Close Tabs to the Right", enabled: !right.isEmpty) { [weak self] in self?.closeTabs(right) })
+        let others = closeScope(.others, of: tab)
+        menu.addItem(ClosureMenuItem("Close Other Tabs", enabled: !others.drawn.isEmpty) { [weak self] in self?.closeTabs(others.drawn, hidden: others.hidden) })
+        let right = closeScope(.right, of: tab)
+        menu.addItem(ClosureMenuItem("Close Tabs to the Right", enabled: !right.drawn.isEmpty) { [weak self] in self?.closeTabs(right.drawn, hidden: right.hidden) })
         return menu
     }
 
@@ -3146,7 +3151,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             NSSound.beep()
             return false
         }
-        store.select(target)
+        store.reveal(target)
         target.terminal.insertText(prompt)
         window?.makeFirstResponder(target.terminal)
         return true
@@ -3261,7 +3266,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package func chooseOverviewCard(_ id: Tab.ID) {
         guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
         hideAgentOverview()
-        store.select(tab)
+        store.reveal(tab)
         focusSelectedTerminal()
     }
 
@@ -3301,6 +3306,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance  ⇧⌘A", symbol: "square.grid.2x2") {
                 [weak self] _, _ in self?.showAgentOverview(nil)
             },
+            PaletteItem(
+                id: "a.clearHistory", group: .action, title: "Clear Command History…", subtitle: "What ⌘K remembers you ran; the shell's own is left alone",
+                symbol: "clock.badge.xmark"
+            ) { [weak self] _, _ in self?.clearCommandHistory() },
             PaletteItem(id: "a.peek", group: .action, title: "Tab Peek", subtitle: "Every tab's terminal, live  ⇧⌘E", symbol: "rectangle.on.rectangle") {
                 [weak self] _, _ in self?.toggleTabPeek(nil)
             },
@@ -3415,7 +3424,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             PaletteItem(
                 id: "t.\(tab.id)", group: .tab, title: tab.title, subtitle: tab.workingDirectory,
                 symbol: tab.agent?.symbol ?? (tab.isPinned ? "pin" : "terminal")
-            ) { [weak self] _, _ in self?.store.select(tab) }
+            ) { [weak self] _, _ in self?.store.reveal(tab) }
         }
         items += worktrees.worktrees.map { worktree in
             PaletteItem(
@@ -3454,10 +3463,33 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     private func historyItems(matching query: String) -> [PaletteItem] {
         let folder = store.selected?.terminal.workingDirectory ?? store.selected?.workingDirectory
         return history.ranked(query: query, folder: folder).map { entry in
-            PaletteItem(
+            var item = PaletteItem(
                 id: "h.\(entry.command)", group: .history, title: entry.command, subtitle: entry.ago(),
                 symbol: "clock", detail: detail(of: entry), failed: entry.failed
             ) { [weak self] run, _ in self?.type(entry.command, run: run) }
+            item.forget = { [weak self] in self?.forgetHistory(entry.command) }
+            return item
+        }
+    }
+
+    /// A history row forgotten: out of the history, and out of the palette
+    /// showing it.
+    package func forgetHistory(_ command: String) {
+        history.forget(command)
+        palette.forget(id: "h.\(command)")
+    }
+
+    /// ⌘K's Clear Command History…: asked, then all of it gone.
+    package func clearCommandHistory() {
+        guard let window, !history.entries.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = "Clear the command history?"
+        alert.informativeText = "The \(history.entries.count) commands ⌘K remembers are forgotten. Your shell's own history is left alone."
+        alert.addButton(withTitle: "Clear")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            self?.history.clear()
         }
     }
 
@@ -3603,8 +3635,66 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         closeTabs([tab])
     }
 
-    /// Closes several tabs behind one confirmation.
-    package func closeTabs(_ tabs: [Tab]) {
+    /// Close Other Tabs' and Close Tabs to the Right's tabs: those the strip
+    /// draws, and apart those it hides — a stashed or collapsed island's,
+    /// another island's while one is focused. Pinned ones never.
+    package enum CloseScope { case others, right }
+
+    package func closeScope(_ scope: CloseScope, of tab: Tab) -> (drawn: [Tab], hidden: [Tab]) {
+        let candidates: [Tab]
+        switch scope {
+        case .others: candidates = store.tabs.filter { $0 !== tab }
+        case .right: candidates = store.index(of: tab).map { Array(store.tabs[($0 + 1)...]) } ?? []
+        }
+        let unpinned = candidates.filter { !$0.isPinned }
+        return (unpinned.filter { store.isDrawn($0) }, unpinned.filter { !store.isDrawn($0) })
+    }
+
+    /// Suspend Other Tabs: once, naming them (6.10, an action on several
+    /// targets lists them); Cancel stops nothing. Suspend Tab alone still
+    /// acts at once.
+    package func confirmSuspend(_ asked: [Tab]) {
+        guard !asked.isEmpty, let window else { return }
+        // A terraform write's tab is passed over, and said (TERM-G6).
+        let writing = asked.filter { !terraformWrites(tabs: [$0], path: .tabs).isEmpty }
+        let tabs = asked.filter { tab in !writing.contains { $0 === tab } }
+        guard !tabs.isEmpty else { return presentSuspendRefusal(writing) }
+        let alert = NSAlert()
+        alert.messageText = tabs.count == 1 ? "Suspend “\(tabs[0].title)”?" : "Suspend \(tabs.count) tabs?"
+        alert.informativeText = Self.suspendQuestion(tabs, passedOver: writing)
+        alert.addButton(withTitle: tabs.count == 1 ? "Suspend Tab" : "Suspend \(tabs.count) Tabs")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            // Each read again: one closed or suspended meanwhile is left be.
+            for tab in tabs where self.store.tabs.contains(where: { $0 === tab }) && !tab.isSuspended { self.suspendTab(tab) }
+        }
+    }
+
+    /// The question's words: every tab by name, an agent's named, eight at
+    /// most.
+    package static func suspendQuestion(_ tabs: [Tab], passedOver writing: [Tab] = []) -> String {
+        let names = tabs.prefix(8).map { tab in tab.agent.map { "\($0.name) in “\(tab.title)”" } ?? "“\(tab.title)”" }
+        let more = tabs.count > 8 ? ", and \(tabs.count - 8) more" : ""
+        let said = "Their processes stop where they are until you resume them: \(names.joined(separator: ", "))\(more)."
+        guard !writing.isEmpty else { return said }
+        let skipped = writing.map { "“\($0.title)”" }.joined(separator: ", ")
+        return said + "\n\n" + "Left running: \(skipped). " + ActivitySignalCheck.terraformSuspend
+    }
+
+    /// Every tab Suspend Other Tabs was given runs a terraform write.
+    private func presentSuspendRefusal(_ writing: [Tab]) {
+        guard let window, window.attachedSheet == nil else { return NSSound.beep() }
+        let alert = NSAlert()
+        alert.messageText = writing.count == 1 ? "“\(writing[0].title)” isn't suspended" : "None of the \(writing.count) tabs is suspended"
+        alert.informativeText = ActivitySignalCheck.terraformSuspend
+        alert.beginSheetModal(for: window)
+    }
+
+    /// Closes several tabs behind one confirmation. `hidden`: tabs the strip
+    /// doesn't draw that the same verb would reach — named in the question
+    /// with a box, unticked, and closed only when it is ticked.
+    package func closeTabs(_ tabs: [Tab], hidden: [Tab] = []) {
         guard !tabs.isEmpty, let window else { return }
         // A terraform write in one of their panes asks first, whatever the setting (4.8).
         if terraformCloseGuard(tabs: tabs, path: .tabs, proceed: { [weak self] in tabs.forEach { self?.removeTab($0) } }) { return }
@@ -3615,12 +3705,17 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         let panes = tabs.flatMap(\.terminals)
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let survivors = await self.closeSurvivors(panes)
-            self.askToClose(tabs.filter { tab in self.store.tabs.contains { $0 === tab } }, survivors: survivors, on: window)
+            // One census for both: what the hidden tabs leave running is
+            // listed too, for when they are ticked to close.
+            let survivors = await self.closeSurvivors(panes, hidden: hidden.flatMap(\.terminals))
+            let alive = { (list: [Tab]) in list.filter { tab in self.store.tabs.contains { $0 === tab } } }
+            self.askToClose(alive(tabs), hidden: alive(hidden), survivors: survivors.shown, hiddenSurvivors: survivors.hidden, on: window)
         }
     }
 
-    private func askToClose(_ tabs: [Tab], survivors: ActivitySurvivors, on window: NSWindow) {
+    private func askToClose(
+        _ tabs: [Tab], hidden: [Tab] = [], survivors: ActivitySurvivors, hiddenSurvivors: ActivitySurvivors = ActivitySurvivors(), on window: NSWindow
+    ) {
         guard !tabs.isEmpty else { return }
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Close “\(tabs[0].title)”?" : "Close \(tabs.count) tabs?"
@@ -3629,12 +3724,57 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
         let boxes = Self.survivorBoxes(survivors)
-        alert.accessoryView = boxes?.0
+        let hiddenBox = hidden.isEmpty ? nil : NSButton(checkboxWithTitle: hiddenBoxTitle(hidden), target: nil, action: nil)
+        hiddenBox?.state = .off
+        hiddenBox?.setAccessibilityIdentifier("close.hiddenTabs")
+        // What the hidden tabs leave running: listed under their box, a
+        // box each, usable only while their tabs are ticked to close.
+        let hiddenBoxes = hidden.isEmpty ? nil : Self.survivorBoxes(hiddenSurvivors)
+        let follower = hiddenBoxes.map { SurvivorBoxesFollow(boxes: $0.1.map(\.0)) }
+        follower?.follow(on: false)
+        if let hiddenBox, let follower {
+            hiddenBox.target = follower
+            hiddenBox.action = #selector(SurvivorBoxesFollow.toggled(_:))
+            objc_setAssociatedObject(alert, &SurvivorBoxesFollow.key, follower, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+        alert.accessoryView = Self.stacked([hiddenBox, hiddenBoxes?.0, boxes?.0].compactMap { $0 })
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn, let self else { return }
             tabs.forEach { self.removeTab($0) }
             self.settleSurvivors(boxes?.1 ?? [])
+            guard hiddenBox?.state == .on else { return }
+            // Ticked: closed too, read again — and a terraform write among
+            // them still asks first (4.8). Their survivors are settled as
+            // the sheet said, only once their tabs have closed.
+            let still = hidden.filter { tab in self.store.tabs.contains { $0 === tab } }
+            let close: () -> Void = { [weak self] in
+                still.forEach { self?.removeTab($0) }
+                self?.settleSurvivors(hiddenBoxes?.1 ?? [])
+            }
+            if self.terraformCloseGuard(tabs: still, path: .tabs, proceed: close) { return }
+            close()
         }
+    }
+
+    /// The box's words: how many the strip hides, where, and how many of
+    /// them still run something.
+    package func hiddenBoxTitle(_ hidden: [Tab]) -> String {
+        let busy = hidden.filter { $0.terminals.contains { $0.needsConfirmClose } }.count
+        let running = busy == 0 ? "" : busy == hidden.count ? ", all still running" : ", \(busy) still running"
+        let count = hidden.count == 1 ? "the tab" : "the \(hidden.count) tabs"
+        return "Also close \(count) the strip hides — \(store.hiddenSummary(hidden).joined(separator: "; "))\(running)"
+    }
+
+    /// Accessory views one under another, sized: an alert lays out its
+    /// accessory by its frame, and a bare checkbox's is empty.
+    private static func stacked(_ views: [NSView]) -> NSView? {
+        guard !views.isEmpty else { return nil }
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.frame = NSRect(x: 0, y: 0, width: 420, height: stack.fittingSize.height)
+        return stack
     }
 
     /// Whether closing these tabs asks first: always, unless Settings says
@@ -3937,25 +4077,33 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var unsavedEditorFile: String? { unsavedNames(everyWindow: isLastWindow).first }
 
     package func closeTabs(of view: TerminalView, mode: ghostty_action_close_tab_mode_e) {
-        guard let tab = tab(containing: view), let i = store.index(of: tab) else { return }
+        guard let tab = tab(containing: view) else { return }
         switch mode {
         case GHOSTTY_ACTION_CLOSE_TAB_MODE_OTHER:
-            closeTabs(store.tabs.filter { $0.id != tab.id && !$0.isPinned })
+            let scope = closeScope(.others, of: tab)
+            closeTabs(scope.drawn, hidden: scope.hidden)
         case GHOSTTY_ACTION_CLOSE_TAB_MODE_RIGHT:
-            closeTabs(store.tabs[(i + 1)...].filter { !$0.isPinned })
+            let scope = closeScope(.right, of: tab)
+            closeTabs(scope.drawn, hidden: scope.hidden)
         default:
             if !tab.isPinned { closeTab(tab) }
         }
     }
 
     /// Ghostty's goto_tab: 1-based index, or previous/next/last.
+    /// Counted over the tabs the strip draws (`TabStore.drawnTabs`): ⌘3
+    /// is the third tab you see, never one a stashed or collapsed island
+    /// or another island's focus hides.
     package func gotoTab(_ value: Int32) -> Bool {
-        guard store.tabs.count > 1 else { return false }
+        let drawn = store.drawnTabs.count
+        // One drawn tab is somewhere to go when the selected one is hidden
+        // (its island stashed, then the drawn one's collapsed).
+        guard drawn > 1 || (drawn == 1 && !(store.selected.map(store.isDrawn) ?? false)) else { return false }
         switch value {
         case GHOSTTY_GOTO_TAB_PREVIOUS.rawValue: store.selectAdjacent(-1)
         case GHOSTTY_GOTO_TAB_NEXT.rawValue: store.selectAdjacent(1)
-        case GHOSTTY_GOTO_TAB_LAST.rawValue: store.select(index: store.tabs.count - 1)
-        case 1...: store.select(index: min(Int(value) - 1, store.tabs.count - 1))
+        case GHOSTTY_GOTO_TAB_LAST.rawValue: store.select(drawnIndex: drawn - 1)
+        case 1...: store.select(drawnIndex: Int(value) - 1)
         default: return false
         }
         return true
@@ -4435,4 +4583,24 @@ extension TerminalWindowController: NSPopoverDelegate {
         infoModel = nil
         infoPopover = nil
     }
+}
+
+/// The hidden tabs' survivor boxes follow their tabs' box: usable only
+/// while it is ticked, unticked again when it isn't — a process is never
+/// stopped for tabs that weren't closed.
+@MainActor
+final class SurvivorBoxesFollow: NSObject {
+    static var key = 0
+    private let boxes: [NSButton]
+
+    init(boxes: [NSButton]) { self.boxes = boxes }
+
+    func follow(on: Bool) {
+        for box in boxes {
+            box.isEnabled = on
+            if !on { box.state = .off }
+        }
+    }
+
+    @objc func toggled(_ sender: NSButton) { follow(on: sender.state == .on) }
 }

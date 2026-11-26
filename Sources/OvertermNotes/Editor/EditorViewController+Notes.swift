@@ -70,6 +70,7 @@ extension EditorViewController {
     /// Draws the note — once the index can say what its links mean.
     package func renderNote(_ buffer: EditorBuffer, scrollTo anchor: String? = nil) {
         guard let url = buffer.url, let reader = noteReader else { return }
+        reader.loadsRemoteImages = Settings.shared.notesRemoteImages
         let notes = self.notes
         notes.whenLoaded { [weak self, weak buffer] in
             guard let self, let buffer, buffer === self.active, buffer.showsPreview else { return }

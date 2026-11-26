@@ -194,6 +194,31 @@ inside a bound island is always the island's own folder — so reading the
 binding there sent every ⌘T straight back into the group, which is the thing
 this rule exists to undo.
 
+**What the strip hides is out of reach of anything that walks "the tabs".**
+A stashed island's tabs, a collapsed one's and, while an island is focused,
+every other — `TabStore.drawnTabs` is what the strip draws, and what moves
+between tabs or acts on "the others" goes by it: next and previous (⇧⌘] ⇧⌘[),
+⌘1–9, Close Other Tabs and Close Tabs to the Right (the menu's and
+Ghostty's keybindings, `closeScope`), Suspend Other Tabs. A tab nobody can
+see is never selected: stashing and collapsing move the selection out, and
+going to one on purpose — a notification, ⌥⌘↓, the palette, an agent's
+card, a session resumed, a worktree opened — goes through
+`TabStore.reveal`, which takes its island off the shelf, expands it and
+leaves focus first. Close Other Tabs and Close Tabs to the Right name what
+they would also reach (`hiddenSummary`: "“shop-api” (stashed)") with a box,
+unticked, and close those only when it is ticked — a terraform write among
+them still asks. Suspend Other Tabs asks once, listing the tabs (an action
+on several targets lists them, Activity's rule); Suspend Tab alone still
+acts at once — and neither stops a terraform write: refused in Activity's
+words, the other tabs' question says which it leaves running.
+
+**Broadcast Input to Group** (⌥⌘I, `BroadcastModel`) types a line and a
+Return into each of the island's tabs, so it leaves out the panes where a
+Return does what nobody meant: one suspended, one whose agent or terraform
+asks something, one pinned to a production context (`broadcastHold`). The
+bar names each, and a production context is let in only with its name
+typed (Include…). The tabs are read again at every send.
+
 ## Splits
 
 A tab is a `SplitTree<TerminalView>` (`Sources/Overterm/Splits/`): a
@@ -568,7 +593,12 @@ It is fed by the command ledger — which already records every command with
 its exit, its duration and its folder — and seeded once from the shell's
 own history file so it is not empty on day one. Ranking is "this folder
 first", then recency, then how often; it is pure, because the ranking *is*
-the feature.
+the feature. A command that carries a secret by the shared rules
+(`CommandHistory.carriesSecret`: `Secrets.maskArguments`, a URL's password,
+a credential or a secret header) is never kept — neither from the ledger
+nor from the shell's file, and one an earlier version kept is dropped at
+load — and neither is a line typed with a space first. The file is 0600; a
+row's detail has Forget, ⌘K has Clear Command History….
 
 History rows are ranked below everything else in the palette itself: a
 history row is a guess at what you meant, and an action named for what you
@@ -2036,7 +2066,13 @@ in it, and `.obsidian/` is read for where things go, never written.
   `overterm-note:` — the app's files and the vault's, a path leaving either
   refused — and a note's HTML is sanitized, because the page talks back to
   the app. DOMPurify drops any attribute value with `-->` in it: a mermaid
-  diagram's source is kept in a table, not an attribute.
+  diagram's source is kept in a table, not an attribute. Nothing remote
+  loads: the policy has no `https:` (a note's image on a server told it
+  the reader's address and when the note was read). A remote image's place
+  is a Load button — the app fetches it (`NoteRemoteImage`: no cookies, an
+  image, 20 MB at most; an isolated run only from this Mac) and hands it
+  back as `data:` —, every one of them as the note draws with
+  `notes.remoteImages`; a remote video or audio is a link to the browser.
 - **Live Preview** (`NoteLivePreview`): the note's own text, styled with
   attributes — nothing inserted. Markup carries `.noteHidden`, which the
   layout manager's delegate (`EditorLineHeight`) lays out as nothing, on
@@ -2120,7 +2156,14 @@ destroying statement are there too).
 - **The model** (`DatabaseModel`, `DatabaseSession`): one for the app; a
   session a connection, opened when the panel or a console needs it — a
   statement run while it opens waits for that; tables and columns read a
-  schema at a time, as the tree opens or completion asks; the history.
+  schema at a time, as the tree opens or completion asks; the history —
+  every statement's password literals masked as it is kept, whoever ran it
+  (`OpsText.maskSecrets`: SQL's `PASSWORD '…'` and kin, Redis's `AUTH`,
+  `HELLO … AUTH`, `CONFIG SET requirepass`, `ACL SETUSER`'s `>pass`,
+  MongoDB's `pwd:` and `db.auth`), an older file masked at load, the file
+  0600. A statement that destroys is asked with the connection's name and
+  where it is, every character shown (`SQLConsole.destructiveQuestion`), as
+  an agent's write is.
 - **A console** (`SQLConsole`, `SQLConsoleView`, `EditorViewController+Database`):
   any `.sql` file in the editor, its connection remembered by its path; a
   connection's own console is a file in Overterm's folder. Under the text,
@@ -3381,6 +3424,38 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   first and is the runner's `DELETE /models/…`. The header copies the
   OpenAI-compatible base URL for a container and, for a runner
   container, for this Mac; agents get the same in `docker_models`.
+- **Apple Containers** (section 7, `AppleContainers` and
+  `AppleContainerCommands`, pure; `AppleContainerModel`, one for the app;
+  `DockerPageModel+Apple`, `AppleContainersView`): Apple's `container`
+  (github.com/apple/container, 1.7.1, Apple silicon, macOS 26) — Linux
+  containers in light VMs, beside whatever engine the page reaches, and
+  shown whether Docker answers or not. It speaks no Engine API: its
+  service is XPC, so it is read through its CLI's `--format json` —
+  `system status` (exit 1, still JSON, while its service is stopped),
+  `list --all`, `image list`, `volume list` — read field by field from
+  untyped JSON, a missing field or another type left out, never fatal:
+  before 1.7 a container's `status` was a word with its networks beside
+  it, and both shapes are read. The env's secret-looking values and the
+  command's are masked as they are read. The tool is looked for only where
+  its installer puts it and Homebrew's (`AppleContainerCLI.installed`),
+  never a `container` on the PATH; the section is listed only while it is
+  there, looked for again each time the page shows. It sends no events, so
+  what shows is read every 3 s while the section is on screen (`want`,
+  counted like `DockerModel.want`; images only on their tab — the tool
+  resolves each one's manifests), after each thing done, and never while
+  nobody looks. Start, Stop, Kill and the removals are the CLI's (a
+  removal asked first; an image a container is made from, or a volume one
+  mounts, greyed with who); a shell, a run, a pull, its log followed and
+  the service's start and stop go to a terminal tab, typed with the
+  tool's full path. A container's Logs tab is `container logs --follow -n
+  500` through `DockerCLI.lines`: its lines carry no timestamps, so it is
+  read afresh — never resumed from a time — when the tab shows again or
+  the container starts again. A volume's `sizeInBytes` is its sparse disk
+  image's limit, said "up to". Compose, builds, stats, events and agents'
+  tools are Docker's alone. A guarded run (isolated, a unit test) reaches
+  only `OVERTERM_APPLE_CONTAINER`'s stand-in or
+  `AppleContainerCLI.override`; `OVERTERM_APPLE_CONTAINER_TESTS=1` reads
+  the real tool, nothing made or removed.
 - **Vulnerabilities** (`DockerScout`, pure; `DockerScoutScans`;
   `DockerScoutView`): an image's detail has two tabs, Overview and
   Vulnerabilities. A scan is `docker scout cves --format sarif
