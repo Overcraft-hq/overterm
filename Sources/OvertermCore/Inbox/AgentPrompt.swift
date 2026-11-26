@@ -64,6 +64,30 @@ package struct AgentPrompt: Equatable {
         question.hasSuffix("?") && choices.contains(where: \.isDefault) && deny != nil
     }
 
+    /// A question being asked, choices to pick from: it ends in "?" and
+    /// the agent has one of them marked, as only its own list does. An
+    /// answer that ends in a numbered list marks none.
+    package var isQuestion: Bool {
+        question.hasSuffix("?") && choices.contains(where: \.isDefault)
+    }
+
+    /// The question on a pane's screen the Inbox offers answers for: in its
+    /// last `window` lines, as the screen check reads them, and a question
+    /// with a choice marked (`isQuestion`). An answer that ends in a
+    /// numbered list is no question: a button there typed "1" into the
+    /// agent's prompt (AGT-G1).
+    package static func question(in text: String, window: Int = AgentScreenCheck.window) -> AgentPrompt? {
+        guard let prompt = parse(text.components(separatedBy: "\n").suffix(window).joined(separator: "\n")), prompt.isQuestion else { return nil }
+        return prompt
+    }
+
+    /// An approval on a pane's screen — the screen check's: a question,
+    /// a choice marked, one that says no (`isApproval`).
+    package static func approval(in text: String, window: Int = AgentScreenCheck.window) -> AgentPrompt? {
+        guard let prompt = question(in: text, window: window), prompt.isApproval else { return nil }
+        return prompt
+    }
+
     /// `❯ 1. Yes` — the marker is optional, the number and the label are
     /// not. Built per call: a `Regex` is not Sendable, so it cannot be a
     /// static on a type this is parsed from.
