@@ -71,6 +71,11 @@ final class TaskSetupTests: XCTestCase {
         let through = TaskSetupCopy.copy(["config/dev.json"], from: repo, into: worktree)
         XCTAssertEqual(through.skipped.map(\.why), ["its place in the worktree leads outside it"])
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("elsewhere/dev.json").path))
+        // Deeper under that link: no folder made outside either.
+        try write("y", "config/new/dev.json", in: repo)
+        let deeper = TaskSetupCopy.copy(["config/new/dev.json"], from: repo, into: worktree)
+        XCTAssertEqual(deeper.skipped.map(\.why), ["its place in the worktree leads outside it"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("elsewhere/new").path), "nothing made outside")
     }
 
     func testWhatTheWorktreeHasIsKept() throws {

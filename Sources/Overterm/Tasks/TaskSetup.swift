@@ -119,6 +119,30 @@ package enum TaskSetupCopy {
 
     private static func inside(_ path: String, _ root: String) -> Bool { path == root || path.hasPrefix(root + "/") }
 
+    private struct Made { var problem: String? }
+
+    /// `path`'s folders made inside `worktree`, each checked before the
+    /// next: nil when one of them resolves outside it.
+    private static func makeFolders(for path: String, in worktree: URL, root: String) -> Made? {
+        let folders = path.split(separator: "/").dropLast()
+        var place = worktree
+        for folder in folders {
+            place = place.appendingPathComponent(String(folder))
+            if let real = resolved(place) {
+                guard inside(real, root) else { return nil }
+                continue
+            }
+            // A link that leads nowhere is still a link: never made through.
+            if (try? FileManager.default.destinationOfSymbolicLink(atPath: place.path)) != nil { return nil }
+            do {
+                try FileManager.default.createDirectory(at: place, withIntermediateDirectories: false)
+            } catch {
+                return Made(problem: "its folder couldn't be made in the worktree")
+            }
+        }
+        return Made()
+    }
+
     package static func copy(_ paths: [String], from repo: URL, into worktree: URL) -> Report {
         var report = Report()
         guard let repoRoot = resolved(repo), let worktreeRoot = resolved(worktree) else {
@@ -145,17 +169,16 @@ package enum TaskSetupCopy {
                 report.skipped.append((path, "the worktree already has it"))
                 continue
             }
-            let parent = target.deletingLastPathComponent()
-            do {
-                try manager.createDirectory(at: parent, withIntermediateDirectories: true)
-            } catch {
-                report.skipped.append((path, "its folder couldn't be made in the worktree"))
+            // Its folders, one at a time from the worktree down: each that is
+            // there must resolve inside the worktree before anything is made
+            // under it — a folder that links elsewhere is never written
+            // through, not even to make a folder.
+            guard let made = makeFolders(for: path, in: worktree, root: worktreeRoot) else {
+                report.skipped.append((path, "its place in the worktree leads outside it"))
                 continue
             }
-            // A folder of the worktree's that is a link elsewhere: never
-            // written through.
-            guard let realParent = resolved(parent), inside(realParent, worktreeRoot) else {
-                report.skipped.append((path, "its place in the worktree leads outside it"))
+            if let problem = made.problem {
+                report.skipped.append((path, problem))
                 continue
             }
             do {
