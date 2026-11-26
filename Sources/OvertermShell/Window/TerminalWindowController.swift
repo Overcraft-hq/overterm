@@ -3651,11 +3651,15 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// Suspend Other Tabs: once, naming them (6.10, an action on several
     /// targets lists them); Cancel stops nothing. Suspend Tab alone still
     /// acts at once.
-    package func confirmSuspend(_ tabs: [Tab]) {
-        guard !tabs.isEmpty, let window else { return }
+    package func confirmSuspend(_ asked: [Tab]) {
+        guard !asked.isEmpty, let window else { return }
+        // A terraform write's tab is passed over, and said (TERM-G6).
+        let writing = asked.filter { !terraformWrites(tabs: [$0], path: .tabs).isEmpty }
+        let tabs = asked.filter { tab in !writing.contains { $0 === tab } }
+        guard !tabs.isEmpty else { return presentSuspendRefusal(writing) }
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Suspend “\(tabs[0].title)”?" : "Suspend \(tabs.count) tabs?"
-        alert.informativeText = Self.suspendQuestion(tabs)
+        alert.informativeText = Self.suspendQuestion(tabs, passedOver: writing)
         alert.addButton(withTitle: tabs.count == 1 ? "Suspend Tab" : "Suspend \(tabs.count) Tabs")
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { [weak self] response in
@@ -3667,10 +3671,22 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
 
     /// The question's words: every tab by name, an agent's named, eight at
     /// most.
-    package static func suspendQuestion(_ tabs: [Tab]) -> String {
+    package static func suspendQuestion(_ tabs: [Tab], passedOver writing: [Tab] = []) -> String {
         let names = tabs.prefix(8).map { tab in tab.agent.map { "\($0.name) in “\(tab.title)”" } ?? "“\(tab.title)”" }
         let more = tabs.count > 8 ? ", and \(tabs.count - 8) more" : ""
-        return "Their processes stop where they are until you resume them: \(names.joined(separator: ", "))\(more)."
+        let said = "Their processes stop where they are until you resume them: \(names.joined(separator: ", "))\(more)."
+        guard !writing.isEmpty else { return said }
+        let skipped = writing.map { "“\($0.title)”" }.joined(separator: ", ")
+        return said + "\n\n" + "Left running: \(skipped). " + ActivitySignalCheck.terraformSuspend
+    }
+
+    /// Every tab Suspend Other Tabs was given runs a terraform write.
+    private func presentSuspendRefusal(_ writing: [Tab]) {
+        guard let window, window.attachedSheet == nil else { return NSSound.beep() }
+        let alert = NSAlert()
+        alert.messageText = writing.count == 1 ? "“\(writing[0].title)” isn't suspended" : "None of the \(writing.count) tabs is suspended"
+        alert.informativeText = ActivitySignalCheck.terraformSuspend
+        alert.beginSheetModal(for: window)
     }
 
     /// Closes several tabs behind one confirmation. `hidden`: tabs the strip
