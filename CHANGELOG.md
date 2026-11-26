@@ -8,6 +8,7 @@ version is tagged `v<version>`.
 
 ## 1.6.8 — 2026-11-26
 
+- The Docker page lists Apple's container tool's containers, images and volumes — a section of its own, when the tool is installed
 - Next and previous tab, ⌘1–9 and Close or Suspend Other Tabs go by the tabs the strip shows; a stashed, collapsed or unfocused island's are left alone, or named and asked about
 - No secret reaches an agent or a file of Overterm's: a password field in the browser's snapshot, the API report Ask an Agent sends, a command with a secret in ⌘K's history (Forget, Clear Command History…), a password in the database console's history
 - A note's remote image loads only when you press Load (Settings ▸ Notes can load them all)
