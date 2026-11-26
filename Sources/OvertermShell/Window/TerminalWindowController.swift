@@ -611,7 +611,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 broadcast: broadcast, focus: focus, store: store, theme: theme,
                 onSend: { [weak self] in self?.broadcast.send() },
                 onStopBroadcast: { [weak self] in self?.stopBroadcast() },
-                onLeaveFocus: { [weak self] in self?.leaveFocus() }))
+                onLeaveFocus: { [weak self] in self?.leaveFocus() },
+                onIncludeProduction: { [weak self] context in self?.includeBroadcastProduction(context) }))
         groupBars.translatesAutoresizingMaskIntoConstraints = false
         // Out of the layout entirely while no group mode is on, so an empty
         // bar can never take part in sizing the column.
