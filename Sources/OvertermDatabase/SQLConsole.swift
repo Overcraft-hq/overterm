@@ -60,6 +60,16 @@ package final class SQLConsole: ObservableObject {
         sessionChanges = session?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
+    /// The question a statement that destroys is asked with: the
+    /// connection by name and where it is, the whole statement with every
+    /// character visible, then why it destroys — what an agent's write is
+    /// shown with (`DatabaseMCP.allow`). Pure.
+    package static func destructiveQuestion(_ sql: String, why: String, on connection: DatabaseConnection) -> WriteConfirmation {
+        WriteConfirmation(
+            title: "Run this on “\(connection.name)”?", scope: "\(connection.kind.title) · \(connection.summary)",
+            detail: VisibleText.displayed(sql) + "\n\n" + why, button: "Run", cancel: "Don't Run")
+    }
+
     /// The statements in order, each a tab. A destroying one is asked about
     /// first (Settings ▸ Database); a read-only connection refuses a write.
     package func run(_ statements: [String]) {
