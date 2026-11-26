@@ -11,10 +11,9 @@ import Foundation
 package final class CommitDetailModel: ObservableObject {
     package init() {}
 
-    /// As many files as the changes pane diffs, for the same reason: a
-    /// commit that moved a vendored tree would otherwise run git a
-    /// thousand times.
-    package static let maxFiles = DiffModel.maxDiffedFiles
+    /// Files diffed at most: a commit that moved a vendored tree would
+    /// otherwise run git a thousand times.
+    package static let maxFiles = 60
 
     package enum Phase: Equatable {
         case idle, loading, loaded

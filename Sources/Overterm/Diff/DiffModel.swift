@@ -20,6 +20,13 @@ package final class DiffModel: ObservableObject {
         /// Each line's syntax colours and changed part, by `DiffLine.id`;
         /// lines with neither are left out.
         package let styles: [Int: DiffLineStyle]
+        /// Each hunk's own patch, by its `@@` line's id: what Stage,
+        /// Unstage and Discard of that hunk apply (GIT-G1). None for a
+        /// diff against a base — a branch's, a commit's.
+        package private(set) var hunks: [Int: DiffHunk] = [:]
+        /// Staged and not staged both: the id of the first line not staged,
+        /// where the card says so.
+        package private(set) var unstagedFrom: Int?
 
         /// A file's `git diff`: its hunks and their lines (the card's header
         /// already names the file), at most `limit`, each styled — the
@@ -31,7 +38,30 @@ package final class DiffModel: ObservableObject {
             styles = DiffHighlight.styles(for: lines, language: SyntaxHighlighter.language(for: URL(fileURLWithPath: path)))
         }
 
+        /// An uncommitted file's: what is staged (HEAD to the index), then
+        /// what isn't (the index to the file), each hunk with its patch.
+        package init(staged: String, unstaged: String, path: String, limit: Int = DiffModel.maxDiffLines) {
+            self.init(parsing: staged + unstaged, path: path, limit: limit)
+            let patches =
+                DiffPatch.patches(staged).map { DiffHunk(side: .staged, patch: $0) } + DiffPatch.patches(unstaged).map { DiffHunk(side: .unstaged, patch: $0) }
+            let headers = lines.filter { $0.kind == .hunk }
+            hunks = Dictionary(zip(headers.map(\.id), patches).map { ($0, $1) }, uniquingKeysWith: { first, _ in first })
+            let stagedCount = DiffPatch.split(staged).hunks.count
+            if stagedCount > 0, stagedCount < headers.count { unstagedFrom = headers[stagedCount].id }
+        }
+
         package func style(of line: DiffLine) -> DiffLineStyle { styles[line.id] ?? DiffLineStyle() }
+
+        /// Whether the card's lines begin with the staged part.
+        package var startsStaged: Bool { hunks.values.contains { $0.side == .staged } }
+    }
+
+    /// One hunk of an uncommitted file, and which side of the index it is.
+    package struct DiffHunk: Equatable, Sendable {
+        package enum Side: Sendable { case staged, unstaged }
+        package let side: Side
+        /// The file's header and this hunk: a patch of its own.
+        package let patch: String
     }
 
     package enum Scope: String {
@@ -132,9 +162,6 @@ package final class DiffModel: ObservableObject {
         }
     }
 
-    /// Diffs past this many files aren't loaded — a huge change set is for
-    /// the terminal, not a panel.
-    package static let maxDiffedFiles = 60
     /// Lines of one file's diff shown at most.
     package nonisolated static let maxDiffLines = 3_000
     /// Commits listed at most: a base far behind is no reason to parse
@@ -530,25 +557,49 @@ package final class DiffModel: ObservableObject {
         return data.last == 0x0A ? newlines : newlines + 1
     }
 
-    /// The shown scope's diffs: against HEAD (`head`: or the empty tree), or
-    /// against the merge-base.
+    /// The open cards' diffs, read again — a folded card's is read when it
+    /// opens (GIT-G10): no cap on the files, and nothing read for a card
+    /// nobody is looking at.
     private func loadDiffs(head: String, ticket: Int) async {
-        guard let root else { return }
-        let mergeBase = shownScope == .branch ? comparison?.mergeBase : nil
-        let base = mergeBase ?? head
+        let open = shownFiles.filter { !isFolded($0.path) }
         var loaded: [String: FileDiff] = [:]
-        for file in (mergeBase == nil ? files : branchFiles).prefix(Self.maxDiffedFiles) {
-            let arguments: [String]
-            switch file.kind {
-            case .untracked: arguments = ["diff", "--no-color", "--no-index", "--", "/dev/null", file.path]
-            case .renamed: arguments = ["diff", "--no-color", "-M", base, "--", file.originalPath ?? file.path, file.path]
-            default: arguments = ["diff", "--no-color", base, "--", file.path]
-            }
-            let text = (try? await Git.run(arguments, in: root, success: [0, 1])) ?? ""
-            loaded[file.path] = await Self.fileDiff(parsing: text, path: file.path)
+        for file in open {
+            guard let diff = await readDiff(of: file) else { continue }
+            loaded[file.path] = diff
         }
         guard ticket == generation else { return }
         diffs = loaded
+    }
+
+    /// One card's diff, read as it opens: shown at once when it comes.
+    private func loadDiff(of path: String) {
+        guard panelVisible, diffs[path] == nil, let file = shownFiles.first(where: { $0.path == path }) else { return }
+        let ticket = generation
+        Task {
+            guard let diff = await readDiff(of: file), ticket == generation, !isFolded(path) else { return }
+            diffs[path] = diff
+        }
+    }
+
+    /// What a card shows. Uncommitted: what is staged, then what isn't,
+    /// each hunk with its patch — Stage, Unstage and Discard act on one;
+    /// an untracked file whole. Branch: against the merge-base.
+    private func readDiff(of file: ChangedFile) async -> FileDiff? {
+        guard let root else { return nil }
+        func diff(_ arguments: [String]) async -> String { (try? await Git.run(arguments, in: root, success: [0, 1])) ?? "" }
+        let paths = file.kind == .renamed ? [file.originalPath ?? file.path, file.path] : [file.path]
+        if shownScope == .branch, let mergeBase = comparison?.mergeBase {
+            let text = await diff(
+                file.kind == .untracked ? ["diff", "--no-color", "--no-index", "--", "/dev/null", file.path] : ["diff", "--no-color", "-M", mergeBase, "--"] + paths)
+            return await Self.fileDiff(parsing: text, path: file.path)
+        }
+        if file.kind == .untracked {
+            return await Self.fileDiff(parsing: await diff(["diff", "--no-color", "--no-index", "--", "/dev/null", file.path]), path: file.path)
+        }
+        // Before the first commit, --cached compares with the empty tree.
+        let staged = await diff(["diff", "--no-color", "--cached", "-M", "--"] + paths)
+        let unstaged = await diff(["diff", "--no-color", "--", file.path])
+        return await Self.fileDiff(staged: staged, unstaged: unstaged, path: file.path)
     }
 
     /// Parses and styles a file's diff off the main thread: tokenizing a
@@ -557,6 +608,14 @@ package final class DiffModel: ObservableObject {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(returning: FileDiff(parsing: text, path: path, limit: limit))
+            }
+        }
+    }
+
+    package nonisolated static func fileDiff(staged: String, unstaged: String, path: String) async -> FileDiff {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: FileDiff(staged: staged, unstaged: unstaged, path: path))
             }
         }
     }
@@ -576,8 +635,11 @@ package final class DiffModel: ObservableObject {
     /// Every card shown is folded: the header offers Expand All.
     package var everyCardFolded: Bool { shownFiles.allSatisfy { isFolded($0.path) } }
 
-    /// A click on a card's header.
-    package func toggleFold(_ path: String) { folded[path] = !isFolded(path) }
+    /// A click on a card's header: opened, its diff is read.
+    package func toggleFold(_ path: String) {
+        folded[path] = !isFolded(path)
+        if !isFolded(path) { loadDiff(of: path) }
+    }
 
     /// A file asked for from elsewhere (Overgit): unfolded, and the pane
     /// scrolls to it.
@@ -587,6 +649,7 @@ package final class DiffModel: ObservableObject {
     package func reveal(_ path: String) {
         if scope != .uncommitted { choose(.uncommitted) }
         folded[path] = false
+        loadDiff(of: path)
         revealTicket += 1
         revealed = (path, revealTicket)
     }
@@ -600,6 +663,7 @@ package final class DiffModel: ObservableObject {
     private func foldAll(_ fold: Bool) {
         allFolded = fold
         folded = Dictionary(shownFiles.map { ($0.path, fold) }, uniquingKeysWith: { first, _ in first })
+        if !fold { shownFiles.forEach { loadDiff(of: $0.path) } }
     }
 
     /// Settles how the cards shown for the first time start, so a refresh
@@ -753,6 +817,37 @@ package final class DiffModel: ObservableObject {
             await refresh()
         } else {
             await perform(["restore", "--source=HEAD", "--staged", "--worktree", "--"] + [file.originalPath, file.path].compactMap { $0 })
+        }
+    }
+
+    /// What a hunk's button does.
+    package enum HunkAction: Sendable { case stage, unstage, discard }
+
+    /// One hunk into the index, out of it, or out of the file (Discard,
+    /// asked first by the pane): its own patch applied — to the index, or
+    /// reversed (GIT-G1). The patch is written to a file of its own:
+    /// `Git.run` hands no input.
+    @discardableResult
+    package func apply(_ hunk: DiffHunk, _ action: HunkAction) async -> Bool {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-hunk-\(UUID().uuidString).patch")
+        do {
+            try Data(hunk.patch.utf8).write(to: file)
+        } catch {
+            actionError = error.localizedDescription
+            return false
+        }
+        defer { try? FileManager.default.removeItem(at: file) }
+        return await perform(Self.applyArguments(action, patch: file.path))
+    }
+
+    /// `git apply` for a hunk's patch: Stage puts it in the index; Unstage
+    /// takes it back out (a staged hunk's patch, reversed); Discard takes it
+    /// out of the file (an unstaged one's, reversed). Pure.
+    package nonisolated static func applyArguments(_ action: HunkAction, patch: String) -> [String] {
+        switch action {
+        case .stage: ["apply", "--cached", "--whitespace=nowarn", patch]
+        case .unstage: ["apply", "--cached", "--reverse", "--whitespace=nowarn", patch]
+        case .discard: ["apply", "--reverse", "--whitespace=nowarn", patch]
         }
     }
 

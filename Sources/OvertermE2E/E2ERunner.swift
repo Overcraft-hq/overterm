@@ -1496,6 +1496,7 @@ package final class E2ERunner {
         check("the commit is in git", log == "e2e commit", log ?? "nil")
         check("the badge clears", app.diff.totals.added == 0)
         check("to a plain ±, still there to open the pane", app.diff.badge == .plain, "\(String(describing: app.diff.badge))")
+        await hunkStagingChecks(repo)
         check("View ▸ Changes again closes it", perform(changes) && app.diffItem?.isCollapsed == true)
         check("and it is no longer ticked", changes.state == .off)
     }

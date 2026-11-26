@@ -269,7 +269,19 @@ header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`
   switch would; the plain ± keeps the one picked last). View ▸ Changes (⌥⌘D,
   the palette's Changes) toggles the pane on the scope picked last and is
   ticked while it shows. Diff text loads only while the pane is open, for the
-  scope shown, from that scope's base.
+  scope shown, from that scope's base — and only for a card that is open: a
+  folded card's diff is read when it opens (`DiffModel.loadDiff`), so there
+  is no cap on the files and nothing is read for a card nobody looks at.
+- **A hunk at a time** (Uncommitted): a card shows what is staged (HEAD to
+  the index, `diff --cached`) and then what isn't (the index to the file),
+  labelled when it has both (`FileDiff(staged:unstaged:)`). Each hunk's `@@`
+  line carries Unstage, or Stage and Discard… (asked first). A hunk is the
+  file's header and that hunk, cut from git's own text with every byte kept
+  — a `\r`, the no-newline marker, a rename's lines (`DiffPatch`, pure) — and
+  applied with `git apply --cached`, `--cached --reverse` or `--reverse`
+  (`DiffModel.apply`), written to a file first: `Git.run` takes no input. An
+  untracked file and Branch's diffs have no hunk buttons; the stage box
+  still takes the whole file. Lines rather than hunks are open.
 - It refreshes on FSEvents under the checkout and, for a linked worktree,
   under its git dir (`.git/worktrees/<name>`: index, HEAD) and the
   repository's `refs/` — a commit there writes nothing inside the checkout.
