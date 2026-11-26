@@ -9,6 +9,10 @@ version is tagged `v<version>`.
 ## 1.6.8 — 2026-11-26
 
 - Next and previous tab, ⌘1–9 and Close or Suspend Other Tabs go by the tabs the strip shows; a stashed, collapsed or unfocused island's are left alone, or named and asked about
+- No secret reaches an agent or a file of Overterm's: a password field in the browser's snapshot, the API report Ask an Agent sends, a command with a secret in ⌘K's history (Forget, Clear Command History…), a password in the database console's history
+- A note's remote image loads only when you press Load (Settings ▸ Notes can load them all)
+- Every feature's agent switch is held when settings.json changes outside Settings, as Kubernetes' already were
+- The Inbox offers answers only to a real question; Broadcast leaves out production, an agent that asks and a suspended pane, by name; Suspend Tab doesn't stop a terraform write; the console's destroying question names its connection; the JSON settings view never saves a stale draft over the file
 
 ## 1.6.7 — 2026-11-23
 

@@ -209,7 +209,15 @@ they would also reach (`hiddenSummary`: "“shop-api” (stashed)") with a box,
 unticked, and close those only when it is ticked — a terraform write among
 them still asks. Suspend Other Tabs asks once, listing the tabs (an action
 on several targets lists them, Activity's rule); Suspend Tab alone still
-acts at once.
+acts at once — and neither stops a terraform write: refused in Activity's
+words, the other tabs' question says which it leaves running.
+
+**Broadcast Input to Group** (⌥⌘I, `BroadcastModel`) types a line and a
+Return into each of the island's tabs, so it leaves out the panes where a
+Return does what nobody meant: one suspended, one whose agent or terraform
+asks something, one pinned to a production context (`broadcastHold`). The
+bar names each, and a production context is let in only with its name
+typed (Include…). The tabs are read again at every send.
 
 ## Splits
 
@@ -573,7 +581,12 @@ It is fed by the command ledger — which already records every command with
 its exit, its duration and its folder — and seeded once from the shell's
 own history file so it is not empty on day one. Ranking is "this folder
 first", then recency, then how often; it is pure, because the ranking *is*
-the feature.
+the feature. A command that carries a secret by the shared rules
+(`CommandHistory.carriesSecret`: `Secrets.maskArguments`, a URL's password,
+a credential or a secret header) is never kept — neither from the ledger
+nor from the shell's file, and one an earlier version kept is dropped at
+load — and neither is a line typed with a space first. The file is 0600; a
+row's detail has Forget, ⌘K has Clear Command History….
 
 History rows are ranked below everything else in the palette itself: a
 history row is a guess at what you meant, and an action named for what you
@@ -2041,7 +2054,13 @@ in it, and `.obsidian/` is read for where things go, never written.
   `overterm-note:` — the app's files and the vault's, a path leaving either
   refused — and a note's HTML is sanitized, because the page talks back to
   the app. DOMPurify drops any attribute value with `-->` in it: a mermaid
-  diagram's source is kept in a table, not an attribute.
+  diagram's source is kept in a table, not an attribute. Nothing remote
+  loads: the policy has no `https:` (a note's image on a server told it
+  the reader's address and when the note was read). A remote image's place
+  is a Load button — the app fetches it (`NoteRemoteImage`: no cookies, an
+  image, 20 MB at most; an isolated run only from this Mac) and hands it
+  back as `data:` —, every one of them as the note draws with
+  `notes.remoteImages`; a remote video or audio is a link to the browser.
 - **Live Preview** (`NoteLivePreview`): the note's own text, styled with
   attributes — nothing inserted. Markup carries `.noteHidden`, which the
   layout manager's delegate (`EditorLineHeight`) lays out as nothing, on
@@ -2125,7 +2144,14 @@ destroying statement are there too).
 - **The model** (`DatabaseModel`, `DatabaseSession`): one for the app; a
   session a connection, opened when the panel or a console needs it — a
   statement run while it opens waits for that; tables and columns read a
-  schema at a time, as the tree opens or completion asks; the history.
+  schema at a time, as the tree opens or completion asks; the history —
+  every statement's password literals masked as it is kept, whoever ran it
+  (`OpsText.maskSecrets`: SQL's `PASSWORD '…'` and kin, Redis's `AUTH`,
+  `HELLO … AUTH`, `CONFIG SET requirepass`, `ACL SETUSER`'s `>pass`,
+  MongoDB's `pwd:` and `db.auth`), an older file masked at load, the file
+  0600. A statement that destroys is asked with the connection's name and
+  where it is, every character shown (`SQLConsole.destructiveQuestion`), as
+  an agent's write is.
 - **A console** (`SQLConsole`, `SQLConsoleView`, `EditorViewController+Database`):
   any `.sql` file in the editor, its connection remembered by its path; a
   connection's own console is a file in Overterm's folder. Under the text,
