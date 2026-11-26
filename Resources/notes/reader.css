@@ -99,3 +99,6 @@ details.callout[open] > .callout-title::after { transform: rotate(90deg); }
 /* An embedded Excalidraw drawing: its picture, as wide as the note allows. */
 .embed.drawing { padding: 8px 0; }
 .embed.drawing svg { display: block; max-width: 100%; height: auto; margin-top: 6px; }
+
+button.remote-image { display: inline-block; padding: 6px 10px; margin: 2px 0; border: 1px dashed var(--border, #888); border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: .85em; opacity: .8; cursor: pointer; }
+button.remote-image:hover { opacity: 1; }

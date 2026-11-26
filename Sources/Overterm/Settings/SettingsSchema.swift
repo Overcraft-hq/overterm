@@ -749,6 +749,11 @@ package enum SettingsSchema {
             help: "Notes open as Obsidian's Live Preview: headings, emphasis, links and tasks as they read, their markup shown only on the line you edit. Off: the Markdown as written.",
             kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled"),
         SettingSpec(
+            key: "notes.remoteImages", section: .notes, group: "Reading", title: "Load remote images",
+            help:
+                "A note's image on another server shows as a Load button: its server learns your address and when you read the note. On: each is fetched as the note shows — by Overterm, with no cookies. Video and audio elsewhere open in the browser.",
+            kind: .toggle, defaultValue: .bool(false), requires: "notes.enabled"),
+        SettingSpec(
             key: "notes.agentAccess", section: .notes, group: "Agents", title: "Agents can read the notes",
             help: "Claude Code started from Overterm gets MCP tools to search the vault and read a note. They never change a note.",
             kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled"),
