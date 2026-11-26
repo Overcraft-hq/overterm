@@ -20,6 +20,14 @@ final class TaskPromptTests: XCTestCase {
         XCTAssertEqual(wait.step(now: at(3.2), agentRunning: true, screen: "╭ Welcome\n> "), .deliver)
     }
 
+    func testABlankScreenInBetweenSettlesAnew() {
+        var wait = TaskPromptWait(started: start)
+        _ = wait.step(now: at(0.2), agentRunning: true, screen: "> ")
+        XCTAssertEqual(wait.step(now: at(1.2), agentRunning: true, screen: ""), .wait)
+        XCTAssertEqual(wait.step(now: at(1.6), agentRunning: true, screen: "> "), .wait, "changed 0.4 s ago, not 1.4")
+        XCTAssertEqual(wait.step(now: at(3.2), agentRunning: true, screen: "> "), .deliver)
+    }
+
     func testAnAgentThatGoesStartsTheWaitOver() {
         var wait = TaskPromptWait(started: start)
         _ = wait.step(now: at(1), agentRunning: true, screen: "> ")

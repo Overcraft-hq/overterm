@@ -38,7 +38,12 @@ package struct TaskPromptWait {
             return .wait
         }
         if agentSince == nil { agentSince = now }
-        guard let screen, !screen.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .wait }
+        guard let screen, !screen.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // A blank screen in between: what comes next settles anew.
+            self.screen = nil
+            screenSince = nil
+            return .wait
+        }
         if screen != self.screen {
             self.screen = screen
             screenSince = now
