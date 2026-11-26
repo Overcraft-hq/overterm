@@ -251,17 +251,40 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
         guard let json = raw as? String, let data = json.data(using: .utf8),
             let page = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { throw BrowserError.script("The page didn't answer.") }
+        return Self.describe(page)
+    }
+
+    /// The mask a secret field's value is given (MCP-G2).
+    package static let secretMask = "‹hidden›"
+
+    /// The snapshot as text. A field that holds a secret — a password, a
+    /// one-time code, a card's number, by its type, its `autocomplete` or
+    /// its name — says only whether it is filled: the script masks it, and
+    /// this masks it again whatever the page's own scripts did to that one.
+    /// Pure.
+    package static func describe(_ page: [String: Any]) -> String {
         var out = "Page: \(page["title"] as? String ?? "")\nURL: \(page["url"] as? String ?? "")\n"
         if let elements = page["elements"] as? [[String: Any]], !elements.isEmpty {
             out += "\nControls (use the ref):\n"
             for element in elements {
-                var line = "- [\(element["ref"] as? String ?? "")] \(element["role"] as? String ?? "") “\(element["name"] as? String ?? "")”"
-                if let value = element["value"] as? String, !value.isEmpty { line += " value=“\(value)”" }
+                let role = element["role"] as? String ?? ""
+                let name = element["name"] as? String ?? ""
+                var line = "- [\(element["ref"] as? String ?? "")] \(role) “\(name)”"
+                if let value = element["value"] as? String, !value.isEmpty {
+                    let secret = element["secret"] as? Bool == true || role.contains("[password]") || isSecretField(name: name)
+                    line += " value=“\(secret ? secretMask : value)”"
+                }
                 out += line + "\n"
             }
         }
         out += "\nText:\n\(page["text"] as? String ?? "")"
         return out
+    }
+
+    /// A field's name that says it holds a secret.
+    package static func isSecretField(name: String) -> Bool {
+        name.range(of: #"(?i)pass(word|code|phrase)?\b|\bpwd|\botp\b|one.?time|\bcvc|\bcvv|card.?number|security.?code|\bpin\b|secret|token|api.?key"#, options: .regularExpression)
+            != nil
     }
 
     package func click(ref: String) async throws {
@@ -373,8 +396,14 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
           if (el.type && el.tagName !== 'BUTTON') role += '[' + el.type + ']';
           const name = (el.getAttribute('aria-label') || el.innerText || el.placeholder || el.title || el.getAttribute('href') || el.name || '')
             .trim().replace(/\\s+/g, ' ').slice(0, 80);
-          const value = ('value' in el && el.tagName !== 'BUTTON' && el.type !== 'submit') ? String(el.value).slice(0, 80) : '';
-          elements.push({ref, role, name, value});
+          // A password, a one-time code, a card: only whether it is filled.
+          const auto = (el.getAttribute('autocomplete') || '').toLowerCase();
+          const said = [el.name, el.id, el.getAttribute('aria-label'), el.placeholder].filter(Boolean).join(' ');
+          const secret = el.type === 'password' || /password|one-time-code|cc-number|cc-csc|cc-exp/.test(auto)
+            || /pass(word|code|phrase)?\\b|\\bpwd|\\botp\\b|one.?time|\\bcvc|\\bcvv|card.?number|security.?code|\\bpin\\b|secret|token|api.?key/i.test(said);
+          const raw = ('value' in el && el.tagName !== 'BUTTON' && el.type !== 'submit') ? String(el.value) : '';
+          const value = secret ? (raw ? '‹hidden›' : '') : raw.slice(0, 80);
+          elements.push({ref, role, name, value, secret});
           if (elements.length >= 300) break;
         }
         const text = (document.body ? document.body.innerText : '').replace(/\\n{3,}/g, '\\n\\n').slice(0, 8000);
