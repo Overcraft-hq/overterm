@@ -89,12 +89,12 @@ package struct SnippetActions {
 /// What the Sessions panel asks the window to do.
 package struct SessionActions {
     /// Go to the tab it runs in, else resume it in a new tab there.
-    package var resume: (ClaudeSession) -> Void
+    package var resume: (AgentSession) -> Void
     /// Always a new tab, even when it runs somewhere.
-    package var resumeInNewTab: (ClaudeSession) -> Void
+    package var resumeInNewTab: (AgentSession) -> Void
     package var refresh: () -> Void
 
-    package init(resume: @escaping (ClaudeSession) -> Void, resumeInNewTab: @escaping (ClaudeSession) -> Void, refresh: @escaping () -> Void) {
+    package init(resume: @escaping (AgentSession) -> Void, resumeInNewTab: @escaping (AgentSession) -> Void, refresh: @escaping () -> Void) {
         self.resume = resume
         self.resumeInNewTab = resumeInNewTab
         self.refresh = refresh

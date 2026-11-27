@@ -1568,16 +1568,17 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     }
 
     /// The tab a session runs in, or — `inNewTab`, or not running — a new
-    /// tab in its directory with `claude --resume <id>`. `start: false`
-    /// opens the tab without typing it (the E2E scenarios; nothing else).
-    package func resume(_ session: ClaudeSession, inNewTab: Bool = false, start: Bool = true) {
+    /// tab in its directory with its agent's resume (`claude --resume <id>`,
+    /// `opencode --session <id>`). `start: false` opens the tab without
+    /// typing it (the E2E scenarios; nothing else).
+    package func resume(_ session: AgentSession, inNewTab: Bool = false, start: Bool = true) {
         if !inNewTab, let id = sessions.running[session.id], let tab = store.tabs.first(where: { $0.id == id }) {
             store.reveal(tab)
             focusSelectedTerminal()
             return
         }
-        guard let command = Agent.claudeResume(session: session.id, launch: Settings.shared.launch(for: .claude)) else { return }
-        newTab(in: URL(fileURLWithPath: session.directory), agent: .claude, startAgent: start, command: command)
+        guard let command = session.resumeCommand(Settings.shared.launch(for: session.agent)) else { return }
+        newTab(in: URL(fileURLWithPath: session.directory), agent: session.agent, startAgent: start, command: command)
     }
 
     // MARK: Clipboard confirmations

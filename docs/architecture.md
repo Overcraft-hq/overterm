@@ -872,6 +872,19 @@ in its directory. A click selects that tab, else opens one with
 `claude --resume <id>` (`Agent.claudeResume`, UUIDs only — it is typed into
 a shell).
 
+opencode's sessions are listed beside them (`AgentSessions.list`, newest
+first across both, 60 in all; `AgentSession` the row either way): from
+opencode's own SQLite database (`OpencodeSessions`, `$XDG_DATA_HOME` or
+`~/.local/share/opencode/opencode.db`, opened read-only, never in an
+isolated run) — top-level sessions only (no subagent's `parent_id`), not
+archived, kept by their `directory` as Claude's by `cwd`; "New session - …"
+is opencode's placeholder, so such a row shows the newest thing typed (its
+`part` rows). A tab's opencode, found in the same census snapshot as its
+Claude, is the newest of its sessions in its folder; a click opens
+`opencode --session <id>` with its launch (`ses_` and letters and digits
+only), Terraform's guard as any opencode launch has it. Codex, pi and Gemini
+CLI aren't listed yet.
+
 ## Review tabs (⇧⌘R)
 
 A branch, some commits or a pull request read as a reviewer reads them, in a
