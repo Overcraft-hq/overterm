@@ -2726,17 +2726,34 @@ package final class E2ERunner {
         try? await git(["commit", "-q", "--allow-empty", "-m", "init"], in: repo)
         app.newTab(in: repo)
         check("the worktree list follows the tab", await eventually { self.app.worktrees.main?.branch == "main" })
+        // Its setup (P05, D-7 (a)): an untracked .env copied, one that isn't
+        // there said, a command typed in the tab.
+        try? "API_KEY=e2e\n".write(to: repo.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+        var skipped: TaskSetupCopy.Report?
+        app.taskSetupRecorder = { skipped = $0 }
+        let setup = TaskSetup(copy: [".env", ".env.local"], command: "echo set-up > \(out("setup").path)")
         do {
-            try await app.createTask(repo: repo, branch: "feat/e2e-task", base: "main", agent: nil)
+            try await app.createTask(repo: repo, branch: "feat/e2e-task", base: "main", agent: nil, setup: setup)
         } catch {
             return check("createTask", false, error.localizedDescription)
         }
+        app.taskSetupRecorder = nil
         let path = scratch.appendingPathComponent("proj-wt-feat-e2e-task")
+        check(
+            "its untracked .env is copied in",
+            (try? String(contentsOf: path.appendingPathComponent(".env"), encoding: .utf8)) == "API_KEY=e2e\n")
+        check("one that isn't in the repository is said", skipped?.skipped.map(\.path) == [".env.local"], "\(String(describing: skipped))")
+        check(
+            "its setup command runs in the tab", await eventually(10) { contents(self.out("setup")) == "set-up" },
+            contents(out("setup")) ?? "nothing")
+        let status = (try? await Git.run(["status", "--porcelain", "--untracked-files=all"], in: repo)) ?? "unread"
+        check("nothing of Overterm's is written into the repository", status.trimmingCharacters(in: .whitespacesAndNewlines) == "?? .env", status)
         check("the worktree exists next to the repo", FileManager.default.fileExists(atPath: path.appendingPathComponent(".git").path))
         check("a tab opened in it, named after the branch", app.store.selected?.title == "feat/e2e-task" && app.store.selected?.workingDirectory == path.path)
         check("the worktree list shows it", await eventually { self.app.worktrees.worktrees.contains { $0.branch == "feat/e2e-task" } })
         await waitForPrompt()
         await runAndExpect("git branch --show-current > \(out("br").path)", file: out("br"), content: "feat/e2e-task", "its shell is on the new branch")
+        await taskTextChecks()
     }
 
     /// Snippets: a first run is empty; Run types and executes; placeholders ask.

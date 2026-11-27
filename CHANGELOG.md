@@ -19,6 +19,7 @@ version is tagged `v<version>`.
 - Every pane of a restored tab comes back with its own agent, and each Claude with its own conversation — two in one folder were both the newest
 - Sheets that delete leave Return on Cancel: the button that deletes takes a click, and where a name is typed, Return deletes once it matches
 - Docker's, Redis', the SQL console's, Files' and Overgit's questions that delete use the same sheet and say what they reach: the engine, the connection, the folder, the repository and branch. Docker's Clean Up leaves Return on Cancel too
+- New Task asks what the agent is to do and types it in once the agent is up; a repository's setup copies its untracked files (.env) into the new worktree and types a command before the agent
 
 ## 1.6.7 — 2026-11-23
 

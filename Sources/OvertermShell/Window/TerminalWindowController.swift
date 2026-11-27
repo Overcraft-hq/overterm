@@ -212,6 +212,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// A scenario's: a Docker link (a port pill's) handed here instead of
     /// the browser.
     package var dockerLinkRecorder: ((URL) -> Void)?
+    /// A scenario's: a New Task text not sent is said here, not in a sheet.
+    package var taskTextRecorder: ((TaskTextOutcome) -> Void)?
+    /// A scenario's: what New Task's setup didn't copy, said here.
+    package var taskSetupRecorder: ((TaskSetupCopy.Report) -> Void)?
     /// A scenario's: a link `openLink` would open — a pane pill's, Tab
     /// Info's — handed here with whether Settings ▸ Browser opens it in
     /// the browser column, instead of either browser.
@@ -1347,10 +1351,12 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// `startAgent: false` makes an agent tab without starting the agent
     /// (the E2E scenarios use it; nothing else should).
     /// `command`: what starts the agent, when not its plain command (a resume).
-    package func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true, command: String? = nil) {
+    /// `setup`: New Task's setup command, typed first — the agent only once
+    /// it succeeded (`TaskSetup.firstLine`).
+    package func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true, command: String? = nil, setup: String = "") {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let start = agent.map { agentCommand($0, base: command, in: directory) }
-        let input = startAgent ? start.map { $0.command + "\n" } : nil
+        let input = TaskSetup.firstLine(setup: setup, agent: startAgent ? start?.command : nil).map { $0 + "\n" }
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
         terminal.terraformAgentGuard = start?.launch ?? .none
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
@@ -1369,11 +1375,12 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
 
     /// An agent's tab (or a shell's), pinned as Terminal in this context
     /// pins one: New Task's, its agent's kubectl going to `kubePin`'s context.
-    package func newTab(in directory: URL, agent: Agent?, environment: [String: String], kubePin: KubeTerminalPin) {
+    package func newTab(in directory: URL, agent: Agent?, environment: [String: String], kubePin: KubeTerminalPin, setup: String = "") {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let start = agent.map { agentCommand($0, in: directory) }
         let terminal = TerminalView(
-            workingDirectory: directory.path, initialInput: start.map { $0.command + "\n" }, fontSize: fontSize, environment: environment, kubePin: kubePin)
+            workingDirectory: directory.path, initialInput: TaskSetup.firstLine(setup: setup, agent: start?.command).map { $0 + "\n" }, fontSize: fontSize,
+            environment: environment, kubePin: kubePin)
         terminal.terraformAgentGuard = start?.launch ?? .none
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
         followKubernetesPins()
@@ -2192,10 +2199,15 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 location: Settings.shared.worktreeLocation,
                 composeFile: Settings.shared.dockerEnabled ? ComposeProjects.composeFile(in: repo)?.lastPathComponent : nil,
                 kubernetes: Settings.shared.kubernetesEnabled ? { await Self.kubernetesTaskOffer(for: repo) } : nil,
-                onCreate: { [weak self] branch, base, agent, startStack, pin in
+                setup: TaskSetupStore.setup(for: repo),
+                onCreate: { [weak self] branch, base, agent, startStack, pin, task, setup in
                     guard let self else { return nil }
                     do {
-                        try await self.createTask(repo: repo, branch: branch, base: base, agent: agent, startStack: startStack, kubeContext: pin)
+                        if let problem = TaskSetup.commandProblem(setup.command) { return problem }
+                        // Kept for the next task of this repository, in Overterm's folder.
+                        if setup != TaskSetupStore.setup(for: repo) { try? TaskSetupStore.save(setup, for: repo) }
+                        try await self.createTask(
+                            repo: repo, branch: branch, base: base, agent: agent, startStack: startStack, kubeContext: pin, task: task, setup: setup)
                         close()
                         return nil
                     } catch {
@@ -3552,11 +3564,25 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// `kubeContext`: the tab pinned to it, as Terminal in this context
     /// pins one (3.11) — read and checked before the worktree is made, so a
     /// pin refused leaves nothing behind; its file written after it, so a
-    /// worktree that fails leaves none either.
-    package func createTask(repo: URL, branch: String, base: String, agent: Agent?, startStack: Bool = false, kubeContext: String? = nil) async throws {
+    /// worktree that fails leaves none either. `task`: what the agent is to
+    /// do, typed into it once it is up (`sendTaskText`); nothing for a shell.
+    package func createTask(
+        repo: URL, branch: String, base: String, agent: Agent?, startStack: Bool = false, kubeContext: String? = nil, task: String = "",
+        setup: TaskSetup = TaskSetup()
+    ) async throws {
+        if let problem = TaskSetup.commandProblem(setup.command) { throw TaskSetupProblem(message: problem) }
         var checked: (pin: KubeTerminalPin, kubeconfigs: [URL])?
         if let kubeContext { checked = try await kubernetesTaskPin(kubeContext, repo: repo) }
         let path = try await TaskCreator.create(repo: repo, branch: branch, base: base, location: Settings.shared.worktreeLocation)
+        // Its untracked files before anything runs in it (D-7 (a)): copied, never read.
+        // Off the main thread (a folder may be large), awaited before the tab: nothing starts before it is copied.
+        let copied: TaskSetupCopy.Report? =
+            setup.copy.isEmpty
+            ? nil
+            : await withCheckedContinuation { continuation in
+                let paths = setup.copy
+                DispatchQueue.global(qos: .utility).async { continuation.resume(returning: TaskSetupCopy.copy(paths, from: repo, into: path)) }
+            }
         // Its roots read before its agent starts: a production one denies it Terraform's writes (3.4).
         if agent != nil, Settings.shared.terraformAgentWriteGuard { await TerraformAgentGuards.shared.decide(path) }
         var pinned: (environment: [String: String], pin: KubeTerminalPin)?
@@ -3569,11 +3595,18 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             }
         }
         if let pinned {
-            newTab(in: path, agent: agent, environment: pinned.environment, kubePin: pinned.pin)
+            newTab(in: path, agent: agent, environment: pinned.environment, kubePin: pinned.pin, setup: setup.command)
         } else {
-            newTab(in: path, agent: agent)
+            newTab(in: path, agent: agent, setup: setup.command)
         }
         store.selected?.customTitle = branch
+        if let copied, !copied.skipped.isEmpty { tellTaskSetupSkipped(copied, branch: branch) }
+        // Its text waits for the agent on its own: the sheet closes now. A
+        // setup command (npm ci) may take a while before the agent starts.
+        if agent != nil, let text = TaskPromptWait.text(task), let tab = store.selected {
+            let timeout = setup.command.isEmpty ? TaskPromptWait.timeout : TaskPromptWait.timeoutAfterSetup
+            Task { @MainActor [weak self] in await self?.sendTaskText(text, to: tab, branch: branch, timeout: timeout) }
+        }
         await worktrees.refresh()
         await prepareTerraformWorktree(path)
         // Its own stack, in a tab beside it — the page's Up, which looks at
