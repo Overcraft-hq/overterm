@@ -146,6 +146,7 @@ extension E2ERunner {
             "\(String(describing: pr?.phase)) \(pr?.files.map(\.path) ?? [])")
         check("with its title", await eventually(5) { pr?.title == "#9 Speed up the server" }, pr?.title ?? "")
         check("a file's diff is its part of the patch", await eventually(5) { pr?.diffs["lib/new.go"]?.lines.contains { $0.text == "package lib" } == true })
+        if let pr { await reviewCommentsChecks(pr, posted: scratch.appendingPathComponent("posted-review.json")) }
 
         // On the base branch itself, with changes not yet committed: ⇧⌘R
         // reviews those (it said "nothing to review" — reported by hand).
@@ -211,6 +212,13 @@ extension E2ERunner {
             print(json.dumps({"number": 9, "title": "Speed up the server", "headRefName": "fast", "baseRefName": "main", "state": "OPEN",
                 "isDraft": False, "url": "https://github.com/o/r/pull/9", "statusCheckRollup": [], "body": "", "author": {"login": "me"},
                 "additions": 3, "deletions": 1, "changedFiles": 2, "comments": [], "reviews": []}))
+        elif args[:2] == ["api", "repos/{owner}/{repo}/pulls/9/comments"]:
+            print(json.dumps([{"id": 71, "path": "server.go", "line": 2, "side": "RIGHT", "body": "Is fast really faster?",
+                "user": {"login": "reviewer"}, "diff_hunk": "@@ -1,3 +1,3 @@\n+func fast() {}", "html_url": "https://github.com/o/r/pull/9#r71"}]))
+        elif args[:4] == ["api", "--method", "POST", "repos/{owner}/{repo}/pulls/9/reviews"] and "--input" in args:
+            import os, shutil
+            shutil.copyfile(args[args.index("--input") + 1], os.path.join(os.path.dirname(os.path.abspath(__file__)), "posted-review.json"))
+            print("{}")
         else:
             sys.stderr.write("fake gh: unexpected %s\n" % args)
             sys.exit(2)

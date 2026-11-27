@@ -224,6 +224,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// A scenario's: what a review's Send or Address This Thread would
     /// type, and the agent tabs it found in the checkout.
     package var reviewNotesRecorder: ((String, [Tab]) -> Void)?
+    /// A scenario's: Submit Review's question answered here — the decision
+    /// and summary, nil for Cancel.
+    package var reviewSubmitRecorder: (([ReviewDraftComment]) -> (ReviewComments.Event, String)?)?
     /// A scenario's: a New Task text not sent is said here, not in a sheet.
     package var taskTextRecorder: ((TaskTextOutcome) -> Void)?
     /// A scenario's: what New Task's setup didn't copy, said here.

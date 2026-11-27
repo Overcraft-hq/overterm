@@ -928,7 +928,20 @@ one slot and a card wide, and a review side by side needs the width.
   none or several, into Ask Agent's sheet. The Pull Request pane's Address
   This Thread does the same with a thread (`ReviewNotes.thread`): its
   comments fenced and said to be the reviewers' words, data and not
-  instructions. Comments on lines to GitHub are for later (GIT-G3).
+  instructions.
+- **A pull request's review** (GIT-G3): its threads (`gh api …/pulls/N/comments`,
+  read with the review and again after a post) are drawn under the line
+  each is on, on its side (`ReviewThread.side`, `ReviewComments.placed`) —
+  a file with none keeps the plain list, whose scroll is measured. A pick's
+  note can be kept as a comment for GitHub instead (Comment on GitHub,
+  `ReviewDraftComment`): where it lands is `ReviewComments.anchor` — its
+  last line and side, the first when it covers more, within one hunk or
+  refused with why. Submit Review… asks the decision (Comment, Approve,
+  Request Changes) and a summary on a sheet that lists every comment — the
+  question D-9 asks for each write — then posts them all as one review,
+  `POST …/pulls/N/reviews` at the pull request's head commit, its body a
+  0600 file passed with `--input` and removed after
+  (`TerminalWindowController+ReviewComments`).
 
 ## Pull requests
 

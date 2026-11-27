@@ -193,6 +193,9 @@ package struct ReviewThread: Equatable, Identifiable {
     package let context: [String]
     package let comments: [Comment]
     package let url: URL?
+    /// Which side of the diff `line` counts on: the new file's (RIGHT) or
+    /// the old one's (LEFT, a removed line's).
+    package var side: ReviewSide = .right
 
     /// `gh api repos/{owner}/{repo}/pulls/N/comments --paginate` → threads,
     /// by file then line. Pages come back as concatenated arrays.
@@ -211,7 +214,7 @@ package struct ReviewThread: Equatable, Identifiable {
             return ReviewThread(
                 id: rootID, path: root.path ?? "", line: root.line, context: Array(hunk.suffix(4)),
                 comments: all.map { Comment(id: $0.id, author: $0.user?.login ?? "ghost", body: $0.body, date: GH.date($0.created_at)) },
-                url: root.html_url.flatMap(URL.init))
+                url: root.html_url.flatMap(URL.init), side: root.side == "LEFT" ? .left : .right)
         }
         .sorted { ($0.path, $0.line ?? 0) < ($1.path, $1.line ?? 0) }
     }
@@ -315,6 +318,7 @@ package enum GH {
         package let created_at: String?
         package let html_url: String?
         package let diff_hunk: String?
+        package var side: String? = nil
     }
 
     /// `--paginate` prints one JSON array per page, back to back.
