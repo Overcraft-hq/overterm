@@ -1923,22 +1923,34 @@ driving it are in the same window as the code.
   this Mac's own — `localhost`, `127.0.0.1`, `[::1]`, `0.0.0.0`,
   `*.localhost`; `*.name`, `*` all). Any other http(s) host is asked
   through `MCPApprovals` — the tab and agent named, the URL without query,
-  fragment or credentials — once a run: allowed, not asked again; declined,
-  refused without asking, the agent reading why as a tool result
-  (`AgentHostRefused`, not a protocol error). `BrowserMCP` checks the URL
-  before navigate and a new tab, and the page's host before any tool reads
-  it or acts on it (snapshot, click, type, evaluate, console, screenshot,
-  reload; after a tab is picked). For the length of a call that can move
-  the page — navigate, click, type, evaluate, back, reload, a new tab —
-  `AgentBrowser.agentGuard` is set on every page of the tab: in
-  `BrowserSession`'s navigation policy a main-frame navigation to a host
-  it doesn't allow is cancelled before its request leaves (a link, a
-  form's POST, a script, a server's redirect) and kept
-  (`takeBlockedNavigation`); asked, a GET is then loaded, anything else is
-  left to the agent to do again — nothing was sent. A page that moves on
-  its own after the call (a timer) is caught by the next read. Pages on no
-  host (file:, about:, data:) are never asked, and the person's own use of
-  the column is never checked. Scenario `browserHosts`.
+  fragment or credentials — once a run and for every agent (the question
+  says so): allowed, not asked again; declined, refused without asking,
+  the agent reading why as a tool result (`AgentHostRefused`, not a
+  protocol error). Two calls about one host wait on one question.
+  `BrowserMCP` checks the URL before navigate and a new tab, the page's host
+  before any tool reads it or acts on it (snapshot, click, type, evaluate,
+  console, screenshot, reload; after a tab is picked; a tab closed), and
+  lists other tabs' unlisted addresses without their query. For a call that
+  can move the page — navigate, click, type, evaluate, back, reload, a new
+  tab — and `AgentHosts.guardTail` (2 s) after it, the page it acts on and
+  the pages that one opens are held (`AgentBrowser.holdAgentGuard`; holds
+  nest, so concurrent calls keep it until the last ends): in
+  `BrowserSession`'s navigation policy a main-frame navigation to a host it
+  doesn't allow is cancelled before its request leaves (a link, a form's
+  POST, a script, a server's redirect) and kept (`takeBlockedNavigation`);
+  asked, a GET is followed in the page it came from, still held, so a
+  redirect from there to a third host is stopped and asked too (three at
+  most); anything else is left to the agent to do again — nothing was sent.
+  What it doesn't cover, said plainly: a page that navigates on its own
+  later than the tail sends that request — the next read asks before the
+  agent sees the page; and only the top-level page is held — a frame's,
+  a `fetch`'s or an image's request from an allowed page goes out unasked
+  (a content rule list per call would be the next step). The person's own
+  loads (`BrowserSession.load`: the address bar, a terminal link, a
+  restored page) are never held, nor their other pages; a click of theirs
+  on the page an agent is acting on, within its call and tail, is held as
+  the agent's would be. Pages on no host (file:, about:, data:) are never
+  asked. Scenario `browserHosts`.
 
 ## API client (⌥⌘R, sidebar)
 

@@ -99,6 +99,20 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
     // MARK: Navigation
 
     package func load(_ url: URL) {
+        // Asked for by the person (or for them, or an agent's checked
+        // navigate): its own load is never held by an agent's guard.
+        personLoad = url
+        loadUnmarked(url)
+    }
+
+    /// A load the page itself made (a stopped navigation followed once
+    /// allowed): held by an agent's guard as the page's own are.
+    package func loadAsPage(_ url: URL) { loadUnmarked(url) }
+
+    /// The load `load` marked, until its navigation's policy is asked.
+    private var personLoad: URL?
+
+    private func loadUnmarked(_ url: URL) {
         if url.isFileURL {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
@@ -175,7 +189,8 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         if let open = onOpenPage { return open(configuration, navigationAction.request.url) }
-        if let url = navigationAction.request.url { load(url) }
+        // A page's window.open: the page's, so held like any of its navigations.
+        if let url = navigationAction.request.url { loadUnmarked(url) }
         return nil
     }
 
@@ -193,8 +208,15 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
         // An agent's step sending the page to a host it may not use: stopped
         // here, before the request leaves — a link, a form's POST, a script,
         // a server's redirect alike. A frame inside the page isn't the page.
-        if let allows = agentGuard, navigationAction.targetFrame?.isMainFrame ?? true, let url = navigationAction.request.url, !allows(url) {
-            onAgentBlocked?(BlockedNavigation(url: url, method: navigationAction.request.httpMethod ?? "GET"))
+        let mainFrame = navigationAction.targetFrame?.isMainFrame ?? true
+        let url = navigationAction.request.url
+        // The person's load (`load`), its first main-frame navigation: theirs, never held.
+        let personal = mainFrame && personLoad != nil && personLoad?.host == url?.host && personLoad?.port == url?.port
+        if mainFrame { personLoad = nil }
+        // Only the top-level page: a frame's, a fetch's or an image's request
+        // isn't a navigation of the page and isn't held here (docs/architecture.md).
+        if let allows = agentGuard, mainFrame, !personal, let url, !allows(url) {
+            onAgentBlocked?(BlockedNavigation(url: url, method: navigationAction.request.httpMethod ?? "GET", page: ObjectIdentifier(self)))
             decisionHandler(.cancel)
             // Nothing loads now: whoever waits for the load is told it is over.
             finishLoads()

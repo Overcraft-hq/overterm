@@ -82,12 +82,31 @@ private final class FakeBrowser: AgentBrowser {
     /// would: stopped when `agentGuard` says no.
     var clickSends: BlockedNavigation?
     var agentGuard: ((URL) -> Bool)?
+    var holds = 0
+    var releases: [TimeInterval] = []
     var blocked: BlockedNavigation?
+    /// Where a followed URL redirects next, as a server's 302 would.
+    var redirects: [String: URL] = [:]
     var currentURL: URL? { url }
     func takeBlockedNavigation() -> BlockedNavigation? {
         defer { blocked = nil }
         return blocked
     }
+    func holdAgentGuard(_ allows: @escaping (URL) -> Bool) {
+        holds += 1
+        agentGuard = allows
+    }
+    func releaseAgentGuard(after seconds: TimeInterval) { releases.append(seconds) }
+    func follow(_ blocked: BlockedNavigation, timeout: TimeInterval) async throws {
+        log.append("follow \(blocked.url.absoluteString)")
+        guard let next = redirects[blocked.url.absoluteString] else {
+            url = blocked.url
+            return
+        }
+        if agentGuard?(next) == false { self.blocked = BlockedNavigation(url: next, method: "GET") } else { url = next }
+    }
+    var tabURLs: [URL] = []
+    func url(ofTab index: Int) -> URL? { tabURLs.indices.contains(index) ? tabURLs[index] : nil }
 
     func navigate(_ url: URL, timeout: TimeInterval) async throws {
         log.append("navigate \(url.absoluteString)")
@@ -113,7 +132,10 @@ private final class FakeBrowser: AgentBrowser {
     func waitForLoad(timeout: TimeInterval) async throws {}
     var tabs = ["Home"]
     var current = 0
-    func tabsDescription() -> String { tabs.enumerated().map { "\($0 == current ? "*" : " ") [\($0)] \($1)" }.joined(separator: "\n") }
+    func tabsDescription(showing: (URL) -> String) -> String {
+        tabs.enumerated().map { index, tab in "\(index == current ? "*" : " ") [\(index)] \(URL(string: tab).flatMap { $0.scheme == nil ? nil : showing($0) } ?? tab)" }
+            .joined(separator: "\n")
+    }
     func openTab(_ url: URL?, timeout: TimeInterval) async throws {
         tabs.append(url?.absoluteString ?? "new")
         current = tabs.count - 1
@@ -513,8 +535,8 @@ final class BrowserAgentHostTests: XCTestCase {
         let followed = await call("browser_click", ["ref": "e2"])
         XCTAssertFalse(followed.error, followed.text)
         XCTAssertEqual(asked.count, 1)
-        XCTAssertEqual(browser.log.last, "navigate https://docs.example/page")
-        XCTAssertNil(browser.agentGuard, "held only for the call")
+        XCTAssertEqual(browser.log.last, "follow https://docs.example/page", "loaded in the page it came from, still held")
+        XCTAssertEqual(browser.releases, [AgentHosts.guardTail], "held for the call and a moment after, once released")
         // A form's POST: stopped and asked; allowed, the agent sends it again (nothing was sent).
         browser.url = URL(string: "http://localhost:3000/")
         browser.clickSends = BlockedNavigation(url: URL(string: "https://admin.shop.example/delete")!, method: "POST")
@@ -527,6 +549,41 @@ final class BrowserAgentHostTests: XCTestCase {
         let declined = await call("browser_click", ["ref": "e2"])
         XCTAssertTrue(declined.error && declined.text.contains("didn't allow third.example"), declined.text)
         XCTAssertEqual(browser.url?.host, "localhost")
+    }
+
+    func testAFollowedPageRedirectingToAThirdHostIsAskedToo() async {
+        browser.clickSends = BlockedNavigation(url: URL(string: "https://docs.example/page")!, method: "GET")
+        browser.redirects["https://docs.example/page"] = URL(string: "https://admin.shop.example/delete?id=1")!
+        answer = ""
+        _ = await call("browser_click", ["ref": "e2"])
+        XCTAssertEqual(asked.map(\.button), ["Allow docs.example", "Allow admin.shop.example"], "the redirect after allowing is stopped and asked")
+        XCTAssertEqual(browser.log.filter { $0.hasPrefix("follow") }.count, 2)
+    }
+
+    func testTwoCallsAboutOneHostAskOnce() async {
+        gate.ask = { [unowned self] confirmation in
+            self.asked.append(confirmation)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            return nil
+        }
+        let gate = self.gate
+        let first = Task { @MainActor in try? await gate.check(URL(string: "https://x.example/a")!, list: [], doing: "open a page") }
+        let second = Task { @MainActor in try? await gate.check(URL(string: "https://x.example/b")!, list: [], doing: "open a page") }
+        _ = await (first.value, second.value)
+        XCTAssertEqual(asked.count, 1, "one question, one answer for both")
+        XCTAssertEqual(gate.answers["x.example"], false)
+    }
+
+    func testTabsListShowsAnUnlistedHostWithoutItsQuery() async {
+        browser.tabs = ["http://localhost:3000/?a=1", "https://mail.example/inbox?token=SECRET"]
+        let listed = await call("browser_tabs")
+        XCTAssertTrue(listed.text.contains("http://localhost:3000/?a=1"), listed.text)
+        XCTAssertTrue(listed.text.contains("https://mail.example/inbox") && !listed.text.contains("SECRET"), listed.text)
+        // Closing the person's page on an unlisted host is asked too.
+        browser.tabURLs = [URL(string: "http://localhost:3000/")!, URL(string: "https://mail.example/inbox")!]
+        answer = nil
+        let closed = await call("browser_tab_close", ["index": 1])
+        XCTAssertTrue(closed.error && browser.tabs.count == 2, closed.text)
     }
 
     func testTheSettingWidensTheList() async {

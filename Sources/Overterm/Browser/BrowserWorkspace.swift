@@ -23,8 +23,14 @@ package final class BrowserWorkspace: ObservableObject {
     package func newPage(_ url: URL? = nil, configuration: WKWebViewConfiguration? = nil, select: Bool = true) -> BrowserSession {
         let page = BrowserSession(configuration: configuration)
         page.onOpenExternally = { [weak self] in self?.onOpenExternally?($0) }
-        // An agent's call holds every page of the tab, a popup it opens too.
-        page.agentGuard = { [weak self] url in self?.agentGuard?(url) ?? true }
+        // An agent's call holds the page it acts on and those that page
+        // opens (`holdAgentGuard`) — never the person's other pages.
+        let id = ObjectIdentifier(page)
+        if guardHolds > 0, configuration != nil { guardedPages.insert(id) }
+        page.agentGuard = { [weak self] url in
+            guard let self, self.guardHolds > 0, self.guardedPages.contains(id), let allows = self.guardAllows else { return true }
+            return allows(url)
+        }
         page.onAgentBlocked = { [weak self] in self?.blocked = $0 }
         page.onOpenPage = { [weak self] configuration, url in
             // window.open hands the page its URL itself; a plain _blank link
@@ -71,9 +77,11 @@ package final class BrowserWorkspace: ObservableObject {
     /// The page an agent's call is about: the one showing, made if none.
     private var current: BrowserSession { active ?? newPage() }
 
-    /// Set for the length of an agent's call (`AgentBrowser.agentGuard`).
-    package var agentGuard: ((URL) -> Bool)?
-    /// The navigation it stopped last.
+    /// An agent's guard (P11, `AgentBrowser.holdAgentGuard`): what it
+    /// allows, how many calls hold it, the pages it holds, what it stopped.
+    private var guardAllows: ((URL) -> Bool)?
+    private var guardHolds = 0
+    private var guardedPages: Set<ObjectIdentifier> = []
     private var blocked: BlockedNavigation?
 }
 
@@ -89,12 +97,14 @@ extension BrowserWorkspace: AgentBrowser {
     package func reload() { active?.reload() }
     package func waitForLoad(timeout: TimeInterval) async throws { try await active?.waitForLoad(timeout: timeout) }
 
-    package func tabsDescription() -> String {
+    package func tabsDescription(showing: (URL) -> String) -> String {
         guard !pages.isEmpty else { return "No pages open." }
         return pages.enumerated().map { index, page in
-            "\(index == activeIndex ? "*" : " ") [\(index)] \(page.title.isEmpty ? "(untitled)" : page.title) — \(page.url?.absoluteString ?? "about:blank")"
+            "\(index == activeIndex ? "*" : " ") [\(index)] \(page.title.isEmpty ? "(untitled)" : page.title) — \(page.url.map(showing) ?? "about:blank")"
         }.joined(separator: "\n")
     }
+
+    package func url(ofTab index: Int) -> URL? { pages.indices.contains(index) ? pages[index].url : nil }
 
     package func openTab(_ url: URL?, timeout: TimeInterval) async throws {
         let page = newPage()
@@ -116,5 +126,38 @@ extension BrowserWorkspace: AgentBrowser {
     package func takeBlockedNavigation() -> BlockedNavigation? {
         defer { blocked = nil }
         return blocked
+    }
+
+    package func holdAgentGuard(_ allows: @escaping (URL) -> Bool) {
+        // A new hold over none: what an earlier one stopped after its call is stale.
+        if guardHolds == 0 {
+            blocked = nil
+            guardedPages = []
+        }
+        guardHolds += 1
+        guardAllows = allows
+        guardedPages.insert(ObjectIdentifier(current))
+    }
+
+    package func releaseAgentGuard(after seconds: TimeInterval) {
+        guard seconds > 0 else { return endGuardHold() }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            self?.endGuardHold()
+        }
+    }
+
+    private func endGuardHold() {
+        guardHolds = max(0, guardHolds - 1)
+        guard guardHolds == 0 else { return }
+        guardAllows = nil
+        guardedPages = []
+    }
+
+    package func follow(_ blocked: BlockedNavigation, timeout: TimeInterval) async throws {
+        let page = pages.first { ObjectIdentifier($0) == blocked.page } ?? current
+        // Not the person's load: what it does next is held as the step's was.
+        page.loadAsPage(blocked.url)
+        try await page.waitForLoad(timeout: timeout)
     }
 }

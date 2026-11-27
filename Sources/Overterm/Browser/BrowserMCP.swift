@@ -14,20 +14,31 @@ package protocol AgentBrowser: AnyObject {
     func goBack()
     func reload()
     func waitForLoad(timeout: TimeInterval) async throws
-    /// The browser's own tabs: `[index] title — url`, `*` on the one showing.
-    func tabsDescription() -> String
+    /// The browser's own tabs: `[index] title — url`, `*` on the one
+    /// showing, each address as `showing` gives it (P11: an unlisted host's
+    /// without its query).
+    func tabsDescription(showing: (URL) -> String) -> String
+    /// A tab's address, by its index in `tabsDescription`.
+    func url(ofTab index: Int) -> URL?
     func openTab(_ url: URL?, timeout: TimeInterval) async throws
     func selectTab(_ index: Int) throws
     func closeTab(_ index: Int) throws
     /// The address of the page the tools act on now (P11: its host checked
     /// before an agent reads it or acts on it).
     var currentURL: URL? { get }
-    /// Set for the length of an agent's call: a main-frame navigation of
-    /// any page it answers false for is stopped before it is sent, and kept
-    /// for `takeBlockedNavigation` — a click, a form, a script, a redirect.
-    var agentGuard: ((URL) -> Bool)? { get set }
-    /// The navigation `agentGuard` stopped last, once.
+    /// Held while an agent's call runs, on the page it acts on and the
+    /// pages that one opens: a main-frame navigation `allows` says no to is
+    /// stopped before it is sent, and kept for `takeBlockedNavigation` — a
+    /// click, a form, a script, a redirect. A load the person asked for is
+    /// never held. Holds nest: concurrent calls keep it until the last ends.
+    func holdAgentGuard(_ allows: @escaping (URL) -> Bool)
+    /// One hold ends, `after` seconds from now.
+    func releaseAgentGuard(after seconds: TimeInterval)
+    /// The navigation the guard stopped last, once.
     func takeBlockedNavigation() -> BlockedNavigation?
+    /// Loads a stopped GET once allowed, in the page it came from — still
+    /// under the guard while held.
+    func follow(_ blocked: BlockedNavigation, timeout: TimeInterval) async throws
 }
 
 /// The Model Context Protocol, as Overterm's browser server speaks it:
@@ -142,6 +153,9 @@ package enum BrowserMCP {
             guard let value = arguments[key] as? String, !value.isEmpty else { throw ToolError(message: "\(name) needs “\(key)”.") }
             return value
         }
+        /// An address as the agent reads it in a list: whole on a host it
+        /// may use, else without its query, fragment or credentials.
+        func shown(_ url: URL) -> String { gate.allows(url, list: hosts) ? url.absoluteString : AgentHosts.shown(url) }
         /// P11: the page's host, before the agent reads it or acts on it.
         func onAllowedHost(_ doing: String) async throws {
             if let url = browser.currentURL { try await gate.check(url, list: hosts, doing: doing) }
@@ -151,22 +165,22 @@ package enum BrowserMCP {
         /// allowed, a GET is loaded, anything else is the agent's to do again.
         /// Nil when the page is where the step left it; else what the agent reads.
         func holding(_ body: () async throws -> Void) async throws -> String? {
-            browser.agentGuard = { [weak gate] url in gate?.allows(url, list: hosts) ?? false }
-            do {
-                try await body()
-            } catch {
-                browser.agentGuard = nil
-                _ = browser.takeBlockedNavigation()
-                throw error
+            browser.holdAgentGuard { [weak gate] url in gate?.allows(url, list: hosts) ?? false }
+            // Held a moment past the call: a page that sends itself elsewhere
+            // just after (a handler that awaits first) is stopped too.
+            defer { browser.releaseAgentGuard(after: AgentHosts.guardTail) }
+            try await body()
+            // Stopped, asked, followed — still held, so where it goes from
+            // there (a redirect to a third host) is stopped and asked too.
+            for _ in 0..<3 {
+                guard let blocked = browser.takeBlockedNavigation() else { return nil }
+                try await gate.check(blocked.url, list: hosts, doing: "follow the page where its step sent it")
+                guard blocked.method.uppercased() == "GET" else {
+                    return AgentHosts.repeatAfterAllowing(AgentHosts.host(of: blocked.url) ?? "", method: blocked.method.uppercased())
+                }
+                try await browser.follow(blocked, timeout: 20)
             }
-            browser.agentGuard = nil
-            guard let blocked = browser.takeBlockedNavigation() else { return nil }
-            try await gate.check(blocked.url, list: hosts, doing: "follow the page where its step sent it")
-            guard blocked.method.uppercased() == "GET" else {
-                return AgentHosts.repeatAfterAllowing(AgentHosts.host(of: blocked.url) ?? "", method: blocked.method.uppercased())
-            }
-            try await browser.navigate(blocked.url, timeout: 20)
-            return nil
+            return browser.takeBlockedNavigation() == nil ? nil : "The page kept sending itself to other hosts: stopped after three."
         }
         /// After an action the page may navigate or re-render: what it shows then.
         func settledSnapshot(_ action: () async throws -> Void) async throws -> [String: Any] {
@@ -232,12 +246,12 @@ package enum BrowserMCP {
             try await onAllowedHost("reload the page")
             return try await settledSnapshot { browser.reload() }
         case "browser_tabs":
-            return textResult(browser.tabsDescription())
+            return textResult(browser.tabsDescription(showing: shown))
         case "browser_tab_new":
             let url = (arguments["url"] as? String).flatMap { $0.isEmpty ? nil : BrowserLinks.url(fromTyped: $0) }
             if let url { try await gate.check(url, list: hosts, doing: "open a page") }
             if let said = try await holding({ try await browser.openTab(url, timeout: 20) }) { return textResult(said) }
-            guard url != nil else { return textResult(browser.tabsDescription()) }
+            guard url != nil else { return textResult(browser.tabsDescription(showing: shown)) }
             try await onAllowedHost("read the page")
             return textResult(try await browser.snapshot())
         case "browser_tab_select":
@@ -247,8 +261,9 @@ package enum BrowserMCP {
             return textResult(try await browser.snapshot())
         case "browser_tab_close":
             guard let index = arguments["index"] as? Int else { throw ToolError(message: "browser_tab_close needs “index”.") }
+            if let url = browser.url(ofTab: index) { try await gate.check(url, list: hosts, doing: "close a page") }
             try browser.closeTab(index)
-            return textResult(browser.tabsDescription())
+            return textResult(browser.tabsDescription(showing: shown))
         default:
             throw ToolError(message: "Unknown tool: \(name)")
         }

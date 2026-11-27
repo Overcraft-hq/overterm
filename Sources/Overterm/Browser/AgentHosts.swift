@@ -12,6 +12,11 @@ package enum AgentHosts {
     /// `browser.agentHosts`' default: this Mac's own addresses.
     package static let defaults = ["localhost", "127.0.0.1", "[::1]", "0.0.0.0", "*.localhost"]
 
+    /// How long the guard stays on the page after an agent's call (a
+    /// handler that awaits before it navigates). Past that, a page sending
+    /// itself elsewhere isn't stopped — the next read asks.
+    package static let guardTail: TimeInterval = 2
+
     /// The host a page at `url` is on, lowercased, as patterns match it;
     /// nil for a page on no host (file:, about:, data:, blob:,
     /// javascript:) — never asked.
@@ -73,7 +78,7 @@ package enum AgentHosts {
         WriteConfirmation(
             title: "Let the agent's browser use \(host)?",
             detail:
-                "It wants to \(doing): \(shown(url))\n\n\(host) isn't one of the hosts agents' browsers use without asking (Settings ▸ Browser ▸ Agents). The browser shares your cookies: where you are signed in on \(host), the agent is too. Allowed, it isn't asked again until Overterm quits.",
+                "It wants to \(doing): \(shown(url))\n\n\(host) isn't one of the hosts agents' browsers use without asking (Settings ▸ Browser ▸ Agents). The browser shares your cookies: where you are signed in on \(host), the agent is too. Allowed, no agent's browser is asked about it again until Overterm quits.",
             button: "Allow \(host)", cancel: "Don't Allow")
     }
 
@@ -96,10 +101,13 @@ package struct BlockedNavigation: Equatable, Sendable {
     /// GET is loaded again once allowed; anything else (a form's POST)
     /// only the agent can send again.
     package var method: String
+    /// The page it was stopped in (`BrowserSession`), where it is followed.
+    package var page: ObjectIdentifier?
 
-    package init(url: URL, method: String) {
+    package init(url: URL, method: String, page: ObjectIdentifier? = nil) {
         self.url = url
         self.method = method
+        self.page = page
     }
 }
 
@@ -119,8 +127,10 @@ package struct AgentHostRefused: LocalizedError {
 package final class AgentHostGate {
     package static let shared = AgentHostGate()
 
-    /// Each host's answer this run.
+    /// Each host's answer this run, for every agent.
     package private(set) var answers: [String: Bool] = [:]
+    /// Calls waiting on a question already open for their host: one question, one answer.
+    private var waiting: [String: [CheckedContinuation<Bool, Error>]] = [:]
     /// How a question is asked: `MCPApprovals` (nil: declined), a test's stand-in.
     package var ask: @MainActor (WriteConfirmation) async throws -> String? = { try await MCPApprovals.shared.ask($0) }
 
@@ -144,8 +154,21 @@ package final class AgentHostGate {
             if answer { return }
             throw AgentHostRefused(message: AgentHosts.declined(host))
         }
-        let allowed = try await ask(AgentHosts.question(host: host, url: url, doing: doing)) != nil
+        if waiting[host] != nil {
+            let allowed = try await withCheckedThrowingContinuation { waiting[host, default: []].append($0) }
+            if !allowed { throw AgentHostRefused(message: AgentHosts.declined(host)) }
+            return
+        }
+        waiting[host] = []
+        let allowed: Bool
+        do {
+            allowed = try await ask(AgentHosts.question(host: host, url: url, doing: doing)) != nil
+        } catch {
+            for other in waiting.removeValue(forKey: host) ?? [] { other.resume(throwing: error) }
+            throw error
+        }
         answers[host] = allowed
+        for other in waiting.removeValue(forKey: host) ?? [] { other.resume(returning: allowed) }
         if !allowed { throw AgentHostRefused(message: AgentHosts.declined(host)) }
     }
 }
