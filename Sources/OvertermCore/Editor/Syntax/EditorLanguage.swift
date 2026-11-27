@@ -195,5 +195,9 @@ package final class EditorLanguage: @unchecked Sendable {
             "hcl", "Terraform", extensions: ["tf", "tfvars", "hcl", "tofu", "nomad"],
             fileNames: [".terraform.lock.hcl", "terragrunt.hcl", "root.hcl"], aliases: ["terraform", "tf", "tfvars", "opentofu"],
             lineComment: "# ", blockComment: ("/*", "*/"), grammar: tree_sitter_hcl()),
+        // PHP with its HTML around it: Helix's queries inject `html` into the text outside `<?php`.
+        EditorLanguage(
+            "php", "PHP", extensions: ["php", "phtml", "php4", "php5", "phps", "inc", "ctp"], blockComment: ("/*", "*/"),
+            grammar: tree_sitter_php()),
     ]
 }

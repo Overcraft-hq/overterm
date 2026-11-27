@@ -127,6 +127,21 @@ final class SyntaxDocumentTests: XCTestCase {
         XCTAssertEqual(winner("# the env", in: tfvars), "comment", "\(tfvars)")
     }
 
+    /// PHP at Helix's pin: its own code coloured, the HTML around it by the injected HTML grammar.
+    func testPHP() {
+        let text = "<p>Hi</p>\n<?php\nfunction hello(string $name): string {\n    return \"Hi \" . $name; // greet\n}\n"
+        let found = spans(text, "index.php")
+        XCTAssertEqual(winner("function", in: found).map { $0.hasPrefix("keyword") }, true, "\(found)")
+        XCTAssertEqual(winner("hello", in: found).map { $0.hasPrefix("function") }, true, "\(found)")
+        XCTAssertEqual(winner("// greet", in: found), "comment", "\(found)")
+        XCTAssertEqual(winner("\"Hi \"", in: found).map { $0.hasPrefix("string") }, true, "\(found)")
+        XCTAssertNotNil(EditorLanguage.named("php")?.injections, "the injections query compiles")
+        for name in ["index.php", "view.phtml", "config.inc"] {
+            XCTAssertEqual(EditorLanguage.language(for: URL(fileURLWithPath: "/site/\(name)"))?.id, "php", name)
+        }
+        XCTAssertEqual(LanguageServers.spec(for: URL(fileURLWithPath: "/site/index.php"))?.id, "php")
+    }
+
     func testLanguageByFile() {
         for name in ["main.tf", "prod.tfvars", "main.tofu", "acme.tftest.hcl", ".terraform.lock.hcl", "terragrunt.hcl", "root.hcl", "job.nomad"] {
             XCTAssertEqual(EditorLanguage.language(for: URL(fileURLWithPath: "/acme/\(name)"))?.id, "hcl", name)
