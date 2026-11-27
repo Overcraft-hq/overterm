@@ -414,8 +414,8 @@ package enum SettingsSchema {
             kind: .choice([.init(value: "regular", label: "Regular"), .init(value: "compact", label: "Compact")]),
             defaultValue: .string("regular")),
         SettingSpec(
-            key: "general.sessions", section: .general, group: "Sidebar", title: "Claude sessions in the sidebar",
-            help: "Every conversation run in the repository, to resume. Off: no panel, and nothing reads the transcripts for it.",
+            key: "general.sessions", section: .general, group: "Sidebar", title: "Agent sessions in the sidebar",
+            help: "Every Claude Code and opencode conversation run in the repository, to resume. Off: no panel, and nothing reads Claude's transcripts or opencode's database for it.",
             kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "general.snippets", section: .general, group: "Sidebar", title: "Snippets",
@@ -699,7 +699,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "browser.agentControl", section: .browser, group: "Agents", title: "Agents can use the browser",
             help:
-                "Claude Code started from Overterm gets an MCP server for its tab's browser: open a page, read it, click, type, take a screenshot, read the console.",
+                "An agent started from Overterm that takes MCP servers — not pi; Gemini CLI unless a Gemini system defaults file is in place — gets an MCP server for its tab's browser: open a page, read it, click, type, take a screenshot, read the console.",
             kind: .toggle, defaultValue: .bool(true), requires: "browser.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "browser.agentHosts", section: .browser, group: "Agents", title: "Hosts an agent's browser uses without asking",
@@ -736,7 +736,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "api.agentControl", section: .api, group: "Agents", title: "Agents can use the API client",
             help:
-                "Claude Code started from Overterm gets MCP tools for its checkout's collection: list the requests, send one with its tests, send a one-off, run the collection.",
+                "An agent started from Overterm that takes MCP servers — not pi; Gemini CLI unless a Gemini system defaults file is in place — gets MCP tools for its checkout's collection: list the requests, send one with its tests, send a one-off, run the collection.",
             kind: .toggle, defaultValue: .bool(true), requires: "api.enabled", heldWhenEditedOutside: true),
     ]
 
@@ -761,7 +761,8 @@ package enum SettingsSchema {
             kind: .toggle, defaultValue: .bool(false), requires: "notes.enabled"),
         SettingSpec(
             key: "notes.agentAccess", section: .notes, group: "Agents", title: "Agents can read the notes",
-            help: "Claude Code started from Overterm gets MCP tools to search the vault and read a note. They never change a note.",
+            help:
+                "An agent started from Overterm that takes MCP servers — not pi; Gemini CLI unless a Gemini system defaults file is in place — gets MCP tools to search the vault and read a note. They never change a note.",
             kind: .toggle, defaultValue: .bool(true), requires: "notes.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "notes.agentDrawings", section: .notes, group: "Agents", title: "Agents can add drawings",
@@ -785,7 +786,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "database.agentAccess", section: .database, group: "Agents", title: "Agents can read the databases and buckets",
             help:
-                "Claude Code started from Overterm gets MCP tools to list your connections, read a schema, run a query that reads, and browse a bucket and read a file in it. Never a password or a key.",
+                "An agent started from Overterm that takes MCP servers — not pi; Gemini CLI unless a Gemini system defaults file is in place — gets MCP tools to list your connections, read a schema, run a query that reads, and browse a bucket and read a file in it. Never a password or a key.",
             kind: .toggle, defaultValue: .bool(true), requires: "database.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "database.agentWrites", section: .database, group: "Agents", title: "Agents can ask to write",
@@ -826,7 +827,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "docker.agentAccess", section: .docker, group: "Agents", title: "Agents can see Docker",
             help:
-                "Claude Code started from Overterm gets MCP tools to list the containers and compose projects, read a container's logs, inspect data and use. Env values that look like secrets are masked, and taken out of logs.",
+                "An agent started from Overterm that takes MCP servers — not pi; Gemini CLI unless a Gemini system defaults file is in place — gets MCP tools to list the containers and compose projects, read a container's logs, inspect data and use. Env values that look like secrets are masked, and taken out of logs.",
             kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "docker.agentWrites", section: .docker, group: "Agents", title: "Agents can ask to act",
@@ -901,7 +902,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "kubernetes.agentAccess", section: .kubernetes, group: "Agents", title: "Agents can read the clusters",
             help:
-                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, what pods and nodes use (metrics-server's), and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply (a manifest, its dry-run diff shown; on production only where the context sets applyOnProduction), each call asked first — on the agent's window when it is in front, else in the Inbox. None reads a Secret's values; what looks like a secret is taken out of every answer.",
+                "An agent started from Overterm that takes MCP servers — not pi; Gemini CLI unless a Gemini system defaults file is in place — gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, what pods and nodes use (metrics-server's), and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply (a manifest, its dry-run diff shown; on production only where the context sets applyOnProduction), each call asked first — on the agent's window when it is in front, else in the Inbox. None reads a Secret's values; what looks like a secret is taken out of every answer.",
             kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "kubernetes.agentWrites", section: .kubernetes, group: "Agents", title: "Contexts agents may change",
@@ -1000,7 +1001,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "terraform.agentAccess", section: .terraform, group: "Agents", title: "Agents can read the checkout's Terraform",
             help:
-                "Claude Code started from Overterm gets MCP tools for its own checkout: tf_roots (roots, classes, backends), tf_fmt_check, tf_validate (no credential; only where the root is initialised and its lock file committed — never init), tf_plan_summary and tf_plan_resource (Overterm's plan, or one it saved, masked: never a sensitive value), tf_run_status and tf_why. tf_plan runs a plan in Overterm: the root's providers and data sources run with your credentials, outside the agent's sandbox — so its first plan of each root this session is asked first — on the agent's window when it is in front, else in the Inbox —, naming the profile and what the code runs, and asked again when that grows; never on production. None applies, destroys or changes state.",
+                "An agent started from Overterm that takes MCP servers — not pi; Gemini CLI unless a Gemini system defaults file is in place — gets MCP tools for its own checkout: tf_roots (roots, classes, backends), tf_fmt_check, tf_validate (no credential; only where the root is initialised and its lock file committed — never init), tf_plan_summary and tf_plan_resource (Overterm's plan, or one it saved, masked: never a sensitive value), tf_run_status and tf_why. tf_plan runs a plan in Overterm: the root's providers and data sources run with your credentials, outside the agent's sandbox — so its first plan of each root this session is asked first — on the agent's window when it is in front, else in the Inbox —, naming the profile and what the code runs, and asked again when that grows; never on production. None applies, destroys or changes state.",
             kind: .toggle, defaultValue: .bool(true), requires: "terraform.enabled", heldWhenEditedOutside: true),
     ]
 

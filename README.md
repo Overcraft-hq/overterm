@@ -177,10 +177,10 @@ that says nothing (opencode) still marks its tab.
 | **Command blocks** | A command's output, time and exit; ⇧⌘C copies it, ⌘R reruns it, ⌥⌘↓ jumps to the next failure. |
 | **Palette** <kbd>⌘K</kbd> | Actions, tabs, worktrees, snippets — and what this machine has actually run, this folder's first. |
 | **Agent overview** <kbd>⇧⌘A</kbd> | Every agent tab as a card: what it is working on, what it last said, and whether it waits for you. |
-| **Claude sessions** | Every conversation ever run in the repository, in the sidebar — one click resumes it where it ran. |
+| **Agent sessions** | Every Claude Code and opencode conversation ever run in the repository, in the sidebar — one click resumes it where it ran. |
 | **Snippets** | Commands you keep, by name: pasted into the terminal or run, and found from ⌘K. |
 | **Browser** <kbd>⇧⌘B</kbd> | A column beside the terminal that agents drive over MCP — and the iOS simulator, live and clickable, in the same place. |
-| **Usage** <kbd>⌥⌘U</kbd> | What is left of Claude's and Codex's windows, and what the day would cost — read from their own files, nothing over the network. |
+| **Usage** <kbd>⌥⌘U</kbd> | What is left of Claude's and Codex's windows, and what the day would cost — read from their own files; Overterm calls no server itself. By default it runs Claude's own `/usage` every ten minutes while it is in front, which asks Claude's service (Settings ▸ General ▸ Usage turns that off). |
 | **⌘L** | The selection to an agent, with the command it came from, its exit code and the diff. |
 | **New Task** <kbd>⇧⌘N</kbd> | A worktree, a branch and an agent tab in one go — and its compose stack, on free ports if another worktree's has them. |
 | **Search** <kbd>⌘F</kbd> | The scrollback, the checkout's file names and their contents; ⌘-click a `path:line` to open it. |

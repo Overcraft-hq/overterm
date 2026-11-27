@@ -45,7 +45,7 @@ package struct PaneAgent: Equatable, Sendable {
                 else { continue }
                 let known: String?
                 if case .path(let path)? = facts?.folder { known = path } else { known = folder(identity) }
-                return PaneAgent(identity: identity, kind: kind, command: command, resumes: kind == .claude ? facts?.resumes : nil, folder: known)
+                return PaneAgent(identity: identity, kind: kind, command: command, resumes: kind == .claude || kind == .opencode ? facts?.resumes : nil, folder: known)
             }
         }
         return nil

@@ -276,7 +276,7 @@ private struct SessionListView: View {
 }
 
 private struct SessionRowView: View {
-    let session: ClaudeSession
+    let session: AgentSession
     let running: Bool
     let worktree: Worktree?
     @ObservedObject var theme: ChromeTheme
@@ -284,7 +284,7 @@ private struct SessionRowView: View {
     @State private var hovering = false
 
     private var title: String {
-        let text = session.activity.title ?? session.activity.lastPrompt ?? session.id
+        let text = session.title ?? session.lastPrompt ?? session.id
         return text.replacingOccurrences(of: "\n", with: " ")
     }
 
@@ -293,6 +293,11 @@ private struct SessionRowView: View {
             HStack(spacing: 5) {
                 if running {
                     Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6).help("Running in a tab")
+                }
+                if session.agent != .claude {
+                    // Which agent's, where it isn't Claude Code's.
+                    Image(systemName: session.agent.symbol).font(.system(size: ChromeMetrics.text(9))).foregroundStyle(theme.dimText)
+                        .help(session.agent.name)
                 }
                 Text(verbatim: title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1)
             }
@@ -311,7 +316,7 @@ private struct SessionRowView: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { actions.resume(session) }
-        .help(session.activity.lastPrompt.map { "You: \($0)" } ?? session.directory)
+        .help(session.lastPrompt.map { "You: \($0)" } ?? session.directory)
         .contextMenu {
             Button(running ? "Go to Its Tab" : "Resume") { actions.resume(session) }
             Button("Resume in a New Tab") { actions.resumeInNewTab(session) }
@@ -320,7 +325,9 @@ private struct SessionRowView: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(session.id, forType: .string)
             }
-            Button("Show Transcript in Finder") { NSWorkspace.shared.activateFileViewerSelecting([session.file]) }
+            if let file = session.file {
+                Button("Show Transcript in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+            }
         }
     }
 }
