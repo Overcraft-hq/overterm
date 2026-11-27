@@ -117,28 +117,40 @@ extension TerminalWindowController {
             checkDrift: { [weak self] card in self?.checkTerraformDrift(card) },
             test: { [weak self] card in self?.testTerraformRoot(card) },
             showTest: { [weak self] run in self?.showTerraformTest(run) },
-            chooseVarFiles: { [weak self] card in self?.chooseTerraformVarFiles(card) })
+            chooseVarFiles: { [weak self] card in self?.chooseTerraformVarFiles(card) },
+            typeInTerminal: { [weak self] card, line in self?.openTerraformTerminal(card, typing: line) },
+            openFileAt: { [weak self] url, line in self?.openInEditor(url, line: line) })
     }
 
     /// Terminal in this root (4.9): a shell tab at the root, its icon and
     /// header saying the root; no `TF_WORKSPACE` — the root's own
     /// `.terraform/environment` selects, as for any terminal there.
+    /// `typing`: the line a sentence that says "in a terminal" means
+    /// (`TerraformTerminalLine`, TF-U2), typed and never run.
     @discardableResult
-    package func openTerraformTerminal(_ card: TerraformRootCard) -> Tab? {
-        guard let tab = newTab(in: card.folder, environment: [:], kubePin: nil) else { return nil }
-        for pane in tab.terminals { pane.terraformRoot = card.name }
+    package func openTerraformTerminal(_ card: TerraformRootCard, typing: String? = nil) -> Tab? {
+        openTerraformTerminal(in: card.folder, name: card.name, typing: typing)
+    }
+
+    @discardableResult
+    package func openTerraformTerminal(in folder: URL, name: String, typing: String? = nil) -> Tab? {
+        guard let tab = newTab(in: folder, environment: [:], kubePin: nil, typing: typing) else { return nil }
+        for pane in tab.terminals { pane.terraformRoot = name }
         tab.objectWillChange.send()
         return tab
     }
 
-    /// The root's first configuration file in the editor, then validate
-    /// (stage 1a's: credentials stripped, nothing written).
+    /// The root's validate, from its card (TF-U11): the folder validated as
+    /// the editor's bar does it (credentials stripped, nothing written),
+    /// no file opened — its result on the card, which opens the first
+    /// failing file. A root with nothing terraform reads says so.
     package func validateTerraformRoot(_ card: TerraformRootCard) {
-        let names = ((try? FileManager.default.contentsOfDirectory(atPath: card.folder.path)) ?? []).sorted()
-        guard let name = names.first(where: { $0 == "main.tf" }) ?? names.first(where: { $0.hasSuffix(".tf") }) else { return }
-        let file = card.folder.appendingPathComponent(name)
-        openInEditor(file)
-        TerraformEditorModel.shared.folder(for: file).validate(manual: true)
+        guard let folder = TerraformRootValidation.folder(of: card) else {
+            NSSound.beep()
+            return alert("Nothing to validate", "\(card.name) has no .tf, .tf.json or .tofu file Overterm can read.")
+        }
+        folder.validate(manual: true)
+        terraformPanel.objectWillChange.send()
     }
 
     /// The switcher's rows: each root with its workspace and class; ↩ shows

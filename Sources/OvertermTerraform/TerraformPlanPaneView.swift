@@ -30,6 +30,8 @@ package struct TerraformPlanActions {
     package var testAgain: (TerraformTestRun) -> Void = { _ in }
     /// Force Unlock… (2e): the lock probed, the sheet, the root's name typed.
     package var forceUnlock: (TerraformPlanRun) -> Void = { _ in }
+    /// A terminal in the run's root with a line typed, never run (TF-U2).
+    package var typeInTerminal: (TerraformPlanRun, String) -> Void = { _, _ in }
 
     package init(
         planAgain: @escaping (TerraformPlanRun, TerraformCommands.LockWait) -> Void, discard: @escaping (TerraformPlanRun) -> Void, copySummary: @escaping (TerraformPlanRun) -> Void,
@@ -37,8 +39,10 @@ package struct TerraformPlanActions {
         showApply: @escaping (TerraformApplyRun) -> Void = { _ in }, chooseVarFiles: @escaping (TerraformPlanRun, [String]) -> Void, open: @escaping (URL, Int?) -> Void, close: @escaping () -> Void,
         apply: @escaping (TerraformPlanRun) -> Void = { _ in }, stopApply: @escaping (TerraformApplyRun) -> Void = { _ in },
         planMode: @escaping (TerraformPlanRun, TerraformPlanMode) -> Void = { _, _ in }, testAgain: @escaping (TerraformTestRun) -> Void = { _ in },
-        forceUnlock: @escaping (TerraformPlanRun) -> Void = { _ in }, editVarFiles: @escaping (TerraformPlanRun) -> Void = { _ in }
+        forceUnlock: @escaping (TerraformPlanRun) -> Void = { _ in }, editVarFiles: @escaping (TerraformPlanRun) -> Void = { _ in },
+        typeInTerminal: @escaping (TerraformPlanRun, String) -> Void = { _, _ in }
     ) {
+        self.typeInTerminal = typeInTerminal
         self.planAgain = planAgain
         self.discard = discard
         self.copySummary = copySummary
@@ -145,6 +149,16 @@ private struct TerraformRunView: View {
                 progress
             case .refused(let why):
                 message(why, color: red).accessibilityIdentifier("terraform.plan.refused")
+                if let line = TerraformTerminalLine.suggested(by: why) {
+                    Button {
+                        actions.typeInTerminal(run, line)
+                    } label: {
+                        Label(TerraformTerminalLine.title(line), systemImage: "terminal").font(.system(size: ChromeMetrics.text(11)))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(theme.accentText).help(TerraformTerminalLine.help)
+                    .padding(.horizontal, 12).padding(.bottom, 6)
+                    .accessibilityIdentifier("terraform.plan.typeInTerminal")
+                }
                 log
             case .failed(let why):
                 failure(why)

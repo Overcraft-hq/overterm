@@ -68,4 +68,6 @@ package protocol TerraformEditorHost: AnyObject {
     func askWhy(validateOf folder: TerraformFolder)
     /// Plan, from the editor's bar (TF-U5): asked as the panel's Plan is.
     func planFromEditor(_ card: TerraformRootCard, checkout: URL)
+    /// A terminal in `folder` with `line` typed, never run (TF-U2).
+    func typeInTerminal(_ line: String, in folder: URL)
 }

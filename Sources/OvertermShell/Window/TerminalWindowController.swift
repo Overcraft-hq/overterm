@@ -1436,10 +1436,13 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// context's `KUBECONFIG` — and pinned to `kubePin`'s context.
     /// `command`, when given, is typed as soon as its shell starts.
     @discardableResult
-    package func newTab(in directory: URL, environment: [String: String], kubePin: KubeTerminalPin?, running command: String? = nil) -> Tab? {
+    /// `typing`: a line typed at the prompt and left there — no Return, the person's to press.
+    package func newTab(in directory: URL, environment: [String: String], kubePin: KubeTerminalPin?, running command: String? = nil, typing: String? = nil)
+        -> Tab?
+    {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let terminal = TerminalView(
-            workingDirectory: directory.path, initialInput: command.map { $0 + "\n" }, fontSize: fontSize, environment: environment, kubePin: kubePin)
+            workingDirectory: directory.path, initialInput: command.map { $0 + "\n" } ?? typing, fontSize: fontSize, environment: environment, kubePin: kubePin)
         addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
         if kubePin != nil { followKubernetesPins() }
         return tab(containing: terminal)

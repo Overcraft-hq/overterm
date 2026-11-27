@@ -48,6 +48,12 @@ extension EditorViewController {
                     : { [weak self, weak folder] path in
                         guard let folder, let card = folder.roots.cards[path], let checkout = folder.roots.readCheckout else { return NSSound.beep() }
                         self?.terraformHost?.planFromEditor(card, checkout: checkout)
+                    },
+                typeInTerminal: terraformHost == nil
+                    ? nil
+                    : { [weak self, weak folder] line in
+                        guard let folder else { return }
+                        self?.terraformHost?.typeInTerminal(line, in: folder.url)
                     }))
         consoleHeight.constant = TerraformEditorBar.height
     }
@@ -208,6 +214,8 @@ package struct TerraformEditorBar: View {
     package var askWhy: (() -> Void)? = nil
     /// Plan the root at this path (TF-U5); nil where nobody can plan.
     package var plan: ((String) -> Void)? = nil
+    /// A terminal in the folder with a line typed (TF-U2): needs-init's.
+    package var typeInTerminal: ((String) -> Void)? = nil
 
     package static let height: CGFloat = 33
 
@@ -254,6 +262,11 @@ package struct TerraformEditorBar: View {
                 Text(verbatim: folder.state.text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(stateColor).lineLimit(1)
                     .truncationMode(.tail).help(folder.state.text)
                     .accessibilityIdentifier("terraform.editor.state")
+            }
+            if case .needsInit = folder.state, let typeInTerminal {
+                Button(TerraformTerminalLine.title(TerraformTerminalLine.initialize)) { typeInTerminal(TerraformTerminalLine.initialize) }
+                    .help(TerraformTerminalLine.help)
+                    .accessibilityIdentifier("terraform.editor.typeInit")
             }
             if failed, let askWhy {
                 Button("Ask Why") { askWhy() }

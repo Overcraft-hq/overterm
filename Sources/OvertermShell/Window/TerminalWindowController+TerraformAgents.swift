@@ -47,6 +47,11 @@ extension TerminalWindowController {
 // MARK: Ask Why on a failed validate (5.10)
 
 extension TerminalWindowController: TerraformEditorHost {
+    package func typeInTerminal(_ line: String, in folder: URL) {
+        openTerraformTerminal(in: folder, name: folder.lastPathComponent, typing: line)
+    }
+
+
     /// The folder's last validate as a brief (`TerraformAgentBrief`), in the
     /// Ask Agent sheet — the checkout's agents first.
     package func askWhy(validateOf folder: TerraformFolder) {
