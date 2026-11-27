@@ -250,24 +250,32 @@ package struct DiffLineView: View, Equatable {
     package let style: DiffLineStyle
     package let palette: DiffPalette
     @ObservedObject package var theme: ChromeTheme
+    /// Picked in a review (its lines' numbers clicked).
+    package let picked: Bool
+    /// A click on its numbers, with whether ⇧ was down — a review's; the
+    /// changes pane's lines have none.
+    package let onNumber: ((Bool) -> Void)?
 
-    package init(line: DiffLine, style: DiffLineStyle, palette: DiffPalette, theme: ChromeTheme) {
+    package init(
+        line: DiffLine, style: DiffLineStyle, palette: DiffPalette, theme: ChromeTheme, picked: Bool = false, onNumber: ((Bool) -> Void)? = nil
+    ) {
         self.line = line
         self.style = style
         self.palette = palette
         self._theme = ObservedObject(wrappedValue: theme)
+        self.picked = picked
+        self.onNumber = onNumber
     }
 
     /// The palette and theme are the app's for its life: a line is drawn
-    /// again only when its text or style changes, not on every refresh.
-    package nonisolated static func == (a: Self, b: Self) -> Bool { a.line == b.line && a.style == b.style }
+    /// again only when its text, style or pick changes, not on every refresh.
+    package nonisolated static func == (a: Self, b: Self) -> Bool { a.line == b.line && a.style == b.style && a.picked == b.picked }
 
     /// A long line wraps within the pane, under its own text: kept on one
     /// row it grew wider than the pane, was centred, and lost its start.
     package var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
-            number(line.oldNumber)
-            number(line.newNumber)
+            numbers
             text
                 .foregroundStyle(line.kind == .hunk || line.kind == .meta ? theme.dimText : theme.text)
                 .fixedSize(horizontal: false, vertical: true)
@@ -276,8 +284,17 @@ package struct DiffLineView: View, Equatable {
         .padding(.leading, 3)
         .padding(.vertical, 1)
         .frame(minHeight: 18)
-        .background(background)
-        .overlay(alignment: .leading) { Rectangle().fill(edge).frame(width: 3) }
+        .background(picked ? Color.accentColor.opacity(0.28) : background)
+        .overlay(alignment: .leading) { Rectangle().fill(picked ? Color.accentColor : edge).frame(width: 3) }
+    }
+
+    /// Both numbers; in a review, what a click picks the line by.
+    private var numbers: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            number(line.oldNumber)
+            number(line.newNumber)
+        }
+        .onTapGesture { onNumber?(NSEvent.modifierFlags.contains(.shift)) }
     }
 
     /// Syntax colours over the line's colour; the changed part marked.

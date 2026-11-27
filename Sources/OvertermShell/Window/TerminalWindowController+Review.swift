@@ -11,7 +11,11 @@ extension TerminalWindowController {
     package var reviewActions: ReviewActions {
         ReviewActions(
             openFile: { [weak self] review, file in self?.openReviewedFile(review, file) },
-            openOnGitHub: { NSWorkspace.shared.open($0) }, terraform: terraformReviewActions)
+            openOnGitHub: { NSWorkspace.shared.open($0) },
+            sendNotes: { [weak self] in self?.sendReviewNotes($0) },
+            noteRecipient: { [weak self] in self?.reviewNoteRecipient($0) },
+            askAboutLines: { [weak self] in self?.askAboutReviewLines($0) },
+            terraform: terraformReviewActions)
     }
 
     /// Opens a review tab — or the one already open for the same thing.

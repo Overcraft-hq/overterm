@@ -63,6 +63,7 @@ extension E2ERunner {
         check("n: the first change", review.scrollTarget == review.changes.first)
         press("n")
         check("n again: the second", review.scrollTarget == review.changes.dropFirst().first)
+        await reviewNotesChecks(review, repo: repo)
 
         // Side by side, the line between the sides drags: a real press on
         // it, in the window — the files' column is 290 pt and a 1 pt line.

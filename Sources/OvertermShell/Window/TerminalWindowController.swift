@@ -221,6 +221,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var pullRequestProblemRecorder: ((String) -> Void)?
     /// A scenario's: Check Out in a New Worktree's question answered here.
     package var pullRequestCheckoutRecorder: ((PullRequestCheckout) -> Bool)?
+    /// A scenario's: what a review's Send or Address This Thread would
+    /// type, and the agent tabs it found in the checkout.
+    package var reviewNotesRecorder: ((String, [Tab]) -> Void)?
     /// A scenario's: a New Task text not sent is said here, not in a sheet.
     package var taskTextRecorder: ((TaskTextOutcome) -> Void)?
     /// A scenario's: what New Task's setup didn't copy, said here.
@@ -693,7 +696,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     onReview: { [weak self] in self?.reviewPullRequest($0) },
                     onCreate: { [weak self] in self?.createPullRequest(nil) },
                     onCheckOut: { [weak self] in self?.checkOutShownPullRequest() },
-                    onWrite: { [weak self] write in Task { @MainActor in await self?.performPullRequestWrite(write) } }),
+                    onWrite: { [weak self] write in Task { @MainActor in await self?.performPullRequestWrite(write) } },
+                    onAddress: { [weak self] thread in self?.addressShownPullRequestThread(thread) }),
                 usage: UsageView(
                     model: usage, theme: theme, settings: .shared, onClose: { [weak self] in self?.toggleDiff(nil) }),
                 commit: CommitDetailView(
@@ -3070,6 +3074,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// terminal hidden under the page (lines picked in a log view answer
     /// it themselves: `LogLinesTextView`).
     @objc package func askAboutSelection(_ sender: Any?) {
+        if let review = shownReview { return askAboutReviewLines(review) }
         if let overlay = store.showingOverlay, let ask = pages[overlay]?.askAboutSelection {
             if !ask() { NSSound.beep() }
             return

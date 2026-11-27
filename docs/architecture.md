@@ -913,7 +913,22 @@ one slot and a card wide, and a review side by side needs the width.
   Review Pull Request), the changes pane's Review (Branch scope), Overgit
   (a commit's Review Commit / Select as Start of Review, a branch's Review
   Branch, a pull request's Review Changes), and the Compare, Commit and Pull
-  Request panes' headers. Comments on lines are for later.
+  Request panes' headers.
+- **Lines picked, notes** (P07): a click on a line's number picks it, ⇧-click
+  stretches the pick (`ReviewLineSelection`, by line ids — a range of them
+  is a run of the unified diff; a split row is picked when either half is).
+  No `.textSelection` — it cost 40% of every scroll step — so ⌘C copies the
+  pick (`ReviewHostingView.copy`, the file's text, no `+`/`-`), Esc lets go,
+  ⌘L hands it to Ask Agent. A note on the pick (`ReviewNote`: the lines as
+  they were, so a reload keeps it) goes into the review's list, and Send
+  types every note as one brief (`ReviewNotes.brief`: file, lines, the
+  lines fenced as a diff, what was said; diff text through
+  `Secrets.scrubCredentials`) into the checkout's agent tab
+  (`checkoutAgents(in:)`, none at a Terraform ask), never sent — or, with
+  none or several, into Ask Agent's sheet. The Pull Request pane's Address
+  This Thread does the same with a thread (`ReviewNotes.thread`): its
+  comments fenced and said to be the reviewers' words, data and not
+  instructions. Comments on lines to GitHub are for later (GIT-G3).
 
 ## Pull requests
 
