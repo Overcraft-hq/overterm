@@ -13,10 +13,14 @@ package struct NewTaskView: View {
     /// The contexts the task's tab may be pinned to (Terminal in this
     /// context, 3.11), read as the sheet opens; nil with Kubernetes off.
     package var kubernetes: (() async -> KubeTaskPin.Offer)?
+    /// The repository's setup as kept (`TaskSetupStore`): what the fields
+    /// start with; what they say at Create is kept for the next task.
+    package var setup = TaskSetup()
     /// Called with (branch, base, agent, start the stack, the context to
-    /// pin the tab to) — agent nil means a plain shell. Returns an error
-    /// message to show, or nil when the task was created.
-    package let onCreate: (String, String, Agent?, Bool, String?) async -> String?
+    /// pin the tab to, what the agent is to do, the repository's setup) —
+    /// agent nil means a plain shell. Returns an error message to show, or
+    /// nil when the task was created.
+    package let onCreate: (String, String, Agent?, Bool, String?, String, TaskSetup) async -> String?
     package let onCancel: () -> Void
 
     @State private var branch = ""
@@ -27,6 +31,10 @@ package struct NewTaskView: View {
     @State private var startStack = false
     @State private var offer: KubeTaskPin.Offer?
     @State private var pin: String?
+    @State private var task = ""
+    @State private var copyField = ""
+    @State private var setupCommand = ""
+    @State private var showsSetup = false
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -42,6 +50,13 @@ package struct NewTaskView: View {
                     ForEach(Agent.allCases) { Text($0.name).tag(Agent?.some($0)) }
                     Text("Shell only").tag(Agent?.none)
                 }
+                if let agent {
+                    // GIT-G11: what it is to do, typed into it once it is up.
+                    TextField("Task", text: $task, prompt: Text("What \(agent.name) should do — sent when it starts"), axis: .vertical)
+                        .lineLimit(3...8)
+                        .help("Typed into \(agent.name) once it is ready, then Return. Leave it empty to start \(agent.name) as before.")
+                        .accessibilityIdentifier("newTask.task")
+                }
                 if let composeFile {
                     Toggle("Start its compose stack (\(composeFile))", isOn: $startStack)
                         .help("docker compose up -d in the new worktree, in a tab, beside the other worktrees' stacks. A port another one holds is offered elsewhere first.")
@@ -56,6 +71,20 @@ package struct NewTaskView: View {
                         Text(verbatim: note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
+            }
+
+            // D-7 (a): kept in Overterm's folder for this repository, never in it.
+            DisclosureGroup("Setup for \(repo.lastPathComponent)", isExpanded: $showsSetup) {
+                Form {
+                    TextField("Copy", text: $copyField, prompt: Text(".env, .env.local"))
+                        .help("Untracked files of the repository copied into the new worktree — copied, never read. Only paths inside the repository.")
+                        .accessibilityIdentifier("newTask.copy")
+                    TextField("Then run", text: $setupCommand, prompt: Text("npm ci"))
+                        .help("Typed in the task's tab before its agent starts, which starts only if this succeeds.")
+                        .accessibilityIdentifier("newTask.setup")
+                }
+                .padding(.top, 4)
+                Text("Kept by Overterm for this repository, not in it.").font(.caption).foregroundStyle(.secondary)
             }
 
             Text(branch.isEmpty ? " " : TaskCreator.worktreePath(repo: repo, branch: branch, location: location).path)
@@ -82,6 +111,9 @@ package struct NewTaskView: View {
         .onAppear {
             base = defaultBase
             agent = defaultAgent
+            copyField = setup.copy.joined(separator: ", ")
+            setupCommand = setup.command
+            showsSetup = !setup.isEmpty
         }
         .task {
             guard let kubernetes else { return }
@@ -97,7 +129,8 @@ package struct NewTaskView: View {
         let branch = branch.trimmingCharacters(in: .whitespaces)
         let base = base.trimmingCharacters(in: .whitespaces)
         Task { @MainActor in
-            error = await onCreate(branch, base.isEmpty ? "HEAD" : base, agent, startStack, pin)
+            let setup = TaskSetup(copy: TaskSetup.paths(copyField), command: setupCommand.trimmingCharacters(in: .whitespaces))
+            error = await onCreate(branch, base.isEmpty ? "HEAD" : base, agent, startStack, pin, agent == nil ? "" : task, setup)
             working = false
         }
     }

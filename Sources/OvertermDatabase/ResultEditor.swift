@@ -160,7 +160,7 @@ package final class ResultEditor: ObservableObject {
         let confirmation = WriteConfirmation(
             title: "Save \(edits.count) change\(edits.count == 1 ? "" : "s") to \(table)?", scope: session.connection.name,
             detail: EditStatement.listing(statements) + notes.map { "\n\n" + $0 }.joined() + "\n\n" + note,
-            button: "Save")
+            button: "Save", destroys: !edits.deleted.isEmpty)
         guard await console.confirmWrite(confirmation) else { return }
         saving = true
         defer { saving = false }

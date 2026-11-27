@@ -67,7 +67,7 @@ extension TerminalWindowController {
         } else {
             answer = await WriteConfirmation(
                 title: sheet.title, scope: sheet.scope, production: sheet.production, detail: sheet.detail, button: sheet.button,
-                typedName: sheet.typedName, critical: sheet.production || sheet.typedName != nil
+                typedName: sheet.typedName, critical: sheet.production || sheet.typedName != nil, destroys: sheet.destroys
             ).ask(on: window)
         }
         guard let answer else { return .cancelled }
@@ -194,7 +194,9 @@ extension TerminalWindowController {
             if let recorder = self.terraformApplyQuestionRecorder {
                 answer = recorder(question)
             } else {
-                answer = await WriteConfirmation(title: question.title, detail: question.detail, button: question.button, critical: true).ask(on: self.window)
+                // "data loss may occur": Return is Cancel's (D-1).
+                answer = await WriteConfirmation(title: question.title, detail: question.detail, button: question.button, critical: true, destroys: true)
+                    .ask(on: self.window)
             }
             if answer != nil { apply.interruptAgain() }
         }

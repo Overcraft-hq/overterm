@@ -59,6 +59,14 @@ package struct DockerEndpoint: Equatable, Sendable {
         }
     }
 
+    /// What a question that deletes says it reaches (CON-U3): the engine,
+    /// and the context or host it was found by; a remote one by its host
+    /// first. Pure.
+    package func confirmationScope(runtime: DockerRuntime) -> String {
+        if let remoteHost { return "Remote engine on \(remoteHost) · \(source)" }
+        return "\(runtime.name) on this Mac · \(source)"
+    }
+
     /// What a `docker` command is given to reach this engine: the context
     /// it came from, else its host. Nothing for the default, which the CLI
     /// finds by itself.

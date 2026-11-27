@@ -165,10 +165,12 @@ package enum DatabaseMCP {
         // The one confirmation every write is asked with: all of the
         // statement, every character visible, and who asks (MCPAsker) —
         // in the calling pane's window.
+        // A DROP or a TRUNCATE leaves Return on Don't Run (D-1).
+        let danger = connection.kind.danger(of: statement)
         let confirmation = WriteConfirmation(
             title: "An agent wants to run this on “\(connection.name)”",
-            detail: VisibleText.displayed(statement) + (connection.kind.danger(of: statement).map { "\n\n\($0)" } ?? ""), button: "Run It",
-            cancel: "Don't Run", asker: await MCPAsker.current())
+            detail: VisibleText.displayed(statement) + (danger.map { "\n\n\($0)" } ?? ""), button: "Run It",
+            cancel: "Don't Run", asker: await MCPAsker.current(), destroys: danger != nil)
         let window = MCPAsker.window(forPane: MCPAsker.pane) ?? NSApp.windows.first(where: \.isVisible)
         if window != nil { NSApp.activate(ignoringOtherApps: true) }
         return await confirmation.ask(on: window) != nil

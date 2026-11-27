@@ -114,7 +114,7 @@ package enum DockerMCP {
             guard let action = string("action"), ["start", "stop", "restart", "pause", "unpause", "remove"].contains(action) else {
                 throw BrowserMCP.ToolError(message: "“action” is one of start, stop, restart, pause, unpause, remove.")
             }
-            guard await allow("An agent wants to \(action) “\(target.name)”", target.Image + " — " + target.Status) else {
+            guard await allow("An agent wants to \(action) “\(target.name)”", target.Image + " — " + target.Status, destroys: action == "remove") else {
                 throw BrowserMCP.ToolError(message: "The user declined.")
             }
             if action == "remove" {
@@ -137,7 +137,10 @@ package enum DockerMCP {
             await ComposePortStore.shared.refresh(for: project, endpoint: docker.endpoint)
             let command = try composeCommand(
                 project, action: action, service: service, endpoint: docker.endpoint, files: ComposePortStore.shared.files(for: project))
-            guard await allow("An agent wants to run compose \(action) on “\(project.name)”" + (service.map { " (\($0))" } ?? ""), command) else {
+            guard
+                await allow(
+                    "An agent wants to run compose \(action) on “\(project.name)”" + (service.map { " (\($0))" } ?? ""), command, destroys: action == "down")
+            else {
                 throw BrowserMCP.ToolError(message: "The user declined.")
             }
             let lasting = project.containers.filter { !$0.isOneOff && (service == nil || $0.composeService == service) }
@@ -243,14 +246,18 @@ package enum DockerMCP {
             "\(target.name): \(settings.summary)." + compose + (warnings.isEmpty ? "" : " Docker says: " + warnings.joined(separator: " ")))
     }
 
-    package static func allow(_ title: String, _ detail: String) async -> Bool {
+    /// `destroys`: a remove or a down — Return is "Don't"'s (D-1).
+    package static func allow(_ title: String, _ detail: String, destroys: Bool = false) async -> Bool {
         let shown = displayed(detail)
         // Who asks: the calling pane's tab and agent (MCPAsker).
         let asker = await MCPAsker.current()
         if let answer = askOverride { return answer(([title, asker].compactMap(\.self) + [shown]).joined(separator: "\n")) }
         // The one confirmation every write is asked with; all of it shown,
         // never cut — in the calling pane's window.
-        let confirmation = WriteConfirmation(title: title, detail: shown, button: "Allow", cancel: "Don't", asker: asker)
+        let docker = DockerModel.shared
+        let confirmation = WriteConfirmation(
+            title: title, scope: destroys ? docker.endpoint?.confirmationScope(runtime: docker.runtime) : nil, detail: shown, button: "Allow", cancel: "Don't",
+            asker: asker, destroys: destroys)
         let window = MCPAsker.window(forPane: MCPAsker.pane) ?? NSApp.windows.first(where: \.isVisible)
         if window != nil { NSApp.activate(ignoringOtherApps: true) }
         return await confirmation.ask(on: window) != nil

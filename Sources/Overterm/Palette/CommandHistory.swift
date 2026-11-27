@@ -49,7 +49,10 @@ package final class CommandHistory: ObservableObject {
     package init(url: URL = AppEnvironment.supportDirectory.appendingPathComponent("history.json")) {
         self.url = url
         if let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode([HistoryEntry].self, from: data) {
-            entries = saved
+            // One an earlier version kept may hold a secret: it goes, and
+            // the file is written again without it.
+            entries = saved.filter { !Self.carriesSecret($0.command) }
+            if entries.count != saved.count { scheduleSave() }
         } else {
             if FileManager.default.fileExists(atPath: url.path) { UnreadableFile.setAside(url) }
             entries = Self.fromShellHistory()
@@ -59,9 +62,12 @@ package final class CommandHistory: ObservableObject {
     /// A command that finished. The same command run again is the same
     /// entry, moved to the front with its new outcome — a list with
     /// `git status` in it forty times is not a history, it is a wall.
+    /// Never one typed with a space first (the shells' own way to keep a
+    /// line out of history), nor one that carries a secret (EDIT-G11).
     package func record(_ block: CommandBlock, folder: String?) {
+        guard !block.command.hasPrefix(" ") else { return }
         let command = block.command.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !command.isEmpty, !CommandLedger.isPrompt(command, cwd: folder) else { return }
+        guard !command.isEmpty, !CommandLedger.isPrompt(command, cwd: folder), !Self.carriesSecret(command) else { return }
         var next = entries
         let runs = (next.first { $0.command == command }?.runs ?? 0) + 1
         next.removeAll { $0.command == command }
@@ -71,6 +77,34 @@ package final class CommandHistory: ObservableObject {
                 runs: runs), at: 0)
         if next.count > Self.limit { next.removeLast(next.count - Self.limit) }
         entries = next
+        scheduleSave()
+    }
+
+    /// Whether `command` holds a secret the shared rules find: a flag's or
+    /// an assignment's value (`mysql -pgizli`, `export TOKEN=…`,
+    /// `--password x`), a URL's password, a bearer token or a key in a
+    /// header (`curl -H 'Authorization: …'`). Such a line is never kept: a
+    /// second copy of it in a file of Overterm's is one too many. Pure.
+    package nonisolated static func carriesSecret(_ command: String) -> Bool {
+        let words = ShellCommandLine.words(command)
+        if Secrets.maskArguments(words) != words { return true }
+        if Secrets.maskURLs(in: command) != command { return true }
+        if Secrets.scrubCredentials(command) != command { return true }
+        // A header with a secret's name, however it is quoted.
+        return command.range(of: #"(?i)\b(authorization|cookie|x-api-key|api-key|private-token)\s*:"#, options: .regularExpression) != nil
+    }
+
+    /// Out of the history, kept so.
+    package func forget(_ command: String) {
+        guard entries.contains(where: { $0.command == command }) else { return }
+        entries.removeAll { $0.command == command }
+        scheduleSave()
+    }
+
+    /// All of it, gone — the shell's own history is left alone and not
+    /// read again.
+    package func clear() {
+        entries = []
         scheduleSave()
     }
 
@@ -132,7 +166,7 @@ package final class CommandHistory: ObservableObject {
         // Newest last in the file, so walk it backwards.
         for line in text.components(separatedBy: "\n").reversed() {
             let command = Self.unextended(line)
-            guard !command.isEmpty, command.count < 400, seen.insert(command).inserted else { continue }
+            guard !command.isEmpty, command.count < 400, !carriesSecret(command), seen.insert(command).inserted else { continue }
             out.append(HistoryEntry(command: command, folder: nil, exit: nil, seconds: nil, lastRun: now, runs: 1))
             if out.count >= limit { break }
         }
@@ -164,5 +198,12 @@ package final class CommandHistory: ObservableObject {
         try? FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    /// Saved now, for a test: what `scheduleSave` would write.
+    package func saveNow() async {
+        saving?.cancel()
+        await write(entries, to: url)
     }
 }

@@ -247,7 +247,8 @@ package struct DatabaseServerView: View {
 
     private func ask(_ stop: SessionStop, _ session: DatabaseActivity) {
         let confirmation = WriteConfirmation(
-            title: stop.title, scope: model.name, detail: stop.command + "\n\n" + stop.effect, button: stop.button, cancel: "Don't")
+            title: stop.title, scope: model.name, detail: stop.command + "\n\n" + stop.effect, button: stop.button, cancel: "Don't",
+            destroys: stop.terminate)
         actions.confirm(confirmation) { _ in Task { await model.cancel(session, terminate: stop.terminate) } }
     }
 
@@ -530,7 +531,7 @@ package struct DatabaseUsersView: View {
                 + (sql
                     ? "\n\nType its name to drop it. What it owns must be dropped or reassigned first; the server says so if not."
                     : "\n\nType its name to drop it."),
-            button: "Drop", typedName: user.name, critical: true)
+            button: "Drop", typedName: user.name, critical: true, destroys: true)
         confirmation.cancel = "Cancel"
         actions.confirm(confirmation) { typed in
             // The name typed, or nothing is dropped.

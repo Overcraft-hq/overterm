@@ -215,6 +215,91 @@ extension TabStore {
         return strip.filter { if case .group(let g, _) = $0 { return g.id == id } else { return false } }
     }
 
+    // MARK: What the strip draws
+
+    /// The tabs the strip draws, in order: none of a stashed island's, none
+    /// of a collapsed one's, and while an island is focused only its own.
+    /// What moves between tabs or acts on "the other tabs" goes by these:
+    /// the keyboard never lands on a tab nobody can see, and a bulk verb
+    /// never reaches one silently.
+    package var drawnTabs: [Tab] {
+        focusedStrip.flatMap { piece -> [Tab] in
+            switch piece {
+            case .loose(let tab): [tab]
+            case .group(let group, let run): group.isCollapsed ? [] : run
+            }
+        }
+    }
+
+    package func isDrawn(_ tab: Tab) -> Bool { drawnTabs.contains { $0 === tab } }
+
+    /// The `index`th drawn tab (⌘1–9), the last for one past them.
+    package func select(drawnIndex index: Int) {
+        let drawn = drawnTabs
+        guard !drawn.isEmpty else { return }
+        select(drawn[min(max(index, 0), drawn.count - 1)])
+    }
+
+    /// Next/previous among the drawn tabs, wrapping. From a tab the strip
+    /// doesn't draw (it shouldn't be selected), the first or the last.
+    package func selectAdjacent(_ offset: Int) {
+        let drawn = drawnTabs
+        guard !drawn.isEmpty else { return }
+        guard let selected, let i = drawn.firstIndex(where: { $0 === selected }) else {
+            return select(offset >= 0 ? drawn[0] : drawn[drawn.count - 1])
+        }
+        let n = drawn.count
+        select(drawn[((i + offset) % n + n) % n])
+    }
+
+    /// Brings `tab` into the strip, then selects it — a notification's tab,
+    /// the next one wanting you: its island back from the shelf, expanded,
+    /// and focus left when it is elsewhere.
+    package func reveal(_ tab: Tab) {
+        if let group = group(of: tab) {
+            if group.isStashed {
+                group.isStashed = false
+                group.stashedAt = nil
+                objectWillChange.send()
+            }
+            if group.isCollapsed { setCollapsed(group, false) }
+        }
+        if let focused = focusedGroupID, tab.groupID != focused { setFocused(nil) }
+        select(tab)
+    }
+
+    /// Why each of `tabs` isn't in the strip, by island — what a question
+    /// about them says: `“shop-api” (stashed)`, `“web” (collapsed)`,
+    /// `“docs” and 2 loose tabs (outside the focused “api”)`. Empty when
+    /// all of them are drawn.
+    package func hiddenSummary(_ tabs: [Tab]) -> [String] {
+        let hidden = tabs.filter { !isDrawn($0) }
+        guard !hidden.isEmpty else { return [] }
+        var said: [String] = []
+        var outside: [String] = []
+        var loose = 0
+        var seen = Set<TabGroup.ID>()
+        for tab in hidden {
+            guard let group = group(of: tab) else {
+                loose += 1
+                continue
+            }
+            guard seen.insert(group.id).inserted else { continue }
+            if group.isStashed {
+                said.append("“\(group.name)” (stashed)")
+            } else if let focused = focusedGroupID, group.id != focused {
+                outside.append("“\(group.name)”")
+            } else {
+                said.append("“\(group.name)” (collapsed)")
+            }
+        }
+        if loose > 0 { outside.append(loose == 1 ? "a loose tab" : "\(loose) loose tabs") }
+        if !outside.isEmpty, let focused = focusedGroup {
+            said.append(outside.joined(separator: ", ") + " (outside the focused “\(focused.name)”)")
+        }
+        return said
+    }
+
     // MARK: Invariants
 
     /// Puts the tabs back in order: pinned first, then each group's tabs in

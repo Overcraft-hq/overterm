@@ -83,9 +83,11 @@ package final class InboxModel: ObservableObject {
                 note: ciSays ? tab.ciFailure?.note : tab.activity.note,
                 // Only a blocked agent is being asked anything; a finished
                 // one has a prompt on screen that is nobody's question. A
-                // Terraform write's is never offered as choices (3.3).
+                // Terraform write's is never offered as choices (3.3), and
+                // only a question with a choice marked is (AGT-G1): an
+                // answer ending in a numbered list gets Open Tab alone.
                 prompt: tab.activity.mark == .waiting && tab.terraformAsk == nil
-                    ? screen(tab).flatMap { TerraformPrompt.parse($0) == nil ? AgentPrompt.parse($0) : nil } : nil,
+                    ? screen(tab).flatMap { TerraformPrompt.parse($0) == nil ? AgentPrompt.question(in: $0) : nil } : nil,
                 since: tab.activity.mark == .waiting ? now : nil, asksWhy: !tab.kubeAlerts.isEmpty, terraform: tab.terraformAsk,
                 leftBehind: tab.activity.fromLeftBehind, ci: tab.ciFailure)
         }

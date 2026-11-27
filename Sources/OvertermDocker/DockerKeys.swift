@@ -6,7 +6,7 @@ import Foundation
 package enum DockerKey: String, ResourceKey {
     case details, toggleDetail, startStop, restart, pause, logs, followLogs, shell, debugShell, client, askAgent, inspect, files, open, database, vulnerabilities, settings, remove,
         composeUp, composeUpFreePorts, composeDown, checkUpdates, rebuild, watch, run, filter, cleanUp, containers, images, volumes, networks, builds, models,
-        help
+        apple, help
 
     /// The section a digit goes to.
     package var section: DockerPageModel.Section? {
@@ -17,6 +17,7 @@ package enum DockerKey: String, ResourceKey {
         case .networks: .networks
         case .builds: .builds
         case .models: .models
+        case .apple: .apple
         default: nil
         }
     }
@@ -57,6 +58,7 @@ package enum DockerKey: String, ResourceKey {
         case .networks: "4"
         case .builds: "5"
         case .models: "6"
+        case .apple: "7"
         case .help: "?"
         }
     }
@@ -96,6 +98,7 @@ package enum DockerKey: String, ResourceKey {
         case .networks: "Networks"
         case .builds: "Builds"
         case .models: "Models — Docker Model Runner's"
+        case .apple: "Apple Containers — Apple's container tool, when it is installed"
         case .help: "These keys"
         }
     }

@@ -173,7 +173,7 @@ extension TerminalWindowController {
         WriteConfirmation(
             title: confirmation.title, scope: confirmation.scope, production: confirmation.production, detail: confirmation.detail,
             button: confirmation.button, typedName: confirmation.typedName, image: confirmation.image,
-            critical: confirmation.production || confirmation.typedName != nil
+            critical: confirmation.production || confirmation.typedName != nil, destroys: confirmation.destroys
         ).presentAnswer(on: window, then: then)
     }
 

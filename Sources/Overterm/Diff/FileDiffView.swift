@@ -81,11 +81,16 @@ package struct FileCard: View {
     package var onStage: () -> Void = {}
     package var onDiscard: () -> Void = {}
     package let onOpen: () -> Void
+    /// A hunk's Stage, Unstage or Discard; nil, no buttons (a branch's
+    /// diff, a commit's).
+    package var onHunk: ((DiffModel.DiffHunk, DiffModel.HunkAction) -> Void)?
 
     package init(
         file: ChangedFile, diff: DiffModel.FileDiff?, collapsed: Bool, editable: Bool = false, theme: ChromeTheme, palette: DiffPalette, why: FileWhy = .none, onToggleWhy: @escaping () -> Void = {},
-        onToggle: @escaping () -> Void, onStage: @escaping () -> Void = {}, onDiscard: @escaping () -> Void = {}, onOpen: @escaping () -> Void
+        onToggle: @escaping () -> Void, onStage: @escaping () -> Void = {}, onDiscard: @escaping () -> Void = {}, onOpen: @escaping () -> Void,
+        onHunk: ((DiffModel.DiffHunk, DiffModel.HunkAction) -> Void)? = nil
     ) {
+        self.onHunk = onHunk
         self.file = file
         self.diff = diff
         self.collapsed = collapsed
@@ -126,8 +131,14 @@ package struct FileCard: View {
                     // Lazy: a file at the cap (DiffModel.maxDiffLines) built
                     // every line's view at once and froze the window ~9 s.
                     LazyVStack(alignment: .leading, spacing: 0) {
+                        if diff.unstagedFrom != nil, diff.startsStaged { sectionLabel("Staged") }
                         ForEach(diff.lines) { line in
-                            DiffLineView(line: line, style: diff.style(of: line), palette: palette, theme: theme).equatable()
+                            if line.id == diff.unstagedFrom { sectionLabel("Not staged") }
+                            if let hunk = diff.hunks[line.id], let onHunk {
+                                HunkHeader(line: line, hunk: hunk, theme: theme, onHunk: onHunk)
+                            } else {
+                                DiffLineView(line: line, style: diff.style(of: line), palette: palette, theme: theme).equatable()
+                            }
                         }
                         if diff.truncated {
                             Text("Diff truncated.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(8)
@@ -147,6 +158,18 @@ package struct FileCard: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.selected.opacity(0.55)))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.dimText.opacity(0.2)))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// Above a part of an uncommitted file's diff: whether it is staged.
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: ChromeMetrics.text(10), weight: .semibold))
+            .textCase(.uppercase)
+            .foregroundStyle(theme.dimText)
+            .padding(.horizontal, 8)
+            .padding(.top, 6)
+            .padding(.bottom, 2)
+            .accessibilityIdentifier("diff.section.\(text == "Staged" ? "staged" : "unstaged")")
     }
 
     private var header: some View {
@@ -286,5 +309,42 @@ package struct DiffLineView: View, Equatable {
             .foregroundStyle(theme.dimText.opacity(0.7))
             .frame(width: 32, alignment: .trailing)
             .padding(.trailing, 5)
+    }
+}
+
+/// A hunk's `@@` line, and what can be done to that hunk alone: a staged
+/// one unstaged; one not staged staged, or discarded (asked first).
+private struct HunkHeader: View {
+    let line: DiffLine
+    let hunk: DiffModel.DiffHunk
+    @ObservedObject var theme: ChromeTheme
+    let onHunk: (DiffModel.DiffHunk, DiffModel.HunkAction) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(verbatim: line.text).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 6)
+            switch hunk.side {
+            case .staged:
+                button("Unstage", .unstage, help: "Out of the index; the file keeps it")
+            case .unstaged:
+                button("Discard…", .discard, help: "Out of the file — asked first")
+                button("Stage", .stage, help: "This hunk alone into the index")
+            }
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 6)
+        .padding(.vertical, 2)
+        .frame(minHeight: 22)
+        .background(theme.selected.opacity(0.6))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("diff.hunk")
+    }
+
+    private func button(_ title: String, _ action: DiffModel.HunkAction, help: String) -> some View {
+        Button(title) { onHunk(hunk, action) }
+            .buttonStyle(.borderless)
+            .font(.system(size: ChromeMetrics.text(11), weight: .medium, design: .default))
+            .help(help)
     }
 }

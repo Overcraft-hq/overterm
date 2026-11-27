@@ -64,16 +64,15 @@ extension TerminalWindowController {
                 guard let open = $0.url?.standardizedFileURL.path, $0.document.isDirty else { return false }
                 return open == path || open.hasPrefix(path + "/")
             }.map(\.name) ?? []
-        let alert = NSAlert()
-        alert.messageText = "Move “\(url.lastPathComponent)” to the Trash?"
         var detail = isFolder ? "The folder and everything in it." : "You can put it back from the Trash."
         if !unsaved.isEmpty { detail += " Unsaved changes to \(unsaved.joined(separator: ", ")) will be lost." }
-        alert.informativeText = detail
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Move to Trash")
-        alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn, let self else { return }
+        // The shared sheet, where it is as its scope, Return on Cancel (D-1).
+        let asked = WriteConfirmation(
+            title: "Move “\(url.lastPathComponent)” to the Trash?",
+            scope: "In \((url.deletingLastPathComponent().path as NSString).abbreviatingWithTildeInPath)", detail: detail, button: "Move to Trash",
+            destroys: true)
+        asked.present(on: window) { [weak self] _ in
+            guard let self else { return }
             do {
                 try FileManager.default.trashItem(at: url, resultingItemURL: nil)
             } catch {

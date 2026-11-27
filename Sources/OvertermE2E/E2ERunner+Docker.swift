@@ -4047,6 +4047,7 @@ extension E2ERunner {
         await emulationChecks(fake)
         await modelsChecks(fake)
         await mcpToolkitChecks()
+        await appleContainersChecks()
         await agentChecks(fake, web: web)
         await remoteChecks(socket: socket, web: web, folder: folder)
         app.hideOverlay()

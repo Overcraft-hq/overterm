@@ -150,13 +150,6 @@ package final class TabStore: ObservableObject {
         selectedID = tabs[index].id
     }
 
-    /// Next/previous with wrap-around.
-    package func selectAdjacent(_ offset: Int) {
-        guard let i = selectedIndex, !tabs.isEmpty else { return }
-        let n = tabs.count
-        select(index: ((i + offset) % n + n) % n)
-    }
-
     /// Where each tab is drawn in the strip (top-left origin), so the window
     /// can tell which tab a right-click landed on.
     package var tabFrames: [Tab.ID: CGRect] = [:]

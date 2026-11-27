@@ -1275,12 +1275,15 @@ package final class E2ERunner {
             }, app.editor?.document.url?.path ?? "nothing open")
 
         app.trashItem(readme)
-        check("Move to Trash… asks first", await eventually(2) { self.window.attachedSheet != nil && self.clickSheetButton("Move to Trash") })
+        check("Move to Trash… asks first", await eventually(2) { self.window.attachedSheet != nil })
+        trashSheetKeys()
+        check("…a click moves it", clickSheetButton("Move to Trash"))
         check(
             "…then it is gone, and so is its tab",
             await eventually(3) {
                 !FileManager.default.fileExists(atPath: readme.path) && self.app.editor?.buffers.contains { $0.url?.lastPathComponent == "README.md" } != true
             })
+        await destructiveSheetChecks()
     }
 
     /// The editor as Zed's: zoomed, tabs, tree-sitter (markdown too), Zed's
@@ -1496,6 +1499,7 @@ package final class E2ERunner {
         check("the commit is in git", log == "e2e commit", log ?? "nil")
         check("the badge clears", app.diff.totals.added == 0)
         check("to a plain ±, still there to open the pane", app.diff.badge == .plain, "\(String(describing: app.diff.badge))")
+        await hunkStagingChecks(repo)
         check("View ▸ Changes again closes it", perform(changes) && app.diffItem?.isCollapsed == true)
         check("and it is no longer ticked", changes.state == .off)
     }
@@ -2217,9 +2221,9 @@ package final class E2ERunner {
              41 +   const event = verifySignature(body, headers)
 
             Do you want to make this edit?
-            1. Yes
-            2. Yes, and don't ask again this session
-            3. No, and tell Claude what to do differently
+            ❯ 1. Yes
+              2. Yes, and don't ask again this session
+              3. No, and tell Claude what to do differently
             """
         try? question.write(to: out("prompt.txt"), atomically: true, encoding: .utf8)
         type("cat \(out("prompt.txt").path)")
@@ -2257,8 +2261,91 @@ package final class E2ERunner {
             },
             String((agent.terminal.visibleText ?? "").suffix(60)).debugDescription)
 
+        // An answer that ends in a numbered list, then a notification: no
+        // question, so no button that would type "1" into its prompt (AGT-G1).
+        let answer = """
+            Three ways to fix it:
+            1. Verify the signature first.
+            2. Reject an event older than five minutes.
+            3. Log the raw body.
+            """
+        try? answer.write(to: out("answer.txt"), atomically: true, encoding: .utf8)
+        agent.terminal.insertText("clear; cat \(out("answer.txt").path)")
+        agent.terminal.pressReturn()
+        let shown = await eventually(10) { (agent.terminal.visibleText ?? "").contains("3. Log the raw body.") }
+        check("the answer is on its screen", shown, String((agent.terminal.visibleText ?? "").suffix(300)).debugDescription)
+        _ = agent.activity.agentAnswered()
+        agent.activity.handle(.notification(title: "Claude", body: "is waiting for your input"), visible: false)
+        app.refreshInbox()
+        check(
+            "an answer's numbered list is no question: the card has no answers",
+            app.inbox.entries.first { $0.id == agent.id }.map { $0.prompt == nil } == true,
+            (app.inbox.entries.first?.prompt?.question ?? "no entry") + " / " + String((agent.terminal.visibleText ?? "").suffix(400)).debugDescription)
+
+        await askingPane(agent, shell: shell)
+
         app.toggleInbox(nil)
         check("⌘I closes it again", app.inboxItem?.isCollapsed == true)
+    }
+
+    /// The pane that asks is the one read and answered (AGT-G2): a split's
+    /// second pane asks while the first has the keyboard; its question is
+    /// the card's, the answer goes there, and a card whose question has
+    /// left the screen types nothing.
+    private func askingPane(_ agent: Tab, shell: Tab) async {
+        app.store.select(agent)
+        let first = agent.terminal
+        app.split(first, .right)
+        guard agent.terminals.count == 2, let second = agent.terminals.first(where: { $0 !== first }) else {
+            return check("the agent tab splits", false, "\(agent.terminals.count)")
+        }
+        app.window?.makeFirstResponder(first)
+        agent.focus(first)
+        await eventually(8) { (second.visibleText ?? "").contains("%") || (second.visibleText ?? "").contains("$") }
+        app.store.select(shell)
+        agent.activity.seen()
+        let question = """
+            Do you want to run this command?
+            $ make deploy
+            ❯ 1. Yes
+              2. No, and tell Claude what to do differently
+            """
+        try? question.write(to: out("pane-prompt.txt"), atomically: true, encoding: .utf8)
+        // The question, then the agent's notification (OSC 777), from the second pane.
+        second.insertText("clear; cat \(out("pane-prompt.txt").path); printf '\\033]777;notify;Claude;needs your permission\\a'")
+        second.pressReturn()
+        check(
+            "the second pane's notification marks the tab",
+            await eventually(10) { agent.activity.mark == .waiting && (second.visibleText ?? "").contains("2. No, and tell") },
+            "\(agent.activity.mark)")
+        check("it is the pane that asks", agent.askingPane === second && agent.terminal === first)
+        app.refreshInbox()
+        guard let entry = app.inbox.entries.first(where: { $0.id == agent.id }), let prompt = entry.prompt else {
+            return check("the card reads the asking pane's question", false, app.inbox.entries.map(\.headline).joined(separator: " | "))
+        }
+        check("the card reads the asking pane's question", prompt.question == "Do you want to run this command?", prompt.question)
+
+        func arrived(_ pane: TerminalView) -> Int {
+            let text = pane.visibleText ?? ""
+            return text.components(separatedBy: "command not found: 1").count - 1 + text.components(separatedBy: "no such entry in dir stack").count - 1
+        }
+        let before = arrived(first)
+        app.answer(prompt.choices[0], in: entry.id)
+        check(
+            "the answer goes to the pane that asked",
+            await eventually(8) { arrived(second) == 1 }, String((second.visibleText ?? "").suffix(80)).debugDescription)
+        check("not the one with the keyboard", arrived(first) == before, String((first.visibleText ?? "").suffix(80)).debugDescription)
+
+        // The card is stale once its question has left the screen.
+        second.insertText("clear")
+        second.pressReturn()
+        let gone = await eventually(8) { !(second.visibleText ?? "").contains("make deploy") }
+        check("the question has left the screen", gone, String((second.visibleText ?? "").suffix(80)).debugDescription)
+        app.answer(prompt.choices[0], in: entry.id)
+        await pause(1)
+        check(
+            "a card whose question has gone types nothing", arrived(second) == 0 && arrived(first) == before,
+            String((second.visibleText ?? "").suffix(80)).debugDescription)
     }
 
     /// The command ledger, against a real shell: libghostty gives no
@@ -2448,6 +2535,22 @@ package final class E2ERunner {
         app.toggleFocus(on: group)
         check("and leaving focus brings them back", app.store.focusedStrip.count == 2, "\(app.store.focusedStrip.count)")
 
+        // A notification's tab outside the focused island leaves focus —
+        // the window's too: what waited is let go, the bar goes.
+        app.toggleFocus(on: group)
+        app.notifyUnlessHeld(loose, note: "done")
+        check("another island's notice waits while focused", app.focus.held.count == 1, "\(app.focus.held.count)")
+        app.reveal(tabID: loose.id)
+        check(
+            "revealing a tab outside the focus leaves it",
+            app.store.focusedGroupID == nil && !app.focus.isFocusing && app.focus.held.isEmpty,
+            "store \(app.store.focusedGroupID != nil), window \(app.focus.isFocusing), held \(app.focus.held.count)")
+        check("and its bar goes", app.groupBars?.isHidden == true)
+        app.toggleFocus(on: group)
+        check("focusing again starts clean", app.focus.isFocusing && app.focus.held.isEmpty)
+        app.toggleFocus(on: group)
+        app.store.select(loose)
+
         // Broadcast types one line into every tab of the island.
         app.beginBroadcast(to: group)
         check("broadcast names its targets", app.broadcast.summary == "Broadcasting to 2 tabs in \(group.name)", app.broadcast.summary)
@@ -2456,6 +2559,17 @@ package final class E2ERunner {
         check(
             "into every tab", await eventually(8) { contents(self.out("broadcast")) == "grouped" },
             contents(out("broadcast")) ?? "missing")
+        // A tab whose agent asks is left out, by name (TERM-G1): a Return
+        // there would take its marked answer.
+        _ = second.activity.agentAsked("Do you want to run this command?", visible: false)
+        app.broadcast.refresh()
+        check(
+            "a tab whose agent asks is left out, said by name",
+            app.broadcast.targets.map(\.title) == [first.title] && app.broadcast.summary.hasSuffix("— not to “\(second.title)” (its agent asks)"),
+            app.broadcast.summary)
+        _ = second.activity.agentAnswered()
+        app.broadcast.refresh()
+        check("answered, it is a target again", app.broadcast.targets.count == 2, app.broadcast.summary)
         app.stopBroadcast()
 
         // Stashing takes the island out of the strip and leaves it running.
@@ -2466,6 +2580,7 @@ package final class E2ERunner {
             "\(app.store.strip.map { $0.tabs.map(\.title) })")
         check("its tabs are still there", app.store.tabs(in: group).count == running)
         check("and it says how long ago", TabGroup.stashedAgo(Date()) == "just now")
+        await stripHiddenTabsChecks(group, loose: loose)
         app.restoreGroup(group)
         check(
             "restoring brings it back", app.store.strip.map(\.tabs.count) == [2, 1],
@@ -2538,8 +2653,9 @@ package final class E2ERunner {
     /// A prepared session comes back; changes are autosaved.
     private func session() async {
         let tabs = app.store.tabs
-        check("both saved tabs restored", tabs.count == 2, "\(tabs.count)")
-        guard tabs.count == 2 else { return }
+        check("every saved tab restored", tabs.count == 6, "\(tabs.count)")
+        guard tabs.count == 6 else { return }
+        resumedAgents(Array(tabs[2...]))
         check("pinned first, with its colour and name", tabs[0].isPinned && tabs[0].color == .green && tabs[0].title == "pinned one")
         check("the selection is restored", app.store.selectedIndex == 1)
         let cwd = ProcessInfo.processInfo.environment["OVERTERM_E2E_CWD"]
@@ -2554,9 +2670,9 @@ package final class E2ERunner {
             check("at the saved size", abs(share - 0.3) < 0.02, "\(share)")
         }
         tabs[1].customTitle = "renamed"
-        let saved = await eventually(4) { SessionState.load()?.tabs.last?.customTitle == "renamed" }
+        let saved = await eventually(4) { SessionState.load()?.tabs[1].customTitle == "renamed" }
         check("a change is autosaved", saved)
-        check("with the panes", SessionState.load()?.tabs.last?.panes != nil && SessionState.load()?.tabs.last?.focusedPane == 1)
+        check("with the panes", SessionState.load()?.tabs[1].panes != nil && SessionState.load()?.tabs[1].focusedPane == 1)
 
         // A working agent changes its tab many times a second; a change
         // elsewhere must still be saved meanwhile, not after a quiet second.
@@ -2569,8 +2685,37 @@ package final class E2ERunner {
         tabs[1].customTitle = "renamed while busy"
         check(
             "a change is saved while another tab keeps changing",
-            await eventually(4) { SessionState.load()?.tabs.last?.customTitle == "renamed while busy" })
+            await eventually(4) { SessionState.load()?.tabs[1].customTitle == "renamed while busy" })
         churn.cancel()
+    }
+
+    /// Each pane comes back with its own agent, Claude with its own
+    /// conversation (TERM-G2): two Claudes in one folder are two, a
+    /// split's second pane resumes too, and an older file's tab its
+    /// agent's last conversation. Recorded, never typed — no real agent
+    /// starts from a scenario.
+    private func resumedAgents(_ tabs: [Tab]) {
+        func command(_ pane: TerminalView) -> String {
+            (app.restoredAgentCommands[ObjectIdentifier(pane)] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        func resumes(_ pane: TerminalView, _ words: String) -> Bool { command(pane).contains(words) }
+        let a = "--resume 00000000-0000-4000-8000-0000000000a1"
+        let b = "--resume 00000000-0000-4000-8000-0000000000b2"
+        check("a Claude tab resumes its own conversation", resumes(tabs[0].terminal, a), command(tabs[0].terminal))
+        check(
+            "and the other Claude in the same folder its own, not the newest",
+            resumes(tabs[1].terminal, b) && !resumes(tabs[1].terminal, a), command(tabs[1].terminal))
+        let split = tabs[2].terminals
+        check("the split's panes come back", split.count == 2, "\(split.count)")
+        if split.count == 2 {
+            check("its first pane resumes Claude's conversation", resumes(split[0], "--resume 00000000-0000-4000-8000-0000000000c3"), command(split[0]))
+            check("its second pane resumes its own agent", resumes(split[1], "codex resume --last"), command(split[1]))
+            check(
+                "each pane keeps what it resumes for the next save",
+                tabs[2].resume(of: split[1]) == AgentResume(agent: .codex))
+        }
+        check("an older file's agent tab resumes its last conversation", resumes(tabs[3].terminal, "codex resume --last"), command(tabs[3].terminal))
+        check("nothing was typed into a shell", tabs.allSatisfy { !($0.terminal.visibleText ?? "").contains("resume") })
     }
 
     /// New Task: a worktree on a new branch next to the repo, a tab in it.
@@ -2581,17 +2726,34 @@ package final class E2ERunner {
         try? await git(["commit", "-q", "--allow-empty", "-m", "init"], in: repo)
         app.newTab(in: repo)
         check("the worktree list follows the tab", await eventually { self.app.worktrees.main?.branch == "main" })
+        // Its setup (P05, D-7 (a)): an untracked .env copied, one that isn't
+        // there said, a command typed in the tab.
+        try? "API_KEY=e2e\n".write(to: repo.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+        var skipped: TaskSetupCopy.Report?
+        app.taskSetupRecorder = { skipped = $0 }
+        let setup = TaskSetup(copy: [".env", ".env.local"], command: "echo set-up > \(out("setup").path)")
         do {
-            try await app.createTask(repo: repo, branch: "feat/e2e-task", base: "main", agent: nil)
+            try await app.createTask(repo: repo, branch: "feat/e2e-task", base: "main", agent: nil, setup: setup)
         } catch {
             return check("createTask", false, error.localizedDescription)
         }
+        app.taskSetupRecorder = nil
         let path = scratch.appendingPathComponent("proj-wt-feat-e2e-task")
+        check(
+            "its untracked .env is copied in",
+            (try? String(contentsOf: path.appendingPathComponent(".env"), encoding: .utf8)) == "API_KEY=e2e\n")
+        check("one that isn't in the repository is said", skipped?.skipped.map(\.path) == [".env.local"], "\(String(describing: skipped))")
+        check(
+            "its setup command runs in the tab", await eventually(10) { contents(self.out("setup")) == "set-up" },
+            contents(out("setup")) ?? "nothing")
+        let status = (try? await Git.run(["status", "--porcelain", "--untracked-files=all"], in: repo)) ?? "unread"
+        check("nothing of Overterm's is written into the repository", status.trimmingCharacters(in: .whitespacesAndNewlines) == "?? .env", status)
         check("the worktree exists next to the repo", FileManager.default.fileExists(atPath: path.appendingPathComponent(".git").path))
         check("a tab opened in it, named after the branch", app.store.selected?.title == "feat/e2e-task" && app.store.selected?.workingDirectory == path.path)
         check("the worktree list shows it", await eventually { self.app.worktrees.worktrees.contains { $0.branch == "feat/e2e-task" } })
         await waitForPrompt()
         await runAndExpect("git branch --show-current > \(out("br").path)", file: out("br"), content: "feat/e2e-task", "its shell is on the new branch")
+        await taskTextChecks()
     }
 
     /// Snippets: a first run is empty; Run types and executes; placeholders ask.
@@ -4896,6 +5058,7 @@ package final class E2ERunner {
             "a hand edit applies at once (the pane dim)",
             await eventually(4) { abs((self.app.host(of: tab)?.dimColor.alphaComponent ?? 0) - 0.6) < 0.01 })
         await heldSettingsChecks()
+        await securityPatchSettingsChecks()
         settings.set("general.newTabDirectory", .string("home"))
         check(
             "the page edits the file in place, comments kept",
@@ -5648,7 +5811,7 @@ package final class E2ERunner {
     }
 
     /// The attached sheet's buttons, each with the key that presses it ("" for none).
-    private var sheetButtons: [(title: String, key: String)] {
+    package var sheetButtons: [(title: String, key: String)] {
         var found: [(title: String, key: String)] = []
         func walk(_ view: NSView) {
             if let button = view as? NSButton { found.append((button.title, button.keyEquivalent)) }

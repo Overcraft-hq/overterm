@@ -88,6 +88,15 @@ package enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
     }()
 
+    /// Where Claude Code says which conversation each of its processes
+    /// has: `<pid>.json` with its `sessionId` — ~/.claude/sessions, or
+    /// $CLAUDE_CONFIG_DIR/sessions. An isolated run reads one of its own.
+    package static let claudeProcessSessionsDirectory: URL = {
+        if isIsolated { return supportDirectory.appendingPathComponent("claude-sessions", isDirectory: true) }
+        if let dir = env["CLAUDE_CONFIG_DIR"] { return URL(fileURLWithPath: dir).appendingPathComponent("sessions") }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/sessions")
+    }()
+
     /// The themes bundled with the app: Ghostty's own, and the rest of
     /// iTerm2-Color-Schemes beside them (Scripts/fetch-themes.sh). Ghostty
     /// resolves `theme = "<name>"` here itself; Settings ▸ Themes reads the
@@ -242,6 +251,12 @@ package enum AppEnvironment {
     /// checkout and root, and the state identities seen production — names
     /// only, never a value. In the support directory, an isolated run's own.
     package static var terraformRootsFile: URL { supportDirectory.appendingPathComponent("terraform-roots.json") }
+
+    /// `TaskSetupStore`'s file: each repository's New Task setup — the
+    /// untracked files copied into a new worktree, by path only, and the
+    /// command typed in its tab (D-7 (a): never in the repository). In the
+    /// support directory, an isolated run's own.
+    package static var taskSetupsFile: URL { supportDirectory.appendingPathComponent("task-setups.json") }
 
     /// Whether the user configures Terraform's CLI themselves, so the
     /// plugin cache isn't offered: `~/.terraformrc` checked for existence,
