@@ -50,6 +50,16 @@ extension TerminalWindowController {
         }
     }
 
+    /// Tab Info's port ⋯ ▸ Free… (6.12): the pane that holds it, then the
+    /// pill's own Free — asked, the holder read again, the port watched —
+    /// with the popover closed first, so the sheet is the window's.
+    package func freeTabInfoPort(_ port: ListeningPort, model: TabInfoModel) {
+        let pane = model.pane(holding: port)
+        infoPopover?.close()
+        guard let pane else { return NSSound.beep() }
+        freePort(port, in: pane)
+    }
+
     /// What holds `identity` in the pane `login` and `tag` name, read now.
     /// Blocking.
     package nonisolated static func readHolder(

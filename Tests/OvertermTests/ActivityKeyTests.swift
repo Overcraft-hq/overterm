@@ -32,6 +32,7 @@ final class ActivityKeyTests: XCTestCase {
 
     override func tearDown() {
         AppEnvironment.defaults.removeObject(forKey: ActivityColumns.key)
+        ActivityPageModel.forgetView()
         super.tearDown()
     }
 
@@ -118,7 +119,9 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertTrue(page.press("P"))
         XCTAssertEqual(page.processSort, ResourceSort(column: "cpu", ascending: false))
         page.section = .listening
-        XCTAssertFalse(page.press("N"), "Processes' only")
+        XCTAssertTrue(page.press("N"), "taken, and said")
+        XCTAssertEqual(page.keySaid, ActivityPageModel.listeningSorts, "Listening sorts by its headers")
+        XCTAssertEqual(page.processSort, ResourceSort(column: "cpu", ascending: false), "unchanged")
     }
 
     func testYoursOnlyFollowAndTheSheets() async throws {
@@ -259,7 +262,8 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertEqual(box.goTo.count, 2)
         XCTAssertTrue(page.press("s"))
         XCTAssertEqual(box.sampled, [1102])
-        XCTAssertFalse(page.pressOption("o"), "nothing to open")
+        XCTAssertTrue(page.pressOption("o"), "nothing to open: said")
+        XCTAssertEqual(page.keySaid, "Nothing it listens on opens in a browser", "the menu's own reason")
         // k, K, x: the verb its class asks — decided by the window on its
         // read again —, Force Quit, Send a Signal — each handed to the
         // window, which reads it again and asks.
@@ -408,7 +412,8 @@ final class ActivityKeyTests: XCTestCase {
         let theirs = page.verbs(for: [login.id]) { _ in }
         XCTAssertNotNil(theirs.first { $0.title == "Terminal in Its Folder" }?.unavailable)
         XCTAssertNotNil(theirs.first { $0.title == "Open Files in a Tab" }?.unavailable)
-        XCTAssertFalse(page.press("e"))
+        XCTAssertTrue(page.press("e"))
+        XCTAssertEqual(page.keySaid, theirs.first { $0.title == "Terminal in Its Folder" }?.unavailable, "the reason the menu greys it with")
         page.selection = []
         XCTAssertEqual(page.focused, [])
         XCTAssertFalse(monitor.demand.focus.contains(server.identity), "the focus given back")

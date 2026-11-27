@@ -10,6 +10,14 @@ package struct TabInfoView: View {
     /// Show in Activity (6.12): the page at the tab, a process or a port;
     /// nil with Activity off. Tab Info itself signals nothing.
     package var showInActivity: ((ActivityLink) -> Void)? = nil
+    /// A port's Free… — Stop… for a forward —: the pane pill's own path
+    /// (`TerminalWindowController.freePort`), asked and identity-checked
+    /// there; Tab Info itself signals nothing.
+    package var freePort: ((ListeningPort) -> Void)? = nil
+
+    /// What a port's ⋯ calls its Free: a forward's is its Stop, as on the
+    /// pane pill. Pure.
+    package nonisolated static func freeTitle(_ port: ListeningPort) -> String { port.forward == nil ? "Free…" : "Stop…" }
 
     /// A process row's Show in Activity (6.12): Processes, it selected
     /// and followed, in its tab's scope. Pure.
@@ -114,6 +122,10 @@ package struct TabInfoView: View {
                         case .process(let node, let depth, let isShell, let leftTerminal):
                             ProcessRow(node: node, depth: depth, isShell: isShell, leftTerminal: leftTerminal, theme: theme)
                                 .contextMenu {
+                                    Button("Copy PID") {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(String(node.pid), forType: .string)
+                                    }
                                     if let showInActivity {
                                         Button("Show in Activity") { showInActivity(Self.processLink(node, tab: model.tab.id)) }
                                     }
@@ -206,6 +218,11 @@ package struct TabInfoView: View {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(port.url?.absoluteString ?? port.endpoint, forType: .string)
                             }
+                            if let freePort {
+                                // Asked, and checked: Interrupt, Stop or the
+                                // owner's own verb, as the class table says.
+                                Button(Self.freeTitle(port)) { freePort(port) }
+                            }
                             if let showInActivity {
                                 Button("Show in Activity") {
                                     showInActivity(Self.portLink(port, tab: model.tab.id))
@@ -215,7 +232,7 @@ package struct TabInfoView: View {
                             Image(systemName: "ellipsis")
                         }
                         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                        .help("Copy its URL, or show it in Activity")
+                        .help("Copy its URL, free it — asked first —, or show it in Activity")
                         .accessibilityIdentifier("tabInfo.port.\(port.proto).\(port.port)")
                     }
                     .font(.system(size: ChromeMetrics.text(12)))

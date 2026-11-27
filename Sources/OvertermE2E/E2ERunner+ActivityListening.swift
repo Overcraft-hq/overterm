@@ -155,6 +155,28 @@ extension E2ERunner {
         // The page shown again after the links: its rows read again first.
         _ = await eventually(15) { page.section == .listening && page.content.ports.contains { $0.id == server.id } }
         page.selection = [server.id]
+        // Its keys do what its menu says, here too (ACT-U2): s samples the
+        // holder, l reads its files; a key that isn't Listening's says why
+        // in the header (ACT-U3).
+        var typed: [ActivityTerminalRequest] = []
+        app.activityTerminalRecorder = { typed.append($0) }
+        let holderPID = server.holder?.pid ?? -1
+        check(
+            "Listening's s samples the port's holder, as its menu does",
+            page.press("s") && typed.last?.command == ActivityPageModel.sampleCommand(holderPID), "pid \(holderPID)")
+        check("and l reads the holder's open files", page.press("l") && page.showsFiles)
+        _ = page.press("l")
+        app.activityTerminalRecorder = nil
+        let sort = page.processSort
+        check("N in Listening sorts nothing", page.press("N") && page.processSort == sort)
+        let said = await eventually(5) {
+            self.app.pages.view(.activity).flatMap { Self.accessibilityElement("activity.keySaid", in: $0) }?.text == ActivityPageModel.listeningSorts
+        }
+        check("and the header says why", said, page.keySaid ?? "nothing said")
+        // Setting the same selection again changes nothing; a new one does.
+        page.selection = []
+        check("a selection by hand clears it", page.keySaid == nil, page.keySaid ?? "")
+        page.selection = [server.id]
         check("o opens the server's port", page.press("o"))
         check(
             "in its tab's browser column: the tab selected, the page stepped aside, the URL its bound address's",

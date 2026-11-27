@@ -231,6 +231,11 @@ package struct ActivityPageView: View {
                     .help("A link asked for this port, and no tick lists it — another user's isn't listed")
                     .accessibilityIdentifier("activity.linkSaid")
             }
+            if let said = page.keySaid {
+                Text(verbatim: said).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                    .help("What the key would have done can't be done now: the reason its menu item is greyed with")
+                    .accessibilityIdentifier("activity.keySaid")
+            }
             if page.following {
                 Text("following").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                     .help("The selection stays in view as it moves (F)")
@@ -339,15 +344,26 @@ package struct ActivityPageView: View {
     }
 
     /// What an empty section says: true of what was read (6.4).
-    package nonisolated static func emptySentence(_ section: ActivityPageModel.Section, scopedToRun: Bool, filter: String = "") -> String {
+    /// Listening's follows `activity.otherListeners` and what was read
+    /// (`others`): "aren't read" only while the setting is off; read and
+    /// shown — everyone's, at the Mac's scope (`othersShown`) —, nobody's
+    /// listens; anything else is the note's to say, under the list.
+    package nonisolated static func emptySentence(
+        _ section: ActivityPageModel.Section, scopedToRun: Bool, filter: String = "", others: ActivityOtherListeners = .off, othersShown: Bool = false
+    ) -> String {
         let filter = filter.trimmingCharacters(in: .whitespaces)
         if !filter.isEmpty { return "Nothing matches “\(filter)”." }
         switch section {
         case .processes:
             return scopedToRun ? "Nothing runs in this test run's tabs." : "No processes to show."
         case .listening:
-            return scopedToRun
-                ? "Nothing in this test run's tabs listens on a port." : "Nothing of yours listens on a port. Other users' listeners aren't read."
+            if scopedToRun { return "Nothing in this test run's tabs listens on a port." }
+            switch others {
+            case .off: return "Nothing of yours listens on a port. Other users' listeners aren't read."
+            case .checked, .unchecked:
+                return othersShown ? "Nothing listens on a port, yours or other users'." : "Nothing of yours listens on a port."
+            case .reading, .unavailable, .blind, .failed: return "Nothing of yours listens on a port."
+            }
         case .leftBehind:
             return "Nothing was left behind: no closed tab's, ended agent's or earlier Overterm's process runs."
         }

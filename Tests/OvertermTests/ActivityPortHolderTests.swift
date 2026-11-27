@@ -557,8 +557,13 @@ final class ActivityPortHolderTests: XCTestCase {
         XCTAssertNil(own.unavailable)
         XCTAssertTrue(page.press("f"))
         XCTAssertEqual(box.freed.map(\.port), [5432, 5173])
+        let holder = try XCTUnwrap(pane.holder)
         page.section = .processes
-        XCTAssertFalse(page.press("f"), "Processes has no f")
+        let row = try XCTUnwrap(page.content.processes.first { $0.identity == holder })
+        page.selection = [row.id]
+        XCTAssertTrue(page.press("f"), "taken, and said")
+        XCTAssertEqual(page.keySaid, ActivityPageModel.freeIsListenings)
+        XCTAssertEqual(box.freed.count, 2, "nothing freed from Processes")
     }
 
     // MARK: Links (6.12)

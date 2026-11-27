@@ -35,6 +35,7 @@ final class ActivityRowsTests: XCTestCase {
     override func tearDown() async throws {
         Settings.shared.set("activity.enabled", nil)
         Settings.shared.set("activity.everyone", nil)
+        ActivityPageModel.forgetView()
     }
 
     @discardableResult
@@ -258,6 +259,19 @@ final class ActivityRowsTests: XCTestCase {
         XCTAssertTrue(ActivityPageView.reading(hasRead: true, rated), "processes left for a later tick")
         XCTAssertEqual(
             ActivityPageView.emptySentence(.listening, scopedToRun: false), "Nothing of yours listens on a port. Other users' listeners aren't read.")
+        // The sentence follows the setting and what was read (ACT-U11).
+        let read = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertEqual(
+            ActivityPageView.emptySentence(.listening, scopedToRun: false, others: .checked(read, period: 10), othersShown: true),
+            "Nothing listens on a port, yours or other users'.")
+        XCTAssertEqual(
+            ActivityPageView.emptySentence(.listening, scopedToRun: false, others: .unchecked(read, period: 10), othersShown: false),
+            "Nothing of yours listens on a port.", "read, but not shown at this scope or for yours only")
+        for state in [ActivityOtherListeners.reading, .unavailable("not read in a test run"), .blind(missing: 2), .failed("nettop exited 1")] {
+            let said = ActivityPageView.emptySentence(.listening, scopedToRun: false, others: state, othersShown: true)
+            XCTAssertEqual(said, "Nothing of yours listens on a port.", "\(state): the note says the rest")
+            XCTAssertFalse(said.contains("aren't read"), "never contradicting the setting")
+        }
         XCTAssertEqual(ActivityPageView.emptySentence(.listening, scopedToRun: true), "Nothing in this test run's tabs listens on a port.")
         XCTAssertEqual(ActivityPageView.emptySentence(.processes, scopedToRun: true), "Nothing runs in this test run's tabs.")
     }
@@ -412,7 +426,8 @@ final class ActivityRowsTests: XCTestCase {
         XCTAssertEqual(page.section, .listening)
         XCTAssertTrue(page.press("1"))
         XCTAssertEqual(page.section, .processes)
-        XCTAssertFalse(page.press("x"), "not the page's: the list's")
+        XCTAssertTrue(page.press("x"), "a verb's key with nothing selected says so")
+        XCTAssertEqual(page.keySaid, ActivityPageModel.nothingSelected)
     }
 
     // MARK: Groups, the tree, the scope (6.5)

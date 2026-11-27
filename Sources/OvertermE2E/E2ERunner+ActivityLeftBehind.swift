@@ -65,6 +65,23 @@ extension E2ERunner {
         }
         check("Left Behind lists the server, with its reason: left by Claude", listed, "\(page.content.leftBehind.count) rows")
         check("3 is Left Behind", page.press("1") && page.press("3") && page.section == .leftBehind)
+        // Left Behind's keys do what its menu says (ACT-U2): s samples the
+        // row's process; G says the section is grouped by checkout (ACT-U3).
+        if let left = page.content.processes.first(where: { $0.identity == server }) {
+            var typed: [ActivityTerminalRequest] = []
+            app.activityTerminalRecorder = { typed.append($0) }
+            page.selection = [left.id]
+            check("Left Behind's s samples it, as its menu does", page.press("s") && typed.last?.command == ActivityPageModel.sampleCommand(left.identity.pid))
+            app.activityTerminalRecorder = nil
+            let grouping = page.grouping
+            check(
+                "G there groups nothing, and says why",
+                page.press("G") && page.grouping == grouping && page.keySaid == ActivityPageModel.arrangesProcesses(.group, in: .leftBehind),
+                page.keySaid ?? "nothing said")
+            page.selection = []
+        } else {
+            check("Left Behind's row for the server", false)
+        }
         page.setScope(.mac, for: .leftBehind)
         app.toggleActivityPage(nil)
 
