@@ -158,3 +158,63 @@ package enum AskSelection {
         return CommandBlock(id: block.id, command: command, startRow: block.startRow, endRow: block.endRow, exit: block.exit, seconds: block.seconds)
     }
 }
+
+/// ⌘L with the editor's keyboard: the file's path, the lines, the text
+/// picked and a problem the language server marked there, as the agent
+/// reads them (EDIT-N1). A cluster object's YAML (a virtual buffer) and a
+/// `.tfvars` carry values the cluster or the variables hold — scrubbed as
+/// a pod's selection is (`KubeLogScrub`). Pure.
+package enum EditorAskSelection {
+    package struct Problem: Equatable {
+        package let severity: String
+        package let message: String
+        package let source: String?
+
+        package init(severity: String, message: String, source: String?) {
+            self.severity = severity
+            self.message = message
+            self.source = source
+        }
+    }
+
+    /// Whether a buffer's text goes through `Secrets` before an agent sees it.
+    package static func scrubs(fileName: String, isVirtual: Bool) -> Bool {
+        let name = fileName.lowercased()
+        return isVirtual || name.hasSuffix(".tfvars") || name.hasSuffix(".tfvars.json")
+    }
+
+    /// "line 12", "lines 12–18".
+    package static func span(first: Int, last: Int) -> String {
+        last > first ? "lines \(first)–\(last)" : "line \(first)"
+    }
+
+    /// The chip's name for it: `Sources/main.swift:12–18`.
+    package static func subject(path: String, first: Int, last: Int) -> String {
+        last > first ? "\(path):\(first)–\(last)" : "\(path):\(first)"
+    }
+
+    package static func text(
+        path: String, first: Int, last: Int, selection: String, language: String?, problem: Problem?, scrub: Bool
+    ) -> String {
+        let clean: (String) -> String = { scrub ? KubeLogScrub.scrub($0, env: []) : $0 }
+        let body = clean(selection)
+        var out = "\(path), \(span(first: first, last: last)):\n" + fenced(body, info: language ?? "")
+        if let problem {
+            let from = problem.source.map { ", \($0)" } ?? ""
+            out += "\n\nProblem marked there (\(problem.severity)\(from)): \(clean(problem.message))"
+        }
+        return out
+    }
+
+    /// In a fence longer than any run of backticks inside it.
+    package static func fenced(_ text: String, info: String) -> String {
+        var longest = 0
+        var run = 0
+        for character in text {
+            run = character == "`" ? run + 1 : 0
+            longest = max(longest, run)
+        }
+        let fence = String(repeating: "`", count: max(3, longest + 1))
+        return "\(fence)\(info)\n\(text)\(text.hasSuffix("\n") ? "" : "\n")\(fence)"
+    }
+}

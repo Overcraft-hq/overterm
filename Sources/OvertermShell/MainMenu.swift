@@ -53,6 +53,13 @@ package enum MainMenu {
 
         let editItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
+        // First-responder actions: the editor's text view answers them with
+        // its file's own undo; the terminal never sees them (Ghostty holds
+        // ⌘Z and ⇧⌘Z there, and has nothing to cut).
+        command(editMenu, "Undo", Selector(("undo:")), "edit.undo")
+        command(editMenu, "Redo", Selector(("redo:")), "edit.redo")
+        editMenu.addItem(.separator())
+        command(editMenu, "Cut", #selector(NSText.cut(_:)), "edit.cut")
         command(editMenu, "Copy", #selector(NSText.copy(_:)), "edit.copy")
         command(editMenu, "Paste", #selector(NSText.paste(_:)), "edit.paste")
         command(editMenu, "Select All", #selector(NSText.selectAll(_:)), "edit.selectAll")

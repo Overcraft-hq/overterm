@@ -79,6 +79,7 @@ package final class E2ERunner {
         "splits": { await $0.splitsScenario() },
         "pullRequest": { await $0.pullRequestScenario() },
         "keyboard": { await $0.keyboardScenario() },
+        "editorBeside": { await $0.editorBesideScenario() },
         "mcpApprovals": { await $0.mcpApprovalsScenario() },
         "overview": { await $0.overviewScenario() },
         "peek": { await $0.peekScenario() },

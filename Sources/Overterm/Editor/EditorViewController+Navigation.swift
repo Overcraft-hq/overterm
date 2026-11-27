@@ -131,6 +131,42 @@ extension EditorViewController {
         showPicker(picker)
     }
 
+    /// ⌘P: a file of the checkout by name — `name:line` goes to the line.
+    /// The list is one `git ls-files` (tracked and untracked, ignored
+    /// left out) each time it opens, ranked as ⌘F's file names are.
+    package func goToFile() {
+        _ = view
+        guard let root = workspaceRoot?() ?? active?.url.flatMap(Self.gitRoot(of:)) else { return NSSound.beep() }
+        var files: [String] = []
+        func item(_ path: String) -> EditorListItem {
+            let folder = (path as NSString).deletingLastPathComponent
+            return EditorListItem(title: (path as NSString).lastPathComponent, detail: folder)
+        }
+        let picker = EditorPicker(
+            placeholder: "Go to file in \(root.lastPathComponent) — name, or name:line", theme: theme, showsList: true,
+            provider: { text in GoToFileQuery(text).ranked(files).map(item) },
+            choose: { [weak self] row, text in
+                let query = GoToFileQuery(text)
+                let ranked = query.ranked(files)
+                guard let self, ranked.indices.contains(row) else { return }
+                let url = root.appendingPathComponent(ranked[row])
+                self.recordPosition()
+                self.open(url) { [weak self] opened in
+                    guard opened, let self else { return }
+                    if let line = query.line { self.go(toLine: line, column: query.column ?? 1) }
+                    self.focus()
+                }
+            })
+        picker.identifier = NSUserInterfaceItemIdentifier("goToFile")
+        showPicker(picker)
+        Task { [weak self, weak picker] in
+            let found = await CheckoutSearch.files(in: root)
+            guard self != nil else { return }
+            files = found
+            picker?.reload()
+        }
+    }
+
     package func goToSymbol() {
         guard let buffer = active else { return }
         var symbols: [EditorSymbol] = []

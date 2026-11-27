@@ -90,8 +90,10 @@ package struct SidebarView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(tree.rows) { row in
-                            FileRowView(row: row, tree: tree, opener: opener, theme: theme, actions: actions)
+                        ForEach(tree.visibleRows) { row in
+                            FileRowView(
+                                row: row, mark: tree.marks.mark(for: row.entry.url, isDirectory: row.entry.isDirectory), tree: tree, opener: opener,
+                                theme: theme, actions: actions)
                         }
                     }
                     .padding(.vertical, 4)
@@ -107,6 +109,10 @@ package struct SidebarView: View {
 
     private var header: some View {
         PanelHeader(title: tree.root?.lastPathComponent ?? "Files", group: group, theme: theme, help: tree.root?.path) {
+            // What git says changed, from the changes pane's own read.
+            PanelHeaderButton(
+                symbol: tree.changedOnly ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle",
+                help: tree.changedOnly ? "Show All Files" : "Changed Only", action: { tree.changedOnly.toggle() }, theme: theme)
             PanelHeaderButton(symbol: "arrow.clockwise", help: "Reload", action: { tree.reload() }, theme: theme)
             PanelHeaderButton(
                 symbol: "rectangle.compress.vertical", help: "Collapse All", action: { tree.collapseAll() }, theme: theme)
@@ -116,6 +122,8 @@ package struct SidebarView: View {
 
 private struct FileRowView: View {
     let row: FileRow
+    /// What git says of it: a file's own change, a folder's worst under it.
+    let mark: FileMark?
     @ObservedObject var tree: FileTreeModel
     /// Observed for "Open in <the app picked>".
     @ObservedObject var opener: ExternalOpener
@@ -124,6 +132,19 @@ private struct FileRowView: View {
     @State private var hovering = false
 
     private var isSelected: Bool { tree.selection == row.id }
+
+    private var nameColor: Color {
+        guard !row.entry.isDirectory, let mark else { return isSelected ? theme.text : theme.text2 }
+        return color(of: mark)
+    }
+
+    private func color(of mark: FileMark) -> Color {
+        switch mark {
+        case .modified: theme.orangeText
+        case .added, .untracked: DiffColors.added
+        case .conflicted: DiffColors.removed
+        }
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -138,6 +159,10 @@ private struct FileRowView: View {
                 .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .foregroundStyle(nameColor)
+            if row.entry.isDirectory, let mark {
+                Circle().fill(color(of: mark)).frame(width: 5, height: 5).help("Has changes")
+            }
             // A symbolic link says where it points, a missing target in orange.
             if let target = row.entry.linkTarget {
                 Text(verbatim: "→ \(target)")
@@ -163,7 +188,8 @@ private struct FileRowView: View {
         .onTapGesture {
             tree.selection = row.id
             if row.entry.isDirectory {
-                tree.toggle(row)
+                // "Changed only" keeps every folder open.
+                if !tree.changedOnly { tree.toggle(row) }
             } else {
                 actions.openInEditor(row.entry.url)
             }
