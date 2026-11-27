@@ -6,7 +6,7 @@ import Network
 /// API client's tests and its E2E scenario — nothing leaves the machine.
 ///
 /// - `/status/<code>`: that status.
-/// - `/redirect`: 302 to `/echo`.
+/// - `/redirect`: 302 to `/echo`, or to `?to=`.
 /// - `/cookie/set?name=value`: sets the cookie; `/cookie/get`: the Cookie header back.
 /// - `/openapi.json`: a small OpenAPI document describing this server.
 /// - anything else: 200 and `{method, path, query, headers, body}` as JSON.
@@ -76,7 +76,8 @@ package final class E2EEchoServer: @unchecked Sendable {
         }
         switch path {
         case "/redirect":
-            return respond(connection, status: 302, headers: ["Location": "/echo"], body: Data())
+            // `?to=`: where it sends the page — another host, for the browser's agent guard.
+            return respond(connection, status: 302, headers: ["Location": query["to"] ?? "/echo"], body: Data())
         case "/cookie/set":
             let cookie = query.first.map { "\($0.key)=\($0.value); Path=/" } ?? ""
             return respond(connection, status: 200, headers: ["Set-Cookie": cookie, "Content-Type": "text/plain"], body: Data("set".utf8))

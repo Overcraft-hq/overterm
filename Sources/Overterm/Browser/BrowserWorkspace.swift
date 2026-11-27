@@ -31,7 +31,7 @@ package final class BrowserWorkspace: ObservableObject {
             guard let self, self.guardHolds > 0, self.guardedPages.contains(id), let allows = self.guardAllows else { return true }
             return allows(url)
         }
-        page.onAgentBlocked = { [weak self] in self?.blocked = $0 }
+        page.onAgentBlocked = { [weak self] in self?.blocked[id] = $0 }
         page.onOpenPage = { [weak self] configuration, url in
             // window.open hands the page its URL itself; a plain _blank link
             // has nothing to load until WebKit does.
@@ -82,7 +82,8 @@ package final class BrowserWorkspace: ObservableObject {
     private var guardAllows: ((URL) -> Bool)?
     private var guardHolds = 0
     private var guardedPages: Set<ObjectIdentifier> = []
-    private var blocked: BlockedNavigation?
+    /// What the guard stopped, by page: a call takes the page it acts on's.
+    private var blocked: [ObjectIdentifier: BlockedNavigation] = [:]
 }
 
 extension BrowserWorkspace: AgentBrowser {
@@ -108,6 +109,8 @@ extension BrowserWorkspace: AgentBrowser {
 
     package func openTab(_ url: URL?, timeout: TimeInterval) async throws {
         let page = newPage()
+        // Made inside an agent's call: held as the page it acts on, a redirect from its first load too.
+        if guardHolds > 0 { guardedPages.insert(ObjectIdentifier(page)) }
         if let url { try await page.navigate(url, timeout: timeout) }
     }
 
@@ -124,14 +127,15 @@ extension BrowserWorkspace: AgentBrowser {
     package var currentURL: URL? { active?.webView.url ?? active?.url }
 
     package func takeBlockedNavigation() -> BlockedNavigation? {
-        defer { blocked = nil }
-        return blocked
+        // The page the call acts on (a page it opened shows, so is this one too).
+        guard let page = active else { return nil }
+        return blocked.removeValue(forKey: ObjectIdentifier(page))
     }
 
     package func holdAgentGuard(_ allows: @escaping (URL) -> Bool) {
         // A new hold over none: what an earlier one stopped after its call is stale.
         if guardHolds == 0 {
-            blocked = nil
+            blocked = [:]
             guardedPages = []
         }
         guardHolds += 1

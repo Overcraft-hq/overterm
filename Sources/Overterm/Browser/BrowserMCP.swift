@@ -241,6 +241,8 @@ package enum BrowserMCP {
             try await onAllowedHost("read the page")
             return textResult(value)
         case "browser_back":
+            // A single-page app's back stays inside it, never asking WebKit's policy: its host first.
+            try await onAllowedHost("go back on the page")
             return try await settledSnapshot { browser.goBack() }
         case "browser_reload":
             try await onAllowedHost("reload the page")

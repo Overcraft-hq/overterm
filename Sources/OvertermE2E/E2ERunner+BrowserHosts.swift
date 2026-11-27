@@ -62,6 +62,19 @@ extension E2ERunner {
         let again = await tool("browser_navigate", ["url": "https://admin.shop.example/"])
         check("declined holds for the run: refused, not asked again", again.error && MCPApprovals.shared.pending.isEmpty, again.text)
 
+        // A new tab on a listed host its server redirects elsewhere: the new
+        // page is held too, its redirect stopped before it leaves (declined above).
+        let pagesBefore = workspace.pages.count
+        let to = "https://admin.shop.example/transfer".addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        let opened = await tool("browser_tab_new", ["url": "http://localhost:\(port)/redirect?to=\(to)"])
+        let newPage = workspace.pages.count > pagesBefore ? workspace.active : nil
+        check(
+            "a new tab's redirect to another host is stopped, not followed",
+            opened.error && opened.text.contains("didn't allow admin.shop.example") && newPage?.url?.host != "admin.shop.example",
+            "\(opened.text) — \(newPage?.url?.absoluteString ?? "-")")
+        if workspace.pages.count > pagesBefore { workspace.close(workspace.activeIndex) }
+        workspace.select(workspace.pages.firstIndex { $0 === session } ?? 0)
+
         // The person's own browsing is never asked: 127.0.0.1 isn't listed.
         app.openInBrowser(URL(string: "http://127.0.0.1:\(port)/echo?own=1")!, for: tab)
         let yours = await eventually(5) { session.url?.host == "127.0.0.1" && !session.isLoading }
