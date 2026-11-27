@@ -78,7 +78,7 @@ final class FileTreeTests: XCTestCase {
     @MainActor
     /// `ln -s`: a linked folder is a folder that opens, a linked file a
     /// file, each saying its target; one whose target is gone, said.
-    func testSymbolicLinksListAsWhatTheyPointTo() throws {
+    @MainActor func testSymbolicLinksListAsWhatTheyPointTo() throws {
         try mkdir("shared")
         touch("shared/a.txt")
         touch("notes.md")
