@@ -219,6 +219,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var pullRequestWriteRecorder: ((PullRequestWrite) -> Bool)?
     package var pullRequestCreatedRecorder: ((Int) -> Void)?
     package var pullRequestProblemRecorder: ((String) -> Void)?
+    /// A scenario's: Check Out in a New Worktree's question answered here.
+    package var pullRequestCheckoutRecorder: ((PullRequestCheckout) -> Bool)?
     /// A scenario's: a New Task text not sent is said here, not in a sheet.
     package var taskTextRecorder: ((TaskTextOutcome) -> Void)?
     /// A scenario's: what New Task's setup didn't copy, said here.
@@ -690,6 +692,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     },
                     onReview: { [weak self] in self?.reviewPullRequest($0) },
                     onCreate: { [weak self] in self?.createPullRequest(nil) },
+                    onCheckOut: { [weak self] in self?.checkOutShownPullRequest() },
                     onWrite: { [weak self] write in Task { @MainActor in await self?.performPullRequestWrite(write) } }),
                 usage: UsageView(
                     model: usage, theme: theme, settings: .shared, onClose: { [weak self] in self?.toggleDiff(nil) }),

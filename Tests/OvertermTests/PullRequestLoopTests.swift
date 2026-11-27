@@ -152,3 +152,20 @@ final class PullRequestLoopTests: XCTestCase {
         XCTAssertFalse(activity.ciRecovered(), "another's mark stays")
     }
 }
+
+/// Check Out in a New Worktree (GIT-G2): its branch where it is this
+/// repository's, detached where it is a fork's, never over what is there.
+final class PullRequestCheckoutTests: XCTestCase {
+    typealias How = TerminalWindowController.PullRequestCheckout
+
+    func testEachWayIsItsOwnGitLine() {
+        let path = URL(fileURLWithPath: "/src/shop-wt-feat-kupon")
+        XCTAssertEqual(How.localBranch(path: path).gitArguments(branch: "feat/kupon"), ["worktree", "add", "--", path.path, "feat/kupon"])
+        XCTAssertEqual(
+            How.remoteBranch(path: path).gitArguments(branch: "feat/kupon"),
+            ["worktree", "add", "--track", "-b", "feat/kupon", "--", path.path, "origin/feat/kupon"], "a branch only on origin: tracking it")
+        XCTAssertEqual(How.fork(path: path).gitArguments(branch: "patch-1"), ["worktree", "add", "--detach", "--", path.path, "HEAD"])
+        XCTAssertNil(How.open(path).gitArguments(branch: "feat/kupon"), "there already: nothing made")
+        XCTAssertTrue(How.fork(path: path).said(number: 9, branch: "patch-1").contains("no branch is made or moved"))
+    }
+}
