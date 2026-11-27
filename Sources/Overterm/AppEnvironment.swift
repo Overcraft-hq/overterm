@@ -88,6 +88,15 @@ package enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects")
     }()
 
+    /// Where Claude Code says which conversation each of its processes
+    /// has: `<pid>.json` with its `sessionId` — ~/.claude/sessions, or
+    /// $CLAUDE_CONFIG_DIR/sessions. An isolated run reads one of its own.
+    package static let claudeProcessSessionsDirectory: URL = {
+        if isIsolated { return supportDirectory.appendingPathComponent("claude-sessions", isDirectory: true) }
+        if let dir = env["CLAUDE_CONFIG_DIR"] { return URL(fileURLWithPath: dir).appendingPathComponent("sessions") }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/sessions")
+    }()
+
     /// The themes bundled with the app: Ghostty's own, and the rest of
     /// iTerm2-Color-Schemes beside them (Scripts/fetch-themes.sh). Ghostty
     /// resolves `theme = "<name>"` here itself; Settings ▸ Themes reads the

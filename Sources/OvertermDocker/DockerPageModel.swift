@@ -152,10 +152,10 @@ package enum DockerListSort: String, CaseIterable, Sendable {
 @MainActor
 package final class DockerPageModel: ObservableObject {
     package enum Section: String, CaseIterable, Identifiable {
-        case containers, images, volumes, networks, builds, models
+        case containers, images, volumes, networks, builds, models, apple
 
         package var id: String { rawValue }
-        package var title: String { rawValue.capitalized }
+        package var title: String { self == .apple ? "Apple Containers" : rawValue.capitalized }
         package var symbol: String {
             switch self {
             case .containers: "shippingbox"
@@ -164,6 +164,7 @@ package final class DockerPageModel: ObservableObject {
             case .networks: "point.3.filled.connected.trianglepath.dotted"
             case .builds: "hammer"
             case .models: "cpu"
+            case .apple: "apple.logo"
             }
         }
 
@@ -174,7 +175,7 @@ package final class DockerPageModel: ObservableObject {
             case .images: .images
             case .volumes: .volumes
             case .networks: .networks
-            case .builds, .models: nil
+            case .builds, .models, .apple: nil
             }
         }
     }
@@ -279,6 +280,22 @@ package final class DockerPageModel: ObservableObject {
     private var usageFeed: AnyCancellable?
 
     package let docker: DockerModel
+    /// Apple's `container`, the Apple Containers section's: the app's.
+    package let apple: AppleContainerModel
+    /// What the section shows: containers, images or volumes.
+    @Published package var appleTab: AppleContainerModel.Part = .containers
+    /// Its selections: container ids, image ids, volume names.
+    @Published package var appleSelection: Set<String> = []
+    @Published package var appleImageSelection: Set<String> = []
+    @Published package var appleVolumeSelection: Set<String> = []
+    /// The selected container's tab.
+    @Published package var appleDetailTab: AppleContainerTab = .overview
+    /// The selected container's Logs, followed while they show.
+    package var appleSession: AppleContainerSession?
+    /// What the section holds the model to (`AppleContainerModel.want`).
+    package var appleWanted: AppleContainerModel.Part?
+    private var appleWanting: AnyCancellable?
+    private var appleStreams: AnyCancellable?
     /// What the registries said of the images (Check for Updates): the
     /// app's, for the app's engine.
     package let updates: DockerImageUpdates
@@ -302,9 +319,11 @@ package final class DockerPageModel: ObservableObject {
     /// engine's (a test's) gets its own, which asks no registry and runs
     /// no Scout.
     package init(
-        docker: DockerModel = .shared, ports: ComposePortStore = .shared, updates: DockerImageUpdates? = nil, scans: DockerScoutScans? = nil
+        docker: DockerModel = .shared, ports: ComposePortStore = .shared, updates: DockerImageUpdates? = nil, scans: DockerScoutScans? = nil,
+        apple: AppleContainerModel = .shared
     ) {
         self.docker = docker
+        self.apple = apple
         self.ports = ports
         self.updates = updates ?? (docker === DockerModel.shared ? .shared : DockerImageUpdates(docker: docker, cli: { _ in nil }))
         self.scans = scans ?? (docker === DockerModel.shared ? .shared : DockerScoutScans())
@@ -322,7 +341,28 @@ package final class DockerPageModel: ObservableObject {
                 DispatchQueue.main.async { self?.wantUsage(visible && windowVisible && section == .containers) }
             }
         showing = $visible.removeDuplicates().filter { $0 }
-            .sink { [weak self] _ in DispatchQueue.main.async { self?.loadMCPToolkit() } }
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.loadMCPToolkit()
+                    // Installed while the app ran: its section shows now.
+                    self?.apple.relocate()
+                }
+            }
+        // Apple's lists are read while their section shows.
+        appleWanting = Publishers.CombineLatest3($section, $visible, $appleTab)
+            .sink { [weak self] section, visible, tab in
+                DispatchQueue.main.async { self?.wantApple(visible && section == .apple ? tab : nil) }
+            }
+        // The selected container's Logs: followed while they show, afresh
+        // when it starts again.
+        appleStreams = Publishers.CombineLatest4($appleSelection, $appleDetailTab, $visible, $showDetail)
+            .combineLatest($section, apple.$containers.map { $0.map { "\($0.id) \($0.state.rawValue)" } }.removeDuplicates())
+            // Images or Volumes shown, the Logs aren't: their follower stops.
+            .combineLatest($appleTab)
+            .sink { [weak self] _ in
+                // @Published fires before the values land.
+                DispatchQueue.main.async { self?.updateAppleStream() }
+            }
         // The detail's streams follow what it shows and whether it shows.
         streams = Publishers.CombineLatest4($selection, $detailTab, $visible, $showDetail)
             .combineLatest($projectTab)
@@ -410,6 +450,8 @@ package final class DockerPageModel: ObservableObject {
         closeVolumeFiles()
         watchBuilds(false)
         updateBuildStream()
+        wantApple(nil)
+        updateAppleStream()
     }
 
     /// What a container uses now, while it runs or is paused.
@@ -792,6 +834,8 @@ package final class DockerPageModel: ObservableObject {
             cheatSheet = false
             return true
         case .section(let section):
+            // Its section is listed only while the tool is there.
+            guard section != .apple || apple.isInstalled else { return false }
             self.section = section
             return true
         case .filter:
@@ -803,6 +847,8 @@ package final class DockerPageModel: ObservableObject {
         case .key(let pressed): key = pressed
         }
         switch key {
+        case _ where section == .apple:
+            return pressApple(key)
         case .cleanUp:
             cleaning = true
             return true
@@ -897,7 +943,7 @@ package final class DockerPageModel: ObservableObject {
             case .networks: confirmRemove(networks: docker.networks.filter { networkSelection.contains($0.Id) })
             case .builds: confirmRemove(builds: builds.filter { buildSelection.contains($0.id) })
             case .models: confirmRemove(models: selectedModels)
-            case .containers: break
+            case .containers, .apple: break
             }
             return true
         case .toggleDetail:

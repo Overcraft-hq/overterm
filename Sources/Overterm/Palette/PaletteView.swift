@@ -414,6 +414,13 @@ private struct PaletteDetail: View {
             if let detail = item.detail {
                 Text(detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             }
+            if let forget = item.forget {
+                Button("Forget") { forget() }
+                    .buttonStyle(.link)
+                    .font(.system(size: ChromeMetrics.text(11)))
+                    .help("Out of Overterm's command history — the shell's own is left alone")
+                    .accessibilityIdentifier("palette.forget")
+            }
             Text(verbatim: "↩ \(PaletteView.verb(item))")
                 .font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(theme.text3)

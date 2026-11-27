@@ -7,8 +7,21 @@ extension TerminalWindowController {
     /// from a list of the app's children read off the main thread
     /// (`pairWaiting`); the lookup runs off it too; a Resume in between
     /// wins.
+    /// Suspend Tab: refused where a terraform write runs in it, in
+    /// Activity's words (TERM-G6) — stopped, it holds its state's lock.
     package func suspendTab(_ tab: Tab) {
+        if !terraformWrites(tabs: [tab], path: .tabs).isEmpty {
+            return presentSuspendRefusal(tab)
+        }
         suspendPanes(tab.terminals, of: tab)
+    }
+
+    private func presentSuspendRefusal(_ tab: Tab) {
+        guard let window, window.attachedSheet == nil else { return NSSound.beep() }
+        let alert = NSAlert()
+        alert.messageText = "“\(tab.title)” isn't suspended"
+        alert.informativeText = ActivitySignalCheck.terraformSuspend
+        alert.beginSheetModal(for: window)
     }
 
     /// Stops `panes` of `tab`, each with its whole set — the shell too, or

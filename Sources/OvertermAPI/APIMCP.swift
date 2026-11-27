@@ -175,16 +175,50 @@ package enum APIMCP {
         return lines.joined(separator: "\n")
     }
 
+    /// Headers that carry a credential though `Secrets` doesn't name them.
+    package static let credentialHeaders: Set<String> = ["cookie", "set-cookie", "proxy-authorization"]
+
+    /// A header's value as an agent reads it: a credential's masked —
+    /// `Authorization`, `X-Api-Key`, a cookie set or sent.
+    package static func maskedHeader(_ name: String, _ value: String) -> String {
+        Secrets.isSecret(name) || credentialHeaders.contains(name.lowercased()) ? Secrets.mask(value) : value
+    }
+
+    /// A URL as an agent reads it: its password, and every query value
+    /// whose name looks secret (`api_key`, `token`, `sig`…), masked.
+    package static func maskedURL(_ url: URL) -> String {
+        // Text to read, not a URL to send: the pairs masked as written.
+        let text = Secrets.maskURL(url.absoluteString)
+        guard let question = text.firstIndex(of: "?") else { return text }
+        let fragment = text[question...].firstIndex(of: "#")
+        let query = text[text.index(after: question)..<(fragment ?? text.endIndex)]
+        let pairs = query.split(separator: "&", omittingEmptySubsequences: false).map { pair -> String in
+            guard let equals = pair.firstIndex(of: "=") else { return String(pair) }
+            let name = String(pair[..<equals]).removingPercentEncoding ?? String(pair[..<equals])
+            let secret = Secrets.isSecret(name) || ["sig", "signature"].contains(name.lowercased())
+            return secret && pair.index(after: equals) < pair.endIndex ? "\(pair[..<equals])=••••••" : String(pair)
+        }
+        return String(text[...question]) + pairs.joined(separator: "&") + (fragment.map { String(text[$0...]) } ?? "")
+    }
+
+    /// A request's result as an agent is told it, from wherever it is
+    /// told: the agent's own tools and ✦ Ask an Agent alike — secret
+    /// headers and query values masked, then every keychain secret of the
+    /// checkout's collections taken out (`redact`).
+    package static func forAgent(_ result: APIExecution.Result, secrets: [String], limit: Int) -> String {
+        redact(report(result, limit: limit), secrets)
+    }
+
     package static func report(_ result: APIExecution.Result, limit: Int) -> String {
         var lines: [String] = []
         if let plan = result.plan {
-            lines.append("\(plan.method) \(plan.url.absoluteString)")
+            lines.append("\(plan.method) \(maskedURL(plan.url))")
             if !plan.unresolved.isEmpty { lines.append("Undefined variables: " + plan.unresolved.joined(separator: ", ")) }
         }
         if let error = result.error { lines.append("Error: \(error)") }
         if let response = result.response {
             lines.append("\(response.status) \(response.statusText) — \(APIResponse.formatDuration(response.duration)), \(APIResponse.formatSize(response.size))")
-            lines.append(response.headers.map { "\($0.name): \($0.value)" }.joined(separator: "\n"))
+            lines.append(response.headers.map { "\($0.name): \(maskedHeader($0.name, $0.value))" }.joined(separator: "\n"))
             var body = response.display
             if body.count > limit { body = String(body.prefix(limit)) + "\n… (\(response.size) bytes in all)" }
             lines.append("")

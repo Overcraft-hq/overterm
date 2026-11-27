@@ -223,7 +223,60 @@ extension TerminalWindowController {
             for (index, ports) in read.panePorts { byPane[ObjectIdentifier(panes[index])] = ports }
             if tab.panePorts != byPane { tab.panePorts = byPane }
             follow(read.agent, of: tab)
+            notePaneAgents(tab, in: snapshot)
         }
+    }
+
+    /// A Claude's conversation off its session file, read on a GCD thread.
+    nonisolated static func claudeSession(of identity: ActivityProcessID) async -> String? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            DispatchQueue.global(qos: .utility).async { @Sendable in
+                continuation.resume(returning: ClaudeProcessSession.sessionID(pid: identity.pid, started: identity.start))
+            }
+        }
+    }
+
+    /// How often a running Claude's session file is read again: `/clear`
+    /// and `/resume` change its conversation under the same process.
+    package static let paneSessionReread: TimeInterval = 30
+
+    /// Each pane's agent as `snapshot` read it, for the session to save
+    /// (`Tab.paneResumes`): a Claude's conversation read off its session
+    /// file off the main thread, for a new process or now and then.
+    package func notePaneAgents(_ tab: Tab, in snapshot: ActivitySnapshot, now: Date = Date()) {
+        var resumes: [ObjectIdentifier: AgentResume] = [:]
+        var reads = tab.paneAgentReads
+        for pane in tab.terminals {
+            let key = ObjectIdentifier(pane)
+            // A pane the snapshot hasn't paired yet keeps what it had.
+            guard let slice = snapshot.pane(pane.processTag), slice.tab == tab.id else {
+                resumes[key] = tab.paneResumes[key]
+                continue
+            }
+            guard let agent = PaneAgent.first([pane.processTag], tab: tab.id, in: snapshot) else {
+                reads[key] = nil
+                continue
+            }
+            let last = reads[key]
+            let same = last?.identity == agent.identity
+            var resume = AgentResume(agent: agent.kind, session: same ? tab.paneResumes[key]?.session : nil)
+            if resume.session == nil { resume.session = agent.resumes }
+            resumes[key] = resume
+            guard agent.kind == .claude, !same || now.timeIntervalSince(last?.readAt ?? .distantPast) >= Self.paneSessionReread else {
+                continue
+            }
+            reads[key] = (agent.identity, now)
+            let identity = agent.identity
+            Task { @MainActor [weak tab, weak pane] in
+                let id = await Self.claudeSession(of: identity)
+                guard let tab, let pane, let id, tab.paneAgentReads[ObjectIdentifier(pane)]?.identity == identity,
+                    tab.paneResumes[ObjectIdentifier(pane)]?.session != id
+                else { return }
+                tab.paneResumes[ObjectIdentifier(pane)]?.session = id
+            }
+        }
+        tab.paneAgentReads = reads.filter { resumes[$0.key] != nil }
+        if tab.paneResumes != resumes { tab.paneResumes = resumes }
     }
 
     /// A tab's panes, the focused one first: its agent comes first.

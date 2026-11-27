@@ -141,8 +141,15 @@ extension TerminalWindowController {
     package static let closeCensusLimit: Duration = .seconds(1)
 
     package func closeSurvivors(_ panes: [TerminalView]) async -> ActivitySurvivors {
-        guard let snapshot = await Self.census(within: Self.closeCensusLimit) else { return ActivitySurvivors() }
-        return Self.survivors(of: panes, in: snapshot)
+        await closeSurvivors(panes, hidden: []).shown
+    }
+
+    /// The same for a close that may take the strip's hidden tabs too: one
+    /// census, the shown tabs' survivors and the hidden ones' apart — the
+    /// latter listed only once those tabs are ticked to close.
+    package func closeSurvivors(_ panes: [TerminalView], hidden: [TerminalView]) async -> (shown: ActivitySurvivors, hidden: ActivitySurvivors) {
+        guard let snapshot = await Self.census(within: Self.closeCensusLimit) else { return (ActivitySurvivors(), ActivitySurvivors()) }
+        return (Self.survivors(of: panes, in: snapshot), hidden.isEmpty ? ActivitySurvivors() : Self.survivors(of: hidden, in: snapshot))
     }
 
     package static func survivors(of panes: [TerminalView], in snapshot: ActivitySnapshot) -> ActivitySurvivors {

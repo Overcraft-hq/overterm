@@ -8,6 +8,26 @@ import Foundation
 /// What each CLI was checked against (docs/architecture.md, Agents):
 /// Claude Code 2.1, Codex (openai/codex c08843a), opencode 1.18.31,
 /// pi 0.73.1, Gemini CLI 0.40.1.
+/// A pane's agent as the session keeps it: which one, and — Claude Code's
+/// — the conversation it had (`ClaudeProcessSession`), so a restored pane
+/// picks up its own.
+package struct AgentResume: Codable, Equatable, Sendable {
+    package var agent: Agent
+    package var session: String?
+
+    package init(agent: Agent, session: String? = nil) {
+        self.agent = agent
+        self.session = session
+    }
+
+    /// Typed into the restored pane: Claude's own conversation by its id
+    /// (`--resume`), else each CLI's last conversation of the folder.
+    package func command(_ launch: AgentLaunch) -> String {
+        if agent == .claude, let session, let line = Agent.claudeResume(session: session, launch: launch) { return line }
+        return agent.resumeCommand(launch)
+    }
+}
+
 package enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
     case claude, codex, opencode, pi, gemini
 

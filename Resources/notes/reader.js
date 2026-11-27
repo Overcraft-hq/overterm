@@ -419,6 +419,7 @@
       const resolved = payload.links["md:" + written] || payload.links["md:" + written.replace(/^\.\//, "")];
       if (resolved) img.setAttribute("src", vaultURL(resolved.path));
     }
+    remoteHolders(main);
     for (const a of main.querySelectorAll("a[href]")) {
       const href = a.getAttribute("href");
       if (/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith("overterm-note:")) a.classList.add("external");
@@ -426,6 +427,65 @@
     post({ rendered: true });
     drawMermaid(main);
     drawDrawings(main);
+  }
+
+  // MARK: Remote images and media
+
+  /**
+   * A note's image or medium on another server loads nothing by itself —
+   * the page's policy allows none (the server would learn the reader's
+   * address and when the note was read). An image's place is a button that
+   * has the app fetch it through its own loader, handed back as data; a
+   * medium's, a link to open it in the browser.
+   */
+  function remoteHolders(main) {
+    for (const img of main.querySelectorAll("img[src]")) {
+      const src = img.getAttribute("src");
+      if (!/^https?:/i.test(src)) continue;
+      let host = src;
+      try { host = new URL(src).host; } catch (error) {}
+      const holder = document.createElement("button");
+      holder.type = "button";
+      holder.className = "remote-image";
+      holder.dataset.remote = src;
+      holder.dataset.alt = img.getAttribute("alt") || "";
+      holder.title = src;
+      holder.textContent = `Remote image from ${host} — Load`;
+      holder.addEventListener("click", () => post({ loadImage: src }));
+      img.replaceWith(holder);
+    }
+    for (const medium of main.querySelectorAll("video, audio")) {
+      const sources = [medium.getAttribute("src"), ...[...medium.querySelectorAll("source[src]")].map((s) => s.getAttribute("src"))];
+      const remote = sources.find((src) => src && /^https?:/i.test(src));
+      if (!remote) continue;
+      const link = document.createElement("a");
+      link.href = remote;
+      link.className = "external remote-media";
+      link.textContent = "Remote media — open in the browser";
+      medium.replaceWith(link);
+    }
+  }
+
+  /** What the app fetched for a remote image: in every place it shows. */
+  function remoteImage(src, data) {
+    for (const holder of document.querySelectorAll("button.remote-image")) {
+      if (holder.dataset.remote !== src) continue;
+      const img = document.createElement("img");
+      img.src = data;
+      img.alt = holder.dataset.alt;
+      img.title = src;
+      holder.replaceWith(img);
+    }
+  }
+
+  /** Settings ▸ Notes says load them: each asked for once. */
+  function loadRemoteImages() {
+    const asked = new Set();
+    for (const holder of document.querySelectorAll("button.remote-image")) {
+      if (asked.has(holder.dataset.remote)) continue;
+      asked.add(holder.dataset.remote);
+      post({ loadImage: holder.dataset.remote });
+    }
   }
 
   // MARK: Embedded drawings
@@ -549,6 +609,9 @@
       return null;
     },
     text: () => document.getElementById("note").innerText,
+    remoteImage,
+    loadRemoteImages,
+    remoteCount: () => document.querySelectorAll("button.remote-image").length,
   };
   post({ ready: true });
 })();

@@ -6,8 +6,17 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
-## 1.6.8 — 2026-11-27
+## 1.6.8 — 2026-11-26
 
+- The Docker page lists Apple's container tool's containers, images and volumes — a section of its own, when the tool is installed
+- Next and previous tab, ⌘1–9 and Close or Suspend Other Tabs go by the tabs the strip shows; a stashed, collapsed or unfocused island's are left alone, or named and asked about
+- No secret reaches an agent or a file of Overterm's: a password field in the browser's snapshot, the API report Ask an Agent sends, a command with a secret in ⌘K's history (Forget, Clear Command History…), a password in the database console's history
+- A note's remote image loads only when you press Load (Settings ▸ Notes can load them all)
+- Every feature's agent switch is held when settings.json changes outside Settings, as Kubernetes' already were
+- The Inbox offers answers only to a real question; Broadcast leaves out production, an agent that asks and a suspended pane, by name; Suspend Tab doesn't stop a terraform write; the console's destroying question names its connection; the JSON settings view never saves a stale draft over the file
+- The changes pane stages, unstages and discards one hunk at a time; a card's diff is read when it opens, however many files changed
+- The Inbox reads and answers the pane that asked, not the one with the keyboard, and types nothing once its question has left the screen
+- Every pane of a restored tab comes back with its own agent, and each Claude with its own conversation — two in one folder were both the newest
 - Sheets that delete leave Return on Cancel: the button that deletes takes a click, and where a name is typed, Return deletes once it matches
 - Docker's, Redis', the SQL console's, Files' and Overgit's questions that delete use the same sheet and say what they reach: the engine, the connection, the folder, the repository and branch. Docker's Clean Up leaves Return on Cancel too
 

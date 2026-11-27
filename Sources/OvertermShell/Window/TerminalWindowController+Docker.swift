@@ -25,7 +25,7 @@ extension TerminalWindowController {
                 // `select` does nothing for the tab already selected: then
                 // the page's going gives the keyboard back to its terminal.
                 if self.store.showingOverlay != nil { self.hideOverlay(focus: tab.id == self.store.selectedID) }
-                self.store.select(tab)
+                self.store.reveal(tab)
             },
             showInActivity: { [weak self] port, proto, pid, tab in self?.showInActivity(.port(port, proto: proto, pid: pid, tab: tab)) },
             edit: { [weak self] url in
