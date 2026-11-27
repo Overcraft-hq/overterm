@@ -4729,8 +4729,8 @@ package final class E2ERunner {
         let listed = await eventually(5) { self.app.sessions.sessions.count == 3 }
         check(
             "the repo's sessions, newest first", listed && app.sessions.sessions.map(\.id) == [ids.feature, ids.sub, ids.old],
-            app.sessions.sessions.map { $0.activity.title ?? $0.id }.joined(separator: ", "))
-        check("with their titles and where they ran", app.sessions.sessions.first?.activity.title == "Feature work" && app.sessions.sessions.first?.directory == worktree.path)
+            app.sessions.sessions.map { $0.title ?? $0.id }.joined(separator: ", "))
+        check("with their titles and where they ran", app.sessions.sessions.first?.title == "Feature work" && app.sessions.sessions.first?.directory == worktree.path)
         // The row's worktree label: sessrepo-wt starts with "sessrepo" too.
         check(
             "labelled with its own worktree",
@@ -4770,6 +4770,10 @@ package final class E2ERunner {
         {
             kill(node.pid, SIGTERM)
         }
+
+        // opencode's, from its own database (the isolated run's fixture, never yours):
+        // beside Claude's, newest first, resumed with `opencode --session`.
+        await opencodeSessionsChecks(repo: repo)
     }
 
     /// Usage: what the agents say is left, and what their logs say it

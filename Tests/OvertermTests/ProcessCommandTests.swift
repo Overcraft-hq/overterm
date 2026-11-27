@@ -127,7 +127,7 @@ final class ProcessCommandTests: XCTestCase {
         XCTAssertFalse(leaks(forked.maskedCommand))
         XCTAssertEqual(forked.resumes, id)
 
-        let session = ClaudeSession(id: id, file: URL(fileURLWithPath: "/tmp/\(id).jsonl"), directory: "/work/acme", updated: Date(), activity: ClaudeActivity())
+        let session = AgentSession(ClaudeSession(id: id, file: URL(fileURLWithPath: "/tmp/\(id).jsonl"), directory: "/work/acme", updated: Date(), activity: ClaudeActivity()))
         let tab = UUID()
         XCTAssertEqual(SessionsModel.running([session], [.init(tab: tab, directory: "/work/acme", resumes: forked.resumes)]), [id: tab])
 

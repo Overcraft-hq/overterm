@@ -64,23 +64,84 @@ package enum AgentUsageCommand {
     @discardableResult
     package static func askClaude() -> String? {
         guard let executable = executable() else { return nil }
+        lock.lock()
+        let flag = takesNoPersistence
+        lock.unlock()
+        let first = run(executable, arguments(persisting: !flag))
+        guard flag, refusesFlag(status: first.status, stderr: first.stderr) else { return first.text }
+        // A Claude Code older than the flag refuses it and prints nothing:
+        // asked again as before, and not offered the flag again this run.
+        lock.lock()
+        takesNoPersistence = false
+        lock.unlock()
+        return run(executable, arguments(persisting: true)).text
+    }
+
+    /// `/usage` as a one-off: `--no-session-persistence` keeps it from
+    /// writing a session — run from ~ every ten minutes, it had left 818
+    /// transcripts in a month under ~/.claude/projects/-Users-<name>, each
+    /// a `/usage` and its output, in `claude --resume`'s list. It is a
+    /// local command: no model is asked, nothing spent (cost 0, no model
+    /// usage in those files); ~/.claude.json is still written.
+    package static func arguments(persisting: Bool) -> [String] {
+        persisting ? ["-p", "/usage"] : ["-p", "/usage", "--no-session-persistence"]
+    }
+
+    /// Whether a run's failure is Claude Code not knowing the flag — and
+    /// nothing else: a timeout or a network error keeps it.
+    package static func refusesFlag(status: Int32, stderr: String) -> Bool {
+        status != 0 && stderr.contains("no-session-persistence") && stderr.lowercased().contains("unknown option")
+    }
+
+    /// Whether this run's `claude` takes the flag (until it refuses it).
+    nonisolated(unsafe) private static var takesNoPersistence = true
+
+    private static func run(_ executable: URL, _ arguments: [String]) -> (text: String?, status: Int32, stderr: String) {
         let process = Process()
         process.executableURL = executable
-        process.arguments = ["-p", "/usage"]
+        process.arguments = arguments
         process.environment = environment()
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         let out = Pipe()
+        let err = Pipe()
         process.standardOutput = out
-        process.standardError = FileHandle.nullDevice
+        process.standardError = err
         process.standardInput = FileHandle.nullDevice
-        do { try process.run() } catch { return nil }
-        // Read before waiting: a full pipe would hold the process open.
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline { usleep(50_000) }
-        if process.isRunning { process.terminate() }
-        process.waitUntilExit()
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
+        do { try process.run() } catch { return (nil, -1, "") }
+        // Both pipes drained on threads of their own, and the process waited
+        // for with the deadline: a read to the pipe's end waited for every
+        // writer, so a `claude` that hung (or a child holding the pipe) held
+        // the refresh forever and the deadline never came.
+        let output = PipeDrain(out)
+        let errors = PipeDrain(err)
+        if exited.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            _ = exited.wait(timeout: .now() + 2)
+        }
+        let data = output.take(within: 2)
         let text = String(decoding: data, as: UTF8.self)
-        return text.isEmpty ? nil : text
+        let status = process.isRunning ? -1 : process.terminationStatus
+        return (text.isEmpty ? nil : text, status, String(decoding: errors.take(within: 1).prefix(4096), as: UTF8.self))
+    }
+}
+
+/// A pipe read to its end on a thread of its own; what it read, waited for
+/// a bounded time (a child that kept the pipe open is left to it).
+private final class PipeDrain: @unchecked Sendable {
+    private var data = Data()
+    private let done = DispatchSemaphore(value: 0)
+
+    init(_ pipe: Pipe) {
+        let handle = pipe.fileHandleForReading
+        DispatchQueue.global(qos: .utility).async { [self] in
+            data = handle.readDataToEndOfFile()
+            done.signal()
+        }
+    }
+
+    func take(within seconds: Double) -> Data {
+        done.wait(timeout: .now() + seconds) == .success ? data : Data()
     }
 }
