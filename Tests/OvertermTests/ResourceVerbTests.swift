@@ -48,11 +48,11 @@ final class ResourceVerbTests: XCTestCase {
     }
 
     func testAnUnavailableVerbIsDisabledWithItsReason() {
-        let shell = ResourceVerb(title: "Open a Shell in a Tab", symbol: "terminal", key: "e", unavailable: "It isn't running.")
+        let shell = ResourceVerb(title: "Shell in a Tab", symbol: "terminal", key: "e", unavailable: "It isn't running.")
         let item = ResourceVerbMenuItem.items([shell])[0]
         XCTAssertFalse(item.isEnabled)
         XCTAssertEqual(item.toolTip, "It isn't running.")
-        XCTAssertEqual(shell.help, "Open a Shell in a Tab (e) — It isn't running.")
+        XCTAssertEqual(shell.help, "Shell in a Tab (e) — It isn't running.")
         let stop = ResourceVerb(title: "Stop", symbol: "stop.fill")
         XCTAssertTrue(ResourceVerbMenuItem.items([stop])[0].isEnabled)
         XCTAssertNil(ResourceVerbMenuItem.items([stop])[0].toolTip)

@@ -14,6 +14,8 @@ package struct InboxActions {
     package var showCILog: (Tab.ID) -> Void = { _ in }
     /// A CI card's Ask Agent to Fix: the brief typed into the tab's agent, not sent.
     package var fixCI: (Tab.ID) -> Void = { _ in }
+    /// Dismiss (X): a finished or failed entry let go of without going to its tab (AGT-U6).
+    package var dismiss: (Tab.ID) -> Void = { _ in }
     package var close: () -> Void
 }
 
@@ -26,7 +28,7 @@ package struct InboxView: View {
     package var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Agent Inbox").font(.system(size: ChromeMetrics.text(13), weight: .bold)).foregroundStyle(theme.text)
+                Text("Inbox").font(.system(size: ChromeMetrics.text(13), weight: .bold)).foregroundStyle(theme.text)
                 Spacer()
                 Text("J / K to move · ⌘I to close")
                     .font(.system(size: ChromeMetrics.text(11)))
@@ -94,6 +96,14 @@ private struct InboxCard: View {
                 Image(systemName: glyph.0).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(glyph.1)
                 Text(entry.headline).font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                 Spacer(minLength: 6)
+                if let since = entry.since {
+                    // Read again every half minute: the list itself isn't redrawn for it.
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Text(verbatim: InboxModel.waited(since: since, now: context.date))
+                            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
+                            .accessibilityIdentifier("inbox.waited")
+                    }
+                }
                 if let group = entry.group {
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(group.color.color).frame(width: 7, height: 7)
@@ -148,7 +158,7 @@ private struct InboxCard: View {
                         button(String(always.label.prefix(24))) { actions.answer(entry.id, always) }
                     }
                     if let deny = prompt.deny, deny != prompt.default {
-                        button("Deny  ⌫") { actions.answer(entry.id, deny) }
+                        button("Deny  ⌫") { actions.answer(entry.id, deny) }.accessibilityIdentifier("inbox.deny")
                     }
                     Spacer(minLength: 0)
                     button("Open tab") { actions.open(entry.id) }
@@ -161,6 +171,9 @@ private struct InboxCard: View {
                     if entry.ci != nil {
                         button("Show Log") { actions.showCILog(entry.id) }
                         button("Ask Agent to Fix") { actions.fixCI(entry.id) }
+                    }
+                    if InboxModel.dismissable(entry) {
+                        button("Dismiss  X") { actions.dismiss(entry.id) }.accessibilityIdentifier("inbox.dismiss")
                     }
                     button("Open tab") { actions.open(entry.id) }
                 }
@@ -217,7 +230,9 @@ package final class InboxHostingView<Content: View>: NSHostingView<Content> {
     }
 
     package override func keyDown(with event: NSEvent) {
-        let key = event.keyCode == 53 ? "escape" : (event.keyCode == 36 ? "return" : (event.charactersIgnoringModifiers ?? ""))
+        // Delete is "delete": the Deny button says ⌫ (AGT-U1).
+        let key =
+            event.keyCode == 53 ? "escape" : event.keyCode == 36 ? "return" : event.keyCode == 51 ? "delete" : (event.charactersIgnoringModifiers ?? "")
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty, onKey?(key) == true { return }
         super.keyDown(with: event)
     }

@@ -61,7 +61,44 @@ package struct NotesDetailView: View {
         .frame(height: ChromeMetrics.row(30))
     }
 
-    private var currentPath: String? { model.current.map(model.path(of:)) }
+    /// The note the panes are about: the one open, else the last one that
+    /// was (`NotesModel.subject`) — unless it has gone from the vault since.
+    private var currentPath: String? {
+        guard let subject = model.subject else { return nil }
+        let path = model.path(of: subject)
+        if model.current == nil, model.index.document(path) == nil { return nil }
+        return path
+    }
+
+    /// Over a pane about the last note while the editor shows something
+    /// else: which note it is, a click opening it again.
+    @ViewBuilder private var subjectLine: some View {
+        if model.current == nil, let path = currentPath {
+            Button {
+                actions.open(model.url(of: path))
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: ChromeMetrics.text(9)))
+                    Text(verbatim: NotesDetailView.subjectTitle(path)).font(.system(size: ChromeMetrics.text(10.5), weight: .medium)).lineLimit(1)
+                        .truncationMode(.middle)
+                    Text("— the last note open").font(.system(size: ChromeMetrics.text(10.5))).lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.text3)
+            .help("Open \(path)")
+            .padding(.horizontal, 12)
+            .padding(.bottom, 2)
+            .accessibilityIdentifier("notesDetailSubject")
+        }
+    }
+
+    /// A note's name as the panes say it: its file's, without `.md`.
+    package static func subjectTitle(_ path: String) -> String {
+        (LinkResolver.name(of: path) as NSString).deletingPathExtension
+    }
 
     private func placeholder(_ text: String) -> some View {
         Text(text).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).padding(.horizontal, 12).padding(.vertical, 6)
@@ -70,6 +107,7 @@ package struct NotesDetailView: View {
     // MARK: Panes
 
     @ViewBuilder private var backlinks: some View {
+        subjectLine
         if let path = currentPath {
             let lines = model.backlinkLines(of: path)
             if lines.isEmpty {
@@ -93,6 +131,7 @@ package struct NotesDetailView: View {
     }
 
     @ViewBuilder private var outline: some View {
+        subjectLine
         if let path = currentPath, let doc = model.index.document(path) {
             if doc.headings.isEmpty {
                 placeholder("No headings")
@@ -151,6 +190,7 @@ package struct NotesDetailView: View {
         if model.tasksInVault {
             vaultTasks
         } else if let path = currentPath {
+            subjectLine
             let items = model.index.document(path)?.tasks ?? []
             if items.isEmpty {
                 placeholder("No tasks in this note")
@@ -158,7 +198,9 @@ package struct NotesDetailView: View {
                 ForEach(items, id: \.line) { task in taskRow(task, in: path) }
             }
         } else {
-            placeholder("Open a note to see its tasks")
+            // No note open yet: the vault's, rather than nothing.
+            placeholder("No note open — the vault's open tasks")
+            vaultTasks
         }
     }
 

@@ -29,11 +29,14 @@ package struct NotesActions {
     /// Notes, files or folders dropped on a folder: moved into it, the links
     /// to them written again.
     package var move: ([URL], URL) -> Void = { _, _ in }
+    /// ⌘F on its Notes scope with this text: what notes say, not their names.
+    package var searchContents: (String) -> Void = { _ in }
 
     package init(
         open: @escaping (URL) -> Void, newNote: @escaping (URL?) -> Void, newDrawing: @escaping (URL?) -> Void = { _ in }, newFolder: @escaping (URL?) -> Void, dailyNote: @escaping () -> Void,
         rename: @escaping (URL) -> Void, trash: @escaping (URL) -> Void, insertPath: @escaping (URL) -> Void, newTab: @escaping (URL) -> Void = { _ in }, chooseVault: @escaping () -> Void,
-        openAt: @escaping (URL, Int) -> Void = { _, _ in }, toggleTask: @escaping (URL, Int, String) -> Void = { _, _, _ in }, move: @escaping ([URL], URL) -> Void = { _, _ in }
+        openAt: @escaping (URL, Int) -> Void = { _, _ in }, toggleTask: @escaping (URL, Int, String) -> Void = { _, _, _ in }, move: @escaping ([URL], URL) -> Void = { _, _ in },
+        searchContents: @escaping (String) -> Void = { _ in }
     ) {
         self.open = open
         self.newNote = newNote
@@ -48,6 +51,7 @@ package struct NotesActions {
         self.openAt = openAt
         self.toggleTask = toggleTask
         self.move = move
+        self.searchContents = searchContents
     }
 }
 
@@ -182,9 +186,10 @@ package struct NotesPanelView: View {
     private var searchField: some View {
         HStack(spacing: 4) {
             Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
-            TextField("Filter notes", text: $model.query)
+            TextField(Self.filterPlaceholder, text: $model.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: ChromeMetrics.text(12)))
+                .help(Self.filterHelp)
             if !model.query.isEmpty {
                 Button {
                     model.query = ""
@@ -236,12 +241,24 @@ package struct NotesPanelView: View {
         return rows
     }
 
+    /// The filter names notes; what they say is ⌘F's — said where it is typed.
+    package static let filterPlaceholder = "Filter by name"
+    package static let filterHelp = "Filters the notes by name. To search what notes say, ⌘F's Notes scope."
+
+    /// What the list says when the filter names no note, and the button
+    /// that searches the notes' text for it instead.
+    package static func noMatch(_ query: String) -> (text: String, search: String) {
+        ("No note is named “\(query)”", "Search Contents for “\(query)”")
+    }
+
     private func list(_ tree: NoteItem) -> some View {
-        ScrollView {
+        let rows = Self.rows(tree, query: model.query, expanded: model.expanded, tagged: tagged)
+        return ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Self.rows(tree, query: model.query, expanded: model.expanded, tagged: tagged)) { row in
+                ForEach(rows) { row in
                     NoteRowView(row: row, model: model, theme: theme, actions: actions)
                 }
+                if rows.isEmpty, !model.query.isEmpty { noMatch(model.query) }
             }
             .padding(.vertical, 4)
         }
@@ -264,6 +281,28 @@ package struct NotesPanelView: View {
         Button("New Note") { actions.newNote(folder) }
         Button("New Drawing") { actions.newDrawing(folder) }
         Button("New Folder") { actions.newFolder(folder) }
+    }
+
+    private func noMatch(_ query: String) -> some View {
+        let said = Self.noMatch(query)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: said.text)
+                .font(.system(size: ChromeMetrics.text(12)))
+                .foregroundStyle(theme.text2)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                actions.searchContents(query)
+            } label: {
+                Text(verbatim: said.search).lineLimit(1).truncationMode(.middle)
+            }
+            .controlSize(.small)
+            .help("⌘F, on the Notes scope: lines of notes that say it")
+            .accessibilityIdentifier("notesSearchContents")
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("notesNoMatch")
     }
 
     private var empty: some View {

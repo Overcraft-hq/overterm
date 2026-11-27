@@ -371,7 +371,7 @@ extension E2ERunner {
     /// Part 9 (metrics.md 8; stage M11): `k8s_metrics` through the MCP's
     /// own handler, as an agent in a pane would call it — app's memory over
     /// the last hour, bounded, "81% of limit" said; only the Service's two
-    /// query paths, each with 20 s. Then "Ask Agent About This Chart" on
+    /// query paths, each with 20 s. Then "Ask an Agent About This Chart" on
     /// the tab's chart: the Ask Agent sheet, the chart as text shown whole
     /// before anything is sent — cancelled, nothing sent.
     package func kubernetesChartsAgent(
@@ -394,7 +394,7 @@ extension E2ERunner {
             "\(asked.map(\.path))")
         check("nothing written", fake.writes.isEmpty)
 
-        // "Ask Agent About This Chart": the sheet, the chart as text.
+        // "Ask an Agent About This Chart": the sheet, the chart as text.
         // app's CPU over 24h, as the tab draws it (the recording rule's), with points in it.
         _ = await eventually(10) { chart()?.data.usage.first.map { !$0.points.isEmpty } == true }
         guard let shown = chart() else { return check("app's CPU chart to ask about", false) }

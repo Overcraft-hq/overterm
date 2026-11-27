@@ -33,7 +33,7 @@ extension DockerPageModel {
         }
         verbs += [
             ResourceVerb(title: "Restart", symbol: "arrow.clockwise", place: .button, key: "r") { act(.restart) },
-            ResourceVerb(title: "Open a Shell in a Tab", label: "Shell", symbol: "terminal", place: .button, key: "e", unavailable: notRunning) {
+            ResourceVerb(title: "Shell in a Tab", label: "Shell", symbol: "terminal", place: .button, key: "e", unavailable: notRunning) {
                 [weak self] in self?.actions?.run(DockerCommands.shell(in: container, endpoint: endpoint), nil)
             },
         ]
@@ -315,7 +315,7 @@ extension DockerPageModel {
             ResourceVerb(title: "Show Its Logs", label: "Logs", symbol: "text.alignleft", place: .button, unavailable: never) { [weak self] in
                 self?.showLogs(of: service, in: project)
             },
-            ResourceVerb(title: "Follow Its Logs in a Tab", symbol: "text.alignleft", unavailable: never) { [weak self] in
+            ResourceVerb(title: "Follow Logs in a Tab", symbol: "text.alignleft", unavailable: never) { [weak self] in
                 self?.composeService("logs -f --tail 100", service, project)
             },
             ResourceVerb(title: "Pull in a Tab", symbol: "arrow.down.circle") { [weak self] in self?.composeService("pull", service, project) },
@@ -445,7 +445,7 @@ extension DockerPageModel {
                     self?.cloneVolume(volume, as: $0)
                 }
             },
-            ResourceVerb(title: "Open a Shell on It in a Tab", label: "Shell", symbol: "terminal") { [weak self] in
+            ResourceVerb(title: "Shell in a Tab", label: "Shell", symbol: "terminal") { [weak self] in
                 self?.actions?.run(
                     DockerCommands.prefix(for: endpoint) + "docker run --rm -it -v \(DockerCommands.quote(volume.Name)):/volume -w /volume alpine sh", nil)
             },

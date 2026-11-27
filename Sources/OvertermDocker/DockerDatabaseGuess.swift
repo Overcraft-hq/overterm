@@ -57,7 +57,22 @@ package enum DockerDatabaseGuess {
         let words = Set(words)
         guard !words.isEmpty, words.isDisjoint(with: DockerClient.toolWords) else { return nil }
         if isOracle(words) { return (.oracle, 1521) }
+        if isKafka(words) { return (.kafka, 9092) }
         return panelOnlyWords.first { !$0.2.isDisjoint(with: words) }.map { ($0.0, $0.port) }
+    }
+
+    /// A Kafka broker's images: Apache's (`apache/kafka`, `-native`),
+    /// Bitnami's, Confluent's (`cp-kafka`) and Redpanda's —
+    /// never Connect, a schema registry, a REST proxy, ksqlDB, ZooKeeper or
+    /// a UI beside them.
+    package static func isKafka(_ words: Set<String>) -> Bool {
+        let beside: Set<String> = [
+            "connect", "schema", "registry", "rest", "ksqldb", "ksql", "zookeeper", "mirrormaker", "console", "kafdrop", "akhq", "cruise",
+            "control", "center", "lenses", "streams",
+        ]
+        guard words.isDisjoint(with: beside) else { return false }
+        // Words are split at - _ and .: `cp-kafka` is cp and kafka.
+        return words.contains("kafka") || words.contains("redpanda")
     }
 
     /// Oracle Database's images: gvenzl's (`oracle-free`, `oracle-xe`),
@@ -234,6 +249,10 @@ package enum DockerDatabaseGuess {
             } else {
                 connection.database = first("MONGO_INITDB_DATABASE", "MONGODB_DATABASE") ?? ""
             }
+            connection.sslMode = .disable
+        case .kafka:
+            // A local broker's plaintext listener; one that signs in names
+            // its users in a JAAS file, not the env: left to the form.
             connection.sslMode = .disable
         default:
             return nil

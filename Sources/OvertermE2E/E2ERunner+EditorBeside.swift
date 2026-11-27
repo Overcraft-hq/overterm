@@ -186,12 +186,16 @@ extension E2ERunner {
         if let sheet = window.attachedSheet { window.endSheet(sheet) }
         _ = await eventually(5) { self.window.attachedSheet == nil }
 
-        // No selection in the editor: ⌘L is what it was — no sheet.
+        // No selection in the editor: ⌘L says so (AGT-U8), no Ask Agent sheet.
         editor.focus()
         textView.setSelectedRange(NSRange(location: 0, length: 0))
+        var said: String?
+        app.askAgentHintRecorder = { said = $0 }
         app.askAboutSelection(nil)
+        app.askAgentHintRecorder = nil
         await pause(0.3)
-        check("with nothing selected, ⌘L opens no sheet", window.attachedSheet == nil && !app.askAgent.isOpen)
+        check("with nothing selected, ⌘L opens no Ask Agent sheet", window.attachedSheet == nil && !app.askAgent.isOpen)
+        check("and says to select something", said == "Select some text first", said ?? "nothing said")
         editor.saveDocument(nil)
     }
 }

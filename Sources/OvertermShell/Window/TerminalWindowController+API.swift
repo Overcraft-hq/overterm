@@ -164,13 +164,40 @@ extension TerminalWindowController {
         return target
     }
 
+    /// A sheet that says something. A long text scrolls in a box of its
+    /// own, the sheet's height capped: as informative text, an import's 40
+    /// notes made the sheet taller than the window.
     package func informAPI(title: String, detail: String) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title
-        alert.informativeText = detail
+        let lines = detail.split(separator: "\n", omittingEmptySubsequences: false).count
+        if lines <= Self.informLines {
+            alert.informativeText = detail
+        } else {
+            let width: CGFloat = 440
+            let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 260))
+            scroll.hasVerticalScroller = true
+            scroll.borderType = .bezelBorder
+            scroll.autohidesScrollers = true
+            let text = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 260))
+            text.isEditable = false
+            text.isSelectable = true
+            text.drawsBackground = false
+            text.textContainerInset = NSSize(width: 4, height: 6)
+            text.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+            text.string = detail
+            text.isVerticallyResizable = true
+            text.autoresizingMask = [.width]
+            text.textContainer?.widthTracksTextView = true
+            scroll.documentView = text
+            alert.accessoryView = scroll
+        }
         alert.beginSheetModal(for: window)
     }
+
+    /// Lines an informing sheet shows as its text; more scroll in a box.
+    package static let informLines = 12
 
     package func reportAPIError(_ error: Error) {
         guard let window else { return }

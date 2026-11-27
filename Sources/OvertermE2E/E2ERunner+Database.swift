@@ -101,6 +101,7 @@ extension E2ERunner {
             console.current?.error ?? "-")
 
         await duckdbChecks()
+        await kafkaChecks()
     }
 }
 #endif

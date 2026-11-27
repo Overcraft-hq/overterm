@@ -131,7 +131,7 @@ package enum KubeMetricsText {
         return said
     }
 
-    /// "Ask Agent About This Chart" (metrics.md 3.9): the chart as
+    /// "Ask an Agent About This Chart" (metrics.md 3.9): the chart as
     /// `k8s_metrics` says it — whose it is and where its numbers come from,
     /// its window, its figures and markers, the chips it shows — bounded.
     package static func about(

@@ -74,7 +74,7 @@ package enum OvergitCommand: Equatable {
 
     case fetch, pull(rebase: Bool), push
     case newBranch(from: String?)
-    case stash, popStash(Stash)
+    case stash, stashStaged, popStash(Stash)
     case merge(String), rebase(onto: String)
     case pushBranch(BranchRef), renameBranch(BranchRef), deleteBranch(BranchRef)
     case checkOutCommit(String), cherryPick(Commit), revert(Commit), reset(Commit, ResetMode), tag(at: String)
@@ -112,5 +112,43 @@ package enum OvergitCommand: Equatable {
         }
         guard let slash = name.firstIndex(of: "/") else { return nil }
         return (String(name[..<slash]), String(name[name.index(after: slash)...]))
+    }
+}
+
+/// A rebase or a soft/mixed reset rewrites the branch: the commits it takes
+/// off are gone from it (a reset) or made again as new ones (a rebase).
+/// Done to commits a remote already has, the next push needs force and
+/// everyone who has them is left with the old ones — so it asks first,
+/// naming how many (GIT-U7). Commits only this checkout has go without a
+/// word: that is the everyday case, and easily undone. Pure.
+package enum OvergitRewrite {
+    /// The commits leaving the branch: `HEAD` without `base`'s.
+    package static func countArguments(base: String) -> [String] { ["rev-list", "--count", "HEAD", "^\(base)"] }
+    /// Those of them no remote branch has.
+    package static func unpushedArguments(base: String) -> [String] { ["rev-list", "--count", "HEAD", "^\(base)", "--not", "--remotes"] }
+    /// A rebase onto an ancestor of HEAD rewrites nothing (exit 0: it is one).
+    package static func ancestorArguments(_ base: String) -> [String] { ["merge-base", "--is-ancestor", base, "HEAD"] }
+
+    /// The question, or nil when nothing pushed is touched.
+    package static func question(_ command: OvergitCommand, current: String?, pushed: Int) -> (title: String, detail: String)? {
+        guard pushed > 0 else { return nil }
+        let branch = current ?? "HEAD"
+        let commits = pushed == 1 ? "1 commit" : "\(pushed) commits"
+        let them = pushed == 1 ? "it" : "them"
+        switch command {
+        case .rebase(let onto):
+            return (
+                "Rebase \(branch) onto \(onto)?",
+                "\(commits) of \(branch) already on a remote will be made again as new ones. Pushing after needs --force, and anyone who has \(them) is left with the old ones."
+            )
+        case .reset(let commit, let mode) where mode != .hard:
+            let kept = mode == .soft ? "staged" : "unstaged"
+            return (
+                "Reset \(branch) to \(commit.shortSHA)?",
+                "\(commits) already on a remote will leave \(branch); their changes stay in the files, \(kept). Pushing after needs --force."
+            )
+        default:
+            return nil
+        }
     }
 }

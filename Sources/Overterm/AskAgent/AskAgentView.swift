@@ -39,7 +39,7 @@ package struct SelectionBar: View {
             Button(action: actions.ask) {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles").font(.system(size: ChromeMetrics.text(11)))
-                    Text("Ask Agent").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
+                    Text("Ask an Agent").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                     Text(verbatim: "⌘L").font(.system(size: ChromeMetrics.text(12))).opacity(0.8)
                 }
                 .padding(.horizontal, 10)
