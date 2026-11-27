@@ -8,6 +8,7 @@ version is tagged `v<version>`.
 
 ## 1.6.8 — 2026-11-26
 
+- The database client opens DuckDB files — or a database in memory — with DuckDB's own library in the app: tables in the tree, a LIST or STRUCT in the grid as `duckdb` prints it, CSV and Parquet read by a query, rows edited by their key; an agent's query that reads a file is asked first
 - The Docker page lists Apple's container tool's containers, images and volumes — a section of its own, when the tool is installed
 - Next and previous tab, ⌘1–9 and Close or Suspend Other Tabs go by the tabs the strip shows; a stashed, collapsed or unfocused island's are left alone, or named and asked about
 - No secret reaches an agent or a file of Overterm's: a password field in the browser's snapshot, the API report Ask an Agent sends, a command with a secret in ⌘K's history (Forget, Clear Command History…), a password in the database console's history

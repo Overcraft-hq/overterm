@@ -16,7 +16,7 @@ package struct Acknowledgement: Codable, Hashable, Identifiable {
     package var id: String { group + "/" + name }
 
     /// The order the groups are listed in.
-    package static let groups = ["Terminal", "Editor", "Swift packages", "Notes"]
+    package static let groups = ["Terminal", "Editor", "Swift packages", "Database", "Notes"]
 
     package static func load(from resources: URL? = Bundle.main.resourceURL) -> [Acknowledgement] {
         guard let resources, let data = try? Data(contentsOf: resources.appendingPathComponent("licenses/index.json")),

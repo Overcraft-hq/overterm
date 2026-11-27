@@ -238,6 +238,18 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# DuckDB's library (Scripts/fetch-duckdb.sh), which the database client
+# loads by @rpath: in Contents/Frameworks — bundle-swift-libs.sh gives the
+# binary that rpath and checks it. The xcframework's copy, the one linked.
+DUCKDB_LIB="$(find "$ROOT/Frameworks/DuckDBKit.xcframework" -name libduckdb.dylib -print -quit 2>/dev/null || true)"
+if [[ -z "$DUCKDB_LIB" ]]; then
+  echo "error: Frameworks/DuckDBKit.xcframework missing — run: make duckdb" >&2
+  exit 1
+fi
+mkdir -p "$CONTENTS/Frameworks"
+cp "$DUCKDB_LIB" "$CONTENTS/Frameworks/libduckdb.dylib"
+chmod u+w "$CONTENTS/Frameworks/libduckdb.dylib"
+
 # Swift's back-deployment libraries the binary loads by @rpath (Xcode 26
 # and later): in the bundle, or no bundle — 1.6.2 opened on no macOS
 # before 26 without them.

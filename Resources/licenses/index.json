@@ -528,6 +528,14 @@
   "file": "licenses/swift-system.txt"
  },
  {
+  "group": "Database",
+  "name": "DuckDB",
+  "version": "2.0.1",
+  "license": "MIT",
+  "url": "https://duckdb.org",
+  "file": "licenses/duckdb.txt"
+ },
+ {
   "group": "Notes",
   "name": "markdown-it",
   "version": "15.0.3",

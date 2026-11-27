@@ -96,6 +96,8 @@ package enum DatabaseDrivers {
         case .neo4j: Neo4jDriver(connection, password: password)
         case .rabbitmq: RabbitMQDriver(connection, password: password)
         case .oracle: OracleDriver(connection, password: password)
+        // DuckDB's own library, a file or memory: no secret.
+        case .duckdb: DuckDBDriver(connection)
         }
     }
 
