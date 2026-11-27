@@ -530,7 +530,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     reviewPullRequest: { [weak self] in self?.reviewPullRequest($0) },
                     git: { [weak self] command in Task { await self?.overgit(command) } },
                     createPullRequest: { [weak self] in self?.createPullRequest(nil) }
-                ),
+                ).with(showStash: { [weak self] in self?.showStash($0) }),
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
                     edit: { [weak self] in self?.editSnippet($0) }
