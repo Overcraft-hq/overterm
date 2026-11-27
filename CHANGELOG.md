@@ -37,6 +37,7 @@ version is tagged `v<version>`.
 - Terraform: Var Files… on a root's card (and the plan's inputs line) ticks its .tfvars for every plan, several at once, None clearing them
 - Terraform: a plan, apply, drift check or test that ends while you're elsewhere marks the checkout's tab and notifies, in Overterm's words only
 - Terraform: the changes pane names the roots the changed files touch, directly or through a module, with Plan; the editor's bar shows the file's root, workspace and class, with Plan
+- Notes: a link clicked in Live Preview opens its note in Live Preview; New Note asks the name first; the backlinks, outline and tasks stay on the last note while the editor shows another file; a filter naming no note offers ⌘F's search of what notes say
 
 ## 1.6.7 — 2026-11-23
 

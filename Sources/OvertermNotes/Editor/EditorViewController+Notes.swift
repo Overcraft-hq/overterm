@@ -42,7 +42,7 @@ extension EditorViewController {
             reader.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
             reader.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
         ])
-        reader.onOpenLink = { [weak self] target, anchor, markdown, _ in self?.followNoteLink(target, anchor: anchor, markdown: markdown) }
+        reader.onOpenLink = { [weak self] target, anchor, markdown, _ in self?.followNoteLink(target, anchor: anchor, markdown: markdown, from: .reader) }
         reader.onOpenURL = { Self.openExternal($0) }
         reader.onToggleTask = { [weak self] line in self?.toggleNoteTask(line: line) }
         reader.onTag = { [weak self] tag in self?.onNoteTag?(tag) }
@@ -98,16 +98,29 @@ extension EditorViewController {
         }
     }
 
-    /// A link in the reading view: the note it names, opened at its
-    /// heading or block — or, for a note not written yet, written (as
-    /// Obsidian does on a click) where new notes go.
-    package func followNoteLink(_ target: String, anchor: String?, markdown: Bool) {
+    /// A link in a note: the note it names, opened at its heading or block
+    /// — or, for a note not written yet, written (as Obsidian does on a
+    /// click) where new notes go. It opens in the mode it was clicked in, as
+    /// Obsidian's pane keeps its mode: from the reading view (or a drawing)
+    /// it reads, from Live Preview it is written in.
+    package func followNoteLink(_ target: String, anchor: String?, markdown: Bool, from origin: NoteLinkOrigin) {
         guard let current = active?.url else { return }
+        // `[[#Heading]]` in Live Preview: a place in this note.
+        if target.isEmpty, origin == .live {
+            if let anchor { goToNoteAnchor(anchor) }
+            return
+        }
         // The index first: a link it hasn't read yet is not a note to write.
-        notes.whenLoaded { [weak self] in self?.followLoadedNoteLink(target, anchor: anchor, markdown: markdown, from: current) }
+        notes.whenLoaded { [weak self] in self?.followLoadedNoteLink(target, anchor: anchor, markdown: markdown, from: current, origin: origin) }
     }
 
-    private func followLoadedNoteLink(_ target: String, anchor: String?, markdown: Bool, from current: URL) {
+    /// The line of a heading or block in the text, the caret put there.
+    private func goToNoteAnchor(_ anchor: String) {
+        guard let line = NoteAnchor.line(of: anchor, in: textView.string) else { return }
+        go(toLine: line + 1, column: 1)
+    }
+
+    private func followLoadedNoteLink(_ target: String, anchor: String?, markdown: Bool, from current: URL, origin: NoteLinkOrigin) {
         let notes = self.notes
         let source = notes.path(of: current)
         var resolved: String?
@@ -145,17 +158,26 @@ extension EditorViewController {
             return
         }
         if url.standardizedFileURL == current.standardizedFileURL {
-            if let anchor { noteReader?.scrollTo(anchor: anchor) }
+            if let anchor {
+                if origin == .live { goToNoteAnchor(anchor) } else { noteReader?.scrollTo(anchor: anchor) }
+            }
             return
         }
         open(url) { [weak self] opened in
             guard opened, let self, let buffer = self.active else { return }
-            // Read as the link was: a note followed from the reading view reads.
-            if buffer.isNote, !buffer.showsPreview {
-                buffer.showsPreview = true
+            // A drawing keeps its canvas, whatever the link was clicked in.
+            guard buffer.isNote, buffer.drawing == nil else { return }
+            // In the mode the link was clicked in: a note followed from the
+            // reading view reads, one followed in Live Preview is written in.
+            let reads = origin != .live
+            if buffer.showsPreview != reads {
+                buffer.showsPreview = reads
                 self.updatePreview()
+                if !reads { self.focus() }
             }
-            if let anchor { self.renderNote(buffer, scrollTo: anchor) }
+            if let anchor {
+                if reads { self.renderNote(buffer, scrollTo: anchor) } else { self.goToNoteAnchor(anchor) }
+            }
         }
     }
 
@@ -168,6 +190,16 @@ extension EditorViewController {
         replaceText(of: buffer, with: (text as NSString).replacingCharacters(in: edit.range, with: edit.replacement))
         renderNote(buffer)
     }
+}
+
+/// Where a followed link was clicked: the target opens in that mode.
+package enum NoteLinkOrigin: Equatable, Sendable {
+    /// The reading view (⇧⌘V).
+    case reader
+    /// The text, in Live Preview.
+    case live
+    /// An element's link on an Excalidraw canvas.
+    case drawing
 }
 
 // MARK: Completing links and tags
@@ -449,7 +481,7 @@ extension EditorViewController {
                 anchor = String(target[target.index(after: hash)...])
                 target = String(target[..<hash])
             }
-            followNoteLink(target, anchor: anchor, markdown: markdown)
+            followNoteLink(target, anchor: anchor, markdown: markdown, from: .live)
             return true
         }
         if let link = storage.attribute(.noteURL, at: index, effectiveRange: nil) as? String, let url = URL(string: link) {
