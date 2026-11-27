@@ -39,6 +39,7 @@ extension DatabaseDrivers {
         case .rabbitmq: RabbitMQDriver.self
         case .oracle: OracleDriver.self
         case .duckdb: DuckDBDriver.self
+        case .kafka: KafkaDriver.self
         }
     }
 
