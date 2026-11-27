@@ -488,7 +488,10 @@ final class KubeCanIProcessTests: XCTestCase {
         try "#!/bin/sh\necho $$ > '\(leader.path)'\nsleep 30 &\necho $! > '\(child.path)'\nsleep 30\n".write(
             to: script, atomically: true, encoding: .utf8)
         chmod(script.path, 0o755)
-        let result = KubeProcessRun.run(script, [], environment: ["PATH": "/usr/bin:/bin"], timeout: 0.5)
+        // Long enough for the shell to start and write both pids on a loaded
+        // machine (0.5 s wasn't: under the parallel run it was ended first,
+        // nothing written); its sleeps outlast it by far.
+        let result = KubeProcessRun.run(script, [], environment: ["PATH": "/usr/bin:/bin"], timeout: 3)
         XCTAssertNil(result, "timed out")
         XCTAssertEqual(KubeProcessRun.livePIDs, [])
         let pids = [leader, child].compactMap { try? String(contentsOf: $0, encoding: .utf8) }.compactMap {
