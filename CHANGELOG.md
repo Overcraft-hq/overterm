@@ -15,6 +15,8 @@ version is tagged `v<version>`.
 - Every feature's agent switch is held when settings.json changes outside Settings, as Kubernetes' already were
 - The Inbox offers answers only to a real question; Broadcast leaves out production, an agent that asks and a suspended pane, by name; Suspend Tab doesn't stop a terraform write; the console's destroying question names its connection; the JSON settings view never saves a stale draft over the file
 - The changes pane stages, unstages and discards one hunk at a time; a card's diff is read when it opens, however many files changed
+- The Inbox reads and answers the pane that asked, not the one with the keyboard, and types nothing once its question has left the screen
+- Every pane of a restored tab comes back with its own agent, and each Claude with its own conversation — two in one folder were both the newest
 
 ## 1.6.7 — 2026-11-23
 
