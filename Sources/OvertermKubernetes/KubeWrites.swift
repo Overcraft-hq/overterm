@@ -17,6 +17,10 @@ package struct KubeWriteRefused: Error, Equatable, LocalizedError, CustomStringC
 /// context and namespace, the typed name where rule 4 says, then the
 /// request (`KubeWrites`) and its outcome said (`KubeWriteOutcome`).
 package enum KubeWriteVerb: String, CaseIterable, Sendable {
+    /// It deletes (D-1): its sheet leaves Return on Cancel. A restart,
+    /// a scale or a cordon doesn't — what they change can be set back.
+    package var destroys: Bool { [.delete, .recreate, .forceDelete, .removeFinalizers, .evict].contains(self) }
+
     /// `DELETE`, in the background, after the pod's grace period.
     case delete
     /// A pod deleted so its controller makes it again (`r` on a pod).
@@ -831,6 +835,9 @@ package struct KubeWriteConfirmation: Equatable, Sendable {
     /// What comes back is checked as an image reference before anything
     /// runs (`KubeTabWrite.image(from:)`).
     package var image: String? = nil
+    /// It deletes, or overwrites what can't be had back (D-1): Return is
+    /// Cancel's until the typed name, where one is asked, matches.
+    package var destroys = false
 
     /// How a production scope begins, wherever one is asked.
     package static let productionMark = WriteConfirmation.productionMark
@@ -967,7 +974,7 @@ package struct KubeWriteConfirmation: Equatable, Sendable {
         if let typed { lines.append("Type \(typed) to confirm.") }
         return KubeWriteConfirmation(
             verb: verb, title: title, scope: place, detail: lines.joined(separator: "\n"), button: button, typedName: typed, production: context.isProduction,
-            kubectl: kubectl)
+            kubectl: kubectl, destroys: verb.destroys)
     }
 }
 

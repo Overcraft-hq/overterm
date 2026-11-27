@@ -1009,6 +1009,6 @@ package enum KubeApplyConfirmation {
         if let typed { lines.append("Type \(typed) to confirm.") }
         return KubeWriteConfirmation(
             verb: nil, title: title, scope: place, detail: lines.joined(separator: "\n"), button: force != nil ? "Force Apply" : (replacing ? "Replace" : "Apply"),
-            typedName: typed, production: context.isProduction, kubectl: kubectl)
+            typedName: typed, production: context.isProduction, kubectl: kubectl, destroys: force != nil || replacing)
     }
 }

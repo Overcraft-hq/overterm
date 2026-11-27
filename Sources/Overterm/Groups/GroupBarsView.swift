@@ -11,10 +11,14 @@ package struct GroupBarsView: View {
     package let onSend: () -> Void
     package let onStopBroadcast: () -> Void
     package let onLeaveFocus: () -> Void
+    /// A held production context's Include…: asked, its name typed.
+    package var onIncludeProduction: (String) -> Void = { _ in }
 
     package init(
-        broadcast: BroadcastModel, focus: GroupFocus, store: TabStore, theme: ChromeTheme, onSend: @escaping () -> Void, onStopBroadcast: @escaping () -> Void, onLeaveFocus: @escaping () -> Void
+        broadcast: BroadcastModel, focus: GroupFocus, store: TabStore, theme: ChromeTheme, onSend: @escaping () -> Void, onStopBroadcast: @escaping () -> Void, onLeaveFocus: @escaping () -> Void,
+        onIncludeProduction: @escaping (String) -> Void = { _ in }
     ) {
+        self.onIncludeProduction = onIncludeProduction
         self._broadcast = ObservedObject(wrappedValue: broadcast)
         self._focus = ObservedObject(wrappedValue: focus)
         self._store = ObservedObject(wrappedValue: store)
@@ -61,6 +65,12 @@ package struct GroupBarsView: View {
                 if broadcast.hasAgent {
                     Text(verbatim: "· Agent tabs receive text only after you press ↩")
                         .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText.opacity(0.8))
+                }
+                ForEach(broadcast.heldProduction, id: \.self) { context in
+                    Button("Include \(context)…") { onIncludeProduction(context) }
+                        .buttonStyle(.link)
+                        .font(.system(size: ChromeMetrics.text(11)))
+                        .help("Its panes get every line too — asked, the context's name typed")
                 }
             }
         }

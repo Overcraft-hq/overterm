@@ -108,7 +108,11 @@ extension TerminalWindowController {
         for tab in store.tabs where touched.contains(tab.id) {
             // Its panes in order: the first one's question that stands.
             var question: String?
-            for pane in tab.terminals where question == nil { question = agentScreenPanes[pane.processTag]?.question }
+            for pane in tab.terminals where question == nil {
+                question = agentScreenPanes[pane.processTag]?.question
+                // The Inbox reads and answers the pane that asks.
+                if question != nil { tab.askingPane = pane }
+            }
             markScreenAsk(question, on: tab)
         }
     }

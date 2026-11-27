@@ -19,7 +19,7 @@ extension TerminalWindowController {
             return await promptForName(title, detail, initial: initial, button: button)
         }
         func sure(_ title: String, _ detail: String, button: String) async -> Bool {
-            confirmed ? true : await confirmGit(title, detail, button: button)
+            confirmed ? true : await confirmGit(title, detail, button: button, in: root, on: current)
         }
         let run = { (arguments: [String], failure: String) in
             await self.runGit(arguments, in: root, command: command, failure: failure)
@@ -162,15 +162,20 @@ extension TerminalWindowController {
         return response == .alertFirstButtonReturn ? field.stringValue : nil
     }
 
-    private func confirmGit(_ title: String, _ detail: String, button: String) async -> Bool {
+    /// What loses work: the shared sheet, the repository and the branch
+    /// checked out as its scope, Return on Cancel (D-1).
+    private func confirmGit(_ title: String, _ detail: String, button: String, in root: URL, on branch: String?) async -> Bool {
         guard let window else { return false }
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = detail
-        alert.addButton(withTitle: button)
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons.first?.hasDestructiveAction = true
-        return await alert.beginSheetModal(for: window) == .alertFirstButtonReturn
+        let asked = WriteConfirmation(
+            title: title, scope: Self.gitScope(root: root, branch: branch), detail: detail, button: button, destroys: true)
+        return await asked.ask(on: window) != nil
+    }
+
+    /// The checkout with `~` for home, and the branch checked out: "~/src/app
+    /// · on main". Pure.
+    package nonisolated static func gitScope(root: URL, branch: String?) -> String {
+        let place = (root.path as NSString).abbreviatingWithTildeInPath
+        return branch.map { "\(place) · on \($0)" } ?? place
     }
 }
 

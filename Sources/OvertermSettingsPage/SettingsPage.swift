@@ -15,6 +15,44 @@ package final class SettingsPageModel: ObservableObject {
     @Published package var mode: Mode = .ui
     /// The JSON view's text, as typed; nil until the view opens.
     @Published package var draft: String?
+    /// The file's text the draft began from (SET-U1): while the draft is
+    /// untouched it follows the file; edited, a change to the file asks.
+    package var draftBase: String?
+    /// The file changed under an edited draft: Save waits for Reload or
+    /// Keep Mine.
+    @Published package var draftConflict = false
+
+    /// A draft against the file as it is now. Pure: untouched, the file's
+    /// new text; edited and the file is what was typed (a save), settled;
+    /// edited and the file moved elsewhere, a conflict — the draft kept.
+    package nonisolated static func reconcile(draft: String?, base: String?, saved: String) -> (draft: String, base: String, conflict: Bool) {
+        guard let draft, let base else { return (saved, saved, false) }
+        if draft == saved { return (saved, saved, false) }
+        if draft == base { return (saved, saved, false) }
+        if saved == base { return (draft, base, false) }
+        return (draft, base, true)
+    }
+
+    /// The file as it is now: the draft follows it or asks.
+    package func follow(saved: String) {
+        let (draft, base, conflict) = Self.reconcile(draft: self.draft, base: draftBase, saved: saved)
+        if self.draft != draft { self.draft = draft }
+        draftBase = base
+        if draftConflict != conflict { draftConflict = conflict }
+    }
+
+    /// The file's text taken: Reload.
+    package func reload(saved: String) {
+        draft = saved
+        draftBase = saved
+        draftConflict = false
+    }
+
+    /// The draft kept over the file's change: Save writes it.
+    package func keepMine(saved: String) {
+        draftBase = saved
+        draftConflict = false
+    }
     /// Themes: the gallery's own search and filter, and — when a theme
     /// follows macOS — which of the two a pick goes to.
     @Published package var themeSearch = ""
@@ -47,6 +85,8 @@ package final class SettingsPageModel: ObservableObject {
         self.section = section
         mode = .ui
         draft = nil
+        draftBase = nil
+        draftConflict = false
     }
 }
 
@@ -673,8 +713,21 @@ private struct SettingsJSONView: View {
                     .truncationMode(.head)
                 Spacer()
                 Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                Button("Revert") { model.draft = saved }.disabled(model.draft == saved)
-                Button("Save") { save() }.keyboardShortcut("s").disabled(model.draft == saved)
+                Button("Revert") { model.reload(saved: saved) }.disabled(model.draft == saved)
+                Button("Save") { save() }.keyboardShortcut("s").disabled(model.draft == saved || model.draftConflict)
+            }
+            if model.draftConflict {
+                HStack(spacing: 10) {
+                    Label("\(url.lastPathComponent) changed since you began typing.", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                    Spacer()
+                    Button("Reload") { model.reload(saved: saved) }
+                        .help("The file as it is now; what you typed goes")
+                    Button("Keep Mine") { model.keepMine(saved: saved) }
+                        .help("What you typed stays; Save writes it over the change")
+                }
+                .font(.caption)
+                .accessibilityIdentifier("settings.json.changed")
             }
             JSONTextView(text: Binding(get: { model.draft ?? saved }, set: { model.draft = $0 }), theme: theme)
                 .background(RoundedRectangle(cornerRadius: 8).fill(theme.selected.opacity(0.35)))
@@ -698,15 +751,21 @@ private struct SettingsJSONView: View {
         }
         .padding(.horizontal, 32)
         .padding(.bottom, 24)
-        .onAppear { if model.draft == nil { model.draft = saved } }
+        .onAppear { model.follow(saved: saved) }
+        // The file changed — the UI view, another editor, an agent: an
+        // untouched draft follows it, an edited one asks (SET-U1).
+        .onChange(of: saved) { model.follow(saved: $0) }
         // Another section's file, while this view stays: load that one.
         .onChange(of: model.section) { section in
-            model.draft = section == .shortcuts ? keybindings.fileText : settings.fileText
+            model.reload(saved: section == .shortcuts ? keybindings.fileText : settings.fileText)
         }
     }
 
     private func save() {
-        guard let draft = model.draft else { return }
+        guard let draft = model.draft, !model.draftConflict else { return }
+        // What is written is the base now: the file's change it makes
+        // settles the draft rather than asking about itself.
+        model.draftBase = draft
         if isKeybindings { keybindings.save(text: draft) } else { settings.save(text: draft) }
     }
 }

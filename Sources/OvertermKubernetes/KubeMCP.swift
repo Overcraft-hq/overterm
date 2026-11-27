@@ -808,7 +808,7 @@ package enum KubeMCP {
         let sheet = WriteConfirmation(
             title: KubeAgentWrites.title(confirmation), scope: confirmation.scope, production: confirmation.production,
             detail: DockerMCP.displayed(confirmation.detail), button: "Allow", cancel: "Don't", typedName: confirmation.typedName,
-            critical: confirmation.production || confirmation.typedName != nil)
+            critical: confirmation.production || confirmation.typedName != nil, destroys: confirmation.destroys)
         let window = window(forPane: pane)
         // An isolated run never stops on a dialog of its own: no window, no.
         if window == nil, AppEnvironment.isIsolated { return nil }

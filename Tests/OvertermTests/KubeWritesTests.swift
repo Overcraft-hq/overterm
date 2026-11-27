@@ -643,6 +643,7 @@ extension KubeWritesTests {
         XCTAssertEqual(confirmation.scope, "fake-dev · namespace argocd")
         XCTAssertTrue(confirmation.detail.contains("⚠︎ Argo CD deletes the 42 resources it manages with it"), confirmation.detail)
         XCTAssertTrue(confirmation.detail.hasSuffix("Type acme-shop to confirm."), confirmation.detail)
+        XCTAssertTrue(confirmation.destroys, "a delete's sheet leaves Return on Cancel until the name matches (D-1)")
     }
 
     /// Values, parameters, manifests and annotations are never decoded:

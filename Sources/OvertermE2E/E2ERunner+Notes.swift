@@ -225,6 +225,8 @@ extension E2ERunner {
         ![[Plan]]
 
         ![[dot.png]]
+
+        ![logo](https://images.example.test/logo.png)
         """.write(to: rich, atomically: true, encoding: .utf8)
         let dot = NSImage(size: NSSize(width: 6, height: 6))
         dot.lockFocus()
@@ -251,6 +253,7 @@ extension E2ERunner {
         check("a callout has its title", text.contains("Careful") && !text.contains("[!warning]"), text)
         check("the embed is drawn in place", text.contains("Back to Welcome."), text)
         check("mermaid draws its diagram", await eventually(8) { reader.mermaidDrawn == 1 }, "\(reader.mermaidDrawn)")
+        await remoteImageChecks(reader)
         var hasMath = false
         reader.webView.evaluateJavaScript("document.querySelectorAll('.katex').length") { value, _ in
             hasMath = (value as? Int ?? 0) > 0

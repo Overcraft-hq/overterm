@@ -39,9 +39,12 @@ extension E2ERunner {
         app.newTab(in: scratch)
         guard let other = app.store.selected, other !== tab else { return check("a second tab", false) }
         let menu = app.menu(for: other)
-        if let index = menu.items.firstIndex(where: { $0.title == "Suspend Other Tabs" }) {
+        if let index = menu.items.firstIndex(where: { $0.title == "Suspend Other Tabs…" }) {
             menu.performActionForItem(at: index)
         }
+        // It asks once, naming them (P02): the first answer stops them.
+        check("Suspend Other Tabs asks first", await eventually(5) { self.window.attachedSheet != nil } && !tab.isSuspended)
+        answerActivitySheet(.alertFirstButtonReturn)
         check("Suspend Other Tabs stops the others", await eventually(5) { tab.isSuspended && Self.isStopped(sleep.pid) })
         check("and leaves this one", !other.isSuspended)
         check("the strip counts them", app.store.tabs.filter(\.isSuspended).count >= 1)

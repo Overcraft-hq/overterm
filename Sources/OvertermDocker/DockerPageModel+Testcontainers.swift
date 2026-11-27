@@ -25,7 +25,7 @@ extension DockerPageModel {
             ? " Their anonymous volumes go with them."
             : " Their anonymous volumes go with them, then the networks, volumes and images labelled with the run, as Ryuk removes them when a run ends"
                 + (session.reaper == nil ? "." : "; Ryuk itself last, once all of that has gone.")
-        actions?.confirm(title, detail, "Remove All") { [weak self] in
+        actions?.confirmDestroying(title, detail, "Remove All") { [weak self] in
             guard let self, let now = self.docker.testcontainers.first(where: { $0.id == session.id }) else { return }
             self.remove(session: now)
         }

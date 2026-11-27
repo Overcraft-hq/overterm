@@ -21,7 +21,7 @@ extension DockerFolderBrowsing {
     /// folder is listed again once they are in.
     package func copyIn(_ urls: [URL], into folder: String, of source: DockerFileSource, actions: DockerActions, transfers: DockerFileTransfers = .shared) {
         let listed = folder == self.folder && filesError == nil && !listing ? entries : nil
-        transfers.copyIn(urls, into: folder, of: source, listed: listed, confirm: actions.confirm) { [weak self] in
+        transfers.copyIn(urls, into: folder, of: source, listed: listed, confirm: actions.confirmDestroying) { [weak self] in
             guard let self, self.folder == folder else { return }
             self.open(folder)
         }
