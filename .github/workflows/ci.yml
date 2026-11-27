@@ -299,7 +299,7 @@ jobs:
       - name: Keep the tests' logs
         if: ${{ !cancelled() }}
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: unit-tests
           path: ${{ runner.temp }}/unit-tests
@@ -421,7 +421,7 @@ jobs:
       # runner's before a release (1.6.2 opened on none before macOS 26).
       - name: Keep the app bundle
         run: ditto -c -k --keepParent Overterm.app Overterm-app.zip
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: Overterm-app
           path: Overterm-app.zip
