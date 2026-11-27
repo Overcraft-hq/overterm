@@ -94,6 +94,8 @@ keeps its lines as they were.
         card inside the terminal container, chrome drawn over them
 ```
 
+- **The keyboard between columns** (`TerminalWindowController+Columns`, A11Y-U3): Focus the Sidebar, Terminal, Editor, Right Pane, Inbox (⌃⌥⌘1–5, left to right) and Next/Previous Column (F6, ⇧F6) — ⌃⌥⌘ and F6 are none of Ghostty v1.4.0's defaults. A closed column is a beep, never opened for it; which column has the keyboard is the one whose view holds the first responder (`focusedColumn`). Only these commands, or a click, move it: a column appearing or its content changing never takes it. The sidebar's keys (A11Y-U2) are `SidebarKeyView`'s, a view behind the panel that takes the keyboard only when given it (`sidebarKeyTarget`) and hands keys to `sidebarKey`: in Files ↑↓/jk move (`FileTreeModel.moveSelection`), →/← open and close a folder or go to its child or parent, ↩ opens; in Overgit they stand on the sections' titles and an open Commits' commits (`OvergitModel.keyFocus`), ↩ opens the commit or toggles the section; Esc gives the keyboard back to the terminal everywhere. The row moved to is scrolled into view.
+- **The chrome's text has a contrast floor** (`ChromeContrast`, A11Y-U1): the secondary and tertiary text start at 62% and 54% of the foreground and are raised — more opaque, then mixed toward white or black, whichever reads better by the grounds' luminance — until they read at 4.5:1 and 3:1 on the window, the cards and the terminal's background. `ChromeContrastTests` checks every bundled theme; on grounds where no colour reaches the floor (a saturated red), the best one does.
 - Each column is a **card** (`CardColumn`): rounded 10 pt, hairlined, clipping its content, and on a light ground casting a shadow. What shows between two cards is the window's own colour (`ChromeTheme.win`), and **each card keeps half the 10 pt gap on each side** (`CardColumn.gap`). The split view's divider measures and draws nothing (`GapSplitView`), and `WideDividerSplitViewController` widens it to a 10 pt grab band over that gap, so the columns can still be dragged.
 
   The gap was the divider first — one number, and a grab area for free — but **a divider is measured even for a collapsed item**: with the editor, the changes pane and the inbox all shut, 30 pt of window went dead down the right-hand side, and a shut column *between* two open ones doubled the gap there. A card's own margin is only spent when the card is on screen. The `layout` E2E scenario measures both.
@@ -490,7 +492,7 @@ About: `UpdateChecker` asks `gh api repos/Overcraft-hq/overterm/releases/latest`
 downloads the DMG with `gh release download`; once a day at launch when
 allowed, a title-bar chip when newer (it opens Settings ▸ About).
 `make-app.sh` bundles `CHANGELOG.md` for "What's new" and View Latest
-Changelog (⌥⌘O).
+Changelog.
 
 ## Agent overview (⇧⌘A)
 

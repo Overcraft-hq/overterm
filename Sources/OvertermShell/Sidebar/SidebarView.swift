@@ -37,6 +37,10 @@ package struct SidebarView: View {
     package let openKubernetesPage: () -> Void
     /// The buttons at the foot of the rail: Activity, the gear, Hide.
     package let railAction: (SidebarRailAction) -> Void
+    /// The panel's keys while the sidebar has the keyboard (A11Y-U2), and
+    /// the view that takes it — handed to the window, which alone gives it.
+    package var onKey: (NSEvent) -> Bool = { _ in false }
+    package var keyView: (NSView) -> Void = { _ in }
 
     package var body: some View {
         HStack(spacing: 0) {
@@ -72,6 +76,7 @@ package struct SidebarView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(theme.card)
+        .background(SidebarKeyCatcher(onKey: onKey, made: keyView))
     }
 
     /// The island the selected tab is in: what every panel here is about.
@@ -82,13 +87,20 @@ package struct SidebarView: View {
         if tree.root == nil {
             Spacer()
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(tree.rows) { row in
-                        FileRowView(row: row, tree: tree, opener: opener, theme: theme, actions: actions)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(tree.rows) { row in
+                            FileRowView(row: row, tree: tree, opener: opener, theme: theme, actions: actions)
+                        }
                     }
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
+                // The row the keyboard picks is brought into view.
+                .onChange(of: tree.selection) { picked in
+                    guard let picked else { return }
+                    proxy.scrollTo(picked)
+                }
             }
         }
     }
@@ -387,4 +399,35 @@ private struct SnippetRowView: View {
         }
         .help(snippet.command)
     }
+}
+
+/// The sidebar's keyboard (A11Y-U2): a view behind the panel that takes
+/// keys only when the window gives it the keyboard (Focus the Sidebar,
+/// F6) — never on its own, never as the panel appears or changes.
+private struct SidebarKeyCatcher: NSViewRepresentable {
+    let onKey: (NSEvent) -> Bool
+    let made: (NSView) -> Void
+
+    func makeNSView(context: Context) -> SidebarKeyView {
+        let view = SidebarKeyView()
+        view.onKey = onKey
+        made(view)
+        return view
+    }
+
+    func updateNSView(_ view: SidebarKeyView, context: Context) { view.onKey = onKey }
+}
+
+package final class SidebarKeyView: NSView {
+    var onKey: (NSEvent) -> Bool = { _ in false }
+
+    package override var acceptsFirstResponder: Bool { true }
+    // Clicks go to the panel's rows, not here.
+    package override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    package override func keyDown(with event: NSEvent) {
+        if !onKey(event) { super.keyDown(with: event) }
+    }
+
+    package override func accessibilityIdentifier() -> String { "sidebar.keyboard" }
 }

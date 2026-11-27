@@ -239,7 +239,8 @@ package enum KeyCommands {
     package static let all: [KeyCommand] = [
         // Overterm
         .init("app.settings", "Settings", group: "Overterm", key: "cmd+,", ghostty: "open_config"),
-        .init("app.changelog", "View Latest Changelog", group: "Overterm", key: "alt+cmd+o"),
+        // No default key since D-21 gave ⌥⌘O to opencode's tab.
+        .init("app.changelog", "View Latest Changelog", group: "Overterm"),
         .init("app.hide", "Hide Overterm", group: "Overterm", key: "cmd+h"),
         .init("app.hideOthers", "Hide Others", group: "Overterm", key: "alt+cmd+h"),
         .init("app.quit", "Quit Overterm", group: "Overterm", key: "cmd+q", ghostty: "quit"),
@@ -247,8 +248,8 @@ package enum KeyCommands {
         .init("tabs.new", "New Tab", group: "Tabs", key: "cmd+t", ghostty: "new_tab"),
         .init("tabs.newClaude", "New Claude Tab", group: "Tabs", key: "alt+cmd+c"),
         .init("tabs.newCodex", "New Codex Tab", group: "Tabs", key: "alt+cmd+x"),
-        // No default key: ⌥⌘O, ⌥⌘I and ⌥⌘G are taken; keybindings.json can give one.
-        .init("tabs.newOpencode", "New opencode Tab", group: "Tabs"),
+        // ⌥⌘O, the changelog's until D-21 (c).
+        .init("tabs.newOpencode", "New opencode Tab", group: "Tabs", key: "alt+cmd+o"),
         .init("tabs.newPi", "New pi Tab", group: "Tabs"),
         .init("tabs.newGemini", "New Gemini Tab", group: "Tabs"),
         .init("tasks.new", "New Task…", group: "Tabs", key: "shift+cmd+n"),
@@ -262,7 +263,18 @@ package enum KeyCommands {
         .init("tabs.nextAttention", "Next Failure or Tab That Needs You", group: "Tabs", key: "alt+cmd+down"),
         .init("tabs.peek", "Tab Peek", group: "Tabs", key: "shift+cmd+e"),
         .init("agents.overview", "Agent Overview", group: "Tabs", key: "shift+cmd+a"),
-        .init("view.presentation", "Presentation Mode", group: "Window", key: "ctrl+cmd+p"),
+        // ⇧⌃⌘P since D-21 (c) gave ⌃⌘P to Docker's switcher, as Kubernetes',
+        // Activity's and Terraform's are ⌃⌘J, ⌃⌘A and ⌃⌘E.
+        .init("view.presentation", "Presentation Mode", group: "Window", key: "shift+ctrl+cmd+p"),
+        // The columns, left to right, and the next and previous open one
+        // (A11Y-U3, D-21): ⌃⌥⌘ and F6 are none of Ghostty v1.4.0's defaults.
+        .init("columns.sidebar", "Focus the Sidebar", group: "Window", key: "ctrl+alt+cmd+1"),
+        .init("columns.terminal", "Focus the Terminal", group: "Window", key: "ctrl+alt+cmd+2"),
+        .init("columns.editor", "Focus the Editor", group: "Window", key: "ctrl+alt+cmd+3"),
+        .init("columns.right", "Focus the Right Pane", group: "Window", key: "ctrl+alt+cmd+4"),
+        .init("columns.inbox", "Focus the Inbox", group: "Window", key: "ctrl+alt+cmd+5"),
+        .init("columns.next", "Next Column", group: "Window", key: "f6"),
+        .init("columns.previous", "Previous Column", group: "Window", key: "shift+f6"),
         // Groups. The designs asked for ⇧⌘G and ⌥⌘I; Ghostty binds both
         // (navigate_search, inspector) and eats them before the menu, so
         // these went to ⌃⌘ — which isn't free. Ghostty v1.4.0's macOS ⌃⌘
@@ -312,13 +324,13 @@ package enum KeyCommands {
         .init("notes.show", "Notes", group: "Panels", key: "alt+cmd+n"),
         .init("database.show", "Database", group: "Panels", key: "alt+cmd+b"),
         .init("docker.page", "Docker", group: "Panels", key: "alt+cmd+p"),
-        .init("docker.switch", "Docker Switcher", group: "Panels", key: "shift+alt+cmd+p"),
+        .init("docker.switch", "Docker Switcher", group: "Panels", key: "ctrl+cmd+p"),
         .init("docker.composeUp", "Compose Up (the checkout's stack)", group: "Panels"),
         .init("docker.composeDown", "Compose Down… (the checkout's stack)", group: "Panels"),
         .init("docker.composeRestart", "Compose Restart (the checkout's stack)", group: "Panels"),
         .init("docker.composeWatch", "Compose Watch (the checkout's stack)", group: "Panels"),
         .init("kubernetes.page", "Kubernetes", group: "Panels", key: "alt+cmd+j"),
-        // Not ⇧⌥⌘J, as Docker's ⇧⌥⌘P would have it: Ghostty v1.4.0 binds
+        // Not ⇧⌥⌘J, as Docker's old ⇧⌥⌘P would have had it: Ghostty v1.4.0 binds
         // that (write_screen_file:open), and ⌘J, ⇧⌘J and ⌃⇧⌘J. ⌃⌘J is
         // free: its macOS ⌃⌘ defaults are the arrows, = and F.
         .init("kubernetes.switch", "Kubernetes Switcher", group: "Panels", key: "ctrl+cmd+j"),

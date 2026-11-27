@@ -243,4 +243,30 @@ extension FileTreeTests {
         }
         XCTAssertTrue(tree.rows.contains { $0.entry.name == "README.md" && $0.isIgnored })
     }
+
+    // MARK: The keyboard (A11Y-U2)
+
+    @MainActor
+    func testTheKeyboardWalksAndFoldsTheTree() throws {
+        try mkdir("src")
+        touch("src/main.swift")
+        touch("README.md")
+        let tree = FileTreeModel()
+        tree.setRoot(dir)
+        XCTAssertEqual(tree.rows.map(\.entry.name), ["src", "README.md"])
+        tree.moveSelection(by: 1)
+        XCTAssertEqual(tree.selectedRow?.entry.name, "src", "nothing picked: ↓ is the first row")
+        tree.expandSelection()
+        XCTAssertEqual(tree.rows.map(\.entry.name), ["src", "main.swift", "README.md"], "→ opens a closed folder")
+        tree.expandSelection()
+        XCTAssertEqual(tree.selectedRow?.entry.name, "main.swift", "→ on an open one: its first child")
+        tree.collapseSelection()
+        XCTAssertEqual(tree.selectedRow?.entry.name, "src", "← on a file: its folder")
+        tree.collapseSelection()
+        XCTAssertEqual(tree.rows.map(\.entry.name), ["src", "README.md"], "← on an open folder closes it")
+        tree.moveSelection(by: 5)
+        XCTAssertEqual(tree.selectedRow?.entry.name, "README.md", "the last row stays the last")
+        tree.moveSelection(by: -9)
+        XCTAssertEqual(tree.selectedRow?.entry.name, "src")
+    }
 }

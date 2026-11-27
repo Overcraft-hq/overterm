@@ -712,7 +712,7 @@ extension TerminalWindowController {
 // MARK: The switcher and the palette
 
 extension TerminalWindowController {
-    /// ⇧⌥⌘P: the palette, on containers and compose projects. Docker is
+    /// ⌃⌘P: the palette, on containers and compose projects. Docker is
     /// started if it wasn't; what it lists comes in as it answers.
     @objc package func showDockerSwitcher(_ sender: Any?) {
         guard Settings.shared.dockerEnabled else { return openSettings(.docker) }

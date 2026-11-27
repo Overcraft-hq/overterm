@@ -82,7 +82,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package private(set) var theme: ChromeTheme?
     /// The body's four insets from the window (the card gap).
     private var bodyInsets: [NSLayoutConstraint] = []
-    /// While presenting (⌃⌘P): what it shut (TerminalWindowController+Presentation).
+    /// While presenting (⇧⌃⌘P): what it shut (TerminalWindowController+Presentation).
     package var presentation: Presentation?
     /// The theme the window was last dressed in for the selected tab.
     package var lastWindowTheme: String?
@@ -214,6 +214,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var dockerLinkRecorder: ((URL) -> Void)?
     /// The pull requests as the last poll said them, by branch (`applyCI`).
     package var ciSeen: [String: PullRequestSummary] = [:]
+    /// What takes the keyboard in the sidebar's panel on screen (A11Y-U2):
+    /// its list's key view; set as the panel shows.
+    package var sidebarKeyTarget: (() -> NSView?)?
     /// The note each tab was marked with for an agent's MCP write it asks
     /// (MCPApprovals), until that request is answered.
     package var mcpMarked: [UUID: String] = [:]
@@ -543,7 +546,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 dockerActions: dockerActions,
                 terraformActions: terraformPanelActions,
                 openKubernetesPage: { [weak self] in self?.toggleKubernetesPage(nil) },
-                railAction: { [weak self] in self?.performRailAction($0) }
+                railAction: { [weak self] in self?.performRailAction($0) },
+                onKey: { [weak self] in self?.sidebarKey($0) ?? false },
+                keyView: { [weak self] view in self?.sidebarKeyTarget = { [weak view] in view } }
             ))
         sidebar.sizingOptions = []
         let sidebarItem = NSSplitViewItem(
@@ -3397,6 +3402,27 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 id: "a.clearHistory", group: .action, title: "Clear Command History…", subtitle: "What ⌘K remembers you ran; the shell's own is left alone",
                 symbol: "clock.badge.xmark"
             ) { [weak self] _, _ in self?.clearCommandHistory() },
+            PaletteItem(id: "a.focusSidebar", group: .action, title: "Focus the Sidebar", subtitle: "The keyboard to the sidebar's panel  ⌃⌥⌘1", symbol: "sidebar.left") {
+                [weak self] _, _ in self?.focusColumn(.sidebar)
+            },
+            PaletteItem(id: "a.focusTerminal", group: .action, title: "Focus the Terminal", subtitle: "⌃⌥⌘2", symbol: "terminal") {
+                [weak self] _, _ in self?.focusColumn(.terminal)
+            },
+            PaletteItem(id: "a.focusEditor", group: .action, title: "Focus the Editor", subtitle: "⌃⌥⌘3", symbol: "doc.text") {
+                [weak self] _, _ in self?.focusColumn(.editor)
+            },
+            PaletteItem(id: "a.focusRight", group: .action, title: "Focus the Right Pane", subtitle: "Changes, pull request, browser…  ⌃⌥⌘4", symbol: "sidebar.right") {
+                [weak self] _, _ in self?.focusColumn(.right)
+            },
+            PaletteItem(id: "a.focusInbox", group: .action, title: "Focus the Inbox", subtitle: "J and K to move  ⌃⌥⌘5", symbol: "tray") {
+                [weak self] _, _ in self?.focusColumn(.inbox)
+            },
+            PaletteItem(id: "a.nextColumn", group: .action, title: "Next Column", subtitle: "The keyboard to the next open column  F6", symbol: "arrow.right.to.line") {
+                [weak self] _, _ in self?.focusColumn(by: 1)
+            },
+            PaletteItem(id: "a.previousColumn", group: .action, title: "Previous Column", subtitle: "⇧F6", symbol: "arrow.left.to.line") {
+                [weak self] _, _ in self?.focusColumn(by: -1)
+            },
             PaletteItem(id: "a.peek", group: .action, title: "Tab Peek", subtitle: "Every tab's terminal, live  ⇧⌘E", symbol: "rectangle.on.rectangle") {
                 [weak self] _, _ in self?.toggleTabPeek(nil)
             },

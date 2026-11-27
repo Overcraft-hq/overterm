@@ -4008,9 +4008,9 @@ extension E2ERunner {
         await capturePanel()
         await plannedChecks(fake, socket: socket)
 
-        // ⇧⌥⌘P: the palette, on containers and compose projects.
+        // ⌃⌘P: the palette, on containers and compose projects.
         app.showDockerSwitcher(nil)
-        check("⇧⌥⌘P opens the palette on Docker", app.paletteView?.isHidden == false && app.palette.scope == .container)
+        check("⌃⌘P opens the palette on Docker", app.paletteView?.isHidden == false && app.palette.scope == .container)
         check(
             "listing its projects and containers",
             Set(app.palette.results.map(\.title)).isSuperset(of: ["ot-shop", "ot-shop-web-1", "ot-shop-db-1", "ot-elsewhere"])
@@ -4031,7 +4031,7 @@ extension E2ERunner {
         check("⌥↩ starts a stopped one", await eventually(5) { docker.container(db)?.state == .running })
         app.showDockerSwitcher(nil)
         app.showDockerSwitcher(nil)
-        check("⇧⌥⌘P again puts it away", app.paletteView?.isHidden == true)
+        check("⌃⌘P again puts it away", app.paletteView?.isHidden == true)
         await usageChecks(fake, web: web, db: db, elsewhere: elsewhere)
         await resourcesChecks(fake)
         await buildsChecks()

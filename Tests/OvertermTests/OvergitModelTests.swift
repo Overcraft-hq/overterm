@@ -133,4 +133,25 @@ final class OvergitModelTests: XCTestCase {
         XCTAssertEqual(SidebarPanel(stored: nil), .files)
         XCTAssertEqual(SidebarPanel(stored: "nonsense"), .files)
     }
+
+    func testTheKeyboardStandsOnSectionsAndTheOpenCommits() async {
+        let model = OvergitModel()
+        model.visible = true
+        model.setRoot(repo)
+        if !model.isExpanded(.commits) { model.toggle(.commits) }
+        await model.refresh()
+        let sha = try? XCTUnwrap(model.commits.first?.sha)
+        XCTAssertTrue(model.keyItems.contains(.commit(sha ?? "")), "an open Commits' commits can be stood on")
+        model.keyFocus = .section(.commits)
+        model.moveKeyFocus(by: 1)
+        XCTAssertEqual(model.keyFocus, .commit(sha ?? ""))
+        XCTAssertEqual(model.selected, sha, "a commit stood on is selected")
+        XCTAssertEqual(model.keyCommit?.subject, "Add a")
+        model.setKeySectionOpen(false)
+        XCTAssertEqual(model.keyFocus, .section(.commits), "← on a commit closes its section and stands on its title")
+        XCTAssertFalse(model.isExpanded(.commits))
+        XCTAssertFalse(model.keyItems.contains(.commit(sha ?? "")))
+        model.setKeySectionOpen(true)
+        XCTAssertTrue(model.isExpanded(.commits))
+    }
 }

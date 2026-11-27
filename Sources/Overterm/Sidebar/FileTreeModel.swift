@@ -130,6 +130,36 @@ package final class FileTreeModel: ObservableObject {
         rebuild()
     }
 
+    // MARK: The keyboard (A11Y-U2)
+
+    /// The selected row, if it is on screen.
+    package var selectedRow: FileRow? { rows.first { $0.id == selection } }
+
+    /// ↓/↑ (j/k): the next or previous row — the first when none is picked.
+    package func moveSelection(by step: Int) {
+        guard !rows.isEmpty else { return }
+        guard let at = rows.firstIndex(where: { $0.id == selection }) else {
+            selection = (step > 0 ? rows.first : rows.last)?.id
+            return
+        }
+        selection = rows[min(max(at + step, 0), rows.count - 1)].id
+    }
+
+    /// →: a closed folder opened; an open one's first child picked.
+    package func expandSelection() {
+        guard let row = selectedRow, row.entry.isDirectory else { return }
+        if !row.isExpanded { return toggle(row) }
+        if let at = rows.firstIndex(of: row), at + 1 < rows.count, rows[at + 1].depth > row.depth { selection = rows[at + 1].id }
+    }
+
+    /// ←: an open folder closed; anything else's parent folder picked.
+    package func collapseSelection() {
+        guard let row = selectedRow else { return }
+        if row.entry.isDirectory, row.isExpanded { return toggle(row) }
+        guard let at = rows.firstIndex(of: row) else { return }
+        if let parent = rows[..<at].last(where: { $0.depth < row.depth }) { selection = parent.id }
+    }
+
     package func collapseAll() {
         expanded = []
         rebuild()

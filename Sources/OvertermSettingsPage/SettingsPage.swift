@@ -1077,7 +1077,7 @@ private struct AboutSettings: View {
     }
 }
 
-/// View ▸ Latest Changelog (⌥⌘O): the bundled CHANGELOG.md.
+/// View ▸ Latest Changelog: the bundled CHANGELOG.md.
 @MainActor
 package final class ChangelogWindowController: NSWindowController {
     package static let shared = ChangelogWindowController()

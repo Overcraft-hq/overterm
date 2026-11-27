@@ -10,7 +10,7 @@ package final class SplitHostView: NSView {
     /// The bar across the top of every pane (`PaneHeaderView`).
     /// Settings ▸ Appearance ▸ Density moves it (ChromeMetrics); 38 by default.
     package static var headerHeight: CGFloat { ChromeMetrics.paneHeaderHeight }
-    /// Presentation mode (⌃⌘P) hides every pane's header.
+    /// Presentation mode (⇧⌃⌘P) hides every pane's header.
     package nonisolated(unsafe) static var presenting = false
     /// Settings ▸ Appearance ▸ Pane headers: "Only when a tab is split".
     package static var headersOnlyWhenSplit: Bool { Settings.shared.string("appearance.paneHeaders") == "whenSplit" }
