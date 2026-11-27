@@ -251,12 +251,16 @@ package struct TabBarView: View {
             .padding(.leading, 6)
             if let release = updates.available {
                 Button(action: actions.showUpdate) {
-                    Label("Update \(release.version)", systemImage: "arrow.down.circle.fill")
-                        .font(.system(size: ChromeMetrics.text(11), weight: .medium))
-                        .padding(.horizontal, 8)
-                        .frame(height: ChromeMetrics.row(22))
-                        .background(Capsule().fill(TabStatusStyle.signal.opacity(0.22)))
-                        .contentShape(Rectangle())
+                    // Image and text, not a Label: in the toolbar a Label is drawn icon-only.
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.circle.fill")
+                        Text(verbatim: "Update \(release.version)")
+                    }
+                    .font(.system(size: ChromeMetrics.text(11), weight: .medium))
+                    .padding(.horizontal, 8)
+                    .frame(height: ChromeMetrics.row(22))
+                    .background(Capsule().fill(TabStatusStyle.signal.opacity(0.22)))
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(TabStatusStyle.signal)
