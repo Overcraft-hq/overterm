@@ -68,17 +68,22 @@ if [[ "${1:-}" == "kafka" ]]; then
     -e KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
     -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 -e KAFKA_NUM_PARTITIONS=3 \
     -e KAFKA_SASL_ENABLED_MECHANISMS='PLAIN,SCRAM-SHA-256,SCRAM-SHA-512' \
-    -e KAFKA_LISTENER_NAME_SASL__PLAINTEXT_PLAIN_SASL_JAAS_CONFIG='org.apache.kafka.common.security.plain.PlainLoginModule required user_ot="otpass";' \
-    -e KAFKA_LISTENER_NAME_SASL__PLAINTEXT_SCRAM-SHA-256_SASL_JAAS_CONFIG='org.apache.kafka.common.security.scram.ScramLoginModule required;' \
-    -e KAFKA_LISTENER_NAME_SASL__PLAINTEXT_SCRAM-SHA-512_SASL_JAAS_CONFIG='org.apache.kafka.common.security.scram.ScramLoginModule required;' \
-    apache/kafka:4.1.0 >/dev/null
+    -e KAFKA_OPTS='-Djava.security.auth.login.config=/tmp/jaas.conf' \
+    --entrypoint sh apache/kafka:4.1.0 -c '
+      # The image wants the SASL users in a JAAS file KAFKA_OPTS names: PLAIN
+      # lists its users here, SCRAM keeps them in the cluster (added below).
+      printf "KafkaServer {\n org.apache.kafka.common.security.plain.PlainLoginModule required user_ot=\"otpass\";\n org.apache.kafka.common.security.scram.ScramLoginModule required;\n};\n" >/tmp/jaas.conf
+      exec /etc/kafka/docker/run' >/dev/null
   bin=/opt/kafka/bin
   for _ in $(seq 1 90); do
     if docker exec ot-kafka "$bin/kafka-broker-api-versions.sh" --bootstrap-server localhost:9095 >/dev/null 2>&1; then break; fi
     sleep 1
   done
-  docker exec ot-kafka "$bin/kafka-configs.sh" --bootstrap-server localhost:9095 --alter --entity-type users --entity-name ot \
-    --add-config 'SCRAM-SHA-256=[password=otpass],SCRAM-SHA-512=[password=otpass]' >/dev/null
+  # One credential a request: Kafka refuses two for one user at once.
+  for scram in SCRAM-SHA-256 SCRAM-SHA-512; do
+    docker exec ot-kafka "$bin/kafka-configs.sh" --bootstrap-server localhost:9095 --alter --entity-type users --entity-name ot \
+      --add-config "$scram=[password=otpass]" >/dev/null
+  done
   for codec in gzip snappy lz4 zstd; do
     printf 'one\ntwo\nthree\n' | docker exec -i ot-kafka "$bin/kafka-console-producer.sh" --bootstrap-server localhost:9095 \
       --topic "ot.codec.$codec" --compression-codec "$codec" >/dev/null
