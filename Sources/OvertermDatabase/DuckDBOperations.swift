@@ -102,6 +102,9 @@ package enum DuckDBOps {
     /// when it is the file's lock, what to do about it.
     package static func explainOpen(_ message: String) -> String {
         let text = trimmed(message)
+        if text.localizedCaseInsensitiveContains("different configuration") {
+            return text + "\n\nThe file is open in Overterm already, read-only in one connection and writable in the other. Close that one, then connect again."
+        }
         guard text.contains("Could not set lock") || text.contains("Conflicting lock") else { return text }
         return text + "\n\nDuckDB lets one program at a time open a file that can be written. Close it there, then connect again."
     }

@@ -2616,8 +2616,14 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   scale). A SELECT that can't be a subquery, and anything else, runs as it
   is through the materialised result (`duckdb_value_varchar`, deprecated
   and allowed by `CDuckDB.h`); a write's one `Count` column is its rows
-  changed, a transaction's `Success` nothing. A cancelled run is
-  `duckdb_interrupt`ed. The file's lock — one program at a time may open
+  changed, a transaction's `Success` nothing; a SELECT never runs twice.
+  A cancelled run is `duckdb_interrupt`ed. A file is opened through one
+  instance cache for the app (`duckdb_get_or_create_from_cache`, the path
+  with its links resolved): DuckDB's lock is `fcntl`'s, the process's, so
+  a second open here — another connection, the form's Test — would not be
+  refused, and its close would drop the first one's lock; the cache gives
+  both the same database and refuses read-only beside writable. Memory is
+  each its own. The file's lock — one program at a time may open
   a file it can write — is DuckDB's own message, which names the holder,
   and one sentence (`DuckDBOps.explainOpen`). The catalog: the current
   database's schemas (`duckdb_schemas()`, main first), tables and views,
@@ -2634,8 +2640,10 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
 - **Agents** (`DuckText`): SQL's rules, DuckDB's reads (`FROM t`,
   `SUMMARIZE`, `PIVOT`) and PRAGMAs that only say something — and a
   statement that reaches outside the database is held as a write is:
-  `read_*`, `glob`, `query()` (text run as SQL) and kin, any string or
-  quoted name that looks like a path, a URL or a file (`FROM 'orders.csv'`).
+  `read_*`, `glob`, `query()` (text run as SQL) and kin, their names
+  quoted or not, any string — `'…'`, `$$…$$` — or quoted name that looks
+  like a path, a URL or a file (`FROM 'orders.csv'`). On a read-only
+  connection such a read is asked too, not refused.
   DuckDB reads whatever a query names, the user's ssh key too; a person's
   console never asks, an agent's statement says why (`DuckText.outside`),
   refused unless Settings ▸ Database lets agents write, then asked.

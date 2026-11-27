@@ -63,7 +63,16 @@ package actor DuckDBDriver: DatabaseDriver {
         }
         var opened: duckdb_database?
         var error: UnsafeMutablePointer<CChar>?
-        guard duckdb_open_ext(path, &opened, config, &error) == DuckDBSuccess, opened != nil else {
+        // A file through the app's one instance cache: DuckDB's lock is
+        // fcntl's, the process's — a second open of the file here would not
+        // be refused, and closing it would drop the first one's lock. The
+        // cache hands every connection to a file the same database, and
+        // refuses one with other settings (read-only beside writable).
+        let state =
+            memory
+            ? duckdb_open_ext(path, &opened, config, &error)
+            : duckdb_get_or_create_from_cache(Self.instances.cache, Self.canonical(path), &opened, config, &error)
+        guard state == DuckDBSuccess, opened != nil else {
             let message = error.map { String(cString: $0) } ?? "DuckDB couldn't open \(path)."
             if let error { duckdb_free(error) }
             if opened != nil { duckdb_close(&opened) }
@@ -83,6 +92,20 @@ package actor DuckDBDriver: DatabaseDriver {
         if database != nil { duckdb_close(&database) }
         handle = nil
         database = nil
+    }
+
+    /// The app's databases by file: one instance each, however many
+    /// connections and Test buttons open it.
+    private static let instances = Instances()
+    private final class Instances: @unchecked Sendable {
+        let cache = duckdb_create_instance_cache()
+    }
+
+    /// A file's path as the cache keys it: links resolved, so two spellings
+    /// of one file are one database.
+    package static func canonical(_ path: String) -> String {
+        guard FileManager.default.fileExists(atPath: path) else { return path }
+        return URL(fileURLWithPath: path).resolvingSymlinksInPath().path
     }
 
     /// The library's version: v2.0.1.
@@ -111,20 +134,29 @@ package actor DuckDBDriver: DatabaseDriver {
 
     private func run(_ sql: String, limit: Int) throws -> QueryResult {
         guard let handle else { throw DatabaseError.notConnected }
-        if let shape = shape(of: sql), let wrapped = prepared(DuckDBOps.asText(sql, limit: limit + 1)) {
-            var prepared: duckdb_prepared_statement? = wrapped
-            defer { duckdb_destroy_prepare(&prepared) }
-            var answer = duckdb_result()
-            defer { duckdb_destroy_result(&answer) }
-            guard duckdb_execute_prepared(prepared, &answer) == DuckDBSuccess else { throw Self.failure(&answer) }
-            // The wrapper's columns are the statement's, one for one.
-            if Int(duckdb_column_count(&answer)) == shape.columns.count {
+        if let shape = shape(of: sql) {
+            // A SELECT that can be a subquery runs once, as text; one that
+            // can't (DuckDB says so preparing it) runs as it is, below —
+            // unless its run was cancelled meanwhile.
+            if let wrapped = prepared(DuckDBOps.asText(sql, limit: limit + 1)) {
+                var prepared: duckdb_prepared_statement? = wrapped
+                defer { duckdb_destroy_prepare(&prepared) }
+                var answer = duckdb_result()
+                defer { duckdb_destroy_result(&answer) }
+                guard duckdb_execute_prepared(prepared, &answer) == DuckDBSuccess else { throw Self.failure(&answer) }
                 var result = QueryResult()
-                result.columns = shape.columns
-                result.types = shape.types
+                // The wrapper's columns are the statement's, one for one;
+                // should they not be, its own names, never a second run.
+                if Int(duckdb_column_count(&answer)) == shape.columns.count {
+                    result.columns = shape.columns
+                    result.types = shape.types
+                } else {
+                    result.columns = (0..<duckdb_column_count(&answer)).map { duckdb_column_name(&answer, $0).map { String(cString: $0) } ?? "" }
+                }
                 (result.rows, result.truncated) = Self.rows(&answer, limit: limit)
                 return result
             }
+            if Task.isCancelled { throw DatabaseError.failed("Interrupted.") }
         }
         var answer = duckdb_result()
         defer { duckdb_destroy_result(&answer) }

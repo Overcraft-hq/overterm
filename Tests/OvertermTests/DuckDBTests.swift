@@ -130,6 +130,37 @@ final class DuckDBTests: XCTestCase {
         }
     }
 
+    /// DuckDB's lock is the process's: the app opens a file once, however
+    /// many connections (and Test buttons) ask for it — a second one closed
+    /// keeps the first's lock, and read-only beside writable is refused.
+    func testOneFileIsOneDatabase() async throws {
+        let path = file().path
+        let first = DuckDBDriver(connection(path))
+        try await first.connect()
+        _ = try await first.execute("CREATE TABLE t (x INT)", limit: 1)
+        let second = DuckDBDriver(connection(path))
+        try await second.connect()
+        let seen = try await second.execute("SELECT count(*) FROM t", limit: 1)
+        XCTAssertEqual(seen.rows, [["0"]], "the same database")
+        await second.close()
+        let after = try await first.execute("INSERT INTO t VALUES (1)", limit: 1)
+        XCTAssertEqual(after.affected, 1, "the first keeps working once the second closed")
+        do {
+            try await DuckDBDriver(connection(path, readOnly: true)).connect()
+            XCTFail("read-only beside writable")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("open in Overterm already"), error.localizedDescription)
+        }
+        await first.close()
+        let memory = DuckDBDriver(connection(DuckDBDriver.memory))
+        try await memory.connect()
+        _ = try await memory.execute("CREATE TABLE only_here (a INT)", limit: 1)
+        let other = DuckDBDriver(connection(DuckDBDriver.memory))
+        try await other.connect()
+        let tables = try await other.tables(in: "main")
+        XCTAssertEqual(tables, [], "each in-memory database its own")
+    }
+
     func testACancelledRunStops() async throws {
         let driver = DuckDBDriver(connection(DuckDBDriver.memory))
         try await driver.connect()
@@ -209,9 +240,13 @@ final class DuckDBTests: XCTestCase {
             "SELECT * FROM 'orders.csv'", "FROM '/etc/hosts'", "SELECT * FROM read_text('~/.ssh/id_rsa')", "SELECT * FROM READ_CSV ('x')",
             "SELECT * FROM query('DROP TABLE t')", #"SELECT * FROM "data.parquet""#, "SELECT * FROM 's3://bucket/x'", "INSERT INTO t VALUES (1)",
             "ATTACH 'other.db'", "COPY t TO 'x.csv'", "INSTALL httpfs", "PRAGMA import_database('x')", "WITH a AS (DELETE FROM t RETURNING *) SELECT * FROM a",
+            // A function's name quoted, a path built at run time, a dollar-quoted string.
+            #"SELECT content FROM "read_text"(chr(47)||'Users'||chr(47)||'.aws')"#, #"SELECT * FROM "main"."read_csv"('x')"#,
+            "SELECT * FROM $$~/secret.csv$$", "SELECT * FROM $a$/etc/hosts$a$",
         ] {
             XCTAssertFalse(DatabaseKind.duckdb.agentReads(asked), asked)
         }
+        XCTAssertTrue(DatabaseKind.duckdb.agentReads(#"SELECT "note" FROM "orders" WHERE id = $1"#), "a parameter isn't a string")
         XCTAssertTrue(DatabaseKind.duckdb.onlyReads("FROM t"))
         XCTAssertFalse(DatabaseKind.duckdb.onlyReads("INSTALL httpfs"), "refused on a read-only connection")
         XCTAssertEqual(DuckText.outside("SELECT * FROM 'a.csv'"), "It names “a.csv”, which DuckDB reads as a file or a URL.")

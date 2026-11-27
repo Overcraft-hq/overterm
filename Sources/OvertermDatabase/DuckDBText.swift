@@ -43,17 +43,19 @@ package enum DuckText: KindConsoleText {
     /// What a statement reaches outside the database, said; nil when it
     /// reaches nothing. Text can't see everything — a string built at run
     /// time — so it errs towards saying so: a function that reads files or
-    /// URLs or runs text, and any string or quoted name that looks like a
-    /// path, a URL or a file.
+    /// URLs or runs text, however its name is quoted (`"read_text"(…)`), and
+    /// any string — `'…'`, `$$…$$` — or quoted name that looks like a path, a
+    /// URL or a file.
     package static func outside(_ statement: String) -> String? {
-        let bare = stripped(statement)
-        let functions = #"(?i)\b(read_[a-z_]+|glob|sniff_csv|parquet_[a-z_]+|delta_scan|iceberg_[a-z_]+|query|query_table|getenv|which_secret|duckdb_secrets)\s*\("#
-        if let match = bare.range(of: functions, options: .regularExpression) {
-            let name = bare[match].prefix { $0.isLetter || $0.isNumber || $0 == "_" }
+        let (visible, quoted) = scan(statement)
+        let functions =
+            #"(?i)\b(read_[a-z_]+|glob|sniff_csv|parquet_[a-z_]+|delta_scan|iceberg_[a-z_]+|query|query_table|getenv|which_secret|duckdb_secrets|json_execute_serialized_sql)\s*\("#
+        if let match = visible.range(of: functions, options: .regularExpression) {
+            let name = visible[match].prefix { $0.isLetter || $0.isNumber || $0 == "_" }
             return "It calls \(name)(), which reads outside the database or runs text as SQL."
         }
-        for quoted in quotedTexts(statement) where looksLikeAPlace(quoted) {
-            return "It names “\(quoted)”, which DuckDB reads as a file or a URL."
+        for text in quoted where looksLikeAPlace(text) {
+            return "It names “\(text)”, which DuckDB reads as a file or a URL."
         }
         return nil
     }
@@ -66,21 +68,36 @@ package enum DuckText: KindConsoleText {
         return extensions.contains((text as NSString).pathExtension.lowercased())
     }
 
-    /// Every `'…'` string's and `"…"` name's text, comments skipped.
-    private static func quotedTexts(_ statement: String) -> [String] {
-        var texts: [String] = []
+    /// The statement as DuckDB reads its names — comments out, strings
+    /// blanked, a quoted name's quotes taken off — and every string's and
+    /// quoted name's text: `'…'` (a doubled quote one of it), `"…"`, and
+    /// dollar-quoted `$$…$$` / `$tag$…$tag$`.
+    private static func scan(_ statement: String) -> (visible: String, quoted: [String]) {
+        var visible = ""
+        var quoted: [String] = []
         let chars = Array(statement)
         var i = 0
+        func starts(_ text: [Character], at k: Int) -> Bool { k + text.count <= chars.count && Array(chars[k..<k + text.count]) == text }
         while i < chars.count {
             let c = chars[i]
-            if c == "-", i + 1 < chars.count, chars[i + 1] == "-" {
+            if starts(["-", "-"], at: i) {
                 while i < chars.count, chars[i] != "\n" { i += 1 }
                 continue
             }
-            if c == "/", i + 1 < chars.count, chars[i + 1] == "*" {
+            if starts(["/", "*"], at: i) {
                 i += 2
-                while i + 1 < chars.count, !(chars[i] == "*" && chars[i + 1] == "/") { i += 1 }
+                while i < chars.count, !starts(["*", "/"], at: i) { i += 1 }
                 i += 2
+                visible += " "
+                continue
+            }
+            if c == "$", let tag = dollarTag(chars, at: i) {
+                let body = i + tag.count
+                var end = body
+                while end < chars.count, !starts(tag, at: end) { end += 1 }
+                quoted.append(String(chars[body..<min(end, chars.count)]))
+                visible += " '' "
+                i = min(end + tag.count, chars.count)
                 continue
             }
             if c == "'" || c == "\"" {
@@ -88,7 +105,6 @@ package enum DuckText: KindConsoleText {
                 i += 1
                 while i < chars.count {
                     if chars[i] == c {
-                        // A doubled quote is one of it, inside.
                         if i + 1 < chars.count, chars[i + 1] == c {
                             text.append(c)
                             i += 2
@@ -99,11 +115,24 @@ package enum DuckText: KindConsoleText {
                     text.append(chars[i])
                     i += 1
                 }
-                texts.append(text)
+                i += 1
+                quoted.append(text)
+                visible += c == "'" ? " '' " : text
+                continue
             }
+            visible.append(c)
             i += 1
         }
-        return texts
+        return (visible, quoted)
+    }
+
+    /// `$$` or `$tag$` starting at `i`; nil for a `$` that opens no string
+    /// (a parameter, `$1`).
+    private static func dollarTag(_ chars: [Character], at i: Int) -> [Character]? {
+        var j = i + 1
+        while j < chars.count, chars[j].isLetter || chars[j] == "_" || (j > i + 1 && chars[j].isNumber) { j += 1 }
+        guard j < chars.count, chars[j] == "$" else { return nil }
+        return Array(chars[i...j])
     }
 
     private static func stripped(_ statement: String) -> String { SQLText.stripped(statement) }

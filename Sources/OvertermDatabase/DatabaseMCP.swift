@@ -60,7 +60,11 @@ package enum DatabaseMCP {
                     throw BrowserMCP.ToolError(
                         message: "Agents only read here: \(target.kind.verb(of: statement)) writes. The user can allow writes in Settings ▸ Database.")
                 }
-                guard !target.readOnly else { throw BrowserMCP.ToolError(message: "“\(target.name)” is read-only.") }
+                // A DuckDB read of a file is asked, not refused, on a read-only
+                // connection: DuckDB keeps the database itself read-only.
+                guard !target.readOnly || (target.kind == .duckdb && DuckText.onlyReads(statement)) else {
+                    throw BrowserMCP.ToolError(message: "“\(target.name)” is read-only.")
+                }
                 guard try await allow(statement, on: target) else { throw BrowserMCP.ToolError(message: "The user declined to run it.") }
             }
             let limit = min(max(arguments["limit"] as? Int ?? 100, 1), 1000)
