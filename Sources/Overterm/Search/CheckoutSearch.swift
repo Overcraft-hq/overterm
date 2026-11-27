@@ -69,3 +69,44 @@ package enum CheckoutSearch {
         }
     }
 }
+
+/// What Go to File (⌘P) was asked: a name to rank, and the line (and
+/// column) after a colon — `main.swift:12`, `main.swift:12:4`. Pure.
+package struct GoToFileQuery: Equatable {
+    package let name: String
+    package let line: Int?
+    package let column: Int?
+
+    package init(name: String, line: Int? = nil, column: Int? = nil) {
+        self.name = name
+        self.line = line
+        self.column = column
+    }
+
+    package init(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        var parts = trimmed.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        var numbers: [Int] = []
+        // Up to two numbers off the end, line then column; a colon in a
+        // name (rare, but legal) stays in it.
+        while parts.count > 1, numbers.count < 2, let last = parts.last {
+            if last.isEmpty, numbers.isEmpty {
+                // `name:` while the line is being typed.
+                parts.removeLast()
+                continue
+            }
+            guard let number = Int(last.trimmingCharacters(in: .whitespaces)), number >= 0 else { break }
+            numbers.insert(number, at: 0)
+            parts.removeLast()
+        }
+        name = parts.joined(separator: ":").trimmingCharacters(in: .whitespaces)
+        line = numbers.first.map { max(1, $0) }
+        column = numbers.count > 1 ? max(1, numbers[1]) : nil
+    }
+
+    /// The picker's rows for this query: ranked by `CheckoutSearch.rank`;
+    /// with no name yet, the first files in order.
+    package func ranked(_ files: [String], limit: Int = 50) -> [String] {
+        name.isEmpty ? Array(files.prefix(limit)) : CheckoutSearch.rank(files, query: name, limit: limit)
+    }
+}

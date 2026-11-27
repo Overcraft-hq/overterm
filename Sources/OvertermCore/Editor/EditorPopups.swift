@@ -167,6 +167,15 @@ package final class EditorPicker: NSView, NSTextFieldDelegate, NSTableViewDataSo
 
     package var query: String { field.stringValue }
 
+    /// The query as if typed: the scenarios' way in, never a synthetic key.
+    package func setQuery(_ text: String) {
+        field.stringValue = text
+        refresh()
+    }
+
+    /// The rows the list shows now.
+    package var itemTitles: [String] { items.map(\.title) }
+
     package func refresh() {
         items = scroll.isHidden ? [] : provider(field.stringValue)
         table.reloadData()

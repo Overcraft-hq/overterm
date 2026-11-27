@@ -104,6 +104,11 @@ extension EditorViewController: CodeTextViewHost {
     /// does what it would have).
     @discardableResult
     package func perform(_ id: String) -> Bool {
+        // A file to open needs no file open.
+        if id == "editor.goToFile" {
+            goToFile()
+            return true
+        }
         guard let buffer = active, buffer.document.unavailable == nil || ["editor.closeFile", "editor.toggleZoom"].contains(id) else {
             return false
         }

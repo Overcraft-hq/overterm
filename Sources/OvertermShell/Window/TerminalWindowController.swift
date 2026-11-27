@@ -170,6 +170,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     private var pullRequestPoll: Timer?
     private var finalSaveDone = false
     package private(set) var editor: EditorViewController?
+    /// The file the tree last followed the editor to (EDIT-U2): only a new
+    /// one moves it, so a folder closed by hand stays closed while you type.
+    package var lastRevealedInTree: URL?
     /// Opens files in the app picked for them (the file tree, the editor's ↗).
     package let opener = ExternalOpener()
     package private(set) var editorItem: NSSplitViewItem?
@@ -831,6 +834,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         wireGroupFocus()
         wireAPI()
         wireNotes()
+        wireEditorBeside()
         wireDatabase()
         declarePage(settingsWorkspacePage())
         wireDockerPage()
@@ -3106,9 +3110,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             if !ask() { NSSound.beep() }
             return
         }
+        // The editor's keyboard and a selection there: its file and lines.
+        if let editor, editor.hasKeyboard, let asked = editor.askAboutSelection() { return askAboutEditor(asked) }
         guard let tab = store.selected, let pane = tab.terminal.selectionText == nil ? nil : tab.terminal,
             let text = pane.selectionText
-        else { return }
+        else { return NSSound.beep() }
         hideSelectionBar()
         let folder = pane.workingDirectory ?? tab.workingDirectory
         let asked = askSelection(text, of: pane, in: tab)
@@ -3424,6 +3430,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             },
             PaletteItem(id: "a.focusEditor", group: .action, title: "Focus the Editor", subtitle: "⌃⌥⌘3", symbol: "doc.text") {
                 [weak self] _, _ in self?.focusColumn(.editor)
+            },
+            PaletteItem(id: "a.goToFile", group: .action, title: "Go to File…", subtitle: "A file of this checkout by name, name:line  ⌘P in the editor", symbol: "doc.text.magnifyingglass") {
+                [weak self] _, _ in self?.goToFile()
             },
             PaletteItem(id: "a.focusRight", group: .action, title: "Focus the Right Pane", subtitle: "Changes, pull request, browser…  ⌃⌥⌘4", symbol: "sidebar.right") {
                 [weak self] _, _ in self?.focusColumn(.right)

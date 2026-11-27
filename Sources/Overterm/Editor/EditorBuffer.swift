@@ -73,6 +73,9 @@ package final class EditorBuffer {
     /// dropped at the next edit, which they no longer describe.
     package var terraformDiagnostics: [EditorDiagnostic] = []
     /// The file as the last commit has it; nil outside git or when new.
+    /// The disk's version Keep Mine was pressed for: its bar stays away
+    /// until the file changes again.
+    package var keptDiskVersion: Date?
     package var gitBase: String?
     package var gitMarks: [GitGutterMark] = []
     /// The version a language server last heard.

@@ -136,6 +136,13 @@ package final class EditorDocument: ObservableObject {
         return current > loadedModification
     }
 
+    /// The file's modification date on disk now (nil: none, or virtual):
+    /// what Keep Mine remembers having seen.
+    package var diskModification: Date? {
+        guard let url, !isVirtual else { return nil }
+        return Self.modification(of: url)
+    }
+
     private static func modification(of url: URL) -> Date? {
         (try? FileManager.default.attributesOfItem(atPath: url.resolvingSymlinksInPath().path))?[.modificationDate] as? Date
     }

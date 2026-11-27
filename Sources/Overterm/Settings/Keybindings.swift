@@ -365,6 +365,12 @@ package enum KeyCommands {
         .init("usage.show", "Usage", group: "Panels", key: "alt+cmd+u"),
         .init("search.terminal", "Search Terminal & Files", group: "Panels", ghostty: "start_search", menu: false),
         // Editing
+        // Undo and Redo are Ghostty's own actions on its own keys, so the
+        // terminal keeps what it did with them; the menu items reach the
+        // editor (and any text field) through the responder chain.
+        .init("edit.undo", "Undo", group: "Editing", key: "cmd+z", ghostty: "undo"),
+        .init("edit.redo", "Redo", group: "Editing", key: "shift+cmd+z", ghostty: "redo"),
+        .init("edit.cut", "Cut", group: "Editing", key: "cmd+x"),
         .init("edit.copy", "Copy", group: "Editing", key: "cmd+c", ghostty: "copy_to_clipboard"),
         .init("edit.paste", "Paste", group: "Editing", key: "cmd+v", ghostty: "paste_from_clipboard"),
         .init("edit.selectAll", "Select All", group: "Editing", key: "cmd+a", ghostty: "select_all"),
@@ -386,6 +392,8 @@ package enum KeyCommands {
         .init("window.close", "Close Window", group: "Window", key: "shift+cmd+w", ghostty: "close_window"),
         .init("window.minimize", "Minimize", group: "Window", key: "cmd+m"),
         // Editor — Zed's keys (its VS Code keymap), only while editing.
+        // ⌘P, D-21's: Presentation Mode moved to ⇧⌃⌘P for it.
+        .init("editor.goToFile", "Go to File…", group: "Editor", key: "cmd+p", editor: true),
         .init("editor.goToLine", "Go to Line…", group: "Editor", key: "ctrl+g", editor: true),
         .init("editor.goToSymbol", "Go to Symbol in File…", group: "Editor", key: "shift+cmd+o", editor: true),
         .init("editor.goToDefinition", "Go to Definition", group: "Editor", key: "f12", editor: true),

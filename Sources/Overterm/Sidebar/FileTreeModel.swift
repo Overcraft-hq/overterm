@@ -36,6 +36,10 @@ package final class FileTreeModel: ObservableObject {
     @Published package private(set) var root: URL?
     @Published package private(set) var rows: [FileRow] = []
     @Published package var selection: URL?
+    /// What git says of the rows, from the window's `DiffModel` (`setChanges`).
+    @Published package private(set) var marks = FileTreeMarks.empty
+    /// The header's "Changed only": the changed files under their folders.
+    @Published package var changedOnly = false
 
     private var expanded: Set<URL> = []
     private var listings: [URL: [FileEntry]] = [:]
@@ -130,34 +134,93 @@ package final class FileTreeModel: ObservableObject {
         rebuild()
     }
 
+    // MARK: Git's marks (EDIT-G6)
+
+    /// The checkout's changes as `DiffModel` has them — no git call here.
+    /// Only for the tree's own checkout: another one's paths mean nothing.
+    package func setChanges(_ changed: [ChangedFile], root changesRoot: URL?) {
+        let same = changesRoot.map { $0.standardizedFileURL.path } == root?.standardizedFileURL.path
+        let new = same ? FileTreeMarks(root: changesRoot, changed: changed) : .empty
+        if new != marks { marks = new }
+    }
+
+    /// "Changed only"'s rows: every changed file, its folders open.
+    package var changedRows: [FileRow] {
+        guard let root else { return [] }
+        return marks.changedRows().map { row in
+            let url = root.appendingPathComponent(row.path, isDirectory: row.isDirectory)
+            return FileRow(entry: FileEntry(url: url, isDirectory: row.isDirectory), depth: row.depth, isExpanded: row.isDirectory, isIgnored: false)
+        }
+    }
+
+    /// The rows on screen: the tree, or the changed ones.
+    package var visibleRows: [FileRow] { changedOnly ? changedRows : rows }
+
+    // MARK: Following the editor (EDIT-U2)
+
+    /// The deepest a reveal opens: past this a path is not a checkout's.
+    package static let revealDepth = 64
+
+    /// Opens the folders down to `url` and selects its row (the view
+    /// scrolls to the selection). Walked down from the root by the
+    /// listings' own entries, so it never walks up and stops at the path's
+    /// end. False when `url` isn't under the tree's root.
+    @discardableResult
+    package func reveal(_ url: URL) -> Bool {
+        guard let root, let relative = FileTreeMarks.relative(url.standardizedFileURL.path, to: root.standardizedFileURL.path) else { return false }
+        let components = relative.split(separator: "/").map(String.init)
+        guard !components.isEmpty, components.count <= Self.revealDepth else { return false }
+        if changedOnly, marks.files[relative] == nil { changedOnly = false }
+        var dir = root
+        var target: URL?
+        for (index, name) in components.enumerated() {
+            guard let entry = listing(of: dir).first(where: { $0.name == name }) else { break }
+            if index == components.count - 1 {
+                target = entry.url
+            } else {
+                guard entry.isDirectory else { break }
+                expanded.insert(entry.url)
+                dir = entry.url
+            }
+        }
+        rebuild()
+        guard let target else { return false }
+        if changedOnly {
+            selection = changedRows.first { $0.entry.url.standardizedFileURL.path == target.standardizedFileURL.path }?.id ?? target
+        } else if selection != target {
+            selection = target
+        }
+        return true
+    }
+
     // MARK: The keyboard (A11Y-U2)
 
     /// The selected row, if it is on screen.
-    package var selectedRow: FileRow? { rows.first { $0.id == selection } }
+    package var selectedRow: FileRow? { visibleRows.first { $0.id == selection } }
 
     /// ↓/↑ (j/k): the next or previous row — the first when none is picked.
     package func moveSelection(by step: Int) {
-        guard !rows.isEmpty else { return }
-        guard let at = rows.firstIndex(where: { $0.id == selection }) else {
-            selection = (step > 0 ? rows.first : rows.last)?.id
+        guard !visibleRows.isEmpty else { return }
+        guard let at = visibleRows.firstIndex(where: { $0.id == selection }) else {
+            selection = (step > 0 ? visibleRows.first : visibleRows.last)?.id
             return
         }
-        selection = rows[min(max(at + step, 0), rows.count - 1)].id
+        selection = visibleRows[min(max(at + step, 0), visibleRows.count - 1)].id
     }
 
     /// →: a closed folder opened; an open one's first child picked.
     package func expandSelection() {
         guard let row = selectedRow, row.entry.isDirectory else { return }
         if !row.isExpanded { return toggle(row) }
-        if let at = rows.firstIndex(of: row), at + 1 < rows.count, rows[at + 1].depth > row.depth { selection = rows[at + 1].id }
+        if let at = visibleRows.firstIndex(of: row), at + 1 < visibleRows.count, visibleRows[at + 1].depth > row.depth { selection = visibleRows[at + 1].id }
     }
 
     /// ←: an open folder closed; anything else's parent folder picked.
     package func collapseSelection() {
         guard let row = selectedRow else { return }
-        if row.entry.isDirectory, row.isExpanded { return toggle(row) }
-        guard let at = rows.firstIndex(of: row) else { return }
-        if let parent = rows[..<at].last(where: { $0.depth < row.depth }) { selection = parent.id }
+        if row.entry.isDirectory, row.isExpanded, !changedOnly { return toggle(row) }
+        guard let at = visibleRows.firstIndex(of: row) else { return }
+        if let parent = visibleRows[..<at].last(where: { $0.depth < row.depth }) { selection = parent.id }
     }
 
     package func collapseAll() {
