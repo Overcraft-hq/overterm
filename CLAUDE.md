@@ -125,7 +125,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - Keep features built-in (the agents are `Agent`'s cases — Claude Code, Codex, opencode, pi, Gemini CLI); no plugin slots.
 - **Tests are part of the change**: unit/integration in `Tests/OvertermTests` (tabs are real but surfaceless there — never `ghostty_init` in unit tests), and an E2E scenario in `E2ERunner` for anything a person would see; a bug found by hand gets a check. `make test && make e2e` before calling it done. docs/testing.md.
 - **Tests never reach the user's Docker.** Unit tests and scenarios run against `FakeDockerEngine` on a socket of their own (as a remote one through `FakeSSHHost`, which reads nothing of ~/.ssh), an isolated run reaches no engine unless `OVERTERM_DOCKER_HOST` names one, and a scenario records rather than types any command that would reach a real `docker` (compose down against the user's own project of the same name). `OVERTERM_DOCKER_TESTS=1` reads, and makes only containers and volumes of its own (labelled `overterm.test`, from an image already there), removed after.
-- **Nobody is asked about usage over the network.** Both agents write their
+- **Overterm asks no server about usage itself** — the one request is the agent's own: `general.usageAsk` (on by default) runs `claude -p "/usage" --no-session-persistence` every ten minutes while Overterm is in front, a local command that asks Claude's service and writes no session (`AgentUsageCommand`; README says so). Both agents write their
   own quota to disk — Claude caches the API's answer in `~/.claude.json`,
   Codex puts the server's `rate_limits` in every rollout's `token_count` —
   and the money is their logs at list prices, labelled an estimate. Those

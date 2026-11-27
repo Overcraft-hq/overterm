@@ -64,23 +64,65 @@ package enum AgentUsageCommand {
     @discardableResult
     package static func askClaude() -> String? {
         guard let executable = executable() else { return nil }
+        lock.lock()
+        let flag = takesNoPersistence
+        lock.unlock()
+        let first = run(executable, arguments(persisting: !flag))
+        guard flag, refusesFlag(status: first.status, stderr: first.stderr) else { return first.text }
+        // A Claude Code older than the flag refuses it and prints nothing:
+        // asked again as before, and not offered the flag again this run.
+        lock.lock()
+        takesNoPersistence = false
+        lock.unlock()
+        return run(executable, arguments(persisting: true)).text
+    }
+
+    /// `/usage` as a one-off: `--no-session-persistence` keeps it from
+    /// writing a session — run from ~ every ten minutes, it had left 818
+    /// transcripts in a month under ~/.claude/projects/-Users-<name>, each
+    /// a `/usage` and its output, in `claude --resume`'s list. It is a
+    /// local command: no model is asked, nothing spent (cost 0, no model
+    /// usage in those files); ~/.claude.json is still written.
+    package static func arguments(persisting: Bool) -> [String] {
+        persisting ? ["-p", "/usage"] : ["-p", "/usage", "--no-session-persistence"]
+    }
+
+    /// Whether a run's failure is Claude Code not knowing the flag — and
+    /// nothing else: a timeout or a network error keeps it.
+    package static func refusesFlag(status: Int32, stderr: String) -> Bool {
+        status != 0 && stderr.contains("no-session-persistence") && stderr.lowercased().contains("unknown option")
+    }
+
+    /// Whether this run's `claude` takes the flag (until it refuses it).
+    nonisolated(unsafe) private static var takesNoPersistence = true
+
+    private static func run(_ executable: URL, _ arguments: [String]) -> (text: String?, status: Int32, stderr: String) {
         let process = Process()
         process.executableURL = executable
-        process.arguments = ["-p", "/usage"]
+        process.arguments = arguments
         process.environment = environment()
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         let out = Pipe()
+        let err = Pipe()
         process.standardOutput = out
-        process.standardError = FileHandle.nullDevice
+        process.standardError = err
         process.standardInput = FileHandle.nullDevice
-        do { try process.run() } catch { return nil }
-        // Read before waiting: a full pipe would hold the process open.
+        do { try process.run() } catch { return (nil, -1, "") }
+        // stderr drained on its own thread: either pipe filling would hold
+        // the process open while the other is read.
+        nonisolated(unsafe) var errData = Data()
+        let drained = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            errData = err.fileHandleForReading.readDataToEndOfFile()
+            drained.signal()
+        }
         let data = out.fileHandleForReading.readDataToEndOfFile()
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning, Date() < deadline { usleep(50_000) }
         if process.isRunning { process.terminate() }
         process.waitUntilExit()
+        drained.wait()
         let text = String(decoding: data, as: UTF8.self)
-        return text.isEmpty ? nil : text
+        return (text.isEmpty ? nil : text, process.terminationStatus, String(decoding: errData.prefix(4096), as: UTF8.self))
     }
 }

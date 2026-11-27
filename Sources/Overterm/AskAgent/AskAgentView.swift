@@ -93,7 +93,7 @@ package struct AskAgentView: View {
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            label("Send to")
+            label("Type into")
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(model.targets) { target in
                     Button {
@@ -169,7 +169,7 @@ package struct AskAgentView: View {
             HStack {
                 Spacer()
                 Button("Cancel", action: cancel)
-                Button("Send  ⌘↩", action: send).keyboardShortcut(.defaultAction)
+                Button("Type It  ↩", action: send).keyboardShortcut(.defaultAction)
             }
         }
         .padding(14)

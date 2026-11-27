@@ -15,6 +15,7 @@ version is tagged `v<version>`.
 - Every feature's agent switch is held when settings.json changes outside Settings, as Kubernetes' already were
 - The Inbox offers answers only to a real question; Broadcast leaves out production, an agent that asks and a suspended pane, by name; Suspend Tab doesn't stop a terraform write; the console's destroying question names its connection; the JSON settings view never saves a stale draft over the file
 - The changes pane stages, unstages and discards one hunk at a time; a card's diff is read when it opens, however many files changed
+- Claude's `/usage` refresh no longer leaves a session in your home folder every ten minutes (`--no-session-persistence`: 818 a month, all in `claude --resume`); Ask Agent's button says what it does — Type It ↩, Return left to you —; the agents' settings say every agent but pi gets their tools, not Claude Code alone
 - The Inbox reads and answers the pane that asked, not the one with the keyboard, and types nothing once its question has left the screen
 - Every pane of a restored tab comes back with its own agent, and each Claude with its own conversation — two in one folder were both the newest
 - Sheets that delete leave Return on Cancel: the button that deletes takes a click, and where a name is typed, Return deletes once it matches
