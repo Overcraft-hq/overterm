@@ -2225,7 +2225,7 @@ in it, and `.obsidian/` is read for where things go, never written.
 ## Database (⌥⌘B, sidebar)
 
 A database client beside the terminal, DataGrip's work in the sidebar and
-the editor: PostgreSQL, MySQL, MariaDB, SQLite, DuckDB, Redshift, ClickHouse, BigQuery,
+the editor: PostgreSQL, MySQL, MariaDB, SQLite, DuckDB, Kafka, Redshift, ClickHouse, BigQuery,
 Redis, MongoDB and Amazon DocumentDB, DynamoDB, InfluxDB, Neo4j, Oracle, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
 destroying statement are there too).
 
@@ -2544,7 +2544,7 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   3 Core and Neo4j 5 in `Scripts/database-test-servers.sh` with
   `OVERTERM_DB_TESTS=1`.
 
-### RabbitMQ (the management API, a console language of ours); not Kafka
+### RabbitMQ (the management API, a console language of ours)
 
 - **RabbitMQ** (`RabbitMQDriver`, `RabbitMQText`): the management plugin's
   HTTP API (15672, 15671 with TLS; Path for one behind a proxy), Basic
@@ -2578,17 +2578,6 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   (Bitnami's `RABBITMQ_USERNAME`…), else `guest`. Tested: `RabbitMQTests`,
   against `rabbitmq:3-management` with `Scripts/database-test-servers.sh
   queues` and `OVERTERM_DB_TESTS=1`.
-- **Kafka** is not offered (not a kind). The rule is a maintained Swift package
-  or nothing, and `swift-kafka-client` doesn't fit yet: 1.0.0 (and
-  1.0.0-beta.1) need swift-tools 6.2.3 and macOS 15; the last that builds
-  with Swift 6.1 for macOS 13, 1.0.0-alpha.9, links librdkafka against the
-  system's OpenSSL found by pkg-config — Homebrew's, a dylib under
-  `/opt/homebrew` the shipped app can't count on — and its API has no
-  metadata: no topics, partitions or watermark offsets for the tree (its
-  C module is a target, not a product, so not reachable either). When
-  the package's macOS floor allows 13 again (or the app's moves to 15)
-  with the BoringSSL build 1.0.0 has, it fits.
-
 ### DuckDB
 
 - **The library** (`Scripts/fetch-duckdb.sh`, `make duckdb`): DuckDB's own
@@ -2650,6 +2639,56 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
 - **Tests**: `DuckDBTests` against the library itself, always — values,
   the catalog, keys and a Save, read-only, memory, a CSV and a Parquet
   file, a cancelled scan, what an agent runs without asking.
+
+### Kafka
+
+- **No client library** (`KafkaWire`, `KafkaDriver`): `swift-kafka-client`
+  1.0.0 wants macOS 15 (the app runs from 13) and swift-tools 6.2.3, the
+  last that builds for 13 (1.0.0-alpha.9) links the system's OpenSSL and
+  reads no metadata — so the protocol is spoken here on SwiftNIO, as
+  MongoDB's and Redis' are (issue-tracker#134). The APIs the panel uses —
+  ApiVersions, Metadata, ListOffsets, Fetch, Produce, FindCoordinator,
+  ListGroups, DescribeGroups, OffsetFetch, SaslHandshake, SaslAuthenticate
+  — each in its non-flexible versions only (no tagged fields), from the
+  oldest a Kafka 4 broker still takes (KIP-896) to the last before tagged
+  fields; the version both speak picked from ApiVersions, a broker outside
+  the range said in words (`KafkaWire.version`). Record batches (magic 2)
+  read with their CRC-32C checked, a transaction's markers left out, a
+  batch cut at the fetch's end left for the next; the old message format
+  (before 0.11) is said, not read.
+- **Codecs** (`KafkaCompression`): gzip by the system's zlib (the header
+  read here), LZ4 frames and Snappy (raw, or the Java client's xerial
+  framing) by decoders of ours — an LZ4 frame's blocks may reach into
+  earlier ones, which Apple's raw decoder can't — and zstd by the zstd in
+  DuckDB's library (`DuckDBKit`, already in the app), its C-convention
+  functions found by their names (`dlsym`); a batch opens to 64 MB at most.
+  Tested against the tools' own output (`Fixtures/kafka-codec.*`) and, with
+  the script's broker, against batches Kafka's console producer wrote.
+- **Connecting**: the bootstrap servers (`host`, several `a:9092,b:9092`),
+  then each partition's leader at the address Metadata advertises — one
+  this Mac can't reach is said as `advertised.listeners`' doing. Through an
+  SSH tunnel, the one broker given for everything (`problem` refuses
+  several). TLS from the first byte or none (a CA bundle for Verify Full);
+  SASL PLAIN or SCRAM-SHA-256/512 (`authSource` holds the mechanism;
+  `MongoSCRAM` signs, SHA-512 added for it), the password in the keychain.
+- **The console** (`KafkaText`): `TOPICS`, `DESCRIBE`, `PEEK <topic> [n]
+  [PARTITION p] [FROM BEGINNING | FROM <offset>]`, `PUBLISH <topic>
+  [PARTITION p] [KEY k] <value>`, `GROUPS`, `LAG <group>`. PEEK fetches by
+  offset from each leader and never joins a group or commits: nobody's
+  position moves. A value as text when it is UTF-8, else hex and its size.
+  PUBLISH writes one record (its partition the Java partitioner's murmur2
+  of the key, else the one named, else any), `acks=all`; refused on a
+  read-only connection, asked of an agent as a write is.
+- **The tree**: `topics` (their partitions, with offsets and leader) and
+  `groups` (their partitions' lag); Select Top is `PEEK`/`LAG`. The Server
+  page's overview (`KafkaOps.health`): cluster id, brokers, controller,
+  topics, partitions, under-replicated and leaderless ones, groups. A Kafka
+  container on the Docker page opens as a connection (`isKafka`: Apache's,
+  Bitnami's, Confluent's, Redpanda's — never Connect, a registry or a UI).
+- **Tests**: `KafkaTests` — the bytes, versions, codecs, the language,
+  always; a broker's topics, PEEK, PUBLISH, each codec and every SASL
+  mechanism with `Scripts/database-test-servers.sh kafka` and
+  `OVERTERM_DB_TESTS=1`.
 
 ### Oracle Database
 

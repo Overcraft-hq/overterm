@@ -96,10 +96,12 @@ package struct MongoURL: Equatable {
 /// SCRAM as MongoDB signs in with it (RFC 5802, RFC 7677) — pure, so the
 /// RFCs' own examples test it. SHA-1's password is MongoDB's digest of
 /// `user:mongo:password`; SHA-256's the password itself, SASLprepped.
+/// SHA-512 is Kafka's (its SASL), the password as SHA-256's.
 package struct MongoSCRAM {
     package enum Mechanism: String, Sendable {
         case sha1 = "SCRAM-SHA-1"
         case sha256 = "SCRAM-SHA-256"
+        case sha512 = "SCRAM-SHA-512"
     }
 
     package struct Failure: LocalizedError {
@@ -124,7 +126,7 @@ package struct MongoSCRAM {
         case .sha1:
             let digest = Insecure.MD5.hash(data: Data("\(user):mongo:\(password)".utf8))
             secret = digest.map { String(format: "%02x", $0) }.joined()
-        case .sha256:
+        case .sha256, .sha512:
             secret = Self.saslPrep(password)
         }
         clientNonce = nonce ?? Data((0..<24).map { _ in UInt8.random(in: 0...255) }).base64EncodedString()
@@ -177,6 +179,7 @@ package struct MongoSCRAM {
         switch mechanism {
         case .sha1: Data(HMAC<Insecure.SHA1>.authenticationCode(for: data, using: SymmetricKey(data: key)))
         case .sha256: Data(HMAC<SHA256>.authenticationCode(for: data, using: SymmetricKey(data: key)))
+        case .sha512: Data(HMAC<SHA512>.authenticationCode(for: data, using: SymmetricKey(data: key)))
         }
     }
 
@@ -184,13 +187,18 @@ package struct MongoSCRAM {
         switch mechanism {
         case .sha1: Data(Insecure.SHA1.hash(data: data))
         case .sha256: Data(SHA256.hash(data: data))
+        case .sha512: Data(SHA512.hash(data: data))
         }
     }
 
     private func pbkdf2(_ password: Data, salt: Data, rounds: Int) -> Data {
-        let length = mechanism == .sha1 ? 20 : 32
+        let (length, prf): (Int, CCPseudoRandomAlgorithm) =
+            switch mechanism {
+            case .sha1: (20, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1))
+            case .sha256: (32, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256))
+            case .sha512: (64, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA512))
+            }
         var out = [UInt8](repeating: 0, count: length)
-        let prf = mechanism == .sha1 ? CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1) : CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256)
         _ = password.withUnsafeBytes { p in
             salt.withUnsafeBytes { s in
                 CCKeyDerivationPBKDF(
