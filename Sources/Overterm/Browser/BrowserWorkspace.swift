@@ -23,6 +23,9 @@ package final class BrowserWorkspace: ObservableObject {
     package func newPage(_ url: URL? = nil, configuration: WKWebViewConfiguration? = nil, select: Bool = true) -> BrowserSession {
         let page = BrowserSession(configuration: configuration)
         page.onOpenExternally = { [weak self] in self?.onOpenExternally?($0) }
+        // An agent's call holds every page of the tab, a popup it opens too.
+        page.agentGuard = { [weak self] url in self?.agentGuard?(url) ?? true }
+        page.onAgentBlocked = { [weak self] in self?.blocked = $0 }
         page.onOpenPage = { [weak self] configuration, url in
             // window.open hands the page its URL itself; a plain _blank link
             // has nothing to load until WebKit does.
@@ -67,6 +70,11 @@ package final class BrowserWorkspace: ObservableObject {
 
     /// The page an agent's call is about: the one showing, made if none.
     private var current: BrowserSession { active ?? newPage() }
+
+    /// Set for the length of an agent's call (`AgentBrowser.agentGuard`).
+    package var agentGuard: ((URL) -> Bool)?
+    /// The navigation it stopped last.
+    private var blocked: BlockedNavigation?
 }
 
 extension BrowserWorkspace: AgentBrowser {
@@ -101,5 +109,12 @@ extension BrowserWorkspace: AgentBrowser {
     package func closeTab(_ index: Int) throws {
         guard pages.indices.contains(index) else { throw BrowserError.noTab(index) }
         close(index)
+    }
+
+    package var currentURL: URL? { active?.webView.url ?? active?.url }
+
+    package func takeBlockedNavigation() -> BlockedNavigation? {
+        defer { blocked = nil }
+        return blocked
     }
 }

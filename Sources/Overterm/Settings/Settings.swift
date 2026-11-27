@@ -485,6 +485,11 @@ package final class Settings: ObservableObject {
     package var browserLinks: BrowserLinks.Policy { browserEnabled ? BrowserLinks.Policy(rawValue: string("browser.openLinks")) ?? .local : .none }
     package var browserReloadOnSave: Bool { browserEnabled && bool("browser.reloadOnSave") }
     package var browserAgentControl: Bool { browserEnabled && bool("browser.agentControl") }
+    /// Where an agent's browser goes without asking (P11): names, `*.name`,
+    /// `*` everything. Empty, every host is asked.
+    package var browserAgentHosts: [String] {
+        (value("browser.agentHosts")?.list ?? AgentHosts.defaults).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
     package var apiEnabled: Bool { bool("api.enabled") }
     package var apiTimeout: Int { Int(number("api.timeout") ?? 30) }
     package var apiFollowRedirects: Bool { bool("api.followRedirects") }

@@ -19,6 +19,15 @@ package protocol AgentBrowser: AnyObject {
     func openTab(_ url: URL?, timeout: TimeInterval) async throws
     func selectTab(_ index: Int) throws
     func closeTab(_ index: Int) throws
+    /// The address of the page the tools act on now (P11: its host checked
+    /// before an agent reads it or acts on it).
+    var currentURL: URL? { get }
+    /// Set for the length of an agent's call: a main-frame navigation of
+    /// any page it answers false for is stopped before it is sent, and kept
+    /// for `takeBlockedNavigation` — a click, a form, a script, a redirect.
+    var agentGuard: ((URL) -> Bool)? { get set }
+    /// The navigation `agentGuard` stopped last, once.
+    func takeBlockedNavigation() -> BlockedNavigation?
 }
 
 /// The Model Context Protocol, as Overterm's browser server speaks it:
@@ -110,7 +119,7 @@ package enum BrowserMCP {
             return reply(errorResult(BrowserError.noBrowser.localizedDescription))
         }
         do {
-            return reply(try await call(name, arguments, browser))
+            return reply(try await call(name, arguments, browser, hosts: settings.browserAgentHosts))
         } catch let error as ToolError {
             return failure(-32602, error.message)
         } catch {
@@ -126,57 +135,115 @@ package enum BrowserMCP {
         }
     }
 
-    private static func call(_ name: String, _ arguments: [String: Any], _ browser: AgentBrowser) async throws -> [String: Any] {
+    private static func call(
+        _ name: String, _ arguments: [String: Any], _ browser: AgentBrowser, hosts: [String], gate: AgentHostGate = .shared
+    ) async throws -> [String: Any] {
         func string(_ key: String) throws -> String {
             guard let value = arguments[key] as? String, !value.isEmpty else { throw ToolError(message: "\(name) needs “\(key)”.") }
             return value
         }
+        /// P11: the page's host, before the agent reads it or acts on it.
+        func onAllowedHost(_ doing: String) async throws {
+            if let url = browser.currentURL { try await gate.check(url, list: hosts, doing: doing) }
+        }
+        /// `body` with the page's own navigations held to the hosts: one the
+        /// agent's step sets off to another host is stopped, then asked;
+        /// allowed, a GET is loaded, anything else is the agent's to do again.
+        /// Nil when the page is where the step left it; else what the agent reads.
+        func holding(_ body: () async throws -> Void) async throws -> String? {
+            browser.agentGuard = { [weak gate] url in gate?.allows(url, list: hosts) ?? false }
+            do {
+                try await body()
+            } catch {
+                browser.agentGuard = nil
+                _ = browser.takeBlockedNavigation()
+                throw error
+            }
+            browser.agentGuard = nil
+            guard let blocked = browser.takeBlockedNavigation() else { return nil }
+            try await gate.check(blocked.url, list: hosts, doing: "follow the page where its step sent it")
+            guard blocked.method.uppercased() == "GET" else {
+                return AgentHosts.repeatAfterAllowing(AgentHosts.host(of: blocked.url) ?? "", method: blocked.method.uppercased())
+            }
+            try await browser.navigate(blocked.url, timeout: 20)
+            return nil
+        }
         /// After an action the page may navigate or re-render: what it shows then.
-        func settledSnapshot() async throws -> [String: Any] {
-            try await Task.sleep(nanoseconds: 250_000_000)
-            try? await browser.waitForLoad(timeout: 10)
+        func settledSnapshot(_ action: () async throws -> Void) async throws -> [String: Any] {
+            if let said = try await holding({
+                try await action()
+                try await Task.sleep(nanoseconds: 250_000_000)
+                try? await browser.waitForLoad(timeout: 10)
+            }) {
+                return textResult(said)
+            }
+            try await onAllowedHost("read the page")
             return textResult(try await browser.snapshot())
         }
         switch name {
         case "browser_navigate":
             let typed = try string("url")
             guard let url = BrowserLinks.url(fromTyped: typed) else { throw ToolError(message: "Not a URL: \(typed)") }
-            try await browser.navigate(url, timeout: 20)
+            try await gate.check(url, list: hosts, doing: "open a page")
+            if let said = try await holding({ try await browser.navigate(url, timeout: 20) }) { return textResult(said) }
+            try await onAllowedHost("read the page")
             return textResult(try await browser.snapshot())
         case "browser_snapshot":
+            try await onAllowedHost("read the page")
             return textResult(try await browser.snapshot())
         case "browser_click":
-            try await browser.click(ref: try string("ref"))
-            return try await settledSnapshot()
+            let ref = try string("ref")
+            try await onAllowedHost("click on the page")
+            return try await settledSnapshot { try await browser.click(ref: ref) }
         case "browser_type":
             let submit = arguments["submit"] as? Bool ?? false
             guard let text = arguments["text"] as? String else { throw ToolError(message: "browser_type needs “text”.") }
-            try await browser.type(ref: try string("ref"), text: text, submit: submit)
-            return try await settledSnapshot()
+            let ref = try string("ref")
+            try await onAllowedHost(submit ? "type into the page and submit it" : "type into the page")
+            return try await settledSnapshot { try await browser.type(ref: ref, text: text, submit: submit) }
         case "browser_screenshot":
+            try await onAllowedHost("take a screenshot of the page")
             let png = try await browser.screenshot()
             return ["content": [["type": "image", "data": png.base64EncodedString(), "mimeType": "image/png"]]]
         case "browser_console":
+            try await onAllowedHost("read the page's console")
             let onlyErrors = arguments["errors_only"] as? Bool ?? false
             let text = browser.consoleText(onlyErrors: onlyErrors, limit: 200)
             return textResult(text.isEmpty ? "(nothing logged)" : text)
         case "browser_evaluate":
-            return textResult(try await browser.evaluate(try string("script")))
+            let script = try string("script")
+            try await onAllowedHost("run JavaScript in the page")
+            var value = ""
+            // Held past the script's return, as a click is: `location.href = …`
+            // asks WebKit's policy after the script is done.
+            if let said = try await holding({
+                value = try await browser.evaluate(script)
+                try await Task.sleep(nanoseconds: 250_000_000)
+                try? await browser.waitForLoad(timeout: 10)
+            }) {
+                return textResult(said)
+            }
+            // A script that sent the page elsewhere: what it said is that page's no more.
+            try await onAllowedHost("read the page")
+            return textResult(value)
         case "browser_back":
-            browser.goBack()
-            return try await settledSnapshot()
+            return try await settledSnapshot { browser.goBack() }
         case "browser_reload":
-            browser.reload()
-            return try await settledSnapshot()
+            try await onAllowedHost("reload the page")
+            return try await settledSnapshot { browser.reload() }
         case "browser_tabs":
             return textResult(browser.tabsDescription())
         case "browser_tab_new":
             let url = (arguments["url"] as? String).flatMap { $0.isEmpty ? nil : BrowserLinks.url(fromTyped: $0) }
-            try await browser.openTab(url, timeout: 20)
-            return textResult(url == nil ? browser.tabsDescription() : try await browser.snapshot())
+            if let url { try await gate.check(url, list: hosts, doing: "open a page") }
+            if let said = try await holding({ try await browser.openTab(url, timeout: 20) }) { return textResult(said) }
+            guard url != nil else { return textResult(browser.tabsDescription()) }
+            try await onAllowedHost("read the page")
+            return textResult(try await browser.snapshot())
         case "browser_tab_select":
             guard let index = arguments["index"] as? Int else { throw ToolError(message: "browser_tab_select needs “index”.") }
             try browser.selectTab(index)
+            try await onAllowedHost("read the page")
             return textResult(try await browser.snapshot())
         case "browser_tab_close":
             guard let index = arguments["index"] as? Int else { throw ToolError(message: "browser_tab_close needs “index”.") }

@@ -55,6 +55,7 @@ package final class E2ERunner {
         "editorZed": { await $0.editorZedScenario() },
         "fileActions": { await $0.fileActionsScenario() },
         "browser": { await $0.browserScenario() },
+        "browserHosts": { await $0.browserHostsScenario() },
         "diff": { await $0.diffScenario() },
         "branchDiff": { await $0.branchDiffScenario() },
         "why": { await $0.whyScenario() },

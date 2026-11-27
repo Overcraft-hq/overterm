@@ -1916,6 +1916,29 @@ driving it are in the same window as the code.
   the controls, each with a ref), click, type, screenshot, console,
   evaluate, back, reload, and the tabs (list, new, select, close). Ask
   Agent (✦) sends a page's address, errors and a screenshot the ⌘L way.
+- **Where an agent's browser goes** (P11, D-4 (b); `AgentHosts`,
+  `AgentHostGate`): the column shares one cookie store with the person, so
+  an agent able to open anything could act wherever they are signed in.
+  Agents keep to `browser.agentHosts` (held when edited outside; default
+  this Mac's own — `localhost`, `127.0.0.1`, `[::1]`, `0.0.0.0`,
+  `*.localhost`; `*.name`, `*` all). Any other http(s) host is asked
+  through `MCPApprovals` — the tab and agent named, the URL without query,
+  fragment or credentials — once a run: allowed, not asked again; declined,
+  refused without asking, the agent reading why as a tool result
+  (`AgentHostRefused`, not a protocol error). `BrowserMCP` checks the URL
+  before navigate and a new tab, and the page's host before any tool reads
+  it or acts on it (snapshot, click, type, evaluate, console, screenshot,
+  reload; after a tab is picked). For the length of a call that can move
+  the page — navigate, click, type, evaluate, back, reload, a new tab —
+  `AgentBrowser.agentGuard` is set on every page of the tab: in
+  `BrowserSession`'s navigation policy a main-frame navigation to a host
+  it doesn't allow is cancelled before its request leaves (a link, a
+  form's POST, a script, a server's redirect) and kept
+  (`takeBlockedNavigation`); asked, a GET is then loaded, anything else is
+  left to the agent to do again — nothing was sent. A page that moves on
+  its own after the call (a timer) is caught by the next read. Pages on no
+  host (file:, about:, data:) are never asked, and the person's own use of
+  the column is never checked. Scenario `browserHosts`.
 
 ## API client (⌥⌘R, sidebar)
 

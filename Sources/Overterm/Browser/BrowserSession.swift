@@ -35,6 +35,11 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
     /// target=_blank, window.open: a new page in the same browser (its tab
     /// strip), made with WebKit's configuration so the opener can talk to it.
     package var onOpenPage: ((WKWebViewConfiguration, URL?) -> WKWebView?)?
+    /// While an agent's call runs (P11, `AgentBrowser.agentGuard`): false
+    /// for a main-frame navigation's URL stops it before it is sent, and
+    /// `onAgentBlocked` hears of it.
+    package var agentGuard: ((URL) -> Bool)?
+    package var onAgentBlocked: ((BlockedNavigation) -> Void)?
 
     private var watcher: KeyValueWatcher?
     private var loads: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
@@ -155,7 +160,9 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
     package func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let nsError = error as NSError
         // A link that only started a download, or a cancelled load, isn't a failure to show.
-        if nsError.code != NSURLErrorCancelled {
+        // WebKit's 102 is a load its policy stopped (an agent's off-host
+        // navigation, a download): nothing to show either.
+        if nsError.code != NSURLErrorCancelled, !(nsError.domain == "WebKitErrorDomain" && nsError.code == 102) {
             log("error", "Couldn't load \(nsError.userInfo[NSURLErrorFailingURLStringErrorKey] ?? ""): \(error.localizedDescription)")
             webView.loadHTMLString(Self.errorPage(error.localizedDescription), baseURL: nil)
         }
@@ -182,6 +189,16 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
         {
             onOpenExternally?(url)
             return decisionHandler(.cancel)
+        }
+        // An agent's step sending the page to a host it may not use: stopped
+        // here, before the request leaves — a link, a form's POST, a script,
+        // a server's redirect alike. A frame inside the page isn't the page.
+        if let allows = agentGuard, navigationAction.targetFrame?.isMainFrame ?? true, let url = navigationAction.request.url, !allows(url) {
+            onAgentBlocked?(BlockedNavigation(url: url, method: navigationAction.request.httpMethod ?? "GET"))
+            decisionHandler(.cancel)
+            // Nothing loads now: whoever waits for the load is told it is over.
+            finishLoads()
+            return
         }
         decisionHandler(.allow)
     }

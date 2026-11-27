@@ -15,6 +15,7 @@ version is tagged `v<version>`.
 - Every feature's agent switch is held when settings.json changes outside Settings, as Kubernetes' already were
 - The Inbox offers answers only to a real question; Broadcast leaves out production, an agent that asks and a suspended pane, by name; Suspend Tab doesn't stop a terraform write; the console's destroying question names its connection; the JSON settings view never saves a stale draft over the file
 - The changes pane stages, unstages and discards one hunk at a time; a card's diff is read when it opens, however many files changed
+- An agent's browser keeps to this Mac's own hosts: any other — where it navigates, or where its click, form or script sends the page — is asked once until Overterm quits, naming the tab and the agent, and stopped before anything is sent; Settings ▸ Browser ▸ Agents lists the hosts it uses without asking
 - The Inbox reads and answers the pane that asked, not the one with the keyboard, and types nothing once its question has left the screen
 - Every pane of a restored tab comes back with its own agent, and each Claude with its own conversation — two in one folder were both the newest
 - Sheets that delete leave Return on Cancel: the button that deletes takes a click, and where a name is typed, Return deletes once it matches

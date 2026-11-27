@@ -76,10 +76,30 @@ final class HTTPRequestTests: XCTestCase {
 private final class FakeBrowser: AgentBrowser {
     var log: [String] = []
     var page = "Page: Home\nURL: http://localhost:3000/\n\nControls (use the ref):\n- [e1] button “Save”"
+    /// Where the page is: what the host checks read.
+    var url: URL? = URL(string: "http://localhost:3000/")
+    /// Where a click on e2 sends the page (a link, a form's POST), as WebKit
+    /// would: stopped when `agentGuard` says no.
+    var clickSends: BlockedNavigation?
+    var agentGuard: ((URL) -> Bool)?
+    var blocked: BlockedNavigation?
+    var currentURL: URL? { url }
+    func takeBlockedNavigation() -> BlockedNavigation? {
+        defer { blocked = nil }
+        return blocked
+    }
 
-    func navigate(_ url: URL, timeout: TimeInterval) async throws { log.append("navigate \(url.absoluteString)") }
+    func navigate(_ url: URL, timeout: TimeInterval) async throws {
+        log.append("navigate \(url.absoluteString)")
+        self.url = url
+    }
     func snapshot() async throws -> String { page }
     func click(ref: String) async throws {
+        if ref == "e2", let sends = clickSends {
+            log.append("click e2")
+            if agentGuard?(sends.url) == false { blocked = sends } else { url = sends.url }
+            return
+        }
         guard ref == "e1" else { throw BrowserError.noElement(ref) }
         log.append("click \(ref)")
         page = page.replacingOccurrences(of: "Save", with: "Saved")
@@ -389,5 +409,133 @@ extension BridgeServer.Route {
     fileprivate var isRefused: Bool {
         if case .refused = self { return true }
         return false
+    }
+}
+
+/// P11: where an agent's browser goes without asking, and what is asked.
+@MainActor
+final class BrowserAgentHostTests: XCTestCase {
+    private let browser = FakeBrowser()
+    private let gate = AgentHostGate.shared
+    private var asked: [WriteConfirmation] = []
+    private var answer: String? = ""
+
+    override func setUp() async throws {
+        gate.reset()
+        asked = []
+        answer = ""
+        gate.ask = { [unowned self] confirmation in
+            self.asked.append(confirmation)
+            return self.answer
+        }
+    }
+
+    override func tearDown() async throws {
+        gate.reset()
+        gate.ask = { try await MCPApprovals.shared.ask($0) }
+    }
+
+    private func call(_ name: String, _ arguments: [String: Any] = [:]) async -> (text: String, error: Bool) {
+        let answer = await BrowserMCP.handle(
+            ["jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": ["name": name, "arguments": arguments]]) { self.browser }
+        let result = answer?["result"] as? [String: Any]
+        let text = (result?["content"] as? [[String: Any]])?.first?["text"] as? String ?? (answer?["error"] as? [String: Any])?["message"] as? String ?? ""
+        return (text, result?["isError"] as? Bool ?? (answer?["error"] != nil))
+    }
+
+    func testPatterns() {
+        let defaults = AgentHosts.defaults
+        for url in ["http://localhost:3000/x", "http://127.0.0.1:8080", "http://[::1]:5173", "http://0.0.0.0:3000", "http://app.localhost", "https://LOCALHOST./"] {
+            XCTAssertTrue(AgentHosts.allows(AgentHosts.host(of: URL(string: url)!)!, in: defaults), url)
+        }
+        for url in ["https://admin.shop.example", "http://192.168.1.1", "http://localhost.example.com", "http://127.0.0.2", "http://evil.com#localhost"] {
+            XCTAssertFalse(AgentHosts.allows(AgentHosts.host(of: URL(string: url)!)!, in: defaults), url)
+        }
+        // A page on no host is never asked.
+        for url in ["file:///tmp/page.html", "about:blank", "data:text/html,hi"] { XCTAssertNil(AgentHosts.host(of: URL(string: url)!), url) }
+        // *.name is what is under it; a pasted URL or a port is read for its host; * is everything.
+        XCTAssertTrue(AgentHosts.matches("api.staging.dev", "*.staging.dev"))
+        XCTAssertFalse(AgentHosts.matches("staging.dev", "*.staging.dev"))
+        XCTAssertTrue(AgentHosts.matches("staging.dev", "https://staging.dev:8443/login"))
+        XCTAssertTrue(AgentHosts.matches("::1", "[::1]:3000"))
+        XCTAssertTrue(AgentHosts.matches("anything.example", "*"))
+        XCTAssertFalse(AgentHosts.matches("x", " "))
+        // The question shows no query, fragment or credentials: tokens travel there.
+        XCTAssertEqual(AgentHosts.shown(URL(string: "https://u:p@admin.shop.example/orders?token=abc#x")!), "https://admin.shop.example/orders")
+    }
+
+    func testTheMachinesOwnHostsAreNeverAsked() async {
+        _ = await call("browser_navigate", ["url": ":3000"])
+        _ = await call("browser_click", ["ref": "e1"])
+        _ = await call("browser_evaluate", ["script": "1"])
+        XCTAssertTrue(asked.isEmpty, "\(asked.map(\.title))")
+        XCTAssertEqual(browser.log, ["navigate http://localhost:3000", "click e1"])
+    }
+
+    func testAnotherHostIsAskedOnceAndDeclinedIsNotOpened() async {
+        answer = nil
+        let first = await call("browser_navigate", ["url": "https://admin.shop.example/orders?token=abc"])
+        XCTAssertTrue(first.error && first.text.contains("didn't allow admin.shop.example"), first.text)
+        XCTAssertEqual(asked.count, 1)
+        XCTAssertEqual(asked.first?.button, "Allow admin.shop.example")
+        XCTAssertFalse(asked.first?.detail.contains("token=abc") ?? true, "the query stays out of the question")
+        XCTAssertFalse(browser.log.contains { $0.hasPrefix("navigate") }, "declined: never opened")
+        // Declined holds for the run: refused again without a second question.
+        let again = await call("browser_navigate", ["url": "https://admin.shop.example/"])
+        XCTAssertTrue(again.error)
+        XCTAssertEqual(asked.count, 1)
+        // A run's answers go with it: asked again after a restart.
+        gate.reset()
+        answer = ""
+        let allowed = await call("browser_navigate", ["url": "https://admin.shop.example/"])
+        XCTAssertFalse(allowed.error, allowed.text)
+        XCTAssertEqual(asked.count, 2)
+        _ = await call("browser_navigate", ["url": "https://admin.shop.example/other"])
+        XCTAssertEqual(asked.count, 2, "allowed: not asked twice")
+    }
+
+    func testAPageOnAnotherHostIsNotReadUntilAllowed() async {
+        // The page went there on its own (a script, a timer): the agent's next read is asked.
+        browser.url = URL(string: "https://admin.shop.example/")
+        answer = nil
+        let read = await call("browser_snapshot")
+        XCTAssertTrue(read.error && !read.text.contains("Save"), read.text)
+        for tool in ["browser_click", "browser_evaluate", "browser_console", "browser_screenshot"] {
+            let acted = await call(tool, ["ref": "e1", "script": "document.cookie"])
+            XCTAssertTrue(acted.error, tool)
+        }
+        XCTAssertFalse(browser.log.contains("click e1"), "nothing done on a declined host")
+    }
+
+    func testAClickThatLeavesForAnotherHostIsStoppedThenAsked() async {
+        // A link: stopped before it is sent, asked, then loaded once allowed.
+        browser.clickSends = BlockedNavigation(url: URL(string: "https://docs.example/page")!, method: "GET")
+        let followed = await call("browser_click", ["ref": "e2"])
+        XCTAssertFalse(followed.error, followed.text)
+        XCTAssertEqual(asked.count, 1)
+        XCTAssertEqual(browser.log.last, "navigate https://docs.example/page")
+        XCTAssertNil(browser.agentGuard, "held only for the call")
+        // A form's POST: stopped and asked; allowed, the agent sends it again (nothing was sent).
+        browser.url = URL(string: "http://localhost:3000/")
+        browser.clickSends = BlockedNavigation(url: URL(string: "https://admin.shop.example/delete")!, method: "POST")
+        let posted = await call("browser_click", ["ref": "e2"])
+        XCTAssertTrue(posted.text.contains("stopped before anything was sent") && posted.text.contains("do the same again"), posted.text)
+        XCTAssertEqual(browser.url?.host, "localhost", "the POST never went")
+        // Declined: refused, and the page stays where it was.
+        browser.clickSends = BlockedNavigation(url: URL(string: "https://third.example/")!, method: "GET")
+        answer = nil
+        let declined = await call("browser_click", ["ref": "e2"])
+        XCTAssertTrue(declined.error && declined.text.contains("didn't allow third.example"), declined.text)
+        XCTAssertEqual(browser.url?.host, "localhost")
+    }
+
+    func testTheSettingWidensTheList() async {
+        Settings.shared.set("browser.agentHosts", .list(["localhost", "*.staging.dev"]))
+        defer { Settings.shared.set("browser.agentHosts", nil) }
+        _ = await call("browser_navigate", ["url": "https://api.staging.dev/"])
+        XCTAssertTrue(asked.isEmpty)
+        // 127.0.0.1 no longer listed: asked.
+        _ = await call("browser_navigate", ["url": "http://127.0.0.1:3000"])
+        XCTAssertEqual(asked.count, 1)
     }
 }
