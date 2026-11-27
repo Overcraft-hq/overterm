@@ -2285,6 +2285,7 @@ package final class E2ERunner {
             app.inbox.entries.first { $0.id == agent.id }.map { $0.prompt == nil } == true,
             (app.inbox.entries.first?.prompt?.question ?? "no entry") + " / " + String((agent.terminal.visibleText ?? "").suffix(400)).debugDescription)
 
+        await inboxTruthChecks(agent: agent, shell: shell)
         await askingPane(agent, shell: shell)
 
         app.toggleInbox(nil)

@@ -98,7 +98,8 @@ package final class InboxModel: ObservableObject {
                 // An MCP write's card answers that, never the screen's choices.
                 prompt: tab.activity.mark == .waiting && tab.terraformAsk == nil && asked[tab.id] == nil
                     ? screen(tab).flatMap { TerraformPrompt.parse($0) == nil ? AgentPrompt.question(in: $0) : nil } : nil,
-                since: tab.activity.mark == .waiting ? now : nil, asksWhy: !tab.kubeAlerts.isEmpty, terraform: tab.terraformAsk,
+                // Since it began to wait, not since the list was read (AGT-U7).
+                since: tab.activity.mark == .waiting ? tab.activity.waitingSince ?? now : nil, asksWhy: !tab.kubeAlerts.isEmpty, terraform: tab.terraformAsk,
                 leftBehind: tab.activity.fromLeftBehind, ci: tab.ciFailure, approval: asked[tab.id])
         }
         if built != entries { entries = built }
@@ -119,6 +120,24 @@ package final class InboxModel: ObservableObject {
             }
         }
         return tabs.enumerated().sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }.map(\.element)
+    }
+
+    /// "waiting 4 min": how long an entry has waited, from `since` (AGT-U7). Pure.
+    package nonisolated static func waited(since: Date, now: Date = Date()) -> String {
+        let seconds = max(0, now.timeIntervalSince(since))
+        if seconds < 60 { return "waiting <1 min" }
+        let minutes = Int(seconds / 60)
+        if minutes < 60 { return "waiting \(minutes) min" }
+        let hours = minutes / 60
+        return hours < 24 ? "waiting \(hours) h \(minutes % 60) min" : "waiting \(hours / 24) d"
+    }
+
+    /// Whether an entry can be let go of from the list (AGT-U6): a tab
+    /// that finished or failed — not one that waits for an answer, nor a
+    /// card that goes on its own (CI's until it is green, Terraform's ask,
+    /// an agent's write asked).
+    package nonisolated static func dismissable(_ entry: Entry) -> Bool {
+        (entry.mark == .done || entry.mark == .failed) && entry.ci == nil && entry.terraform == nil && entry.approval == nil
     }
 
     /// J / K, wrapping.
