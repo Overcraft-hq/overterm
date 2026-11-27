@@ -256,6 +256,15 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var terraformBriefRecorder: ((TerraformAgentBrief) -> Void)?
     /// A scenario's: the questions before a plan or an init (5.3, 5.5) answered here instead of the sheet.
     package var terraformPlanQuestionRecorder: ((TerraformPlanGate.Question) -> Bool)?
+    /// A scenario's: Var Files…' sheet answered here — the root's files and
+    /// those chosen now in, what is ticked out (nil for Cancel).
+    package var terraformVarFilesRecorder: (([String], [String]) -> [String]?)?
+    /// Each Terraform run's end followed, by its id (TF-U6).
+    package var terraformRunWatches: [String: AnyCancellable] = [:]
+    /// The changes pane's Terraform line: the roots the changes touch (TF-G1).
+    package let changesTerraform = TerraformReviewModel()
+    /// A scenario's: a run's end as said — its words, the tab, whether looked at.
+    package var terraformRunEndRecorder: ((TerraformRunEnd, Tab, Bool) -> Void)?
     /// A scenario's: the plugin cache's offer (4.13) answered here.
     package var terraformCacheOfferRecorder: (() -> Bool)?
     /// A scenario's: an apply's sheets (5.4) answered here — what was
@@ -696,7 +705,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     onOpen: { [weak self] in self?.openInEditor($0) },
                     onReview: { [weak self] scope in
                         if scope == .uncommitted { self?.reviewUncommitted(nil) } else { self?.reviewBranch(nil) }
-                    }),
+                    },
+                    accessory: AnyView(
+                        TerraformChangesLine(model: changesTerraform, theme: theme) { [weak self] root in self?.planChangedTerraformRoot(root) })),
                 pullRequest: PullRequestView(
                     model: pullRequest, theme: theme,
                     onClose: { [weak self] in self?.toggleDiff(nil) },
@@ -832,6 +843,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         wireDockerAttention()
         wireKubernetesAttention()
         wireTerraformAgents()
+        wireTerraformRunEnds()
+        wireChangesTerraform()
         wireMCPApprovals()
         wireActivityMCP()
         wireTerraformPlan()

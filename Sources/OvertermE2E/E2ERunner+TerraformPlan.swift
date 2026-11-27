@@ -388,6 +388,7 @@ extension E2ERunner {
         // The last plan the lock stopped is the force-unlock checks' (2e): its holder, ci@globex-runner-9.
         check("tf_why briefs the lock that stopped a plan", why.contains("ci@globex-runner-9"), why)
         check("no apply by Overterm, ever", !recorder.calls().contains { $0.subcommand == "apply" })
+        await terraformLinksChecks(checkout: checkout, devCard: devCard, prodCard: panel.roots.first { $0.path == "envs/prod" }, tab: mainTab)
     }
 
     /// A tool's text answer, as an agent reads it.

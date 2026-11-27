@@ -27,13 +27,17 @@ package struct TerraformPanelActions {
     /// `terraform test` of the root, in the slot (2.9, stage 2d).
     package var test: (TerraformRootCard) -> Void = { _ in }
     package var showTest: (TerraformTestRun) -> Void = { _ in }
+    /// Var Files…: the root's `.tfvars` ticked for its plans, before any (TF-U4).
+    package var chooseVarFiles: (TerraformRootCard) -> Void = { _ in }
 
     package init(
         openTerminal: @escaping (TerraformRootCard) -> Void, openFile: @escaping (URL) -> Void, validate: @escaping (TerraformRootCard) -> Void, plan: @escaping (TerraformRootCard) -> Void,
         initialize: @escaping (TerraformRootCard) -> Void, chooseWorkspace: @escaping (TerraformRootCard) -> Void, showPlan: @escaping (TerraformPlanRun) -> Void,
         planDestroy: @escaping (TerraformRootCard) -> Void = { _ in }, showApply: @escaping (TerraformApplyRun) -> Void = { _ in }, showState: @escaping (TerraformRootCard) -> Void = { _ in },
-        checkDrift: @escaping (TerraformRootCard) -> Void = { _ in }, test: @escaping (TerraformRootCard) -> Void = { _ in }, showTest: @escaping (TerraformTestRun) -> Void = { _ in }
+        checkDrift: @escaping (TerraformRootCard) -> Void = { _ in }, test: @escaping (TerraformRootCard) -> Void = { _ in }, showTest: @escaping (TerraformTestRun) -> Void = { _ in },
+        chooseVarFiles: @escaping (TerraformRootCard) -> Void = { _ in }
     ) {
+        self.chooseVarFiles = chooseVarFiles
         self.openTerminal = openTerminal
         self.openFile = openFile
         self.validate = validate
@@ -356,7 +360,14 @@ private struct RootRow: View {
             showTest: actions.showTest)
         let varFiles = TerraformRootStore.shared.varFiles(checkout: panel.checkout ?? card.folder, root: card.path)
         if !varFiles.isEmpty {
-            line("var files: " + varFiles.joined(separator: ", "), theme.text3).accessibilityIdentifier("terraform.panel.varFiles.\(card.path)")
+            Button {
+                actions.chooseVarFiles(card)
+            } label: {
+                line("var files: " + varFiles.joined(separator: ", "), theme.text3)
+            }
+            .buttonStyle(.plain)
+            .help("Var Files…: change or clear what its plans use")
+            .accessibilityIdentifier("terraform.panel.varFiles.\(card.path)")
         }
         if card.backendChanged { line("The backend changed since init: run init in a terminal.", theme.orangeText) }
         if card.facts.needsInit {
@@ -459,6 +470,7 @@ private struct RootRow: View {
         }
         .disabled(initializing)
         Button("Select Workspace…") { actions.chooseWorkspace(card) }
+        Button("Var Files…") { actions.chooseVarFiles(card) }
         Group {
             Button("State and Outputs") { actions.showState(card) }
             Button("Check Drift") { actions.checkDrift(card) }

@@ -23,6 +23,12 @@ extension EditorViewController {
 
     /// The bar under a Terraform file's text.
     package func showTerraformBar(_ folder: TerraformFolder) {
+        // Which root this file is: read now, while the bar shows it (TF-U5).
+        if let path = active?.url?.standardizedFileURL.path {
+            let checkout = folder.checkout.standardizedFileURL.path
+            let relative = path.hasPrefix(checkout + "/") ? String(path.dropFirst(checkout.count + 1)) : nil
+            if let relative, folder.roots.changed != [relative] { folder.roots.read(changed: [relative], checkout: folder.checkout, head: nil) }
+        }
         consoleHost.rootView = AnyView(
             TerraformEditorBar(
                 folder: folder, model: TerraformEditorModel.shared, theme: chrome, title: terraformTitle(folder),
@@ -36,6 +42,12 @@ extension EditorViewController {
                     : { [weak self, weak folder] in
                         guard let folder else { return }
                         self?.terraformHost?.askWhy(validateOf: folder)
+                    },
+                plan: terraformHost == nil
+                    ? nil
+                    : { [weak self, weak folder] path in
+                        guard let folder, let card = folder.roots.cards[path], let checkout = folder.roots.readCheckout else { return NSSound.beep() }
+                        self?.terraformHost?.planFromEditor(card, checkout: checkout)
                     }))
         consoleHeight.constant = TerraformEditorBar.height
     }
@@ -194,6 +206,8 @@ package struct TerraformEditorBar: View {
     package let format: () -> Void
     /// Ask Why on a failed validate: its diagnostics to the checkout's agent.
     package var askWhy: (() -> Void)? = nil
+    /// Plan the root at this path (TF-U5); nil where nobody can plan.
+    package var plan: ((String) -> Void)? = nil
 
     package static let height: CGFloat = 33
 
@@ -226,6 +240,7 @@ package struct TerraformEditorBar: View {
             Text(verbatim: "Terraform").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.dimText)
             Text(verbatim: title).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
                 .truncationMode(.middle)
+            TerraformEditorRootChip(roots: folder.roots, theme: theme, plan: plan)
             Button("Validate") { validate() }
                 .disabled(folder.isRunning)
                 .help("terraform validate in this folder, with no credential in its environment — it starts the providers, never init")
@@ -256,5 +271,55 @@ package struct TerraformEditorBar: View {
         .frame(height: Self.height)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.strip)
+    }
+}
+
+/// The bar's root (TF-U5): the file's own root — its class, workspace and
+/// Plan — or, in a module, the roots that call it, Plan a menu of them.
+/// Nothing until the read has come; nothing outside every root.
+private struct TerraformEditorRootChip: View {
+    @ObservedObject var roots: TerraformReviewModel
+    @ObservedObject var theme: ChromeTheme
+    let plan: ((String) -> Void)?
+
+    var body: some View {
+        let direct = roots.roots.filter { !$0.why.hasPrefix("through ") }
+        if let root = direct.first {
+            HStack(spacing: 5) {
+                chip(root)
+                if let workspace = roots.cards[root.path]?.workspace {
+                    Text(verbatim: "@" + workspace).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.dimText)
+                }
+                if let plan {
+                    Button("Plan") { plan(root.path) }
+                        .fixedSize()
+                        .help("Plan \(root.name) — asked first where its class or its code asks")
+                        .accessibilityIdentifier("terraform.editor.plan")
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("terraform.editor.root")
+        } else if !roots.roots.isEmpty, let plan {
+            Menu("Plan a Caller") {
+                ForEach(roots.roots) { root in
+                    Button((root.isProduction ? "PRODUCTION · " : "") + root.name) { plan(root.path) }
+                }
+            }
+            .fixedSize()
+            .help("This folder is a module: the roots that call it")
+            .accessibilityIdentifier("terraform.editor.callers")
+        }
+    }
+
+    private func chip(_ root: TerraformReview.Root) -> some View {
+        Text(verbatim: root.rootClass.title.uppercased())
+            .font(.system(size: ChromeMetrics.text(9.5), weight: .bold))
+            .foregroundStyle(root.rootClass == .local ? theme.dimText : Color.white)
+            .padding(.horizontal, 5).frame(height: 16)
+            .background(
+                RoundedRectangle(cornerRadius: 4).fill(root.isProduction ? TerraformPanelView.production : root.rootClass == .local ? theme.selected : Color.orange)
+            )
+            .help("\(root.name): \(root.rootClass.title)")
+            .accessibilityIdentifier("terraform.editor.class")
     }
 }

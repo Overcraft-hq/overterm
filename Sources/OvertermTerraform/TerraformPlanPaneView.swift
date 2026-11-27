@@ -15,6 +15,8 @@ package struct TerraformPlanActions {
     package var showApply: (TerraformApplyRun) -> Void = { _ in }
     /// The root's var files chosen for its plans (Missing variables, 2.2).
     package var chooseVarFiles: (TerraformPlanRun, [String]) -> Void
+    /// The inputs line's Var Files…: the root's list, as its card opens it.
+    package var editVarFiles: (TerraformPlanRun) -> Void = { _ in }
     /// A file of the checkout at a line.
     package var open: (URL, Int?) -> Void
     package var close: () -> Void
@@ -35,7 +37,7 @@ package struct TerraformPlanActions {
         showApply: @escaping (TerraformApplyRun) -> Void = { _ in }, chooseVarFiles: @escaping (TerraformPlanRun, [String]) -> Void, open: @escaping (URL, Int?) -> Void, close: @escaping () -> Void,
         apply: @escaping (TerraformPlanRun) -> Void = { _ in }, stopApply: @escaping (TerraformApplyRun) -> Void = { _ in },
         planMode: @escaping (TerraformPlanRun, TerraformPlanMode) -> Void = { _, _ in }, testAgain: @escaping (TerraformTestRun) -> Void = { _ in },
-        forceUnlock: @escaping (TerraformPlanRun) -> Void = { _ in }
+        forceUnlock: @escaping (TerraformPlanRun) -> Void = { _ in }, editVarFiles: @escaping (TerraformPlanRun) -> Void = { _ in }
     ) {
         self.planAgain = planAgain
         self.discard = discard
@@ -52,6 +54,7 @@ package struct TerraformPlanActions {
         self.planMode = planMode
         self.testAgain = testAgain
         self.forceUnlock = forceUnlock
+        self.editVarFiles = editVarFiles
     }
 }
 
@@ -256,8 +259,16 @@ private struct TerraformRunView: View {
                     .accessibilityIdentifier("terraform.plan.risks")
             }
             if let inputs = inputsLine {
-                Text(verbatim: inputs).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
-                    .lineLimit(2).truncationMode(.tail).accessibilityIdentifier("terraform.plan.inputs")
+                // The same list the root's card opens (TF-U4).
+                Button {
+                    actions.editVarFiles(run)
+                } label: {
+                    Text(verbatim: inputs).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
+                        .lineLimit(2).truncationMode(.tail)
+                }
+                .buttonStyle(.plain)
+                .help("Var Files…: the root's .tfvars its plans use")
+                .accessibilityIdentifier("terraform.plan.inputs")
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
