@@ -35,6 +35,8 @@ version is tagged `v<version>`.
 - The chrome's secondary text stays readable on any terminal theme: at least 4.5:1 against the window (3:1 for the faintest)
 - Shortcuts moved: Docker Switcher is ⌃⌘P, as Kubernetes', Activity's and Terraform's are ⌃⌘J, ⌃⌘A and ⌃⌘E; Presentation Mode is ⇧⌃⌘P; ⌥⌘O opens a new opencode tab, and View Latest Changelog has no key
 - Terraform: Var Files… on a root's card (and the plan's inputs line) ticks its .tfvars for every plan, several at once, None clearing them
+- Overgit: Publish, Push and a tag's push go to the branch's remote (pushRemote, remote.pushDefault, the one there is), asked when there are several; a rebase or soft/mixed reset of commits already on a remote asks first; a stash opens to show its changes, and Stash Staged Changes Only puts aside just the index; Pull Requests shows who is asked to review (yours first), the review verdict and a conflict
+- The commit message is one draft a checkout, the same in Overgit and the changes pane (with Amend in both); New Task says under Branch and From what is wrong as you type — a name git refuses, a From that names nothing, a branch that exists — with From's branches in a menu
 - Terraform: a plan, apply, drift check or test that ends while you're elsewhere marks the checkout's tab and notifies, in Overterm's words only
 - Terraform: the changes pane names the roots the changed files touch, directly or through a module, with Plan; the editor's bar shows the file's root, workspace and class, with Plan
 

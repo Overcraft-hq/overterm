@@ -15,9 +15,46 @@ package struct PullRequestSummary: Equatable {
     package let checks: CheckSummary
     /// The head commit — a merged PR's says which commit was merged.
     package var headOid: String? = nil
+    /// Who opened it (a login).
+    package var author: String? = nil
+    /// GitHub's verdict over its reviews, nil where none is required or read.
+    package var reviewDecision: ReviewDecision? = nil
+    /// Whether it merges cleanly; GitHub works it out lazily, so `unknown` is common.
+    package var mergeable: Mergeable? = nil
+    /// The people asked to review it (logins) — a team asked is not a person.
+    package var reviewRequested: [String] = []
 
-    /// `gh pr list` fields this parses.
-    package static let listFields = "number,title,headRefName,headRefOid,state,isDraft,url,statusCheckRollup"
+    package enum ReviewDecision: String, Equatable {
+        case approved = "APPROVED", changesRequested = "CHANGES_REQUESTED", reviewRequired = "REVIEW_REQUIRED"
+    }
+
+    package enum Mergeable: String, Equatable {
+        case mergeable = "MERGEABLE", conflicting = "CONFLICTING", unknown = "UNKNOWN"
+    }
+
+    /// `gh pr list` fields this parses. The review and merge fields come in
+    /// the same call (GIT-G4): nothing more is asked a row.
+    package static let listFields =
+        "number,title,headRefName,headRefOid,state,isDraft,url,statusCheckRollup,author,reviewDecision,reviewRequests,mergeable"
+
+    /// Somebody asked `login` to review it.
+    package func asks(_ login: String?) -> Bool {
+        guard let login else { return false }
+        return reviewRequested.contains { $0.caseInsensitiveCompare(login) == .orderedSame }
+    }
+
+    /// The Pull Requests list's three groups, in this order, each newest
+    /// first: those asking you for a review, yours, the rest. Without a
+    /// login (gh's user unread), one unnamed group. Pure.
+    package static func grouped(_ list: [PullRequestSummary], me: String?) -> [(title: String?, pullRequests: [PullRequestSummary])] {
+        let sorted = list.sorted { $0.number > $1.number }
+        guard let me else { return sorted.isEmpty ? [] : [(nil, sorted)] }
+        let mine = { (pr: PullRequestSummary) in pr.author?.caseInsensitiveCompare(me) == .orderedSame }
+        let asked = sorted.filter { $0.asks(me) && !mine($0) }
+        let yours = sorted.filter(mine)
+        let others = sorted.filter { !mine($0) && !$0.asks(me) }
+        return [("Needs your review", asked), ("Yours", yours), ("Others", others)].filter { !$0.1.isEmpty }.map { ($0.0, $0.1) }
+    }
 
     /// Two lists as one, each pull request once (the first list's), newest first.
     package static func merged(_ first: [PullRequestSummary], _ second: [PullRequestSummary]) -> [PullRequestSummary] {
@@ -224,6 +261,11 @@ package struct ReviewThread: Equatable, Identifiable {
 package enum GH {
     package struct Login: Decodable { package let login: String }
 
+    /// A review request's reviewer: a user (`login`) or a team (`name`, `slug`).
+    package struct ReviewRequest: Decodable {
+        package let login: String?
+    }
+
     package struct RollupItem: Decodable {
         // CheckRun
         package let name: String?
@@ -294,6 +336,9 @@ package enum GH {
         package let changedFiles: Int?
         package let comments: [Comment]?
         package let reviews: [Review]?
+        package var reviewDecision: String? = nil
+        package var reviewRequests: [ReviewRequest]? = nil
+        package var mergeable: String? = nil
 
         package var summary: PullRequestSummary {
             let prState: PullRequestSummary.State =
@@ -302,9 +347,14 @@ package enum GH {
                 case "CLOSED": .closed
                 default: isDraft == true ? .draft : .open
                 }
-            return PullRequestSummary(
+            var summary = PullRequestSummary(
                 number: number, title: title, branch: headRefName, state: prState, url: url.flatMap(URL.init),
                 checks: CheckSummary((statusCheckRollup ?? []).map(\.check)), headOid: headRefOid)
+            summary.author = author?.login
+            summary.reviewDecision = reviewDecision.flatMap(PullRequestSummary.ReviewDecision.init(rawValue:))
+            summary.mergeable = mergeable.flatMap(PullRequestSummary.Mergeable.init(rawValue:))
+            summary.reviewRequested = (reviewRequests ?? []).compactMap(\.login)
+            return summary
         }
     }
 
