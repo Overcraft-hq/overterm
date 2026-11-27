@@ -159,6 +159,10 @@ for pin in json.load(open(os.path.join(root, "Package.resolved")))["pins"]:
     add("Swift packages", pin["identity"], pin["state"].get("version") or pin["state"]["revision"][:12],
         re.sub(r"\.git$", "", pin["location"]), text, license=kind(read(os.path.join(folder, licence[0]))))
 
+# ── Database: DuckDB's library, as its release ships it ───────────────────
+duckdb = re.search(r'DUCKDB_VERSION="([^"]+)"', read(os.path.join(root, "Scripts", "fetch-duckdb.sh"))).group(1)
+add("Database", "DuckDB", duckdb, "https://duckdb.org", fetch(f"https://raw.githubusercontent.com/duckdb/duckdb/v{duckdb}/LICENSE"))
+
 # ── Notes: the reading view's libraries, Excalidraw and its fonts ─────────
 web = read(os.path.join(root, "Scripts", "fetch-notes-web.sh"))
 homes = {"markdown-it": "https://github.com/markdown-it/markdown-it", "markdown-it-footnote": "https://github.com/markdown-it/markdown-it-footnote",

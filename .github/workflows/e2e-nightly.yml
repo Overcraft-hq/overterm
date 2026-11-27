@@ -134,7 +134,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       - uses: jdx/mise-action@v5
         if: steps.frameworks.outputs.cache-hit != 'true'
@@ -151,10 +151,16 @@ jobs:
             sleep 30
           done
 
+      # DuckDB's library, fetched (Scripts/fetch-duckdb.sh): kept with the
+      # frameworks above; a restored one is checked and left as it is.
+      - name: Fetch DuckDBKit
+        run: make duckdb
+
       # CI's debug build of this commit, its paths and keys exactly (ci.yml,
       # test): restored only. With the files dated by their commits, nothing
       # main's CI compiled is compiled again.
       - name: Restore the debug build
+        id: debug-build
         uses: actions/cache/restore@v6
         with:
           path: |
@@ -166,10 +172,15 @@ jobs:
             .build/out/Products/Debug/*
             !.build/out/Products/Debug/ExecutableModules
             !.build/out/Products/Debug/lib*.a
-          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
-            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
+            spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
+            spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-
+
+      # What changed since the restored cache's commit, dated now: a branch's
+      # commit can be older than the cache (Scripts/date-changed-since-cache.sh).
+      - name: Date what changed since the cache
+        run: Scripts/date-changed-since-cache.sh "${{ steps.debug-build.outputs.cache-matched-key }}"
 
       - name: Assemble the app from the debug build
         run: |

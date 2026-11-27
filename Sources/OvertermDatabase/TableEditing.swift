@@ -4,7 +4,7 @@ import Foundation
 /// for it (rows edited, users changed). Every name is quoted and every
 /// value a literal — a name or a value never ends the statement it is in.
 package struct SQLDialect: Equatable, Sendable {
-    package enum Engine: Equatable, Sendable { case postgres, redshift, mysql, mariadb, sqlite, oracle, clickhouse, bigquery }
+    package enum Engine: Equatable, Sendable { case postgres, redshift, mysql, mariadb, sqlite, oracle, clickhouse, bigquery, duckdb }
 
     package var engine: Engine
     /// MySQL's and MariaDB's strings take `\` as an escape, unless the
@@ -19,6 +19,7 @@ package struct SQLDialect: Equatable, Sendable {
     package static let oracle = SQLDialect(engine: .oracle)
     package static let clickhouse = SQLDialect(engine: .clickhouse)
     package static let bigquery = SQLDialect(engine: .bigquery)
+    package static let duckdb = SQLDialect(engine: .duckdb)
 
     package var isMySQL: Bool { engine == .mysql || engine == .mariadb }
     /// ClickHouse's and BigQuery's names and strings escape with a
