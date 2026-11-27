@@ -1191,6 +1191,11 @@ package final class E2ERunner {
         check(
             "usage opens in that same slot", app.rightPane.mode == .usage && app.browserItem?.isCollapsed == true,
             "\(app.rightPane.mode)")
+        // The gauge pressed again closes it, as the ± badge does the changes.
+        app.showUsage(nil)
+        check("pressed again, usage closes", await eventually(2) { self.app.diffItem?.isCollapsed == true }, "\(app.diffItem?.isCollapsed as Any)")
+        app.showUsage(nil)
+        check("and opens again", await eventually(2) { self.app.diffItem?.isCollapsed == false } && app.rightPane.mode == .usage)
         app.toggleBrowser(nil)
         check(
             "the globe takes the slot back",

@@ -4452,8 +4452,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     }
 
     /// The right pane, on what the agents have spent (⌥⌘U, the gauge in
-    /// the strip, View ▸ Usage).
+    /// the strip, View ▸ Usage) — or, pressed again while it shows that,
+    /// closed, as the ± badge closes the changes: the gauge only opened it,
+    /// and a second press did nothing.
     @objc package func showUsage(_ sender: Any?) {
+        if diffItem?.isCollapsed == false, rightPane.mode == .usage { return toggleDiff(nil) }
         rightPane.mode = .usage
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
