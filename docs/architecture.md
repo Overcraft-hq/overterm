@@ -2654,8 +2654,14 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   fields; the version both speak picked from ApiVersions, a broker outside
   the range said in words (`KafkaWire.version`). Record batches (magic 2)
   read with their CRC-32C checked, a transaction's markers left out, a
-  batch cut at the fetch's end left for the next; the old message format
-  (before 0.11) is said, not read.
+  batch cut at the fetch's end left for the next, LogAppendTime's records
+  stamped with the batch's time; the old message format (before 0.11) is
+  said, not read. Whatever a broker says is checked before it is used — a
+  count, a length, a name — so a lying one fails a read, never the app; a
+  fetch decodes at most 128 MB and stops once it has what PEEK wants, a key
+  or value keeps its first 64 KB, and PEEK keeps its newest n across
+  partitions as they come. A connection the broker dropped (idle 10 min) is
+  opened again on the next command; one open a broker at a time.
 - **Codecs** (`KafkaCompression`): gzip by the system's zlib (the header
   read here), LZ4 frames and Snappy (raw, or the Java client's xerial
   framing) by decoders of ours — an LZ4 frame's blocks may reach into
@@ -2670,7 +2676,9 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   SSH tunnel, the one broker given for everything (`problem` refuses
   several). TLS from the first byte or none (a CA bundle for Verify Full);
   SASL PLAIN or SCRAM-SHA-256/512 (`authSource` holds the mechanism;
-  `MongoSCRAM` signs, SHA-512 added for it), the password in the keychain.
+  `MongoSCRAM` signs, SHA-512 added for it — the password as it is, no
+  SASLprep, as Kafka's ScramFormatter), the password in the keychain; SNI
+  sent even when the certificate isn't checked (managed clusters route by it).
 - **The console** (`KafkaText`): `TOPICS`, `DESCRIBE`, `PEEK <topic> [n]
   [PARTITION p] [FROM BEGINNING | FROM <offset>]`, `PUBLISH <topic>
   [PARTITION p] [KEY k] <value>`, `GROUPS`, `LAG <group>`. PEEK fetches by

@@ -83,7 +83,8 @@ package enum KafkaWire {
 
         package mutating func string(_ s: String?) {
             guard let s else { return int16(-1) }
-            let utf8 = Array(s.utf8)
+            // A protocol string is at most Int16.max bytes; names are checked long before.
+            let utf8 = Array(s.utf8.prefix(Int(Int16.max)))
             int16(Int16(utf8.count))
             bytes += utf8
         }
@@ -447,6 +448,8 @@ package enum KafkaWire {
         package var key: [UInt8]?
         package var value: [UInt8]?
         package var headers: [Header] = []
+        /// The value's whole size, when `value` keeps only its start.
+        package var valueSize = 0
     }
 
     package enum Codec: Int16, Sendable {
@@ -454,14 +457,24 @@ package enum KafkaWire {
         package var name: String { ["none", "gzip", "snappy", "lz4", "zstd"][Int(rawValue)] }
     }
 
+    /// What a fetch may decode in all: batches past it wait for the next.
+    package static let decodeBudget = 128 << 20
+    /// What of a key or a value is kept: the grid shows less.
+    package static let kept = 64 << 10
+
     /// The messages of a fetch's records: every whole batch, a transaction's
     /// markers left out, one cut off at the end (the size asked for) left
-    /// for the next fetch — and the offset after the last whole batch, where
-    /// the next fetch starts (nil: none was whole). A compressed batch is
-    /// opened by `inflate`.
-    package static func messages(_ records: [UInt8], inflate: (Codec, [UInt8]) throws -> [UInt8]) throws -> (messages: [Message], next: Int64?) {
+    /// for the next fetch — and the offset where the next fetch starts (nil:
+    /// no batch was whole). Decoding stops once `wanted` messages from
+    /// `from` on are in, or `decodeBudget` bytes were opened. A compressed
+    /// batch is opened by `inflate`; a key or value keeps its first `kept`
+    /// bytes.
+    package static func messages(
+        _ records: [UInt8], from: Int64 = 0, wanted: Int = .max, inflate: (Codec, [UInt8]) throws -> [UInt8]
+    ) throws -> (messages: [Message], next: Int64?) {
         var messages: [Message] = []
         var next: Int64?
+        var decoded = 0
         var at = 0
         while records.count - at >= 12 {
             var head = Reader(records, from: at)
@@ -480,37 +493,54 @@ package enum KafkaWire {
             guard crc32c(checked) == crc else { throw Failure("A batch at offset \(baseOffset) fails its CRC: the bytes are damaged.") }
             let attributes = try r.int16()
             let lastOffsetDelta = try r.int32()
-            next = baseOffset + Int64(lastOffsetDelta) + 1
+            let batchNext = baseOffset + Int64(lastOffsetDelta) + 1
             let baseTimestamp = try r.int64()
-            _ = try r.int64()
+            let maxTimestamp = try r.int64()
             _ = try r.int64()
             _ = try r.int16()
             _ = try r.int32()
             let count = Int(try r.int32())
+            guard count >= 0 else { throw Failure("A batch at offset \(baseOffset) says it holds \(count) records.") }
+            // The broker's own time (LogAppendTime): every record's is the batch's.
+            let appendTime = attributes & 0x08 != 0
             at = end
+            guard decoded < decodeBudget, messages.count < wanted else { break }
+            next = batchNext
             // A transaction's commit or abort marker: no message of anyone's.
             if attributes & 0x20 != 0 { continue }
             guard let codec = Codec(rawValue: attributes & 0x07) else { throw Failure("A batch at offset \(baseOffset) is compressed in a way Kafka doesn't name (\(attributes & 0x07)).") }
             let payload = Array(records[r.at..<end])
             let plain = codec == .none ? payload : try inflate(codec, payload)
+            decoded += plain.count
             var m = Reader(plain)
             for _ in 0..<count {
-                let size = Int(try m.varint())
-                var one = Reader(plain, from: m.at, to: m.at + size)
-                _ = try m.take(size)
+                let size = try m.varint()
+                guard size >= 0, size <= Int64(m.remaining) else { throw Failure("A record at offset \(baseOffset) runs past its batch.") }
+                let start = m.at
+                _ = try m.take(Int(size))
+                var one = Reader(plain, from: start, to: start + Int(size))
                 _ = try one.int8()
                 let timestampDelta = try one.varint()
                 let offsetDelta = try one.varint()
                 let key = try one.varData()
                 let value = try one.varData()
-                let headerCount = Int(try one.varint())
+                let headerCount = try one.varint()
+                guard headerCount >= 0, headerCount <= Int64(one.remaining) else { throw Failure("A record at offset \(baseOffset) has a broken header count.") }
                 var headers: [Header] = []
-                for _ in 0..<max(0, headerCount) {
+                for _ in 0..<Int(headerCount) {
                     let name = try one.varData().map { String(decoding: $0, as: UTF8.self) } ?? ""
                     headers.append(Header(key: name, value: try one.varData()))
                 }
+                let offset = baseOffset + offsetDelta
+                guard offset >= from else { continue }
                 messages.append(
-                    Message(offset: baseOffset + offsetDelta, timestamp: baseTimestamp + timestampDelta, key: key, value: value, headers: headers))
+                    Message(
+                        offset: offset, timestamp: appendTime ? maxTimestamp : baseTimestamp + timestampDelta, key: key.map { Array($0.prefix(kept)) },
+                        value: value.map { Array($0.prefix(kept)) }, headers: headers, valueSize: value?.count ?? 0))
+                if messages.count >= wanted {
+                    next = offset + 1
+                    break
+                }
             }
         }
         return (messages, next)

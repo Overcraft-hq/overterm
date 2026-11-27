@@ -95,7 +95,21 @@ package enum KafkaText: KindConsoleText {
         package var errorDescription: String? { message }
     }
 
+    /// Kafka's own limit on a topic's name.
+    package static let longestName = 249
+
     package static func parse(_ statement: String) throws -> Command {
+        let command = try parseCommand(statement)
+        let name: String? =
+            switch command {
+            case .describe(let n), .lag(let n), .peek(let n, _, _, _), .publish(let n, _, _, _): n
+            default: nil
+            }
+        if let name, name.utf8.count > longestName { throw Problem(message: "A name is at most \(longestName) characters in Kafka.") }
+        return command
+    }
+
+    private static func parseCommand(_ statement: String) throws -> Command {
         var rest = Substring(statement.trimmingCharacters(in: .whitespacesAndNewlines))
         guard let first = word(&rest) else { throw Problem(message: "No command.") }
         func done(_ what: String) throws {
@@ -244,13 +258,24 @@ package enum KafkaText: KindConsoleText {
     // MARK: Values
 
     /// A key's or value's bytes as the grid shows them: UTF-8 text as it
-    /// is (cut at `cut`), anything else as hex and its size.
-    package static func text(_ bytes: [UInt8]?, cut: Int = 50_000) -> String? {
+    /// is (cut at `cut`), anything else as hex and its size. `size`, the
+    /// whole value's when only its start was kept.
+    package static func text(_ bytes: [UInt8]?, size: Int? = nil, cut: Int = 50_000) -> String? {
         guard let bytes else { return nil }
-        if let string = String(bytes: bytes, encoding: .utf8), !string.unicodeScalars.contains(where: { $0.value < 0x20 && !"\n\r\t".unicodeScalars.contains($0) }) {
-            return string.count > cut ? String(string.prefix(cut)) + "… (\(bytes.count) bytes)" : string
+        let total = max(size ?? 0, bytes.count)
+        // A start cut in the middle of a character still reads as text.
+        var kept = bytes
+        var string = String(bytes: kept, encoding: .utf8)
+        if string == nil, total > bytes.count {
+            for drop in 1...3 where string == nil && kept.count > drop {
+                string = String(bytes: kept.dropLast(drop), encoding: .utf8)
+                if string != nil { kept = Array(kept.dropLast(drop)) }
+            }
+        }
+        if let string, !string.unicodeScalars.contains(where: { $0.value < 0x20 && !"\n\r\t".unicodeScalars.contains($0) }) {
+            return string.count > cut || total > kept.count ? String(string.prefix(cut)) + "… (\(total) bytes)" : string
         }
         let shown = bytes.prefix(32).map { String(format: "%02x", $0) }.joined()
-        return "0x\(shown)\(bytes.count > 32 ? "…" : "") (\(bytes.count) bytes)"
+        return "0x\(shown)\(total > 32 ? "…" : "") (\(total) bytes)"
     }
 }

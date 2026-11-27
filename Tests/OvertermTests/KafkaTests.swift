@@ -54,6 +54,44 @@ final class KafkaTests: XCTestCase {
         XCTAssertThrowsError(try KafkaWire.messages(damaged, inflate: KafkaCompression.inflate))
     }
 
+    /// A batch changed in place, its CRC made right again — what a broker
+    /// that lies would send.
+    private func altered(_ batch: [UInt8], _ change: (inout [UInt8]) -> Void) -> [UInt8] {
+        var bytes = batch
+        change(&bytes)
+        let crc = KafkaWire.crc32c(bytes[21...])
+        for k in 0..<4 { bytes[17 + k] = UInt8(truncatingIfNeeded: crc >> (24 - 8 * k)) }
+        return bytes
+    }
+
+    func testABrokerThatLiesCrashesNothing() throws {
+        let batch = KafkaWire.batch(key: nil, value: Array("v".utf8), timestamp: 1_000)
+        // A negative record count.
+        let negative = altered(batch) { for k in 57..<61 { $0[k] = 0xFF } }
+        XCTAssertThrowsError(try KafkaWire.messages(negative, inflate: KafkaCompression.inflate))
+        // A record that says it is longer than its batch (a varint near Int64.max).
+        let long = altered(batch) { bytes in
+            bytes.replaceSubrange(61..<62, with: [0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x01])
+            bytes[11] += 9  // the batch's length, so only the record lies
+        }
+        XCTAssertThrowsError(try KafkaWire.messages(long, inflate: KafkaCompression.inflate))
+        // A string longer than Int16 is cut, not a trap.
+        var writer = KafkaWire.Writer()
+        writer.string(String(repeating: "a", count: 40_000))
+        XCTAssertEqual(writer.bytes.count, 2 + Int(Int16.max))
+        XCTAssertThrowsError(try KafkaText.parse("PEEK " + String(repeating: "t", count: 250)))
+    }
+
+    func testLogAppendTime() throws {
+        let batch = KafkaWire.batch(key: nil, value: Array("v".utf8), timestamp: 1_000)
+        // The broker's time: attribute 0x08, every record's timestamp the batch's max.
+        let appended = altered(batch) { bytes in
+            bytes[22] |= 0x08
+            for k in 0..<8 { bytes[35 + k] = UInt8(truncatingIfNeeded: Int64(5_000) >> (56 - 8 * k)) }
+        }
+        XCTAssertEqual(try KafkaWire.messages(appended, inflate: KafkaCompression.inflate).messages.first?.timestamp, 5_000)
+    }
+
     func testVersions() throws {
         XCTAssertEqual(try KafkaWire.version(of: .fetch, broker: [1: 4...17]), 11, "the last before tagged fields")
         XCTAssertEqual(try KafkaWire.version(of: .metadata, broker: [3: 0...5]), 5)
@@ -99,6 +137,7 @@ final class KafkaTests: XCTestCase {
         XCTAssertEqual(KafkaText.browse(CatalogTable(schema: "groups", name: "billing"), limit: 100), "LAG billing")
         XCTAssertEqual(KafkaText.text(Array("héllo".utf8)), "héllo")
         XCTAssertEqual(KafkaText.text([0, 1, 255]), "0x0001ff (3 bytes)")
+        XCTAssertEqual(KafkaText.text(Array("abc".utf8), size: 70_000), "abc… (70000 bytes)", "only its start kept")
     }
 
     func testConnection() {

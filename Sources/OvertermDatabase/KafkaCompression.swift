@@ -34,7 +34,7 @@ package enum KafkaCompression {
         var at = 10
         if flags & 0x04 != 0 {
             guard at + 2 <= bytes.count else { throw failure("gzip", "its header is cut") }
-            at += 2 + Int(bytes[at]) | Int(bytes[at + 1]) << 8
+            at += 2 + (Int(bytes[at]) | Int(bytes[at + 1]) << 8)
         }
         for bit: UInt8 in [0x08, 0x10] where flags & bit != 0 {
             while at < bytes.count, bytes[at] != 0 { at += 1 }

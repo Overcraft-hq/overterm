@@ -21,6 +21,8 @@ package actor KafkaDriver: DatabaseDriver {
     /// Metadata says which it is.
     private var connections: [Int32: KafkaConnection] = [:]
     private var bootstrap: KafkaConnection?
+    /// Opens in flight, by broker id.
+    private var opening: [Int32: Task<KafkaConnection, Error>] = [:]
     private var versions: [Int16: ClosedRange<Int16>] = [:]
     package private(set) var metadata: KafkaWire.Metadata?
 
@@ -33,7 +35,7 @@ package actor KafkaDriver: DatabaseDriver {
     }
 
     /// Through a tunnel: only the address given is reachable.
-    private var oneAddress: Bool { config.sshEnabled }
+    private var oneAddress: Bool { config.usesTunnel }
 
     // MARK: Connecting
 
@@ -127,7 +129,8 @@ package actor KafkaDriver: DatabaseDriver {
         let isAddress = serverName.allSatisfy { $0.isNumber || $0 == "." } || serverName.contains(":")
         do {
             return try NIOSSLClientHandler(
-                context: NIOSSLContext(configuration: configuration), serverHostname: isAddress || config.sslMode == .require ? nil : serverName)
+                // SNI even unverified: managed clusters route by it.
+                context: NIOSSLContext(configuration: configuration), serverHostname: isAddress ? nil : serverName)
         } catch {
             throw DatabaseError.failed("TLS couldn't be set up: \(MongoDriver.describe(error))")
         }
@@ -164,7 +167,9 @@ package actor KafkaDriver: DatabaseDriver {
         guard let scramMechanism = MongoSCRAM.Mechanism(rawValue: mechanism), scramMechanism != .sha1 else {
             throw DatabaseError.failed("Overterm signs in to Kafka with PLAIN, SCRAM-SHA-256 or SCRAM-SHA-512, not \(mechanism).")
         }
-        let scram = MongoSCRAM(mechanism: scramMechanism, user: config.user, password: password)
+        // Kafka's ScramFormatter takes the password's UTF-8 as it is: no SASLprep.
+        let nonce = Data((0..<24).map { _ in UInt8.random(in: 0...255) }).base64EncodedString()
+        let scram = MongoSCRAM(mechanism: scramMechanism, user: config.user, rawSecret: password, nonce: nonce)
         do {
             let first = try await round(Array(scram.clientFirst.utf8))
             let final = try scram.clientFinal(serverFirst: String(decoding: first, as: UTF8.self))
@@ -176,6 +181,8 @@ package actor KafkaDriver: DatabaseDriver {
     }
 
     package func close() async {
+        for task in opening.values { task.cancel() }
+        opening = [:]
         for connection in connections.values where connection !== bootstrap { await connection.close() }
         await bootstrap?.close()
         connections = [:]
@@ -192,18 +199,34 @@ package actor KafkaDriver: DatabaseDriver {
         }
     }
 
-    /// A broker's connection: the bootstrap's when it is that broker, or
-    /// when only the address given can be reached.
-    private func connection(to id: Int32) async throws -> KafkaConnection {
+    /// The bootstrap connection, opened again when the broker closed it — a
+    /// broker drops a connection idle for `connections.max.idle.ms` (10 min).
+    private func liveBootstrap() async throws -> KafkaConnection {
+        if let bootstrap, bootstrap.isActive { return bootstrap }
+        await close()
+        try await connect()
         guard let bootstrap else { throw DatabaseError.notConnected }
+        return bootstrap
+    }
+
+    /// A broker's connection: the bootstrap's when it is that broker, or
+    /// when only the address given can be reached. One open at a time a
+    /// broker: a second asker waits for the first's.
+    private func connection(to id: Int32) async throws -> KafkaConnection {
+        let bootstrap = try await liveBootstrap()
         if oneAddress { return bootstrap }
         if let open = connections[id], open.isActive { return open }
+        if let pending = opening[id] { return try await pending.value }
         guard let broker = metadata?.brokers.first(where: { $0.id == id }) else {
             throw DatabaseError.failed("Broker \(id) isn't in the cluster's metadata.")
         }
         if bootstrap.address == "\(broker.host):\(broker.port)" { return bootstrap }
+        let task = Task { try await self.open(broker.host, Int(broker.port)) }
+        opening[id] = task
+        defer { opening[id] = nil }
         do {
-            let opened = try await open(broker.host, Int(broker.port))
+            let opened = try await task.value
+            if let old = connections[id], old !== opened { await old.close() }
             connections[id] = opened
             return opened
         } catch {
@@ -214,7 +237,8 @@ package actor KafkaDriver: DatabaseDriver {
     }
 
     private func call(_ api: KafkaWire.API, _ body: (Int16) -> [UInt8], on connection: KafkaConnection? = nil) async throws -> ([UInt8], Int16) {
-        guard let target = connection ?? bootstrap else { throw DatabaseError.notConnected }
+        let target: KafkaConnection
+        if let connection { target = connection } else { target = try await liveBootstrap() }
         let version = try version(api)
         do {
             return (try await target.send(api, version: version, body: body(version), timeout: .seconds(30)), version)
@@ -320,7 +344,7 @@ package actor KafkaDriver: DatabaseDriver {
     private func topics() async throws -> QueryResult {
         let metadata = try await refresh()
         let listed = metadata.topics.filter { $0.error == 0 }
-        let partitions = Dictionary(uniqueKeysWithValues: listed.map { ($0.name, $0.partitions) })
+        let partitions = Dictionary(listed.map { ($0.name, $0.partitions) }, uniquingKeysWith: { first, _ in first })
         let latest = try await offsets(partitions, at: KafkaWire.latest)
         let earliest = try await offsets(partitions, at: KafkaWire.earliest)
         var result = QueryResult()
@@ -370,8 +394,23 @@ package actor KafkaDriver: DatabaseDriver {
         let earliest = try await offsets([name: partitions], at: KafkaWire.earliest)[name] ?? [:]
         var messages: [KafkaWire.Message] = []
         var notes: [String] = []
+        // Kept to `count` across partitions as they come: never every partition's `count`.
+        func keep(_ more: [KafkaWire.Message]) {
+            messages += more
+            guard messages.count > count else { return }
+            if case .newest = from {
+                messages.sort { ($0.timestamp, $0.partition, $0.offset) > ($1.timestamp, $1.partition, $1.offset) }
+            } else {
+                messages.sort { ($0.partition, $0.offset) < ($1.partition, $1.offset) }
+            }
+            messages = Array(messages.prefix(count))
+        }
         for p in partitions {
-            guard let end = latest[p.index], let first = earliest[p.index], end > first else { continue }
+            guard let end = latest[p.index], let first = earliest[p.index] else {
+                notes.append("partition \(p.index): its offsets couldn't be read — its leader may be moving; run it again.")
+                continue
+            }
+            guard end > first else { continue }
             let start: Int64
             switch from {
             case .newest: start = max(first, end - Int64(count))
@@ -379,7 +418,7 @@ package actor KafkaDriver: DatabaseDriver {
             case .offset(let offset): start = max(first, min(offset, end))
             }
             do {
-                messages += try await fetch(name, partition: p, from: start, until: min(end, start + Int64(count)), count: count)
+                keep(try await fetch(name, partition: p, from: start, until: min(end, start + Int64(count)), count: count))
             } catch let error as DatabaseError {
                 notes.append("partition \(p.index): \(error.localizedDescription)")
             }
@@ -395,7 +434,10 @@ package actor KafkaDriver: DatabaseDriver {
         result.types = ["int", "int", "timestamp", "bytes", "bytes", "string"]
         result.rows = messages.prefix(count).map { m in
             let headers = m.headers.map { "\($0.key)=\(KafkaText.text($0.value, cut: 200) ?? "null")" }.joined(separator: ", ")
-            return ["\(m.partition)", "\(m.offset)", Self.time(m.timestamp), KafkaText.text(m.key), KafkaText.text(m.value), headers.isEmpty ? nil : headers]
+            return [
+                "\(m.partition)", "\(m.offset)", Self.time(m.timestamp), KafkaText.text(m.key), KafkaText.text(m.value, size: m.valueSize),
+                headers.isEmpty ? nil : headers,
+            ]
         }
         if !notes.isEmpty {
             if result.rows.isEmpty { throw DatabaseError.failed(notes.joined(separator: "\n")) }
@@ -419,7 +461,7 @@ package actor KafkaDriver: DatabaseDriver {
                 .fetch, { KafkaWire.fetchRequest(version: $0, topic: topic, partitions: [(partition.index, offset)], maxBytes: maxBytes) }, on: connection)
             guard let answer = try decode({ try KafkaWire.fetch(body, version: version) }).first(where: { $0.partition == partition.index }) else { break }
             guard answer.error == 0 else { throw DatabaseError.failed(KafkaWire.error(answer.error)) }
-            let read = try decode { try KafkaWire.messages(answer.records, inflate: KafkaCompression.inflate) }
+            let read = try decode { try KafkaWire.messages(answer.records, from: offset, wanted: count - out.count, inflate: KafkaCompression.inflate) }
             guard let next = read.next else {
                 // Nothing whole: a batch bigger than what was asked for — ask for more, up to 16 MB.
                 guard !answer.records.isEmpty, maxBytes < 16 << 20 else { break }
@@ -505,7 +547,8 @@ package actor KafkaDriver: DatabaseDriver {
         result.columns = ["group", "state", "protocol", "members"]
         result.types = ["string", "string", "string", "int"]
         for listing in try await groupList() {
-            let described = try? await describeGroup(listing.id)
+            // One the user may not describe, or a KIP-848 group the classic API doesn't: a dash, not "0 members".
+            let described = (try? await describeGroup(listing.id)).flatMap { $0?.error == 0 ? $0 : nil }
             result.rows.append([
                 listing.id, described.map { $0.state.isEmpty ? "—" : $0.state } ?? "—",
                 listing.protocolType.isEmpty ? (described?.protocolType ?? "") : listing.protocolType,
@@ -516,10 +559,13 @@ package actor KafkaDriver: DatabaseDriver {
     }
 
     /// Each partition the group has committed for: its offset, the end, the lag.
-    package func lagRows(_ group: String) async throws -> [(topic: String, partition: Int32, committed: Int64, end: Int64?)] {
+    package func lagRows(_ group: String, metadata known: KafkaWire.Metadata? = nil) async throws -> [(
+        topic: String, partition: Int32, committed: Int64, end: Int64?
+    )] {
         let committed = try await committed(group)
         guard !committed.isEmpty else { return [] }
-        let metadata = try await refresh()
+        let metadata: KafkaWire.Metadata
+        if let known { metadata = known } else { metadata = try await refresh() }
         var partitions: [String: [KafkaWire.Partition]] = [:]
         for topic in metadata.topics where committed[topic.name] != nil { partitions[topic.name] = topic.partitions }
         let ends = try await offsets(partitions, at: KafkaWire.latest)
@@ -566,8 +612,10 @@ package actor KafkaDriver: DatabaseDriver {
     package func columns(in schema: String) async throws -> [CatalogColumn] {
         if schema == KafkaText.groupsSchema {
             var columns: [CatalogColumn] = []
-            for group in try await groupList().prefix(200) {
-                for row in (try? await lagRows(group.id)) ?? [] {
+            let groups = try await groupList()
+            let metadata = try await refresh()
+            for group in groups.prefix(200) {
+                for row in (try? await lagRows(group.id, metadata: metadata)) ?? [] {
                     let lag = row.end.map { "lag \(max(0, $0 - row.committed))" } ?? "at \(row.committed)"
                     columns.append(CatalogColumn(table: group.id, name: "\(row.topic)/\(row.partition)", type: lag))
                 }
@@ -576,7 +624,7 @@ package actor KafkaDriver: DatabaseDriver {
         }
         let metadata = try await refresh()
         let listed = metadata.topics.filter { $0.error == 0 }
-        let partitions = Dictionary(uniqueKeysWithValues: listed.map { ($0.name, $0.partitions) })
+        let partitions = Dictionary(listed.map { ($0.name, $0.partitions) }, uniquingKeysWith: { first, _ in first })
         let latest = try await offsets(partitions, at: KafkaWire.latest)
         let earliest = try await offsets(partitions, at: KafkaWire.earliest)
         return listed.flatMap { topic in
@@ -618,6 +666,7 @@ package final class KafkaConnection: @unchecked Sendable {
 
     func send(_ api: KafkaWire.API, version: Int16, body: [UInt8], timeout: TimeAmount) async throws -> [UInt8] {
         guard let channel else { throw DatabaseError.notConnected }
+        guard channel.isActive else { throw DatabaseError.failed("\(address) closed the connection.") }
         let id = nextID()
         let frame = KafkaWire.request(api, version: version, correlation: id, body: body)
         let promise = channel.eventLoop.makePromise(of: [UInt8].self)
