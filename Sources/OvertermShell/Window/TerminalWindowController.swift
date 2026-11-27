@@ -212,6 +212,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// A scenario's: a Docker link (a port pill's) handed here instead of
     /// the browser.
     package var dockerLinkRecorder: ((URL) -> Void)?
+    /// A scenario's: a Terraform refusal said, and the HCP link beside it (TF-G6).
+    package var terraformRefusalRecorder: ((String, URL?) -> Void)?
     /// The pull requests as the last poll said them, by branch (`applyCI`).
     package var ciSeen: [String: PullRequestSummary] = [:]
     /// What takes the keyboard in the sidebar's panel on screen (A11Y-U2):

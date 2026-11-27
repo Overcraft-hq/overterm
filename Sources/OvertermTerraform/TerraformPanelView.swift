@@ -33,6 +33,8 @@ package struct TerraformPanelActions {
     package var typeInTerminal: (TerraformRootCard, String) -> Void = { _, _ in }
     /// A file at a line: the card's validate result (TF-U11).
     package var openFileAt: (URL, Int?) -> Void = { _, _ in }
+    /// A page in the browser column: an HCP root's workspace (TF-G6).
+    package var openURL: (URL) -> Void = { _ in }
 
     package init(
         openTerminal: @escaping (TerraformRootCard) -> Void, openFile: @escaping (URL) -> Void, validate: @escaping (TerraformRootCard) -> Void, plan: @escaping (TerraformRootCard) -> Void,
@@ -40,8 +42,9 @@ package struct TerraformPanelActions {
         planDestroy: @escaping (TerraformRootCard) -> Void = { _ in }, showApply: @escaping (TerraformApplyRun) -> Void = { _ in }, showState: @escaping (TerraformRootCard) -> Void = { _ in },
         checkDrift: @escaping (TerraformRootCard) -> Void = { _ in }, test: @escaping (TerraformRootCard) -> Void = { _ in }, showTest: @escaping (TerraformTestRun) -> Void = { _ in },
         chooseVarFiles: @escaping (TerraformRootCard) -> Void = { _ in }, typeInTerminal: @escaping (TerraformRootCard, String) -> Void = { _, _ in },
-        openFileAt: @escaping (URL, Int?) -> Void = { _, _ in }
+        openFileAt: @escaping (URL, Int?) -> Void = { _, _ in }, openURL: @escaping (URL) -> Void = { _ in }
     ) {
+        self.openURL = openURL
         self.chooseVarFiles = chooseVarFiles
         self.typeInTerminal = typeInTerminal
         self.openFileAt = openFileAt
@@ -454,6 +457,12 @@ private struct RootRow: View {
             }
             // New Task's init writes this root's .terraform now.
             .disabled(setup.isInitializing(card.folder))
+            if let hcp = TerraformHCPLink.url(for: card) {
+                // Overterm plans none of its runs: they happen in HCP (TF-G6).
+                button(TerraformHCPLink.title, "arrow.up.right.square") { actions.openURL(hcp) }
+                    .help(hcp.absoluteString)
+                    .accessibilityIdentifier("terraform.panel.hcp.\(card.path)")
+            }
             HStack(spacing: 6) {
                 button("Terminal in This Root", "terminal") { actions.openTerminal(card) }
                     .accessibilityIdentifier("terraform.panel.terminal")

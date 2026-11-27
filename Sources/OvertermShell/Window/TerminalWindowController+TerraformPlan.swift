@@ -67,7 +67,8 @@ extension TerminalWindowController {
             testAgain: { [weak self] test in self?.testTerraformRoot(test.card, checkout: test.checkout, file: test.file) },
             forceUnlock: { [weak self] run in self?.forceUnlockTerraform(run) },
             editVarFiles: { [weak self] run in self?.chooseTerraformVarFiles(run.card, checkout: run.checkout) },
-            typeInTerminal: { [weak self] run, line in self?.openTerraformTerminal(run.card, typing: line) })
+            typeInTerminal: { [weak self] run, line in self?.openTerraformTerminal(run.card, typing: line) },
+            openURL: { [weak self] url in self?.openInBrowser(url, for: self?.store.selected) })
     }
 
     /// The run in the right slot, which takes it (`RightSlot`).
@@ -172,7 +173,7 @@ extension TerminalWindowController {
         if let why = TerraformProcessCheck.refused(.plan, rootClass: card.rootClass)
             ?? TerraformProcessCheck.refused(.plan, backendType: card.facts.backend.type)
         {
-            presentTerraformRefusal(why)
+            presentTerraformRefusal(why, hcp: why == TerraformProcessCheck.remoteExecutionRefusal ? TerraformHCPLink.url(for: card) : nil)
             return nil
         }
         let key = TerraformRootStore.key(checkout: checkout, root: card.path) + "\u{0}" + card.workspace
@@ -246,12 +247,19 @@ extension TerminalWindowController {
         return TerraformPlanGate.authoredByPerson(authors: authors, me: me)
     }
 
-    package func presentTerraformRefusal(_ why: String) {
+    /// `hcp`: an HCP root's workspace, offered beside the refusal (TF-G6).
+    package func presentTerraformRefusal(_ why: String, hcp: URL? = nil) {
+        if let recorder = terraformRefusalRecorder { return recorder(why, hcp) }
         guard let window, window.attachedSheet == nil else { return NSSound.beep() }
         let alert = NSAlert()
         alert.messageText = "Not run"
         alert.informativeText = why
-        alert.beginSheetModal(for: window)
+        guard let hcp else { return alert.beginSheetModal(for: window) }
+        alert.addButton(withTitle: TerraformHCPLink.title)
+        alert.addButton(withTitle: "OK")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            if response == .alertFirstButtonReturn { self?.openInBrowser(hcp, for: self?.store.selected) }
+        }
     }
 
     // MARK: Init

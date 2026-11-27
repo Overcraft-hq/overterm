@@ -262,3 +262,33 @@ final class TerraformDeadEndsTests: XCTestCase {
         XCTAssertEqual(TerraformTerminalLine.newWorkspace("it's"), "terraform workspace new 'it'\\''s'")
     }
 }
+
+/// TF-G6: an HCP root's workspace, from its block's literals only.
+final class TerraformHCPLinkTests: XCTestCase {
+    private func backend(_ type: String, _ settings: [String: String], name: String? = nil, prefix: String? = nil, tags: Bool = false) -> TerraformConfigFacts.Backend {
+        var backend = TerraformConfigFacts.Backend(type: type)
+        backend.settings = settings
+        backend.workspaceName = name
+        backend.workspacePrefix = prefix
+        backend.workspaceTags = tags
+        return backend
+    }
+
+    func testANamedWorkspaceOpensWhereItRuns() {
+        XCTAssertEqual(
+            TerraformHCPLink.url(backend: backend("cloud", ["organization": "acme"], name: "shop-prod"), workspace: "default")?.absoluteString,
+            "https://app.terraform.io/app/acme/workspaces/shop-prod")
+        XCTAssertEqual(
+            TerraformHCPLink.url(backend: backend("remote", ["organization": "acme", "hostname": "tfe.acme.example"], prefix: "shop-"), workspace: "stage")?
+                .absoluteString, "https://tfe.acme.example/app/acme/workspaces/shop-stage")
+    }
+
+    func testNoLinkWhereTheWorkspaceIsntKnownOrAStringIsOdd() {
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("cloud", ["organization": "acme"], tags: true), workspace: "default"), "chosen by tags")
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("remote", ["organization": "acme"], prefix: "shop-"), workspace: "default"), "a prefix, none selected")
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("cloud", [:], name: "shop"), workspace: "default"), "no organization")
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("cloud", ["organization": "acme", "hostname": "evil.example/x?"], name: "shop"), workspace: "default"))
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("cloud", ["organization": "acme"], name: "../x"), workspace: "default"))
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("s3", ["organization": "acme"], name: "shop"), workspace: "default"), "not HCP")
+    }
+}

@@ -32,6 +32,8 @@ package struct TerraformPlanActions {
     package var forceUnlock: (TerraformPlanRun) -> Void = { _ in }
     /// A terminal in the run's root with a line typed, never run (TF-U2).
     package var typeInTerminal: (TerraformPlanRun, String) -> Void = { _, _ in }
+    /// A page in the browser column: an HCP root's workspace (TF-G6).
+    package var openURL: (URL) -> Void = { _ in }
 
     package init(
         planAgain: @escaping (TerraformPlanRun, TerraformCommands.LockWait) -> Void, discard: @escaping (TerraformPlanRun) -> Void, copySummary: @escaping (TerraformPlanRun) -> Void,
@@ -40,8 +42,9 @@ package struct TerraformPlanActions {
         apply: @escaping (TerraformPlanRun) -> Void = { _ in }, stopApply: @escaping (TerraformApplyRun) -> Void = { _ in },
         planMode: @escaping (TerraformPlanRun, TerraformPlanMode) -> Void = { _, _ in }, testAgain: @escaping (TerraformTestRun) -> Void = { _ in },
         forceUnlock: @escaping (TerraformPlanRun) -> Void = { _ in }, editVarFiles: @escaping (TerraformPlanRun) -> Void = { _ in },
-        typeInTerminal: @escaping (TerraformPlanRun, String) -> Void = { _, _ in }
+        typeInTerminal: @escaping (TerraformPlanRun, String) -> Void = { _, _ in }, openURL: @escaping (URL) -> Void = { _ in }
     ) {
+        self.openURL = openURL
         self.typeInTerminal = typeInTerminal
         self.planAgain = planAgain
         self.discard = discard
@@ -158,6 +161,16 @@ private struct TerraformRunView: View {
                     .buttonStyle(.plain).foregroundStyle(theme.accentText).help(TerraformTerminalLine.help)
                     .padding(.horizontal, 12).padding(.bottom, 6)
                     .accessibilityIdentifier("terraform.plan.typeInTerminal")
+                }
+                if why == TerraformProcessCheck.remoteExecutionRefusal, let hcp = TerraformHCPLink.url(for: run.card) {
+                    Button {
+                        actions.openURL(hcp)
+                    } label: {
+                        Label(TerraformHCPLink.title, systemImage: "arrow.up.right.square").font(.system(size: ChromeMetrics.text(11)))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(theme.accentText).help(hcp.absoluteString)
+                    .padding(.horizontal, 12).padding(.bottom, 6)
+                    .accessibilityIdentifier("terraform.plan.hcp")
                 }
                 log
             case .failed(let why):

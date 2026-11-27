@@ -119,7 +119,8 @@ extension TerminalWindowController {
             showTest: { [weak self] run in self?.showTerraformTest(run) },
             chooseVarFiles: { [weak self] card in self?.chooseTerraformVarFiles(card) },
             typeInTerminal: { [weak self] card, line in self?.openTerraformTerminal(card, typing: line) },
-            openFileAt: { [weak self] url, line in self?.openInEditor(url, line: line) })
+            openFileAt: { [weak self] url, line in self?.openInEditor(url, line: line) },
+            openURL: { [weak self] url in self?.openInBrowser(url, for: self?.store.selected) })
     }
 
     /// Terminal in this root (4.9): a shell tab at the root, its icon and

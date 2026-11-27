@@ -196,6 +196,17 @@ extension E2ERunner {
                 check("2d: the folder validated", await eventually(30) { !folder.isRunning }, folder.state.text)
                 let kept = editor.active?.terraformDiagnostics.filter { $0.source == EditorViewController.terraformTestSource } ?? []
                 check("2d: the test's mark is still there after validate", kept == marks, "\(kept.map(\.range))")
+                // TF-G4: the test file's own bar runs it alone.
+                let barMark = recorder.calls().count
+                if let view = app.window?.contentView {
+                    check("2d: a test file's bar offers Test", await eventually(5) { Self.accessibilityPress("terraform.editor.test", in: view) })
+                    check(
+                        "2d: its Test runs that file alone",
+                        await eventually(30) {
+                            recorder.calls().dropFirst(barMark).contains { $0.arguments == TerraformCommands.test(file: "tests/acme.tftest.hcl")! }
+                        }, "\(recorder.calls().dropFirst(barMark).map(\.arguments))")
+                    _ = await eventually(30) { TerraformTestResults.shared.latest(checkout: checkout, root: "envs/dev")?.isGoing == false }
+                }
             } else {
                 check("2d: the test file is a Terraform buffer", false)
             }

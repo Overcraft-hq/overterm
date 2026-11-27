@@ -70,4 +70,6 @@ package protocol TerraformEditorHost: AnyObject {
     func planFromEditor(_ card: TerraformRootCard, checkout: URL)
     /// A terminal in `folder` with `line` typed, never run (TF-U2).
     func typeInTerminal(_ line: String, in folder: URL)
+    /// One test file's run (TF-G4), through the panel's Test gate.
+    func testFromEditor(_ card: TerraformRootCard, checkout: URL, file: String)
 }

@@ -47,6 +47,10 @@ extension TerminalWindowController {
 // MARK: Ask Why on a failed validate (5.10)
 
 extension TerminalWindowController: TerraformEditorHost {
+    package func testFromEditor(_ card: TerraformRootCard, checkout: URL, file: String) {
+        testTerraformRoot(card, checkout: checkout, file: file)
+    }
+
     package func typeInTerminal(_ line: String, in folder: URL) {
         openTerraformTerminal(in: folder, name: folder.lastPathComponent, typing: line)
     }
