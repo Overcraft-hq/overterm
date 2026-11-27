@@ -33,6 +33,7 @@ version is tagged `v<version>`.
 - Tab Info lists the tab's agent's last calls on Overterm's tools, secrets masked, kept in memory only; Settings ▸ Agents shows every feature's agent switch in one place
 - The keyboard moves between columns with Focus the Sidebar, Terminal, Editor, Right Pane and Inbox (⌃⌥⌘1–5) and Next/Previous Column (F6, ⇧F6); in the sidebar, Files and Overgit are walked with the arrows (or j/k/h/l), ↩ opens and Esc goes back to the terminal
 - The chrome's secondary text stays readable on any terminal theme: at least 4.5:1 against the window (3:1 for the faintest)
+- The Inbox says how long a question has waited since it was asked, takes ⌫ as the Deny its card shows, and lets a finished or failed entry go with Dismiss (X); ⌘L with nothing selected says so, and Ask Agent's new tab is New Task's agent, not always Claude
 - Shortcuts moved: Docker Switcher is ⌃⌘P, as Kubernetes', Activity's and Terraform's are ⌃⌘J, ⌃⌘A and ⌃⌘E; Presentation Mode is ⇧⌃⌘P; ⌥⌘O opens a new opencode tab, and View Latest Changelog has no key
 - Terraform: Var Files… on a root's card (and the plan's inputs line) ticks its .tfvars for every plan, several at once, None clearing them
 - Terraform: a plan, apply, drift check or test that ends while you're elsewhere marks the checkout's tab and notifies, in Overterm's words only
