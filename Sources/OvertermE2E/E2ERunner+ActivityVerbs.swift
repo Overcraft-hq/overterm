@@ -276,6 +276,24 @@ extension E2ERunner {
         let control = await eventually(10) { Self.pressInAnyWindow("tabInfo.port.tcp.\(published)", press: false) }
         let listedPort = app.infoModel?.ports.first { $0.port == published && $0.proto == "tcp" }
         check("Tab Info's port row has its ⋯", popover && control && listedPort != nil, "port \(published)")
+        // Its ⋯ ▸ Free… (ACT-U8): the pane pill's own Free, asked — the
+        // container's Stop on the run's fake engine —; Cancel stops nothing.
+        if let listedPort, let model = app.infoModel {
+            check("Tab Info's port ⋯ offers Free…", TabInfoView.freeTitle(listedPort) == "Free…")
+            app.freeTabInfoPort(listedPort, model: model)
+            let asked = await eventually(8) { self.window.attachedSheet != nil }
+            let words = activitySheet()
+            check(
+                "Tab Info's Free… asks first, naming the container",
+                asked && words.texts.contains("Stop container “acme-web”?") && words.buttons.contains("Stop Container"),
+                "\(words.texts.prefix(1)) \(words.buttons)")
+            // NSPopover's close animates out: isShown goes false at its end.
+            let gone = await eventually(5) { self.app.infoPopover?.isShown != true }
+            check("with the popover closed, the sheet the window's", gone)
+            answerActivitySheet(.alertSecondButtonReturn)
+            await pause(1)
+            check("and Cancel leaves it running", window.attachedSheet == nil && docker.container("acme-web")?.State == "running")
+        }
         if let listedPort {
             app.showInActivity(TabInfoView.portLink(listedPort, tab: tab.id))
         }

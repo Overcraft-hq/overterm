@@ -170,7 +170,8 @@ extension E2ERunner {
             let forking = page.verbs(for: [stopped.id]) { _ in }.filter { ["Sample", "Terminal in Its Folder", "Open Files in a Tab"].contains($0.label ?? $0.title) }
             check(
                 "near the process limit the header says so, and Sample, Terminal in Its Folder and Open Files wait",
-                near && forking.count == 3 && forking.allSatisfy { $0.unavailable?.contains("near your limit") == true } && !page.press("s"),
+                near && forking.count == 3 && forking.allSatisfy { $0.unavailable?.contains("near your limit") == true }
+                    && page.press("s") && page.keySaid == forking.first { $0.label == "Sample" }?.unavailable,
                 "\(forking.map { $0.unavailable ?? "-" })")
             page.processLimit = ActivityProcessLimit.perUser
             page.refreshVerbs()

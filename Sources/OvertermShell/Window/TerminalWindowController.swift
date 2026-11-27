@@ -2843,7 +2843,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     self?.infoPopover?.close()
                     self?.openLink(url, for: tab)
                 },
-                showInActivity: Settings.shared.activityEnabled ? { [weak self] link in self?.showInActivity(link) } : nil))
+                showInActivity: Settings.shared.activityEnabled ? { [weak self] link in self?.showInActivity(link) } : nil,
+                freePort: { [weak self, weak model] port in
+                    guard let self, let model else { return }
+                    self.freeTabInfoPort(port, model: model)
+                }))
         popover.delegate = self
         // Strip frames are top-left; the host is flipped, so that is its space.
         var rect = frame

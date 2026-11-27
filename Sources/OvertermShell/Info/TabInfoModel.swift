@@ -259,6 +259,24 @@ package final class TabInfoModel: ObservableObject {
         ports = found + tab.containerPorts + tab.forwardPorts
     }
 
+    /// The pane whose processes hold `port`, as the latest snapshot that
+    /// read the tab places them (a lookup, no read of its own); a
+    /// container's or a forward's — no holder in a pane — the tab's
+    /// focused pane, which the pill's Free watches the port from. Nil when
+    /// no pane holds it now.
+    package func pane(holding port: ListeningPort) -> TerminalView? {
+        guard let identity = port.identity else { return tab.terminal }
+        guard let snapshot = monitor.snapshot, snapshot.covers(ActivityDemand(.light(tabs: [tab.id]))) else { return nil }
+        let placed = tab.terminals.map { (tag: $0.processTag, members: snapshot.pane($0.processTag)?.placed ?? []) }
+        guard let tag = Self.paneTag(holding: identity, placed: placed) else { return nil }
+        return tab.terminals.first { $0.processTag == tag }
+    }
+
+    /// Which pane's tag places `identity`: the first. Pure.
+    package nonisolated static func paneTag(holding identity: ActivityProcessID, placed: [(tag: String, members: [ActivityProcessID])]) -> String? {
+        placed.first { $0.members.contains(identity) }?.tag
+    }
+
     /// Where Claude Code runs in this tab: a running `claude`'s directory,
     /// else — for a Claude tab — the tab's.
     package var claudeDirectory: String? {

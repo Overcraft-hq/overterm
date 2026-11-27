@@ -177,16 +177,18 @@ extension ActivityPageModel {
     /// `k`, `K`, `x`, `p`, `b`, `n` on the selected process: `k`'s verb decided on the
     /// process read again as its sheet opens.
     package func pressSignalKey(_ key: ActivityKey) -> Bool {
-        guard let row = selectedProcess else { return false }
+        guard selection.count == 1 else { return refuse(selection.isEmpty ? Self.nothingSelected : Self.severalSelected) }
+        // An ended row's pid may be another's already: never acted on.
+        guard let row = selectedProcess else { return refuse(Self.notForThisRow) }
         switch key {
         case .stop: actions.stop(row.identity)
         case .forceQuit: actions.act(.forceQuit, row.identity)
         case .signal: actions.chooseSignal(row.identity)
         case .suspend:
-            guard let subject = subject(for: row) else { return false }
+            guard let subject = subject(for: row) else { return refuse(Self.reading) }
             actions.act(subject.target.stopped != nil ? .resume : .suspend, row.identity)
         case .background:
-            guard let subject = subject(for: row) else { return false }
+            guard let subject = subject(for: row) else { return refuse(Self.reading) }
             actions.act(subject.target.backgroundedHere ? .runNormally : .background, row.identity)
         case .lower: actions.chooseLower(row.identity)
         default: return false

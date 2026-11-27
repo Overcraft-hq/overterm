@@ -37,6 +37,7 @@ version is tagged `v<version>`.
 - Terraform: Var Files… on a root's card (and the plan's inputs line) ticks its .tfvars for every plan, several at once, None clearing them
 - Terraform: a plan, apply, drift check or test that ends while you're elsewhere marks the checkout's tab and notifies, in Overterm's words only
 - Terraform: the changes pane names the roots the changed files touch, directly or through a module, with Plan; the editor's bar shows the file's root, workspace and class, with Plan
+- Activity: every key does what its menu says in Listening and Left Behind too, and one that can't says why; grouping, tree and sorts are kept across launches; Tab Info frees a port (Free…); Listening's empty sentence follows what was read of other users'
 
 ## 1.6.7 — 2026-11-23
 
