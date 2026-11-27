@@ -52,6 +52,11 @@ final class AcknowledgementsTests: XCTestCase {
         XCTAssertEqual(listed.count, resolved.pins.count, "a package left: run Scripts/fetch-licenses.sh")
     }
 
+    func testDuckDBIsThePinnedOne() throws {
+        let duckdb = try XCTUnwrap(try source("Scripts/fetch-duckdb.sh").firstMatch(of: /DUCKDB_VERSION="([^"]+)"/)?.1)
+        XCTAssertEqual(all.first { $0.name == "DuckDB" }?.version, String(duckdb), "run Scripts/fetch-licenses.sh")
+    }
+
     func testGhosttyAndTreeSitterAreThePinnedOnes() throws {
         let ghostty = try XCTUnwrap(try source("Scripts/build-ghosttykit.sh").firstMatch(of: /GHOSTTY_REF="v([^"]+)"/)?.1)
         XCTAssertEqual(all.first { $0.name == "Ghostty" }?.version, String(ghostty), "run Scripts/fetch-licenses.sh")

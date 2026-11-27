@@ -47,6 +47,7 @@ extension DatabaseKind {
         case .neo4j: CypherText.self
         case .rabbitmq: RabbitText.self
         case .oracle: OracleText.self
+        case .duckdb: DuckText.self
         default: nil
         }
     }

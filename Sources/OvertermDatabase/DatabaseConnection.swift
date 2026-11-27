@@ -10,6 +10,8 @@ package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable
     /// 1.6.1's: document stores, search engines, AWS's key-value, a graph,
     /// time series, a queue broker, and Oracle — each its own driver.
     case mongodb, documentdb, mariadb, elasticsearch, opensearch, dynamodb, influxdb, neo4j, rabbitmq, oracle
+    /// A DuckDB file, or one in memory: DuckDB's own library (DuckDBDriver).
+    case duckdb
     /// Buckets and their files: S3 and everything that speaks it (Spaces,
     /// MinIO, R2, B2, Wasabi, GCS's interoperability), and GCS's own API.
     case s3, gcs
@@ -41,6 +43,7 @@ package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable
         case .neo4j: "Neo4j"
         case .rabbitmq: "RabbitMQ"
         case .oracle: "Oracle Database"
+        case .duckdb: "DuckDB"
         case .s3: "S3-Compatible Storage"
         case .gcs: "Google Cloud Storage"
         }
@@ -69,7 +72,7 @@ package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable
         // The management API's; AMQP is 5672.
         case .rabbitmq: 15672
         case .oracle: 1521
-        case .sqlite, .bigquery, .s3, .gcs: nil
+        case .sqlite, .duckdb, .bigquery, .s3, .gcs: nil
         }
     }
 
@@ -109,10 +112,14 @@ package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable
     /// speaks its protocol.
     package var isMongo: Bool { self == .mongodb || self == .documentdb }
 
+    /// A file on this Mac, not a server: SQLite's, DuckDB's.
+    package var isFile: Bool { self == .sqlite || self == .duckdb }
+
     /// The schema a new connection starts on.
     package var defaultSchema: String? {
         switch self {
         case .postgres, .redshift: "public"
+        case .duckdb: "main"
         default: nil
         }
     }
@@ -256,6 +263,7 @@ package struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, S
     package var summary: String {
         switch kind {
         case .sqlite: (filePath as NSString).abbreviatingWithTildeInPath
+        case .duckdb: DuckDBDriver.inMemory(filePath) ? "In memory" : (filePath as NSString).abbreviatingWithTildeInPath
         case .bigquery, .gcs: project.isEmpty ? "No project" : project
         case .s3: provider == .aws ? "AWS \(location)" : host
         default:
@@ -268,6 +276,7 @@ package struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, S
         if name.trimmingCharacters(in: .whitespaces).isEmpty { return "A name, please." }
         switch kind {
         case .sqlite: return filePath.isEmpty ? "Choose the database file." : nil
+        case .duckdb: return filePath.isEmpty ? "Choose the database file, or keep it in memory." : nil
         case .bigquery, .gcs: return project.isEmpty ? "The project, please." : nil
         case .s3:
             if host.trimmingCharacters(in: .whitespaces).isEmpty { return "The endpoint, please." }

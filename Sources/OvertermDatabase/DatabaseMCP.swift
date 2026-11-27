@@ -52,10 +52,19 @@ package enum DatabaseMCP {
             }
             if !target.kind.agentReads(statement) {
                 guard Settings.shared.databaseAgentWrites else {
+                    // DuckDB's read of a file or a URL is held as a write is.
+                    if target.kind == .duckdb, let outside = DuckText.outside(statement) {
+                        throw BrowserMCP.ToolError(
+                            message: "\(outside) Agents only read the database itself here. The user can allow more in Settings ▸ Database — each asked first.")
+                    }
                     throw BrowserMCP.ToolError(
                         message: "Agents only read here: \(target.kind.verb(of: statement)) writes. The user can allow writes in Settings ▸ Database.")
                 }
-                guard !target.readOnly else { throw BrowserMCP.ToolError(message: "“\(target.name)” is read-only.") }
+                // A DuckDB read of a file is asked, not refused, on a read-only
+                // connection: DuckDB keeps the database itself read-only.
+                guard !target.readOnly || (target.kind == .duckdb && DuckText.onlyReads(statement)) else {
+                    throw BrowserMCP.ToolError(message: "“\(target.name)” is read-only.")
+                }
                 guard try await allow(statement, on: target) else { throw BrowserMCP.ToolError(message: "The user declined to run it.") }
             }
             let limit = min(max(arguments["limit"] as? Int ?? 100, 1), 1000)
@@ -167,9 +176,11 @@ package enum DatabaseMCP {
         // the calling pane's sheet or Inbox card (MCPApprovals).
         // A DROP or a TRUNCATE leaves Return on Don't Run (D-1).
         let danger = connection.kind.danger(of: statement)
+        // What a DuckDB statement reads outside the database, said beside it.
+        let note = danger ?? (connection.kind == .duckdb ? DuckText.outside(statement) : nil)
         let confirmation = WriteConfirmation(
             title: "An agent wants to run this on “\(connection.name)”",
-            detail: VisibleText.displayed(statement) + (danger.map { "\n\n\($0)" } ?? ""), button: "Run It",
+            detail: VisibleText.displayed(statement) + (note.map { "\n\n\($0)" } ?? ""), button: "Run It",
             cancel: "Don't Run", asker: await MCPAsker.current(), destroys: danger != nil)
         return try await MCPApprovals.shared.ask(confirmation) != nil
     }
@@ -281,7 +292,7 @@ package enum DatabaseMCP {
             ]),
         tool(
             "db_query",
-            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), on MongoDB or DocumentDB one mongo shell statement (`db.orders.find({ status: \"open\" }).sort({ at: -1 })`, `db.orders.aggregate([…])`, `db.orders.countDocuments({})`, `db.getSiblingDB(\"other\").c.findOne({})`, `db.runCommand({ … })`, `show collections` — values only, no JavaScript), or on Elasticsearch / OpenSearch one request as Kibana's Dev Tools writes it (`GET /orders/_search` then its JSON body on the lines below; a search's hits come back as rows, `_cat/indices` too; `POST /_sql` and ES|QL `POST /_query` as their columns), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus), PartiQL on DynamoDB (`SELECT * FROM \"orders\" WHERE pk = 'a'`), InfluxQL, Flux (2.x) or SQL (3.x) on InfluxDB, Cypher on Neo4j (`MATCH (n:Person) RETURN n LIMIT 10`), on RabbitMQ `PEEK <queue> [n]` (messages read and put back — they stay, marked redelivered; asked first), `PUBLISH <exchange> <routing key> <payload>`, `PURGE <queue>`, `USE <vhost>` or any management API path (`GET /api/queues/%2F?columns=name,messages`) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
+            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), on MongoDB or DocumentDB one mongo shell statement (`db.orders.find({ status: \"open\" }).sort({ at: -1 })`, `db.orders.aggregate([…])`, `db.orders.countDocuments({})`, `db.getSiblingDB(\"other\").c.findOne({})`, `db.runCommand({ … })`, `show collections` — values only, no JavaScript), or on Elasticsearch / OpenSearch one request as Kibana's Dev Tools writes it (`GET /orders/_search` then its JSON body on the lines below; a search's hits come back as rows, `_cat/indices` too; `POST /_sql` and ES|QL `POST /_query` as their columns), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus), PartiQL on DynamoDB (`SELECT * FROM \"orders\" WHERE pk = 'a'`), InfluxQL, Flux (2.x) or SQL (3.x) on InfluxDB, Cypher on Neo4j (`MATCH (n:Person) RETURN n LIMIT 10`), on RabbitMQ `PEEK <queue> [n]` (messages read and put back — they stay, marked redelivered; asked first), `PUBLISH <exchange> <routing key> <payload>`, `PURGE <queue>`, `USE <vhost>` or any management API path (`GET /api/queues/%2F?columns=name,messages`) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time. On DuckDB a statement that names a file or a URL (`FROM 'orders.csv'`, `read_parquet(…)`) is held as a write is: only the database's own tables are read freely.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
                 "sql": ["type": "string", "description": "One statement, one Redis command, one mongo shell statement, or one Elasticsearch/OpenSearch request."],
@@ -289,7 +300,7 @@ package enum DatabaseMCP {
             ], required: ["sql"]),
         tool(
             "db_server",
-            "A database server's headline numbers (version, uptime, connections used of max, cache hit rate, replication) and its sizes (databases, the biggest tables and indexes) — PostgreSQL, MySQL, MariaDB; a SQLite file's pages and journal; Redis's INFO; Neo4j's version, nodes and relationships, each label's and type's count; InfluxDB's version, series, memory, each database's (1.x) or bucket's (2.x) disk and retention; RabbitMQ's nodes (memory, disk, file descriptors, alarms), totals and rates, its queues by size; MongoDB's serverStatus and collections; a search cluster's health, heap and indices; DynamoDB's tables (items, size, billing, capacity, indexes, TTL, PITR); Oracle's instance (schemas as its databases, by dba_segments); ClickHouse's (parts on disk, merges, mutations); BigQuery's project — its jobs and its datasets' storage.",
+            "A database server's headline numbers (version, uptime, connections used of max, cache hit rate, replication) and its sizes (databases, the biggest tables and indexes) — PostgreSQL, MySQL, MariaDB; a SQLite file's pages and journal; Redis's INFO; Neo4j's version, nodes and relationships, each label's and type's count; InfluxDB's version, series, memory, each database's (1.x) or bucket's (2.x) disk and retention; RabbitMQ's nodes (memory, disk, file descriptors, alarms), totals and rates, its queues by size; MongoDB's serverStatus and collections; a search cluster's health, heap and indices; DynamoDB's tables (items, size, billing, capacity, indexes, TTL, PITR); Oracle's instance (schemas as its databases, by dba_segments); ClickHouse's (parts on disk, merges, mutations); a DuckDB file's size, blocks, WAL and memory; BigQuery's project — its jobs and its datasets' storage.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
                 "limit": ["type": "integer", "description": "Tables and indexes listed (default 50, at most 200)."],

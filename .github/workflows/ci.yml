@@ -177,7 +177,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       # Zig, pinned in mise.toml: only GhosttyKit's build uses it.
       - uses: jdx/mise-action@v5
@@ -199,6 +199,11 @@ jobs:
             sleep 30
           done
 
+      # DuckDB's library, fetched (Scripts/fetch-duckdb.sh): kept with the
+      # frameworks above; a restored one is checked and left as it is.
+      - name: Fetch DuckDBKit
+        run: make duckdb
+
       # Saved as soon as it is built, not by a post-step at the job's end: a
       # later failure or a cancel kept nothing of the ≈10-min build, and the
       # next run built it again. A second job saving the same key on the same
@@ -209,7 +214,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       # The whole debug build — the packages and the app's own modules, and
       # Swift Build's database (XCBuildData) that says what is up to date —
@@ -226,6 +231,9 @@ jobs:
       # libraries copied in from Frameworks/ (lib*.a, 167 MB; copied again),
       # ExecutableModules (none since the app's code is a library), the
       # index store (out/v5), and Products/Release.
+      # v2: the entries saved before the step below came in were built from
+      # files dated older than their changes — #67's schema left uncompiled —
+      # and restoring one carries that on; v2 starts clean.
       - name: Restore the debug build
         id: debug-build
         uses: actions/cache/restore@v6
@@ -239,10 +247,15 @@ jobs:
             .build/out/Products/Debug/*
             !.build/out/Products/Debug/ExecutableModules
             !.build/out/Products/Debug/lib*.a
-          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
-            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
+            spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
+            spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-
+
+      # What changed since the restored cache's commit, dated now: a branch's
+      # commit can be older than the cache (Scripts/date-changed-since-cache.sh).
+      - name: Date what changed since the cache
+        run: Scripts/date-changed-since-cache.sh "${{ steps.debug-build.outputs.cache-matched-key }}"
 
       # A step of its own, so that the compile's time shows apart from the
       # tests'.
@@ -267,15 +280,15 @@ jobs:
             .build/out/Products/Debug/*
             !.build/out/Products/Debug/ExecutableModules
             !.build/out/Products/Debug/lib*.a
-          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
 
       - name: Delete this branch's older debug builds
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.debug-build.outputs.cache-hit != 'true' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          KEEP: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
-          PREFIX: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
+          KEEP: spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          PREFIX: spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-
         run: Scripts/prune-caches.sh "$PREFIX" "$KEEP"
 
       # Several xctest processes at once (Scripts/unit-tests.sh): the tests
@@ -341,7 +354,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       # Zig, pinned in mise.toml: only GhosttyKit's build uses it.
       - uses: jdx/mise-action@v5
@@ -363,6 +376,11 @@ jobs:
             sleep 30
           done
 
+      # DuckDB's library, fetched (Scripts/fetch-duckdb.sh): kept with the
+      # frameworks above; a restored one is checked and left as it is.
+      - name: Fetch DuckDBKit
+        run: make duckdb
+
       # Saved as soon as it is built, not by a post-step at the job's end: a
       # later failure or a cancel kept nothing of the ≈10-min build, and the
       # next run built it again. A second job saving the same key on the same
@@ -373,7 +391,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       # The whole release build — the packages compiled, the app's modules,
       # Swift Build's database — one entry a commit, as the debug build's
@@ -393,10 +411,15 @@ jobs:
             !.build/out/v5
             .build/out/Products/Release/*
             !.build/out/Products/Release/lib*.a
-          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-release-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
-            spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-
+            spm-release-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
+            spm-release-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-
+
+      # What changed since the restored cache's commit, dated now: a branch's
+      # commit can be older than the cache (Scripts/date-changed-since-cache.sh).
+      - name: Date what changed since the cache
+        run: Scripts/date-changed-since-cache.sh "${{ steps.release-build.outputs.cache-matched-key }}"
 
       - name: Assemble and verify the app bundle
         id: bundle-build
@@ -411,6 +434,8 @@ jobs:
           # The Swift libraries it loads by @rpath are in it (make-app.sh
           # bundles them; this runner's macOS has them, older ones don't).
           Scripts/bundle-swift-libs.sh Overterm.app >/dev/null
+          # DuckDB's library, which the database client loads by @rpath.
+          test -f Overterm.app/Contents/Frameworks/libduckdb.dylib
           # No end-to-end scenario nor fake server in a shipped build: they
           # are `#if E2E`, a debug build's or the E2E trait's (Package.swift).
           if nm Overterm.app/Contents/MacOS/Overterm | grep -qE 'E2ERunner|FakeDockerEngine|FakeKubeAPI'; then
@@ -442,13 +467,13 @@ jobs:
             !.build/out/v5
             .build/out/Products/Release/*
             !.build/out/Products/Release/lib*.a
-          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-release-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
 
       - name: Delete this branch's older release builds
         if: ${{ !cancelled() && steps.bundle-build.outcome == 'success' && steps.release-build.outputs.cache-hit != 'true' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          KEEP: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
-          PREFIX: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-
+          KEEP: spm-release-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          PREFIX: spm-release-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-
         run: Scripts/prune-caches.sh "$PREFIX" "$KEEP"

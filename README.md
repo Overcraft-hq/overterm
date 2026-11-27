@@ -97,7 +97,7 @@ that says nothing (opencode) still marks its tab.
     <td><img alt="A SQL console and its results" src="docs/assets/screenshot-database.png"></td>
     <td>
       <h3>Database <kbd>⌥⌘B</kbd></h3>
-      PostgreSQL, MySQL, SQLite, Redshift, ClickHouse and BigQuery: schemas in the
+      PostgreSQL, MySQL, SQLite, DuckDB, Redshift, ClickHouse and BigQuery: schemas in the
       sidebar, any <code>.sql</code> file a console with completion, results in a
       grid you export. Redis as Redis Insight has it — keys as folders, each type's
       value edited, the server's INFO, slow log, Pub/Sub and profiler. Prometheus,
@@ -273,6 +273,7 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # wherever Xco
 mise trust && mise install   # the pinned Zig
 make ghosttykit              # GhosttyKit from the pinned Ghostty (once, a few minutes)
 make treesitter              # the editor's grammars (once)
+make duckdb                  # DuckDB's library for the database client (once)
 make hooks                   # the git hooks (once)
 make test                    # unit and integration tests
 make e2e                     # end-to-end scenarios in the real app (opens windows)

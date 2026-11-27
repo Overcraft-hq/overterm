@@ -3,7 +3,7 @@ APP := Overterm.app
 # This Mac's own settings, untracked (see .gitignore): SIGN_IDENTITY.
 -include local.mk
 
-.PHONY: ghosttykit treesitter icon themes build test test-changed e2e app dmg run install signed-spike clean hooks
+.PHONY: ghosttykit treesitter duckdb icon themes build test test-changed e2e app dmg run install signed-spike clean hooks
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
@@ -13,6 +13,11 @@ ghosttykit:
 ## highlight queries (Frameworks/TreeSitterQueries) from the pinned grammars
 treesitter:
 	./Scripts/build-treesitter.sh
+
+## duckdb: fetch Frameworks/DuckDBKit.xcframework — DuckDB's own library,
+## SHA-checked, for the database client's DuckDB kind (Scripts/fetch-duckdb.sh)
+duckdb:
+	./Scripts/fetch-duckdb.sh
 
 ## icon: regenerate Resources/AppIcon.icns from Resources/AppIcon.png
 icon:

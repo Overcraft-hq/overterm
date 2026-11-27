@@ -99,6 +99,8 @@ extension E2ERunner {
         check(
             "a read-only connection refuses a write", await eventually(5) { console.current?.error?.contains("only reads") == true },
             console.current?.error ?? "-")
+
+        await duckdbChecks()
     }
 }
 #endif
