@@ -27,6 +27,7 @@ version is tagged `v<version>`.
 - A pull request's review threads show at their lines in its review; comments on picked lines are kept and posted to GitHub as one review with Comment, Approve or Request Changes, asked first
 - An agent's write (Docker, a database, Kubernetes, Terraform's plan) is asked as a card in the Inbox when you're not looking at its window — the tab marked, a notification, Allow and Don't, the name typed on production — and as the sheet only when its window is in front; Overterm no longer jumps to the front, and a question nobody answers fails after ten minutes
 - Tab Info lists the tab's agent's last calls on Overterm's tools, secrets masked, kept in memory only; Settings ▸ Agents shows every feature's agent switch in one place
+- The chrome's secondary text stays readable on any terminal theme: at least 4.5:1 against the window (3:1 for the faintest)
 
 ## 1.6.7 — 2026-11-23
 

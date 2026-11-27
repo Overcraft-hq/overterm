@@ -206,8 +206,21 @@ package final class ChromeTheme: ObservableObject {
         // Text. One hue, three weights of presence.
         textNS = fg
         text = Color(nsColor: fg)
-        text2NS = fg.withAlphaComponent(0.62)
-        text3NS = fg.withAlphaComponent(0.54)
+        // Secondary and tertiary as fractions of the foreground — raised,
+        // then mixed toward white or black, until they read on the window
+        // and the cards (A11Y-U1: 4.5:1 and 3:1), whatever the theme.
+        func rgb(_ color: NSColor) -> ChromeContrast.RGB {
+            let c = color.usingColorSpace(.sRGB) ?? color
+            return ChromeContrast.RGB(Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent))
+        }
+        func ns(_ color: ChromeContrast.RGB, _ alpha: Double) -> NSColor {
+            NSColor(srgbRed: CGFloat(color.red), green: CGFloat(color.green), blue: CGFloat(color.blue), alpha: CGFloat(alpha))
+        }
+        let grounds = [rgb(winColor), rgb(cardColor), rgb(bg)]
+        let second = ChromeContrast.floored(rgb(fg), alpha: 0.62, on: grounds, floor: ChromeContrast.secondary, dark: isDark)
+        let third = ChromeContrast.floored(rgb(fg), alpha: 0.54, on: grounds, floor: ChromeContrast.tertiary, dark: isDark)
+        text2NS = ns(second.color, second.alpha)
+        text3NS = ns(third.color, third.alpha)
         text2 = Color(nsColor: text2NS)
         text3 = Color(nsColor: text3NS)
 
