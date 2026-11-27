@@ -69,7 +69,12 @@ while ((${#queue[@]})); do
   while IFS= read -r next; do queue+=("$next"); done < <(rpath_libs "$FRAMEWORKS/$lib")
 done
 
-if ((copied)); then
+# Anything in Contents/Frameworks — what was copied here, or put there
+# before (make-app.sh's libduckdb.dylib) — is reached by that rpath.
+carried=0
+for file in "$FRAMEWORKS"/*.dylib; do [[ -f "$file" ]] && carried=1; done
+
+if ((carried)); then
   if ! rpaths "$BIN" | grep -qx '@executable_path/../Frameworks'; then
     install_name_tool -add_rpath '@executable_path/../Frameworks' "$BIN"
   fi
@@ -94,7 +99,7 @@ for file in "$BIN" "$FRAMEWORKS"/*.dylib; do
     fi
   done < <(rpath_libs "$file")
 done
-if ((copied)) && ! rpaths "$BIN" | grep -qx '@executable_path/../Frameworks'; then
+if ((carried)) && ! rpaths "$BIN" | grep -qx '@executable_path/../Frameworks'; then
   echo "error: $BIN has no @executable_path/../Frameworks rpath" >&2
   missing=1
 fi

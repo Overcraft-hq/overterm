@@ -38,6 +38,7 @@ extension DatabaseDrivers {
         case .neo4j: Neo4jDriver.self
         case .rabbitmq: RabbitMQDriver.self
         case .oracle: OracleDriver.self
+        case .duckdb: DuckDBDriver.self
         }
     }
 
