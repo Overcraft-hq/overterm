@@ -98,7 +98,9 @@ package struct OvergitOverview: View {
                 let publish = tracking.upstream == nil
                 syncButton(
                     publish ? "Publish" : "Push", symbol: "arrow.up", count: tracking.ahead,
-                    help: publish ? "Push the branch to origin, tracking it" : "git push to \(tracking.upstream ?? "")"
+                    help: publish
+                        ? "Push the branch to a remote, tracking it — its pushRemote, remote.pushDefault or the one there is; asked when there are several"
+                        : "git push to \(tracking.upstream ?? "")"
                 ) { onCommand(.push) }
                 .accessibilityIdentifier("overgitPushBranch")
             }
@@ -109,13 +111,14 @@ package struct OvergitOverview: View {
                 Divider()
                 Button("New Branch…") { onCommand(.newBranch(from: nil)) }
                 Button("Stash Changes…") { onCommand(.stash) }
+                Button("Stash Staged Changes Only…") { onCommand(.stashStaged) }
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: ChromeMetrics.text(11)))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("More: commit, fetch, a new branch, stash")
+            .help("More: commit, fetch, a new branch, stash all or only what is staged")
             if let running {
                 ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 14, height: 14)
                 Text(verbatim: running).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
@@ -395,6 +398,8 @@ package struct PullRequestRowView: View {
     package let onOpen: () -> Void
     package let onOpenExternally: () -> Void
     package var onReview: () -> Void = {}
+    /// gh's login, for "your review is requested".
+    package var me: String?
     @State private var hovering = false
 
     package var body: some View {
@@ -413,6 +418,9 @@ package struct PullRequestRowView: View {
                     .lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 0)
+            ForEach(Self.marks(pullRequest, me: me), id: \.symbol) { mark in
+                Image(systemName: mark.symbol).font(.system(size: ChromeMetrics.text(9))).foregroundStyle(color(mark.tone)).help(mark.help)
+            }
             CIGlyph(overall: pullRequest.checks.overall).font(.system(size: ChromeMetrics.text(9)))
         }
         .padding(.leading, 20)
@@ -422,10 +430,39 @@ package struct PullRequestRowView: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: onOpen)
-        .help("#\(pullRequest.number) \(pullRequest.title)")
+        .help(([("#\(pullRequest.number) \(pullRequest.title)")] + Self.marks(pullRequest, me: me).map(\.help)).joined(separator: "\n"))
         .contextMenu {
             Button("Review Changes", action: onReview)
             Button("Open on GitHub", action: onOpenExternally)
+        }
+    }
+}
+
+extension PullRequestRowView {
+    package enum Tone { case good, warn, bad, accent }
+
+    /// What the row says beside CI (GIT-G4): your review asked, the review
+    /// verdict, a conflict with its base — from the list's own fields. Pure.
+    package static func marks(_ pr: PullRequestSummary, me: String?) -> [(symbol: String, tone: Tone, help: String)] {
+        var marks: [(symbol: String, tone: Tone, help: String)] = []
+        if pr.asks(me), pr.author?.caseInsensitiveCompare(me ?? "") != .orderedSame {
+            marks.append(("person.crop.circle.badge.questionmark", .accent, "Your review is requested"))
+        }
+        switch pr.reviewDecision {
+        case .approved?: marks.append(("checkmark.seal", .good, "Approved"))
+        case .changesRequested?: marks.append(("exclamationmark.bubble", .warn, "Changes requested"))
+        case .reviewRequired?, nil: break
+        }
+        if pr.mergeable == .conflicting { marks.append(("arrow.triangle.merge", .bad, "Conflicts with its base branch")) }
+        return marks
+    }
+
+    private func color(_ tone: Tone) -> Color {
+        switch tone {
+        case .good: theme.greenText
+        case .warn: theme.orangeText
+        case .bad: DiffColors.removed
+        case .accent: theme.accentText
         }
     }
 }
@@ -453,8 +490,11 @@ package struct StashRowView: View {
         .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.rowHover : .clear).padding(.horizontal, 4))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .help(stash.subject)
+        .onTapGesture { actions.showStash(stash) }
+        .help("\(stash.subject)\nClick to see its changes before applying it (untracked files it holds aren't listed)")
         .contextMenu {
+            Button("Show Changes") { actions.showStash(stash) }
+            Divider()
             Button("Pop") { actions.git(.popStash(stash)) }
             Button("Apply") { actions.applyStash(stash) }
             Button("Drop…", role: .destructive) { actions.dropStash(stash) }

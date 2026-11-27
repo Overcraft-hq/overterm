@@ -87,6 +87,30 @@ extension E2ERunner {
             await pause(0.8)
             app.captureWindow(to: png)
         }
+        await commitDraftChecks(repo: repo)
+    }
+
+    /// GIT-U4: one draft a checkout, which both composers edit and commit.
+    private func commitDraftChecks(repo: URL) async {
+        let diff = app.diff
+        guard let root = diff.root else { return check("the changes pane has the checkout", false) }
+        try? "draft\n".write(to: repo.appendingPathComponent("draft.txt"), atomically: true, encoding: .utf8)
+        check("a new file to commit", await eventually(10) { diff.files.contains { $0.path == "draft.txt" } })
+        diff.commitDraft = "One draft"
+        let elsewhere = scratch.appendingPathComponent("draft-elsewhere")
+        try? FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        diff.setRoot(elsewhere)
+        check("another checkout has its own, empty draft", diff.commitDraft.isEmpty, diff.commitDraft)
+        diff.setRoot(root)
+        check("and the first one's comes back", diff.commitDraft == "One draft", diff.commitDraft)
+        _ = await eventually(10) { diff.files.contains { $0.path == "draft.txt" } }
+        await diff.setAmend(true)
+        check("Amend keeps a typed draft", diff.commitAmend && diff.commitDraft == "One draft", diff.commitDraft)
+        await diff.setAmend(false)
+        let committed = await diff.commitDraftNow()
+        let subject = ((try? await Git.run(["log", "-1", "--format=%s"], in: repo)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        check("either composer's Commit commits the draft", committed && subject == "One draft", subject)
+        check("and empties it", diff.commitDraft.isEmpty && !diff.commitAmend)
     }
 }
 #endif

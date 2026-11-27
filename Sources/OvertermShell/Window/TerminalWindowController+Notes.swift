@@ -75,12 +75,27 @@ extension TerminalWindowController {
         newNote(in: nil)
     }
 
+    /// New Note: its name asked first, as Obsidian has it typed at once —
+    /// "Untitled" offered (numbered past the ones there), the field's text
+    /// selected as it takes the keyboard, in
+    /// the folder Obsidian's settings say. Cancel makes nothing.
     package func newNote(in folder: URL?) {
         guard Settings.shared.notesEnabled else { return }
-        do {
-            openNote(try notes.newNote(in: folder, beside: notes.current))
-        } catch {
-            reportNotesError(error)
+        let notes = self.notes
+        let folder = notes.newNoteFolder(in: folder, beside: notes.current)
+        let place = notes.vault.relativePath(of: folder)
+        askForName(
+            title: "New Note", detail: place.isEmpty ? "In \(notes.vault.name)" : "In \(place)", initial: notes.suggestedNoteName(in: folder),
+            action: "Create"
+        ) { [weak self] name in
+            guard let self else { return nil }
+            if let problem = NoteNaming.problem(name, in: folder) { return problem }
+            do {
+                self.openNote(try notes.newNote(named: name, in: folder))
+            } catch {
+                self.reportNotesError(error)
+            }
+            return nil
         }
     }
 
@@ -179,7 +194,16 @@ extension TerminalWindowController {
             chooseVault: { [weak self] in self?.chooseNotesVault() },
             openAt: { [weak self] url, line in self?.openNote(url, line: line) },
             toggleTask: { [weak self] url, line, text in self?.toggleNoteTask(url, line: line, text: text) },
-            move: { [weak self] urls, folder in self?.moveNotes(urls, into: folder) })
+            move: { [weak self] urls, folder in self?.moveNotes(urls, into: folder) },
+            searchContents: { [weak self] in self?.searchNoteContents($0) })
+    }
+
+    /// The panel's filter found no note by that name: ⌘F on its Notes
+    /// scope, searching what the notes say.
+    package func searchNoteContents(_ query: String) {
+        guard Settings.shared.notesEnabled, let terminal = store.selected?.terminal else { return }
+        showSpotlight(for: terminal, needle: query)
+        spotlight.scope = .notes
     }
 
     /// The notes' graph in the right-hand pane (which takes the slot, as

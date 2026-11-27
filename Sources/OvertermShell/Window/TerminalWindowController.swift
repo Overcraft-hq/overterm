@@ -230,6 +230,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// A scenario's: what a review's Send or Address This Thread would
     /// type, and the agent tabs it found in the checkout.
     package var reviewNotesRecorder: ((String, [Tab]) -> Void)?
+    /// A scenario's: ⌘L's "nothing selected" said here, not on a sheet.
+    package var askAgentHintRecorder: ((String) -> Void)?
     /// A scenario's: Submit Review's question answered here — the decision
     /// and summary, nil for Cancel.
     package var reviewSubmitRecorder: (([ReviewDraftComment]) -> (ReviewComments.Event, String)?)?
@@ -528,7 +530,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     reviewPullRequest: { [weak self] in self?.reviewPullRequest($0) },
                     git: { [weak self] command in Task { await self?.overgit(command) } },
                     createPullRequest: { [weak self] in self?.createPullRequest(nil) }
-                ),
+                ).with(showStash: { [weak self] in self?.showStash($0) }),
                 snippetActions: SnippetActions(
                     use: { [weak self] snippet, run in self?.useSnippet(snippet, run: run) },
                     edit: { [weak self] in self?.editSnippet($0) }
@@ -792,6 +794,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     showLeftBehind: { [weak self] id in self?.showLeftBehind(of: id) },
                     showCILog: { [weak self] id in self?.showCILog(on: id) },
                     fixCI: { [weak self] id in self?.askAgentToFixCI(on: id) },
+                    dismiss: { [weak self] id in self?.dismissInboxEntry(id) },
                     close: { [weak self] in self?.toggleInbox(nil) })))
         inboxView.onKey = { [weak self] key in self?.inboxKey(key) ?? false }
         let inboxPanel = NSViewController()
@@ -3108,11 +3111,29 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         }
         guard let tab = store.selected, let pane = tab.terminal.selectionText == nil ? nil : tab.terminal,
             let text = pane.selectionText
-        else { return }
+        else {
+            // Never silent (AGT-U8): there is nothing selected to ask about.
+            NSSound.beep()
+            return askAgentHint("Select some text first", "⌘L asks an agent about what is selected — in a terminal, a log, a review's lines.")
+        }
         hideSelectionBar()
         let folder = pane.workingDirectory ?? tab.workingDirectory
         let asked = askSelection(text, of: pane, in: tab)
         presentAskAgent(text: asked.text, command: asked.command, folder: folder, targets: store.tabs.filter { $0.agent != nil && $0.id != tab.id })
+    }
+
+    /// The agent a new tab of Ask Agent's opens with: New Task's (agents.newTaskAgent), Claude when that is a shell.
+    package static var newTabAgent: Agent { Agent(rawValue: Settings.shared.taskAgent) ?? .claude }
+
+    /// A short word on the window, for a key that has nothing to act on.
+    private func askAgentHint(_ title: String, _ detail: String) {
+        if let askAgentHintRecorder { return askAgentHintRecorder(title) }
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.addButton(withTitle: "OK")
+        alert.beginSheetModal(for: window)
     }
 
     /// What ⌘L hands on of `text` selected in `pane`: a pod's or a pinned
@@ -3142,8 +3163,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 detail: other.activity.isWorking ? "busy" : "idle", color: store.group(of: other)?.color,
                 agent: other.agent)
         }
+        // The agent New Task starts (agents.newTaskAgent), never Claude regardless (AGT-U8).
+        let fresh = Self.newTabAgent
         targets.append(
-            AskAgentModel.Target(id: nil, title: "New agent tab in this folder", detail: "", color: nil, agent: .claude))
+            AskAgentModel.Target(id: nil, title: "New \(fresh.name) tab in this folder", detail: "", color: nil, agent: fresh))
         askAgent.begin(
             selection: text, command: command, folder: folder, targets: targets, diff: diff ?? self.diff.isRepository, message: message,
             subject: subject, parts: parts, showsBrief: showsBrief)
@@ -3222,9 +3245,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             target = store.tabs.first { $0.id == chosen }
         } else {
             if let folder {
-                newTab(in: URL(fileURLWithPath: folder), agent: .claude)
+                newTab(in: URL(fileURLWithPath: folder), agent: Self.newTabAgent)
             } else {
-                newAgentTab(.claude)
+                newAgentTab(Self.newTabAgent)
             }
             target = store.selected
         }
@@ -3287,10 +3310,29 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 let choice = inbox.entries.first(where: { $0.id == id })?.prompt?.default
             else { return false }
             answer(choice, in: id)
+        case "delete":
+            // The Deny the card shows (AGT-U1): its own choice, never the default's.
+            guard let id = inbox.highlighted, let prompt = inbox.entries.first(where: { $0.id == id })?.prompt, let deny = prompt.deny,
+                deny != prompt.default
+            else { return false }
+            answer(deny, in: id)
+        case "x":
+            guard let id = inbox.highlighted, let entry = inbox.entries.first(where: { $0.id == id }), InboxModel.dismissable(entry) else { return false }
+            dismissInboxEntry(id)
         case "escape": toggleInbox(nil)
         default: return false
         }
         return true
+    }
+
+    /// A finished or failed entry let go of without going to its tab
+    /// (AGT-U6): its mark is the tab's, so the tab is marked seen.
+    package func dismissInboxEntry(_ id: Tab.ID) {
+        guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
+        tab.activity.seen()
+        AttentionNotifier.withdraw(tab: tab)
+        updateAttentionBadge()
+        refreshInbox()
     }
 
     /// Types a choice's number and Return into the tab's agent. Return is

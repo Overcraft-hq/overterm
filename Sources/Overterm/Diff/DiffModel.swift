@@ -286,6 +286,7 @@ package final class DiffModel: ObservableObject {
         branch = nil
         head = nil
         error = nil
+        restoreDraft()
         watcher?.stop()
         watcher = nil
         gitWatcher?.stop()
@@ -809,13 +810,80 @@ package final class DiffModel: ObservableObject {
         return (try? await Git.run(["log", "-1", "--format=%B"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Pushes the branch — to its upstream, or, the first time, to origin
-    /// as its upstream (what `git push` would tell you to do).
+    /// Pushes the branch — to its upstream, or, the first time, to the
+    /// remote git would push it to (`PushRemote`: its pushRemote,
+    /// remote.pushDefault, the one remote there is) as its upstream. With
+    /// several and nothing said, it says so: Overgit's Publish asks which.
     @discardableResult
     package func push() async -> Bool {
         guard let root else { return false }
         let upstream = (try? await Git.run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], in: root)) != nil
-        return await perform(upstream ? ["push"] : ["push", "--set-upstream", "origin", "HEAD"], timeout: nil)
+        if upstream { return await perform(["push"], timeout: nil) }
+        guard let branch else {
+            actionError = "Not on a branch: nothing to publish."
+            return false
+        }
+        switch await PushRemote.read(branch: branch, in: root) {
+        case .remote(let remote):
+            return await perform(PushRemote.pushArguments(remote: remote, branch: branch, setUpstream: true), timeout: nil)
+        case .ask(let remotes, _):
+            actionError = "Several remotes (\(remotes.joined(separator: ", "))) and none set for \(branch): publish it from Overgit's overview, which asks."
+            return false
+        case .none:
+            actionError = "No remote to push to: git remote add <name> <url> first."
+            return false
+        }
+    }
+
+    // MARK: The commit message (GIT-U4)
+
+    /// The message being written, one draft a checkout: Overgit's Changes
+    /// and the changes pane's composer edit this same text, so what is
+    /// typed in one is in the other, and a tab switch keeps each
+    /// checkout's own.
+    @Published package var commitDraft = "" {
+        didSet { if let root { drafts[root, default: Draft()].message = commitDraft } }
+    }
+    /// Amend the last commit instead of making one — the draft's too.
+    @Published package private(set) var commitAmend = false {
+        didSet { if let root { drafts[root, default: Draft()].amend = commitAmend } }
+    }
+    private struct Draft {
+        var message = ""
+        var amend = false
+    }
+    private var drafts: [URL: Draft] = [:]
+
+    private func restoreDraft() {
+        let draft = root.flatMap { drafts[$0] } ?? Draft()
+        if commitDraft != draft.message { commitDraft = draft.message }
+        if commitAmend != draft.amend { commitAmend = draft.amend }
+    }
+
+    /// Amend on: an empty draft starts from the last message, as git's
+    /// editor would.
+    package func setAmend(_ on: Bool) async {
+        commitAmend = on
+        guard on, commitDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let root = root
+        let last = await lastCommitMessage() ?? ""
+        guard root == self.root, commitAmend, commitDraft.isEmpty else { return }
+        commitDraft = last
+    }
+
+    /// What either composer's Commit does: what is staged — or, nothing
+    /// staged and not amending, everything — with the draft as its
+    /// message. The draft is cleared when it worked.
+    @discardableResult
+    package func commitDraftNow() async -> Bool {
+        let message = commitDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return false }
+        let ok = stagedCount == 0 && !commitAmend ? await commitAll(message: message) : await commit(message: message, amend: commitAmend)
+        if ok {
+            commitDraft = ""
+            commitAmend = false
+        }
+        return ok
     }
 
     /// Throws the file's changes away: back to HEAD, staged and unstaged. A
