@@ -67,6 +67,7 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         controller.autosaveSession()
         controller.showWindow(nil)
         UpdateChecker.shared.checkIfDue()
+        UpdateChecker.shared.noteLaunch()
         windowController = controller
         controller.dumpLayoutIfRequested()
         if let scenario = AppEnvironment.e2eScenario {
@@ -247,6 +248,20 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     @objc package func showChangelog(_ sender: Any?) {
         ChangelogWindowController.shared.show()
     }
+
+    /// Help ▸ Keyboard Shortcuts: Settings, on its shortcuts.
+    @objc package func showKeyboardShortcuts(_ sender: Any?) {
+        windowController?.openSettings(.shortcuts)
+    }
+
+    /// Help ▸ Overterm on GitHub: the repository, in the default browser
+    /// (never from an isolated run).
+    @objc package func openGitHub(_ sender: Any?) {
+        guard !AppEnvironment.isIsolated else { return }
+        NSWorkspace.shared.open(Self.gitHubURL)
+    }
+
+    package static let gitHubURL = URL(string: "https://github.com/\(UpdateChecker.repository)")!
 
     /// Settings ▸ About, checking.
     @objc package func checkForUpdates(_ sender: Any?) {

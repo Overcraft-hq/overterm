@@ -49,6 +49,7 @@ version is tagged `v<version>`.
 - Terraform: a plan, apply, drift check or test that ends while you're elsewhere marks the checkout's tab and notifies, in Overterm's words only
 - Terraform: the changes pane names the roots the changed files touch, directly or through a module, with Plan; the editor's bar shows the file's root, workspace and class, with Plan
 - Notes: a link clicked in Live Preview opens its note in Live Preview; New Note asks the name first; the backlinks, outline and tasks stay on the last note while the editor shows another file; a filter naming no note offers ⌘F's search of what notes say
+- A Help menu, with macOS's menu search, Keyboard Shortcuts, the changelog and Overterm on GitHub; View's commands grouped into submenus (Groups, Panes, Columns, Docker, Kubernetes, Activity, Terraform, Notes); after an update, a quiet "What's new in <version>" chip in the strip opens its changelog entry
 - Activity: every key does what its menu says in Listening and Left Behind too, and one that can't says why; grouping, tree and sorts are kept across launches; Tab Info frees a port (Free…); Listening's empty sentence follows what was read of other users'
 
 ## 1.6.7 — 2026-11-23
