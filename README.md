@@ -106,7 +106,7 @@ that says nothing (opencode) still marks its tab.
       in your keychain; TLS, and SSH tunnels through your own <code>~/.ssh</code>.
       MongoDB and DocumentDB with the mongo shell's statements, MariaDB,
       Elasticsearch and OpenSearch as Kibana's Dev Tools writes them, DynamoDB,
-      InfluxDB, Neo4j, RabbitMQ and Oracle, each with its own tree and console.
+      InfluxDB, Neo4j, RabbitMQ, Kafka and Oracle, each with its own tree and console.
       S3 and Google Cloud Storage in the same panel.
     </td>
   </tr>

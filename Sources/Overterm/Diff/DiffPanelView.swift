@@ -472,34 +472,40 @@ private struct CommitRow: View {
 }
 
 /// The commit message under "Uncommitted changes". Commits what is staged —
-/// or, with nothing staged, everything.
+/// or, with nothing staged, everything. Its text and Amend are the
+/// checkout's one draft (`DiffModel.commitDraft`), which Overgit's Changes
+/// edits too (GIT-U4).
 private struct CommitComposer: View {
     @ObservedObject var model: DiffModel
     @ObservedObject var theme: ChromeTheme
     let onDone: () -> Void
-    @State private var message = ""
     @State private var committing = false
 
-    private var trimmed: String { message.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var trimmed: String { model.commitDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextField("Commit message", text: $message, axis: .vertical)
+            TextField(model.commitAmend ? "Amended message" : "Commit message", text: $model.commitDraft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1...5)
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: 6).fill(theme.selected))
+                .accessibilityIdentifier("changesCommitMessage")
             if let error = model.actionError {
                 Text(error).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(DiffColors.removed).lineLimit(3)
             }
             HStack {
-                Text(model.stagedCount == 0 ? "Nothing staged — commits all changes." : "\(model.stagedCount) staged.")
+                Toggle("Amend", isOn: Binding(get: { model.commitAmend }, set: { on in Task { await model.setAmend(on) } }))
+                    .toggleStyle(.checkbox)
+                    .help("Change the last commit instead of making a new one")
+                Text(verbatim: model.commitAmend ? "Amends the last commit." : (model.stagedCount == 0 ? "Nothing staged — commits all changes." : "\(model.stagedCount) staged."))
                     .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(theme.dimText)
                 Spacer()
                 Button("Cancel", action: onDone)
-                Button(committing ? "Committing…" : (model.stagedCount == 0 ? "Commit All" : "Commit")) { commit() }
+                    .help("Close the composer; the message stays as a draft")
+                Button(committing ? "Committing…" : (model.commitAmend ? "Amend" : (model.stagedCount == 0 ? "Commit All" : "Commit"))) { commit() }
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(trimmed.isEmpty || committing)
             }
@@ -512,12 +518,9 @@ private struct CommitComposer: View {
     private func commit() {
         committing = true
         Task { @MainActor in
-            let ok = model.stagedCount == 0 ? await model.commitAll(message: trimmed) : await model.commit(message: trimmed)
+            let ok = await model.commitDraftNow()
             committing = false
-            if ok {
-                message = ""
-                onDone()
-            }
+            if ok { onDone() }
         }
     }
 }

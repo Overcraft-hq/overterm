@@ -24,7 +24,20 @@ package final class NotesModel: ObservableObject {
     /// Open folders, by path.
     @Published package var expanded: Set<String> = []
     /// The note the editor shows, highlighted in the tree.
-    @Published package var current: URL?
+    @Published package var current: URL? {
+        didSet { subject = Self.subject(current: current, previous: subject, in: vault) }
+    }
+    /// The note the lower half's panes are about: the one in the editor, or
+    /// — while the editor shows something that isn't a note — the last one
+    /// that was, named over the panes rather than the panes going blank.
+    @Published package private(set) var subject: URL?
+
+    /// The note open, else the last one while it is still in the vault.
+    package static func subject(current: URL?, previous: URL?, in vault: NotesVault) -> URL? {
+        if let current { return current }
+        guard let previous, vault.contains(previous) else { return nil }
+        return previous
+    }
     /// What the panel's lower half shows; nil when it is folded away.
     @Published package var detail: NotesDetail? = NotesDetail(stored: AppEnvironment.defaults.string(forKey: NotesDetail.key)) {
         didSet { AppEnvironment.defaults.set(detail?.rawValue ?? "none", forKey: NotesDetail.key) }
@@ -75,6 +88,7 @@ package final class NotesModel: ObservableObject {
         let root = NotesVault.root(fromSetting: Settings.shared.notesVaultPath)
         guard root.standardizedFileURL != vault.root else { return }
         vault = NotesVault(root: root)
+        subject = current.flatMap { vault.contains($0) ? $0 : nil }
         generation += 1
         tree = nil
         index = NotesIndex()
@@ -197,9 +211,27 @@ package final class NotesModel: ObservableObject {
     /// A new, empty note — in `folder`, else where Obsidian's settings put
     /// new notes.
     package func newNote(in folder: URL?, beside current: URL? = nil) throws -> URL {
-        let folder = folder ?? vault.folderForNewNote(beside: current)
-        let url = NotesVault.freeName("Untitled", extension: "md", in: folder)
-        try NoteFiles.write("", to: url)
+        let folder = newNoteFolder(in: folder, beside: current)
+        return try newNote(named: suggestedNoteName(in: folder), in: folder)
+    }
+
+    /// Where New Note puts a note: `folder`, else where Obsidian's settings
+    /// say (beside the note open, a folder, or the vault's top).
+    package func newNoteFolder(in folder: URL?, beside current: URL? = nil) -> URL {
+        folder ?? vault.folderForNewNote(beside: current)
+    }
+
+    /// The name New Note offers: "Untitled", numbered past the ones there.
+    package func suggestedNoteName(in folder: URL) -> String {
+        NotesVault.freeName("Untitled", extension: "md", in: folder).deletingPathExtension().lastPathComponent
+    }
+
+    /// The note `folder/<name>.md`, empty — never over one that is there
+    /// (here or in iCloud), never outside the vault.
+    package func newNote(named name: String, in folder: URL) throws -> URL {
+        let url = folder.appendingPathComponent(NoteNaming.fileName(name))
+        guard vault.contains(url) else { throw CocoaError(.fileWriteNoPermission) }
+        try NoteFiles.create(url)
         expandFolders(of: url)
         reload()
         return url

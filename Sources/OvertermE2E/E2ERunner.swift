@@ -1199,6 +1199,11 @@ package final class E2ERunner {
         check(
             "usage opens in that same slot", app.rightPane.mode == .usage && app.browserItem?.isCollapsed == true,
             "\(app.rightPane.mode)")
+        // The gauge pressed again closes it, as the ± badge does the changes.
+        app.showUsage(nil)
+        check("pressed again, usage closes", await eventually(2) { self.app.diffItem?.isCollapsed == true }, "\(app.diffItem?.isCollapsed as Any)")
+        app.showUsage(nil)
+        check("and opens again", await eventually(2) { self.app.diffItem?.isCollapsed == false } && app.rightPane.mode == .usage)
         app.toggleBrowser(nil)
         check(
             "the globe takes the slot back",
@@ -2293,6 +2298,7 @@ package final class E2ERunner {
             app.inbox.entries.first { $0.id == agent.id }.map { $0.prompt == nil } == true,
             (app.inbox.entries.first?.prompt?.question ?? "no entry") + " / " + String((agent.terminal.visibleText ?? "").suffix(400)).debugDescription)
 
+        await inboxTruthChecks(agent: agent, shell: shell)
         await askingPane(agent, shell: shell)
 
         app.toggleInbox(nil)
@@ -2741,6 +2747,22 @@ package final class E2ERunner {
         // there said, a command typed in the tab.
         try? "API_KEY=e2e\n".write(to: repo.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
         var skipped: TaskSetupCopy.Report?
+        // GIT-U14: From and Branch checked as typed, a typo said before anything is made.
+        check("From: an existing branch resolves", await TaskFields.resolves("main", in: repo))
+        check("a typo doesn't", !(await TaskFields.resolves("mian", in: repo)))
+        check(
+            "and the sheet says so under From",
+            TaskFields.baseNote("mian", resolves: false, branchExists: false)?.text.contains("No branch, tag or commit is called “mian”") == true)
+        check("From's menu lists the branches", (await TaskFields.refs(in: repo)).local == ["main"])
+        check("an existing Branch is said to be checked out as it is", TaskFields.branchNote("main", local: ["main"])?.isProblem == false)
+        check("a name git refuses is said as typed", TaskFields.branchNote("my change", local: [])?.isProblem == true)
+        do {
+            try await app.createTask(repo: repo, branch: "feat/typo", base: "mian", agent: nil)
+            check("Create refuses a From that names nothing", false)
+        } catch {
+            let left = FileManager.default.fileExists(atPath: scratch.appendingPathComponent("proj-wt-feat-typo").path)
+            check("Create refuses a From that names nothing, making nothing", error.localizedDescription.contains("mian") && !left, error.localizedDescription)
+        }
         app.taskSetupRecorder = { skipped = $0 }
         let setup = TaskSetup(copy: [".env", ".env.local"], command: "echo set-up > \(out("setup").path)")
         do {
@@ -4349,6 +4371,15 @@ package final class E2ERunner {
         let pr = app.worktrees.pullRequests["feat/pr"]
         check("the worktree's pull request, with CI", pr?.number == 7 && pr?.checks.overall == .failing, "\(String(describing: pr))")
         check("a merged pull request counts as merged", app.worktrees.merged["done"] == .pullRequestMerged(5))
+        // GIT-G4: the list's own fields, and gh's login asked once.
+        check("the review verdict and a conflict come with the list", pr?.reviewDecision == .changesRequested && pr?.mergeable == .conflicting)
+        check("gh's login is read once", await eventually(5) { self.app.worktrees.viewerLogin == "me" }, app.worktrees.viewerLogin ?? "none")
+        let groups = PullRequestSummary.grouped(
+            app.worktrees.pullRequests.values.filter { $0.state == .open }, me: app.worktrees.viewerLogin)
+        check(
+            "Pull Requests puts the one asking for your review first, then yours",
+            groups.map(\.title) == ["Needs your review", "Yours"] && groups.map { $0.pullRequests.map(\.number) } == [[9], [7]],
+            "\(groups.map(\.title))")
 
         app.showPullRequest(nil)
         check("the pane opens on it", app.rightPane.mode == .pullRequest && app.diffItem?.isCollapsed == false)
@@ -4427,10 +4458,16 @@ package final class E2ERunner {
             CHECKS = [run("Go", "SUCCESS"), run("Lint", "FAILURE", LINT)]
         def write(line):
             open(LOG, "a").write("write " + line + "\n")
-        if args[:2] == ["pr", "list"]:
+        if args[:2] == ["api", "user"]:
+            print("me")
+        elif args[:2] == ["pr", "list"]:
             print(json.dumps([
                 {"number": 7, "title": "Add the thing", "headRefName": "feat/pr", "headRefOid": "x", "state": "OPEN", "isDraft": False,
-                 "url": "https://github.com/o/r/pull/7", "statusCheckRollup": CHECKS},
+                 "url": "https://github.com/o/r/pull/7", "statusCheckRollup": CHECKS, "author": {"login": "me"},
+                 "reviewDecision": "CHANGES_REQUESTED", "mergeable": "CONFLICTING", "reviewRequests": []},
+                {"number": 9, "title": "Theirs", "headRefName": "fix/theirs", "headRefOid": "y", "state": "OPEN", "isDraft": False,
+                 "url": "https://github.com/o/r/pull/9", "statusCheckRollup": [], "author": {"login": "rev"},
+                 "reviewDecision": "REVIEW_REQUIRED", "mergeable": "MERGEABLE", "reviewRequests": [{"__typename": "User", "login": "me"}]},
                 {"number": 5, "title": "Done", "headRefName": "done", "headRefOid": "\#(doneTip)", "state": "MERGED", "isDraft": False,
                  "url": "https://github.com/o/r/pull/5", "statusCheckRollup": []}]))
         elif args[:2] == ["pr", "view"]:

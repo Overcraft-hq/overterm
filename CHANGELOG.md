@@ -8,6 +8,10 @@ version is tagged `v<version>`.
 
 ## 1.6.8 — 2026-11-26
 
+- The database client connects to Apache Kafka: topics and their partitions in the tree, consumer groups with their lag, the newest messages of a topic read without joining a group (nobody's offset moves), a message published; SASL and TLS; a Kafka container on the Docker page opens as one
+- The usage gauge in the tab strip (and ⌥⌘U) closes the usage pane when pressed again, as the ± badge does the changes
+- PHP in the editor: coloured — the HTML around it too — and, with Intelephense or Phpactor installed, completion, hover, go to definition and diagnostics
+- An API import's notes say each thing once, with how many requests it was said of, and a long list scrolls instead of making the sheet taller than the window
 - The database client opens DuckDB files — or a database in memory — with DuckDB's own library in the app: tables in the tree, a LIST or STRUCT in the grid as `duckdb` prints it, CSV and Parquet read by a query, rows edited by their key; an agent's query that reads a file is asked first
 - The Docker page lists Apple's container tool's containers, images and volumes — a section of its own, when the tool is installed
 - Next and previous tab, ⌘1–9 and Close or Suspend Other Tabs go by the tabs the strip shows; a stashed, collapsed or unfocused island's are left alone, or named and asked about
@@ -33,10 +37,14 @@ version is tagged `v<version>`.
 - Tab Info lists the tab's agent's last calls on Overterm's tools, secrets masked, kept in memory only; Settings ▸ Agents shows every feature's agent switch in one place
 - The keyboard moves between columns with Focus the Sidebar, Terminal, Editor, Right Pane and Inbox (⌃⌥⌘1–5) and Next/Previous Column (F6, ⇧F6); in the sidebar, Files and Overgit are walked with the arrows (or j/k/h/l), ↩ opens and Esc goes back to the terminal
 - The chrome's secondary text stays readable on any terminal theme: at least 4.5:1 against the window (3:1 for the faintest)
+- The Inbox says how long a question has waited since it was asked, takes ⌫ as the Deny its card shows, and lets a finished or failed entry go with Dismiss (X); ⌘L with nothing selected says so, and Ask Agent's new tab is New Task's agent, not always Claude
 - Shortcuts moved: Docker Switcher is ⌃⌘P, as Kubernetes', Activity's and Terraform's are ⌃⌘J, ⌃⌘A and ⌃⌘E; Presentation Mode is ⇧⌃⌘P; ⌥⌘O opens a new opencode tab, and View Latest Changelog has no key
 - Terraform: Var Files… on a root's card (and the plan's inputs line) ticks its .tfvars for every plan, several at once, None clearing them
+- Overgit: Publish, Push and a tag's push go to the branch's remote (pushRemote, remote.pushDefault, the one there is), asked when there are several; a rebase or soft/mixed reset of commits already on a remote asks first; a stash opens to show its changes, and Stash Staged Changes Only puts aside just the index; Pull Requests shows who is asked to review (yours first), the review verdict and a conflict
+- The commit message is one draft a checkout, the same in Overgit and the changes pane (with Amend in both); New Task says under Branch and From what is wrong as you type — a name git refuses, a From that names nothing, a branch that exists — with From's branches in a menu
 - Terraform: a plan, apply, drift check or test that ends while you're elsewhere marks the checkout's tab and notifies, in Overterm's words only
 - Terraform: the changes pane names the roots the changed files touch, directly or through a module, with Plan; the editor's bar shows the file's root, workspace and class, with Plan
+- Notes: a link clicked in Live Preview opens its note in Live Preview; New Note asks the name first; the backlinks, outline and tasks stay on the last note while the editor shows another file; a filter naming no note offers ⌘F's search of what notes say
 - A Help menu, with macOS's menu search, Keyboard Shortcuts, the changelog and Overterm on GitHub; View's commands grouped into submenus (Groups, Panes, Columns, Docker, Kubernetes, Activity, Terraform, Notes); after an update, a quiet "What's new in <version>" chip in the strip opens its changelog entry
 
 ## 1.6.7 — 2026-11-23

@@ -98,6 +98,8 @@ package enum DatabaseDrivers {
         case .oracle: OracleDriver(connection, password: password)
         // DuckDB's own library, a file or memory: no secret.
         case .duckdb: DuckDBDriver(connection)
+        // Its own protocol on NIO: brokers, SASL, record batches.
+        case .kafka: KafkaDriver(connection, password: password)
         }
     }
 

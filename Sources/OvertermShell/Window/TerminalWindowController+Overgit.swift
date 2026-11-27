@@ -72,6 +72,17 @@ extension TerminalWindowController {
         updateRightPaneVisibility()
     }
 
+    /// A stash, opened before it is applied (GIT-G9): it is a commit, so
+    /// the commit pane shows it — what it holds against the commit it was
+    /// made on (its first parent), tracked files staged or not.
+    package func showStash(_ stash: Stash) {
+        overgit.selected = nil
+        commitDetail.show(root: overgit.root ?? diff.root, sha: stash.sha)
+        rightPane.mode = .commit
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
+    }
+
     /// Checks `branch` out in the checkout the panel is about. A remote
     /// branch is tracked, which is what clicking one means.
     package func checkOut(_ branch: BranchRef) {
