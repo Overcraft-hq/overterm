@@ -55,8 +55,8 @@ final class TerraformPlanChecksTests: XCTestCase {
     // MARK: HCP
 
     func testHCPRootsArentPlannedOrInitialisedHere() {
-        XCTAssertEqual(TerraformProcessCheck.refused(.plan, backendType: "cloud"), "HCP runs remotely: plan it in HCP (stage 3)")
-        XCTAssertEqual(TerraformProcessCheck.refused(.initialize, backendType: "remote"), "HCP runs remotely: plan it in HCP (stage 3)")
+        XCTAssertEqual(TerraformProcessCheck.refused(.plan, backendType: "cloud"), TerraformProcessCheck.remoteExecutionRefusal)
+        XCTAssertEqual(TerraformProcessCheck.refused(.initialize, backendType: "remote"), TerraformProcessCheck.remoteExecutionRefusal)
         XCTAssertNil(TerraformProcessCheck.refused(.plan, backendType: "s3"))
         XCTAssertNil(TerraformProcessCheck.refused(.validate, backendType: "cloud"), "the editor's reads stay")
     }
@@ -69,10 +69,10 @@ final class TerraformPlanChecksTests: XCTestCase {
         XCTAssertEqual(card.facts.backend.type, "cloud")
         let run = TerraformPlanRun(kind: .plan, checkout: folder, card: card)
         await run.start(registry: TerraformRunRegistry(), settingPath: "/nonexistent/terraform", classing: .init(settings: .init(), identities: []))
-        XCTAssertEqual(why(run), "HCP runs remotely: plan it in HCP (stage 3)")
+        XCTAssertEqual(why(run), TerraformProcessCheck.remoteExecutionRefusal)
         let initialize = TerraformPlanRun(kind: .initialize, checkout: folder, card: card)
         await initialize.start(registry: TerraformRunRegistry(), settingPath: "/nonexistent/terraform", classing: .init(settings: .init(), identities: []))
-        XCTAssertEqual(why(initialize), "HCP runs remotely: plan it in HCP (stage 3)")
+        XCTAssertEqual(why(initialize), TerraformProcessCheck.remoteExecutionRefusal)
     }
 
     // MARK: Read again at the run
@@ -236,5 +236,59 @@ final class TerraformPlanChecksTests: XCTestCase {
         XCTAssertEqual(lines["envs/dev/main.tf"], [1, 2, 3])
         let uncommitted = await TerraformChangedLines.read(checkout: folder, root: "envs/dev", base: "HEAD")
         XCTAssertTrue(uncommitted.isEmpty, "against HEAD: nothing")
+    }
+}
+
+/// #31's Terraform patch: no stage number in what a person reads (TF-U7),
+/// and each "in a terminal" sentence's line (TF-U2).
+final class TerraformDeadEndsTests: XCTestCase {
+    func testHCPsRefusalSaysWhatAndWhereWithoutAStageNumber() {
+        XCTAssertFalse(TerraformProcessCheck.remoteExecutionRefusal.localizedCaseInsensitiveContains("stage"))
+        XCTAssertTrue(TerraformProcessCheck.remoteExecutionRefusal.contains("HCP Terraform"))
+    }
+
+    func testEachDeadEndSuggestsItsLine() {
+        XCTAssertEqual(
+            TerraformTerminalLine.suggested(by: "The backend changed since init: run init in a terminal (with -migrate-state or -reconfigure, as you mean it)."),
+            "terraform init -migrate-state")
+        let local = TerraformWorkspaceCheck.refusal(
+            workspace: "acme-stage", backend: TerraformConfigFacts.Backend(type: "local"), localWorkspaces: [], listed: nil)
+        XCTAssertEqual(local.flatMap(TerraformTerminalLine.suggested(by:)), "terraform workspace new acme-stage")
+        XCTAssertEqual(
+            TerraformTerminalLine.suggested(by: "Workspace acme-stage can't be checked: terraform workspace list failed — run init in a terminal."), "terraform init")
+        XCTAssertEqual(TerraformTerminalLine.suggested(by: "Needs init (Missing required provider): run terraform init in a terminal"), "terraform init")
+        XCTAssertNil(TerraformTerminalLine.suggested(by: "This Terraform's output is a version Overterm doesn't read (ui 2): run it in a terminal."))
+        XCTAssertNil(TerraformTerminalLine.suggested(by: TerraformProcessCheck.remoteExecutionRefusal))
+        XCTAssertEqual(TerraformTerminalLine.newWorkspace("it's"), "terraform workspace new 'it'\\''s'")
+    }
+}
+
+/// TF-G6: an HCP root's workspace, from its block's literals only.
+final class TerraformHCPLinkTests: XCTestCase {
+    private func backend(_ type: String, _ settings: [String: String], name: String? = nil, prefix: String? = nil, tags: Bool = false) -> TerraformConfigFacts.Backend {
+        var backend = TerraformConfigFacts.Backend(type: type)
+        backend.settings = settings
+        backend.workspaceName = name
+        backend.workspacePrefix = prefix
+        backend.workspaceTags = tags
+        return backend
+    }
+
+    func testANamedWorkspaceOpensWhereItRuns() {
+        XCTAssertEqual(
+            TerraformHCPLink.url(backend: backend("cloud", ["organization": "acme"], name: "shop-prod"), workspace: "default")?.absoluteString,
+            "https://app.terraform.io/app/acme/workspaces/shop-prod")
+        XCTAssertEqual(
+            TerraformHCPLink.url(backend: backend("remote", ["organization": "acme", "hostname": "tfe.acme.example"], prefix: "shop-"), workspace: "stage")?
+                .absoluteString, "https://tfe.acme.example/app/acme/workspaces/shop-stage")
+    }
+
+    func testNoLinkWhereTheWorkspaceIsntKnownOrAStringIsOdd() {
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("cloud", ["organization": "acme"], tags: true), workspace: "default"), "chosen by tags")
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("remote", ["organization": "acme"], prefix: "shop-"), workspace: "default"), "a prefix, none selected")
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("cloud", [:], name: "shop"), workspace: "default"), "no organization")
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("cloud", ["organization": "acme", "hostname": "evil.example/x?"], name: "shop"), workspace: "default"))
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("cloud", ["organization": "acme"], name: "../x"), workspace: "default"))
+        XCTAssertNil(TerraformHCPLink.url(backend: backend("s3", ["organization": "acme"], name: "shop"), workspace: "default"), "not HCP")
     }
 }

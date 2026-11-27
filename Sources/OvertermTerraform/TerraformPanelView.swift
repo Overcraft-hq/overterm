@@ -29,15 +29,25 @@ package struct TerraformPanelActions {
     package var showTest: (TerraformTestRun) -> Void = { _ in }
     /// Var Files…: the root's `.tfvars` ticked for its plans, before any (TF-U4).
     package var chooseVarFiles: (TerraformRootCard) -> Void = { _ in }
+    /// A terminal in the root with a line typed, never run (TF-U2).
+    package var typeInTerminal: (TerraformRootCard, String) -> Void = { _, _ in }
+    /// A file at a line: the card's validate result (TF-U11).
+    package var openFileAt: (URL, Int?) -> Void = { _, _ in }
+    /// A page in the browser column: an HCP root's workspace (TF-G6).
+    package var openURL: (URL) -> Void = { _ in }
 
     package init(
         openTerminal: @escaping (TerraformRootCard) -> Void, openFile: @escaping (URL) -> Void, validate: @escaping (TerraformRootCard) -> Void, plan: @escaping (TerraformRootCard) -> Void,
         initialize: @escaping (TerraformRootCard) -> Void, chooseWorkspace: @escaping (TerraformRootCard) -> Void, showPlan: @escaping (TerraformPlanRun) -> Void,
         planDestroy: @escaping (TerraformRootCard) -> Void = { _ in }, showApply: @escaping (TerraformApplyRun) -> Void = { _ in }, showState: @escaping (TerraformRootCard) -> Void = { _ in },
         checkDrift: @escaping (TerraformRootCard) -> Void = { _ in }, test: @escaping (TerraformRootCard) -> Void = { _ in }, showTest: @escaping (TerraformTestRun) -> Void = { _ in },
-        chooseVarFiles: @escaping (TerraformRootCard) -> Void = { _ in }
+        chooseVarFiles: @escaping (TerraformRootCard) -> Void = { _ in }, typeInTerminal: @escaping (TerraformRootCard, String) -> Void = { _, _ in },
+        openFileAt: @escaping (URL, Int?) -> Void = { _, _ in }, openURL: @escaping (URL) -> Void = { _ in }
     ) {
+        self.openURL = openURL
         self.chooseVarFiles = chooseVarFiles
+        self.typeInTerminal = typeInTerminal
+        self.openFileAt = openFileAt
         self.openTerminal = openTerminal
         self.openFile = openFile
         self.validate = validate
@@ -369,15 +379,23 @@ private struct RootRow: View {
             .help("Var Files…: change or clear what its plans use")
             .accessibilityIdentifier("terraform.panel.varFiles.\(card.path)")
         }
-        if card.backendChanged { line("The backend changed since init: run init in a terminal.", theme.orangeText) }
+        if let folder = TerraformEditorModel.shared.existingFolder(at: card.folder) {
+            TerraformValidateLineView(folder: folder, theme: theme, open: actions.openFileAt)
+                .accessibilityIdentifier("terraform.panel.validated.\(card.path)")
+        }
+        if card.backendChanged {
+            line("The backend changed since init: init it in a terminal, with -migrate-state or -reconfigure as you mean it.", theme.orangeText)
+            typeButton(TerraformTerminalLine.migrateState).accessibilityIdentifier("terraform.panel.typeMigrate.\(card.path)")
+        }
         if card.facts.needsInit {
             line(
-                "Needs init: \(card.facts.unlocked.joined(separator: ", ")) \(card.facts.unlocked.count == 1 ? "isn't" : "aren't") in its lock file — run terraform init in a terminal, then review the lock file.",
+                "Needs init: \(card.facts.unlocked.joined(separator: ", ")) \(card.facts.unlocked.count == 1 ? "isn't" : "aren't") in its lock file — Overterm's Init leaves the lock file as it is, so init it in a terminal, then review the lock file.",
                 theme.orangeText
             )
             .accessibilityIdentifier("terraform.panel.needsInit.\(card.path)")
+            typeButton(TerraformTerminalLine.initialize).accessibilityIdentifier("terraform.panel.typeInit.\(card.path)")
         } else if card.facts.neverInitialised {
-            line("Not initialised here yet: no lock file.", theme.text3).accessibilityIdentifier("terraform.panel.notInitialised.\(card.path)")
+            line("Not initialised here yet: Init… fetches its providers.", theme.text3).accessibilityIdentifier("terraform.panel.notInitialised.\(card.path)")
         }
         HStack(spacing: 6) {
             // The version once, in the panel's top line; here only when it differs.
@@ -391,6 +409,23 @@ private struct RootRow: View {
                     .font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail)
             }
         }
+    }
+
+    /// Why Init… is greyed: its init keeps the lock file, which lacks these.
+    static func initRefusal(_ card: TerraformRootCard) -> String {
+        "Overterm's init keeps the lock file (-lockfile=readonly), which lacks \(card.facts.unlocked.joined(separator: ", ")): init it in a terminal"
+    }
+
+    /// The line a sentence above means, typed in a terminal in the root (TF-U2).
+    private func typeButton(_ text: String) -> some View {
+        Button {
+            actions.typeInTerminal(card, text)
+        } label: {
+            Label(TerraformTerminalLine.title(text), systemImage: "terminal").font(.system(size: ChromeMetrics.text(10.5)))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(theme.accentText)
+        .help(TerraformTerminalLine.help)
     }
 
     private func line(_ text: String, _ color: Color) -> some View {
@@ -413,12 +448,21 @@ private struct RootRow: View {
                 button("Plan", "play.circle") { actions.plan(card) }
                     .accessibilityIdentifier("terraform.panel.plan")
                 button("Init…", "arrow.down.circle") { actions.initialize(card) }
+                    // Its init keeps the lock file (-lockfile=readonly): a provider not in it is refused (TF-U3).
+                    .disabled(card.facts.needsInit)
+                    .help(card.facts.needsInit ? Self.initRefusal(card) : "Init: what it fetches shown first")
                     .accessibilityIdentifier("terraform.panel.init")
                 button("State", "list.bullet.rectangle") { actions.showState(card) }
                     .accessibilityIdentifier("terraform.panel.state")
             }
             // New Task's init writes this root's .terraform now.
             .disabled(setup.isInitializing(card.folder))
+            if let hcp = TerraformHCPLink.url(for: card) {
+                // Overterm plans none of its runs: they happen in HCP (TF-G6).
+                button(TerraformHCPLink.title, "arrow.up.right.square") { actions.openURL(hcp) }
+                    .help(hcp.absoluteString)
+                    .accessibilityIdentifier("terraform.panel.hcp.\(card.path)")
+            }
             HStack(spacing: 6) {
                 button("Terminal in This Root", "terminal") { actions.openTerminal(card) }
                     .accessibilityIdentifier("terraform.panel.terminal")

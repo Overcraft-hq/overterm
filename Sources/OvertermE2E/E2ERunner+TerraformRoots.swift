@@ -255,6 +255,28 @@ extension E2ERunner {
             "⌃⌘E lists the roots its read finds", await eventually(10) { self.app.palette.scope == .terraform && self.app.palette.results.map(\.title).contains("envs/prod") },
             "\(app.palette.results.map(\.title))")
         app.hidePalette()
+        await hcpRootChecks(in: empty, panel: panel)
+    }
+
+    /// TF-G6: an HCP root's card and its plan's refusal open the workspace
+    /// where its runs happen, built from the block's literals.
+    private func hcpRootChecks(in checkout: URL, panel: TerraformPanelModel) async {
+        try? "terraform {\n  cloud {\n    organization = \"acme\"\n    workspaces {\n      name = \"shop-prod\"\n    }\n  }\n}\n".write(
+            to: checkout.appendingPathComponent("envs/hcp/main.tf").creatingFolder(), atomically: true, encoding: .utf8)
+        app.showTerraformPanel(nil)
+        var card: TerraformRootCard? { panel.roots.first { $0.path == "envs/hcp" } }
+        check("an HCP root is listed", await eventually(15) { card != nil }, "\(panel.roots.map(\.path))")
+        guard let card else { return }
+        let expected = "https://app.terraform.io/app/acme/workspaces/shop-prod"
+        check("its card links to its HCP workspace", TerraformHCPLink.url(for: card)?.absoluteString == expected, TerraformHCPLink.url(for: card)?.absoluteString ?? "none")
+        var refused: (String, URL?)?
+        app.terraformRefusalRecorder = { refused = ($0, $1) }
+        defer { app.terraformRefusalRecorder = nil }
+        let runs = TerraformRunRegistry.shared.runs.count
+        app.planTerraformRoot(card, checkout: checkout)
+        check("its Plan is refused, said plainly", await eventually(10) { refused?.0 == TerraformProcessCheck.remoteExecutionRefusal }, refused?.0 ?? "nothing said")
+        check("with the workspace beside it", refused?.1?.absoluteString == expected, refused?.1?.absoluteString ?? "none")
+        check("and nothing is run", TerraformRunRegistry.shared.runs.count == runs)
     }
 }
 
