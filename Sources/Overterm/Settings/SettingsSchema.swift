@@ -702,6 +702,12 @@ package enum SettingsSchema {
                 "An agent started from Overterm that takes MCP servers — not pi; Gemini CLI unless a Gemini system defaults file is in place — gets an MCP server for its tab's browser: open a page, read it, click, type, take a screenshot, read the console.",
             kind: .toggle, defaultValue: .bool(true), requires: "browser.enabled", heldWhenEditedOutside: true),
         SettingSpec(
+            key: "browser.agentHosts", section: .browser, group: "Agents", title: "Hosts an agent's browser uses without asking",
+            help:
+                "An agent's browser opens, reads and acts on these without a question: a name or address, *.name for any name under it, * for every host. Any other host — where it navigates, or where its click, form or script sends the page — is asked once until Overterm quits, naming the tab and the agent; the browser shares your cookies, so there it is signed in as you. Your own use of the browser is never asked.",
+            kind: .list(placeholder: "localhost, *.localhost, staging.example.com"), defaultValue: .list(AgentHosts.defaults),
+            requires: "browser.agentControl", heldWhenEditedOutside: true),
+        SettingSpec(
             key: "browser.simulator", section: .browser, group: "Simulator", title: "An iOS simulator beside the terminal",
             help: "The phone in the title bar: a simulator you can see and click, in the browser's column. Off: the phone goes from the title bar.",
             kind: .toggle, defaultValue: .bool(true)),

@@ -15,6 +15,7 @@ version is tagged `v<version>`.
 - Every feature's agent switch is held when settings.json changes outside Settings, as Kubernetes' already were
 - The Inbox offers answers only to a real question; Broadcast leaves out production, an agent that asks and a suspended pane, by name; Suspend Tab doesn't stop a terraform write; the console's destroying question names its connection; the JSON settings view never saves a stale draft over the file
 - The changes pane stages, unstages and discards one hunk at a time; a card's diff is read when it opens, however many files changed
+- An agent's browser keeps to this Mac's own hosts: any other — where it navigates, or where its click, form or script sends the page — is asked once until Overterm quits, naming the tab and the agent, the page stopped before it leaves; Settings ▸ Browser ▸ Agents lists the hosts it uses without asking
 - Claude's `/usage` refresh no longer leaves a session in your home folder every ten minutes (`--no-session-persistence`: 818 a month, all in `claude --resume`); Ask Agent's button says what it does — Type It ↩, Return left to you —; the agents' settings say every agent but pi gets their tools, not Claude Code alone
 - The Sessions panel lists opencode's sessions beside Claude Code's — read from its own database, never written — and picks one back up with `opencode --session`
 - The Inbox reads and answers the pane that asked, not the one with the keyboard, and types nothing once its question has left the screen

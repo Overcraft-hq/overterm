@@ -57,6 +57,8 @@ final class SettingsHeldTests: XCTestCase {
                 // P01 (MCP-G6): every feature's agent switches.
                 "browser.agentControl", "api.agentControl", "notes.agentAccess", "notes.agentDrawings", "database.agentAccess",
                 "database.agentWrites", "docker.agentAccess", "docker.agentWrites",
+                // P11 (MCP-G1): where an agent's browser goes without asking.
+                "browser.agentHosts",
             ])
         // Agents' access anywhere, and the binaries Overterm runs with a cluster's credentials.
         for spec in SettingsSchema.all where spec.key.hasPrefix("kubernetes.agent") || spec.key.hasSuffix("Path") && spec.key.hasPrefix("kubernetes.") {
