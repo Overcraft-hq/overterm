@@ -254,7 +254,7 @@ final class DuckDBTests: XCTestCase {
         XCTAssertNil(DuckText.outside("SELECT name FROM t WHERE name = 'bob'"))
     }
 
-    func testPure() {
+    @MainActor func testPure() {
         XCTAssertEqual(DuckDBOps.asText("SELECT 1; \n", limit: 5), "SELECT CAST(COLUMNS(*) AS VARCHAR) FROM (\nSELECT 1\n) LIMIT 5")
         XCTAssertTrue(DuckDBOps.isNested("INTEGER[]"))
         XCTAssertTrue(DuckDBOps.isNested("STRUCT(a INTEGER)"))
@@ -269,6 +269,6 @@ final class DuckDBTests: XCTestCase {
         memory.filePath = DuckDBDriver.memory
         XCTAssertNil(memory.problem)
         XCTAssertEqual(memory.summary, "In memory")
-        XCTAssertEqual(DatabaseModel.startingSchema(DatabaseConnection(name: "a", kind: .duckdb), schemas: ["other", "main"]), "main")
+        XCTAssertEqual(DatabaseSession.startingSchema(DatabaseConnection(name: "a", kind: .duckdb), schemas: ["other", "main"]), "main")
     }
 }
