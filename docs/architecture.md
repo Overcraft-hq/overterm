@@ -2225,7 +2225,7 @@ in it, and `.obsidian/` is read for where things go, never written.
 ## Database (⌥⌘B, sidebar)
 
 A database client beside the terminal, DataGrip's work in the sidebar and
-the editor: PostgreSQL, MySQL, MariaDB, SQLite, Redshift, ClickHouse, BigQuery,
+the editor: PostgreSQL, MySQL, MariaDB, SQLite, DuckDB, Redshift, ClickHouse, BigQuery,
 Redis, MongoDB and Amazon DocumentDB, DynamoDB, InfluxDB, Neo4j, Oracle, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
 destroying statement are there too).
 
@@ -2245,7 +2245,7 @@ destroying statement are there too).
   simple query, so `PostgresText` says each type as psql would; an empty
   read's columns are asked of a temporary view. MySQL is MySQLNIO, reads as
   simple queries (text), writes as queries (rows changed). SQLite is the
-  system's libsqlite3. ClickHouse is HTTP (JSONCompact; the server stops at
+  system's libsqlite3; DuckDB its own release's library (DuckDB, below). ClickHouse is HTTP (JSONCompact; the server stops at
   the limit). BigQuery is REST (`jobs.query`, its results until done), the
   service account's JWT signed with swift-crypto's RSA. Read-only is the
   database's own where it has one, and refused before sending everywhere.
@@ -2588,6 +2588,68 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   C module is a target, not a product, so not reachable either). When
   the package's macOS floor allows 13 again (or the app's moves to 15)
   with the BoringSSL build 1.0.0 has, it fits.
+
+### DuckDB
+
+- **The library** (`Scripts/fetch-duckdb.sh`, `make duckdb`): DuckDB's own
+  `libduckdb.dylib` from its release (2.0.1), the universal archive
+  SHA-checked, thinned to this Mac's architecture, its local symbols
+  stripped (65 → 52 MB for arm64) and signed ad hoc again, as
+  `Frameworks/DuckDBKit.xcframework` — a binary target, `CDuckDB` its C
+  module, not committed. Not the duckdb-swift package: its last release is
+  1.1.3, a 2024 DuckDB that may not open a file today's `duckdb` wrote.
+  `make-app.sh` copies it into Contents/Frameworks and `bundle-swift-libs.sh`
+  gives the binary `@executable_path/../Frameworks`; CI keeps it with the
+  frameworks' cache (its script in the key) and checks the bundle has it.
+  The app grows by its 52 MB, the DMG by ≈19.
+- **The driver** (`DuckDBDriver`, the C API): a file, or `:memory:` (the
+  form's "In memory" — nothing kept). Opened with `autoinstall_known_extensions`,
+  `autoload_known_extensions` and `allow_community_extensions` off — nothing
+  fetched or loaded by itself; CSV, Parquet, JSON and ICU are the library's
+  own, and a person's `INSTALL`/`LOAD` still works — and `access_mode =
+  READ_ONLY` when the connection is read-only (memory can't be). Values as
+  text: a SELECT (what preparing it says it is) runs as
+  `SELECT CAST(COLUMNS(*) AS VARCHAR) FROM (…) LIMIT n+1` (`DuckDBOps.asText`),
+  so a LIST, STRUCT or MAP reads as `duckdb` prints it and no more rows
+  than the limit are made; its columns' names and types are the prepared
+  statement's (an alias — JSON — by its name, DECIMAL with its width and
+  scale). A SELECT that can't be a subquery, and anything else, runs as it
+  is through the materialised result (`duckdb_value_varchar`, deprecated
+  and allowed by `CDuckDB.h`); a write's one `Count` column is its rows
+  changed, a transaction's `Success` nothing; a SELECT never runs twice.
+  A cancelled run is `duckdb_interrupt`ed. A file is opened through one
+  instance cache for the app (`duckdb_get_or_create_from_cache`, the path
+  with its links resolved): DuckDB's lock is `fcntl`'s, the process's, so
+  a second open here — another connection, the form's Test — would not be
+  refused, and its close would drop the first one's lock; the cache gives
+  both the same database and refuses read-only beside writable. Memory is
+  each its own. The file's lock — one program at a time may open
+  a file it can write — is DuckDB's own message, which names the holder,
+  and one sentence (`DuckDBOps.explainOpen`). The catalog: the current
+  database's schemas (`duckdb_schemas()`, main first), tables and views,
+  columns (`information_schema`).
+- **The Server page**: the overview — the library's version, the file,
+  `pragma_database_size()` (size, blocks, WAL, memory and its limit),
+  tables and views, threads.
+- **Editing rows** (`DuckDBOperations`): by the primary key, else a unique
+  key over NOT NULL columns (`duckdb_constraints()`, each key's columns in
+  its order); never `rowid`, which DuckDB may give another row once
+  deleted rows are compacted. LIST, ARRAY, STRUCT, MAP and UNION columns
+  aren't written back (`DuckDBOps.isNested`). A Save is one transaction,
+  each statement's rows changed checked.
+- **Agents** (`DuckText`): SQL's rules, DuckDB's reads (`FROM t`,
+  `SUMMARIZE`, `PIVOT`) and PRAGMAs that only say something — and a
+  statement that reaches outside the database is held as a write is:
+  `read_*`, `glob`, `query()` (text run as SQL) and kin, their names
+  quoted or not, any string — `'…'`, `$$…$$` — or quoted name that looks
+  like a path, a URL or a file (`FROM 'orders.csv'`). On a read-only
+  connection such a read is asked too, not refused.
+  DuckDB reads whatever a query names, the user's ssh key too; a person's
+  console never asks, an agent's statement says why (`DuckText.outside`),
+  refused unless Settings ▸ Database lets agents write, then asked.
+- **Tests**: `DuckDBTests` against the library itself, always — values,
+  the catalog, keys and a Save, read-only, memory, a CSV and a Parquet
+  file, a cancelled scan, what an agent runs without asking.
 
 ### Oracle Database
 

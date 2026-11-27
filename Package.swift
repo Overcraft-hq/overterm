@@ -10,10 +10,10 @@ let e2eSettings: [SwiftSetting] = [
 
 /// A module of the app over `below`, with every package the app uses (an
 /// unused one costs nothing).
-func feature(_ name: String, over below: [String]) -> Target {
+func feature(_ name: String, over below: [String], with own: [Target.Dependency] = []) -> Target {
     .target(
         name: name,
-        dependencies: below.map { .target(name: $0) } + [
+        dependencies: below.map { .target(name: $0) } + own + [
             "GhosttyKit", "TreeSitterKit",
             .product(name: "PostgresNIO", package: "postgres-nio"),
             .product(name: "MySQLNIO", package: "mysql-nio"),
@@ -50,8 +50,9 @@ let package = Package(
     ],
     // The database client's wire protocols: PostgreSQL (and Redshift, which
     // speaks it) and MySQL — TLS, SCRAM and caching_sha2 included, which is
-    // why they are packages and not ours. SQLite is the system's; ClickHouse
-    // and BigQuery are HTTP.
+    // why they are packages and not ours. SQLite is the system's; DuckDB its
+    // own release's library (DuckDBKit, below); ClickHouse and BigQuery are
+    // HTTP.
     dependencies: [
         .package(url: "https://github.com/vapor/postgres-nio.git", from: "1.33.2"),
         .package(url: "https://github.com/vapor/mysql-nio.git", from: "1.9.2"),
@@ -81,6 +82,14 @@ let package = Package(
         .binaryTarget(
             name: "TreeSitterKit",
             path: "Frameworks/TreeSitterKit.xcframework"
+        ),
+        // Fetched by `make duckdb` (Scripts/fetch-duckdb.sh): DuckDB's own
+        // libduckdb.dylib from its release, SHA-checked — the database
+        // client's DuckDB kind. A dylib (52 MB), carried in
+        // Contents/Frameworks by make-app.sh.
+        .binaryTarget(
+            name: "DuckDBKit",
+            path: "Frameworks/DuckDBKit.xcframework"
         ),
         // The app's code is a stack of library modules, one package: each
         // depends only on those below it, and shares what others use as
@@ -141,7 +150,7 @@ let package = Package(
         // The features, each over the shell and the ones it uses:
         // Database, then Docker (its containers' databases), Kubernetes
         // (Docker's images and CLI), Terraform (a context's class).
-        feature("OvertermDatabase", over: ["Overterm"]),
+        feature("OvertermDatabase", over: ["Overterm"], with: ["DuckDBKit"]),
         feature("OvertermDocker", over: ["OvertermDatabase"]),
         // OvertermAPI: the API client (⌥⌘R), under Kubernetes (a forward's
         // API docs, its discovery).

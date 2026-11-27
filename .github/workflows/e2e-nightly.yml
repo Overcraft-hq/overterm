@@ -134,7 +134,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       - uses: jdx/mise-action@v5
         if: steps.frameworks.outputs.cache-hit != 'true'
@@ -150,6 +150,11 @@ jobs:
             echo "::warning::the frameworks' build failed (attempt $attempt); trying again in 30 s"
             sleep 30
           done
+
+      # DuckDB's library, fetched (Scripts/fetch-duckdb.sh): kept with the
+      # frameworks above; a restored one is checked and left as it is.
+      - name: Fetch DuckDBKit
+        run: make duckdb
 
       # CI's debug build of this commit, its paths and keys exactly (ci.yml,
       # test): restored only. With the files dated by their commits, nothing

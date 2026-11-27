@@ -177,7 +177,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       # Zig, pinned in mise.toml: only GhosttyKit's build uses it.
       - uses: jdx/mise-action@v5
@@ -199,6 +199,11 @@ jobs:
             sleep 30
           done
 
+      # DuckDB's library, fetched (Scripts/fetch-duckdb.sh): kept with the
+      # frameworks above; a restored one is checked and left as it is.
+      - name: Fetch DuckDBKit
+        run: make duckdb
+
       # Saved as soon as it is built, not by a post-step at the job's end: a
       # later failure or a cancel kept nothing of the ≈10-min build, and the
       # next run built it again. A second job saving the same key on the same
@@ -209,7 +214,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       # The whole debug build — the packages and the app's own modules, and
       # Swift Build's database (XCBuildData) that says what is up to date —
@@ -341,7 +346,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       # Zig, pinned in mise.toml: only GhosttyKit's build uses it.
       - uses: jdx/mise-action@v5
@@ -363,6 +368,11 @@ jobs:
             sleep 30
           done
 
+      # DuckDB's library, fetched (Scripts/fetch-duckdb.sh): kept with the
+      # frameworks above; a restored one is checked and left as it is.
+      - name: Fetch DuckDBKit
+        run: make duckdb
+
       # Saved as soon as it is built, not by a post-step at the job's end: a
       # later failure or a cancel kept nothing of the ≈10-min build, and the
       # next run built it again. A second job saving the same key on the same
@@ -373,7 +383,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       # The whole release build — the packages compiled, the app's modules,
       # Swift Build's database — one entry a commit, as the debug build's
@@ -411,6 +421,8 @@ jobs:
           # The Swift libraries it loads by @rpath are in it (make-app.sh
           # bundles them; this runner's macOS has them, older ones don't).
           Scripts/bundle-swift-libs.sh Overterm.app >/dev/null
+          # DuckDB's library, which the database client loads by @rpath.
+          test -f Overterm.app/Contents/Frameworks/libduckdb.dylib
           # No end-to-end scenario nor fake server in a shipped build: they
           # are `#if E2E`, a debug build's or the E2E trait's (Package.swift).
           if nm Overterm.app/Contents/MacOS/Overterm | grep -qE 'E2ERunner|FakeDockerEngine|FakeKubeAPI'; then

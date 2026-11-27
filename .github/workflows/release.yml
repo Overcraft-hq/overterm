@@ -129,7 +129,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       # The Metal toolchain for Ghostty's shaders, if the image lacks it (CI's step).
       - name: Build GhosttyKit and TreeSitterKit
@@ -146,6 +146,11 @@ jobs:
             sleep 30
           done
 
+      # DuckDB's library, fetched (Scripts/fetch-duckdb.sh): kept with the
+      # frameworks above; a restored one is checked and left as it is.
+      - name: Fetch DuckDBKit
+        run: make duckdb
+
       # Saved as soon as it is built (CI's step): a later failure keeps it.
       - name: Save GhosttyKit and TreeSitterKit
         if: steps.frameworks.outputs.cache-hit != 'true'
@@ -153,7 +158,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'Scripts/fetch-duckdb.sh', 'mise.toml') }}
 
       # CI's release build on main (see the top): the whole of it — the
       # packages and the app's modules compiled, Swift Build's database —

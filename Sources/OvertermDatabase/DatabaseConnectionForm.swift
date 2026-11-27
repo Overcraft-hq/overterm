@@ -52,7 +52,7 @@ package struct DatabaseConnectionForm: View {
                     tested = nil
                 }
                 switch connection.kind {
-                case .sqlite: sqliteFields
+                case .sqlite, .duckdb: fileFields
                 case .bigquery: bigQueryFields
                 case .s3: s3Fields
                 case .gcs: gcsFields
@@ -393,14 +393,28 @@ package struct DatabaseConnectionForm: View {
             text: $sshSecret)
     }
 
-    @ViewBuilder private var sqliteFields: some View {
-        HStack {
-            TextField("File", text: $connection.filePath)
-            Button("Choose…") {
-                let panel = NSOpenPanel()
-                panel.canChooseFiles = true
-                panel.allowsOtherFileTypes = true
-                if panel.runModal() == .OK, let url = panel.url { connection.filePath = url.path }
+    /// SQLite's and DuckDB's: a file — DuckDB's may be in memory instead,
+    /// nothing kept when it closes.
+    @ViewBuilder private var fileFields: some View {
+        let inMemory = connection.kind == .duckdb && DuckDBDriver.inMemory(connection.filePath)
+        if connection.kind == .duckdb {
+            Toggle(
+                "In memory — nothing is kept when it closes",
+                isOn: Binding(get: { inMemory }, set: { connection.filePath = $0 ? DuckDBDriver.memory : "" }))
+        }
+        if !inMemory {
+            HStack {
+                TextField("File", text: $connection.filePath)
+                Button("Choose…") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = true
+                    panel.allowsOtherFileTypes = true
+                    if panel.runModal() == .OK, let url = panel.url { connection.filePath = url.path }
+                }
+            }
+            if connection.kind == .duckdb {
+                Text(verbatim: "A file that isn't there yet is made — unless the connection is read-only.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
     }
