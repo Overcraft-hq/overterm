@@ -61,6 +61,22 @@ package final class ReviewModel: ObservableObject, Identifiable {
     /// The change (`n`/`p`) to bring into view: its first line's id. The
     /// view scrolls when it changes.
     @Published package private(set) var scrollTarget: Int?
+    /// Lines picked in the shown file (GIT-U10): a number clicked, ⇧-clicked.
+    @Published package private(set) var lineSelection: ReviewLineSelection?
+    /// Notes on picked lines, every file's, in the order written (GIT-N2):
+    /// sent to the checkout's agent as one brief.
+    @Published package private(set) var notes: [ReviewNote] = []
+    /// The note being written for the picked lines.
+    @Published package var draft = ""
+    /// A pull request's review threads (GIT-G3), drawn at their lines.
+    @Published package private(set) var threads: [ReviewThread] = []
+    /// Comments on picked lines not sent yet: they go together, with a
+    /// decision, as one review (`ReviewComments.request`).
+    @Published package private(set) var drafts: [ReviewDraftComment] = []
+    /// Why the last pick couldn't be a comment on GitHub.
+    @Published package private(set) var draftProblem: String?
+    /// Each file's threads by the diff line they are drawn under.
+    package private(set) var placedThreads: [String: [Int: [ReviewThread]]] = [:]
 
     /// Each file's patch, for a pull request: `gh pr diff` gives them all.
     private var patches: [String: String] = [:]
@@ -93,6 +109,8 @@ package final class ReviewModel: ObservableObject, Identifiable {
     /// afresh; what was picked and viewed stays where it still applies.
     package func load() async {
         phase = .loading
+        // The lines picked are the old diff's; notes keep their own.
+        lineSelection = nil
         diffs = [:]
         rows = [:]
         failures = [:]
@@ -102,6 +120,7 @@ package final class ReviewModel: ObservableObject, Identifiable {
             switch source {
             case .pullRequest(let number):
                 let text = String(decoding: try await GitHub.run(["pr", "diff", "\(number)", "--color=never"], in: root, timeout: 120), as: UTF8.self)
+                await loadThreads(number)
                 let split = ReviewPatch.split(text)
                 patches = Dictionary(split.map { ($0.file.path, $0.patch) }, uniquingKeysWith: { first, _ in first })
                 list = split.map(\.file)
@@ -196,6 +215,7 @@ package final class ReviewModel: ObservableObject, Identifiable {
         }
         let parsed = await DiffModel.fileDiff(parsing: text, path: path, limit: Self.maxLines)
         rows[path] = SplitDiff.rows(parsed.lines)
+        placedThreads[path] = ReviewComments.placed(threads, path: path, lines: parsed.lines)
         diffs[path] = parsed
         // An untracked file has no numstat: count its lines now.
         if let index = files.firstIndex(where: { $0.path == path }), files[index].added == nil, file.kind == .untracked {
@@ -230,6 +250,7 @@ package final class ReviewModel: ObservableObject, Identifiable {
 
     package func select(_ path: String) {
         guard files.contains(where: { $0.path == path }) else { return }
+        if selected != path { lineSelection = nil }
         selected = path
         scrollTarget = nil
         Task {
@@ -294,4 +315,92 @@ package final class ReviewModel: ObservableObject, Identifiable {
             selectFile(by: 1)
         }
     }
+
+    // MARK: Lines picked, notes
+
+    /// A click on a line's number in the shown file; ⇧ stretches the pick.
+    package func pickLine(_ id: Int, extending: Bool) {
+        guard let selected else { return }
+        lineSelection = ReviewLineSelection.picking(id, in: selected, extending: extending, from: lineSelection)
+        draftProblem = nil
+    }
+
+    package func clearLineSelection() {
+        lineSelection = nil
+        draft = ""
+        draftProblem = nil
+    }
+
+    /// The picked lines, in the diff's order.
+    package var selectedLines: [DiffLine] {
+        guard let lineSelection, let diff = diffs[lineSelection.path] else { return [] }
+        return diff.lines.filter { lineSelection.range.contains($0.id) }
+    }
+
+    /// What Copy (⌘C) puts on the pasteboard; nil with nothing picked.
+    package var copyText: String? {
+        let text = ReviewNotes.copyText(selectedLines)
+        return text.isEmpty ? nil : text
+    }
+
+    /// The draft as a note on the picked lines; the pick and the draft
+    /// cleared for the next. False when nothing is picked or said.
+    @discardableResult
+    package func addNote() -> Bool {
+        guard let lineSelection else { return false }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = ReviewNote(path: lineSelection.path, lines: selectedLines, text: text)
+        guard !text.isEmpty, !note.lines.isEmpty else { return false }
+        notes.append(note)
+        clearLineSelection()
+        return true
+    }
+
+    package func removeNote(_ id: UUID) { notes.removeAll { $0.id == id } }
+    package func clearNotes() { notes = [] }
+
+    /// Every note as the one brief an agent gets.
+    package var notesBrief: String { ReviewNotes.brief(notes, reviewing: title) }
+
+    // MARK: A pull request's review (GIT-G3)
+
+    /// Whether comments on lines can go to GitHub: a pull request's review.
+    package var pullRequestNumber: Int? {
+        if case .pullRequest(let number) = source { number } else { nil }
+    }
+
+    /// The threads read again (after a review was posted too); not worth
+    /// failing the review for.
+    package func loadThreads(_ number: Int? = nil) async {
+        guard let number = number ?? pullRequestNumber,
+            let data = try? await GitHub.run(["api", "repos/{owner}/{repo}/pulls/\(number)/comments", "--paginate"], in: root),
+            let read = try? ReviewThread.parse(data)
+        else { return }
+        threads = read
+        placedThreads = diffs.mapValues { _ in [:] }
+        for (path, diff) in diffs { placedThreads[path] = ReviewComments.placed(read, path: path, lines: diff.lines) }
+    }
+
+    /// The draft as a comment on the picked lines, kept for the review —
+    /// or why GitHub wouldn't take it there.
+    @discardableResult
+    package func addDraftComment() -> Bool {
+        draftProblem = nil
+        guard pullRequestNumber != nil, let lineSelection else { return false }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return false }
+        switch ReviewComments.anchor(selectedLines) {
+        case .failure(let refusal):
+            draftProblem = refusal.message
+            return false
+        case .success(let anchor):
+            drafts.append(ReviewDraftComment(path: lineSelection.path, anchor: anchor, body: text))
+            clearLineSelection()
+            return true
+        }
+    }
+
+    package func removeDraftComment(_ id: UUID) { drafts.removeAll { $0.id == id } }
+    /// Posted: they are GitHub's now.
+    package func clearDraftComments() { drafts = [] }
 }
