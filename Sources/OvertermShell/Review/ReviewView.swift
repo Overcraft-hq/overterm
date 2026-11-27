@@ -284,7 +284,7 @@ private struct ReviewNotesBar: View {
             }
             .help("Copy the picked lines — ⌘C")
             .accessibilityIdentifier("review.notes.copy")
-            Button("Ask…") { actions.askAboutLines(model) }
+            Button("Ask an Agent…") { actions.askAboutLines(model) }
                 .help("Ask an agent about these lines — ⌘L")
             Button {
                 model.clearLineSelection()

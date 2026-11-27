@@ -272,6 +272,13 @@ final class APIImportTests: XCTestCase {
         XCTAssertFalse(unknown.notes.isEmpty, "and says so")
     }
 
+    func testTheSheetSaysANoteOnce() {
+        let cookie = "sessionAuth is a cookie: sent as a header named after it."
+        let imported = APIWorkspace.Imported(
+            folder: URL(fileURLWithPath: "/tmp"), firstRequest: nil, notes: Array(repeating: cookie, count: 40) + ["xml bodies are left as text."])
+        XCTAssertEqual(imported.summary, "• \(cookie) (×40)\n• xml bodies are left as text.", "each once, with how many said it")
+    }
+
     // MARK: Postman
 
     func testAPostmanCollection() throws {

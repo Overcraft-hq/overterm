@@ -408,7 +408,7 @@ package struct APIPanelView: View {
     private func finish(_ imported: APIWorkspace.Imported) {
         if let first = imported.firstRequest { actions.open(first) }
         if !imported.notes.isEmpty {
-            actions.inform("Imported — with notes", imported.notes.map { "• " + $0 }.joined(separator: "\n"))
+            actions.inform("Imported — with notes", imported.summary)
         }
     }
 

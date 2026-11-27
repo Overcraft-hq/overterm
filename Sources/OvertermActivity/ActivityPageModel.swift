@@ -1192,7 +1192,7 @@ package final class ActivityPageModel: ObservableObject {
                 }))
         verbs.append(
             ResourceVerb(
-                title: "Ask an Agent About It…", label: "Ask", symbol: "bubble.left.and.text.bubble.right", place: .button, key: "a",
+                title: "Ask an Agent About It…", label: "Ask", symbol: "sparkles", place: .button, key: "a",
                 unavailable: detail?.row.identity == row.identity ? nil : "Select it alone: the brief is made from its detail",
                 perform: { [weak self] in self?.askAboutSelection() }))
         verbs += signalVerbs(for: row)

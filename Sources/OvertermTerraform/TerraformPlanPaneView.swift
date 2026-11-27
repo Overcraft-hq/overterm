@@ -244,7 +244,7 @@ private struct TerraformRunView: View {
                 if run.plan != nil {
                     button("Copy Summary", "doc.on.doc") { actions.copySummary(run) }.accessibilityIdentifier("terraform.plan.copy")
                 }
-                if case .failed = run.phase { button("Ask Why", "questionmark.bubble") { actions.askWhy(run) } }
+                if case .failed = run.phase { button("Ask Why", "sparkles") { actions.askWhy(run) } }
                 if !run.isGoing { button("Discard", "trash") { actions.discard(run) }.accessibilityIdentifier("terraform.plan.discard") }
                 Spacer(minLength: 0)
             }
@@ -382,7 +382,7 @@ private struct TerraformRunView: View {
                         .foregroundStyle(theme.text3).textSelection(.enabled)
                     HStack(spacing: 6) {
                         button("Wait for It", "hourglass") { actions.planAgain(run, .wait) }.accessibilityIdentifier("terraform.plan.wait")
-                        button("Ask Why", "questionmark.bubble") { actions.askWhy(run) }
+                        button("Ask Why", "sparkles") { actions.askWhy(run) }
                         TerraformForceUnlockButton(run: run, theme: theme) { actions.forceUnlock(run) }
                     }
                     TerraformUnlockNoteView(run: run, theme: theme)

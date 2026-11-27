@@ -48,6 +48,7 @@ extension DatabaseKind {
         case .rabbitmq: RabbitText.self
         case .oracle: OracleText.self
         case .duckdb: DuckText.self
+        case .kafka: KafkaText.self
         default: nil
         }
     }
@@ -61,6 +62,7 @@ extension DatabaseKind {
         case .neo4j: CypherText.browse(table, connection: connection, limit: limit)
         case .rabbitmq: RabbitText.browse(table, limit: limit)
         case .oracle: OracleText.browse(table, limit: limit)
+        case .kafka: KafkaText.browse(table, limit: limit)
         default: nil
         }
     }

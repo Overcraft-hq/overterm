@@ -106,7 +106,7 @@ that says nothing (opencode) still marks its tab.
       in your keychain; TLS, and SSH tunnels through your own <code>~/.ssh</code>.
       MongoDB and DocumentDB with the mongo shell's statements, MariaDB,
       Elasticsearch and OpenSearch as Kibana's Dev Tools writes them, DynamoDB,
-      InfluxDB, Neo4j, RabbitMQ and Oracle, each with its own tree and console.
+      InfluxDB, Neo4j, RabbitMQ, Kafka and Oracle, each with its own tree and console.
       S3 and Google Cloud Storage in the same panel.
     </td>
   </tr>
@@ -172,7 +172,7 @@ that says nothing (opencode) still marks its tab.
 
 | | |
 |---|---|
-| **Agent Inbox** <kbd>⌘I</kbd> | Every agent waiting on you, most urgent first, with its question and choices — answered from there. |
+| **Inbox** <kbd>⌘I</kbd> | Every tab waiting on you — an agent's question, a failed command, CI or a cluster gone red, most urgent first, with its question and choices — answered from there. |
 | **Changes** <kbd>⌥⌘D</kbd> | The worktree's files live, Uncommitted or the whole Branch — and *why* each changed, from what Claude said as it edited it. |
 | **Command blocks** | A command's output, time and exit; ⇧⌘C copies it, ⌘R reruns it, ⌥⌘↓ jumps to the next failure. |
 | **Palette** <kbd>⌘K</kbd> | Actions, tabs, worktrees, snippets — and what this machine has actually run, this folder's first. |
@@ -223,7 +223,7 @@ The defaults; every one is rebindable in Settings ▸ Keyboard Shortcuts (or
 | ⇧⌘N | New Task — worktree, branch, agent |
 | ⇧⎋ | The editor across the window, and back |
 | ⌘K | Command palette |
-| ⌘I | Agent Inbox · ⌃⌘I Tab Info · ⇧⌘A agent overview |
+| ⌘I | Inbox · ⌃⌘I Tab Info · ⇧⌘A agent overview |
 | ⌥⌘↓ | The next failure, or tab that needs you |
 | ⌘D / ⇧⌘D | Split right / down · ⌘[ ⌘] between panes · ⇧⌘↩ zoom |
 | ⌃⌘N / ⌃⌘G | Group the selected tabs / the group switcher |

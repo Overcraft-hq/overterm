@@ -16,14 +16,17 @@ package struct OvergitChanges: View {
     package let ahead: Int
     package let hasUpstream: Bool
     package let onOpen: (ChangedFile) -> Void
-    /// Committed or pushed: the panel's history reads again.
+    /// Committed: the panel's history reads again.
     package let onCommitted: () -> Void
-    @State private var message = ""
-    @State private var amend = false
+    /// Push or Publish: the window's, which picks the remote (GIT-U8) and
+    /// says "Pushing…" in the overview.
+    package var onPush: () -> Void = {}
     @State private var busy: String?
     @State private var discarding: ChangedFile?
 
-    private var trimmed: String { message.trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// One draft, `DiffModel`'s: the changes pane's composer edits the same (GIT-U4).
+    private var trimmed: String { diff.commitDraft.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var amend: Bool { diff.commitAmend }
     private var staged: [ChangedFile] { diff.files.filter(\.isStaged) }
     private var unstaged: [ChangedFile] { diff.files.filter { !$0.isStaged || $0.hasUnstaged } }
 
@@ -81,7 +84,7 @@ package struct OvergitChanges: View {
     private var composer: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !diff.files.isEmpty || amend {
-                TextField(amend ? "Amended message" : "Message (⌘↩ to commit)", text: $message, axis: .vertical)
+                TextField(amend ? "Amended message" : "Message (⌘↩ to commit)", text: $diff.commitDraft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: ChromeMetrics.text(12)))
                     .lineLimit(1...6)
@@ -89,15 +92,10 @@ package struct OvergitChanges: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
                     .accessibilityIdentifier("overgitCommitMessage")
                 HStack(spacing: 8) {
-                    Toggle("Amend", isOn: $amend)
+                    Toggle("Amend", isOn: Binding(get: { diff.commitAmend }, set: { on in Task { await diff.setAmend(on) } }))
                         .toggleStyle(.checkbox)
                         .font(.system(size: ChromeMetrics.text(11)))
                         .help("Change the last commit instead of making a new one")
-                        .onChange(of: amend) { on in
-                            // Amending starts from the last message, as git's editor would.
-                            guard on, trimmed.isEmpty else { return }
-                            Task { message = await diff.lastCommitMessage() ?? "" }
-                        }
                     Spacer(minLength: 0)
                     Button(commitTitle) { commit() }
                         .keyboardShortcut(.return, modifiers: .command)
@@ -114,7 +112,7 @@ package struct OvergitChanges: View {
                     push()
                 } label: {
                     Label(
-                        busy == "push" ? "Pushing…" : (hasUpstream ? "Push \(ahead) commit\(ahead == 1 ? "" : "s")" : "Publish Branch"),
+                        hasUpstream ? "Push \(ahead) commit\(ahead == 1 ? "" : "s")" : "Publish Branch",
                         systemImage: "arrow.up.circle"
                     )
                     .font(.system(size: ChromeMetrics.text(11.5), weight: .medium))
@@ -138,26 +136,14 @@ package struct OvergitChanges: View {
     private func commit() {
         guard !trimmed.isEmpty, busy == nil else { return }
         busy = "commit"
-        let text = trimmed
         Task { @MainActor in
-            let ok = staged.isEmpty && !amend ? await diff.commitAll(message: text) : await diff.commit(message: text, amend: amend)
+            let ok = await diff.commitDraftNow()
             busy = nil
-            if ok {
-                message = ""
-                amend = false
-                onCommitted()
-            }
+            if ok { onCommitted() }
         }
     }
 
-    private func push() {
-        busy = "push"
-        Task { @MainActor in
-            await diff.push()
-            busy = nil
-            onCommitted()
-        }
-    }
+    private func push() { onPush() }
 }
 
 /// One changed file: its box, its letter, its name, its numbers.

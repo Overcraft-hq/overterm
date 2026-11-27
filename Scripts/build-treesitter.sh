@@ -45,6 +45,7 @@ GRAMMARS=(
   "kotlin|https://github.com/fwcd/tree-sitter-kotlin|c4ddea359a7ff4d92360b2efcd6cfce5dc25afe6|-"
   "diff|https://github.com/the-mikedavis/tree-sitter-diff|fd74c78fa88a20085dbc7bbeaba066f4d1692b63|-"
   "hcl|https://github.com/tree-sitter-grammars/tree-sitter-hcl|9e3ec9848f28d26845ba300fd73c740459b83e9b|-"
+  "php|https://github.com/tree-sitter/tree-sitter-php|f860e598194f4a71747f91789bf536b393ad4a56|-"
 )
 # Helix query directories the languages above inherit from ("; inherits: ecma").
 QUERY_EXTRAS=(ecma _javascript _typescript _jsx)

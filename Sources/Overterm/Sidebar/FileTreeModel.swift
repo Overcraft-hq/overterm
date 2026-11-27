@@ -2,7 +2,13 @@ import Foundation
 
 package struct FileEntry: Hashable {
     package let url: URL
+    /// A symbolic link's is its target's: `ln -s ../shared shared` is a
+    /// folder that opens, not a file.
     package let isDirectory: Bool
+    /// A symbolic link's target as it was written; nil for anything else.
+    package var linkTarget: String? = nil
+    /// A link whose target isn't there.
+    package var isBrokenLink = false
     /// Stored, not derived: URL.lastPathComponent is slow enough that
     /// sorting a 1000-entry folder (twice per comparison) took ~90 ms on
     /// the main thread.
@@ -195,12 +201,16 @@ package final class FileTreeModel: ObservableObject {
 
     private func listing(of dir: URL) -> [FileEntry] {
         if let cached = listings[dir] { return cached }
-        let keys: [URLResourceKey] = [.isDirectoryKey]
-        let urls = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys)) ?? []
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey]
+        // A linked folder is read at its target — Foundation won't list a
+        // link as the folder it is ("Not a directory") — its entries named
+        // under the link, as they were opened.
+        let urls = ((try? FileManager.default.contentsOfDirectory(at: dir.resolvingSymlinksInPath(), includingPropertiesForKeys: keys)) ?? [])
+            .map { dir.appendingPathComponent($0.lastPathComponent) }
         let entries =
             urls
             .filter { !Self.hiddenNames.contains($0.lastPathComponent) }
-            .map { FileEntry(url: $0, isDirectory: (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false) }
+            .map(Self.entry)
             .sorted {
                 // Folders first, then a case-insensitive, number-aware name order.
                 if $0.isDirectory != $1.isDirectory { return $0.isDirectory }
@@ -219,6 +229,20 @@ package final class FileTreeModel: ObservableObject {
         }
         checkIgnored(entries, in: dir)
         return entries
+    }
+
+    /// An entry as the tree shows it: a symbolic link by what it points to
+    /// — its resource values describe the link itself, so a linked folder
+    /// listed as a file that wouldn't open — with its target said.
+    package nonisolated static func entry(_ url: URL) -> FileEntry {
+        let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard values?.isSymbolicLink == true else { return FileEntry(url: url, isDirectory: values?.isDirectory ?? false) }
+        var info = stat()
+        let exists = stat(url.path, &info) == 0
+        var entry = FileEntry(url: url, isDirectory: exists && (info.st_mode & S_IFMT) == S_IFDIR)
+        entry.linkTarget = try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)
+        entry.isBrokenLink = !exists
+        return entry
     }
 
     /// The path FSEvents reports for `dir`: symlinks resolved, /var as

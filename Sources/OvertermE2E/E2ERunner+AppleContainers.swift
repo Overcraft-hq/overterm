@@ -54,7 +54,7 @@ extension E2ERunner {
         page.showDetail = true
         page.appleSelection = ["ot-apple-web"]
         if let web = page.appleDetailed {
-            check("a container's detail has Stop, Shell and Logs", page.verbs(for: web).filter { $0.place == .button }.map(\.title) == ["Stop", "Open a Shell in a Tab", "Logs"])
+            check("a container's detail has Stop, Shell and Logs", page.verbs(for: web).filter { $0.place == .button }.map(\.title) == ["Stop", "Shell in a Tab", "Logs"])
             check("its port opens in the browser", web.ports.first?.url?.absoluteString == "http://127.0.0.1:18080")
             check("a secret in its env is masked", !web.environment.joined().contains("e2e-not-a-secret") && web.environment.contains("MODE=demo"), "\(web.environment)")
         } else {

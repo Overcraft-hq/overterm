@@ -263,7 +263,7 @@ package struct TimeChartView: View {
     /// ⤢ and the context menu's "Expand": the chart alone in the window's
     /// right slot; nil, not offered.
     package var expand: (() -> Void)? = nil
-    /// The context menu's "Ask Agent About This Chart" (M11): the chart as
+    /// The context menu's "Ask an Agent About This Chart" (M11): the chart as
     /// `k8s_metrics` says it, in the Ask Agent sheet; nil, not offered.
     package var ask: (() -> Void)? = nil
     @ObservedObject package var theme: ChromeTheme
@@ -491,7 +491,7 @@ package struct TimeChartView: View {
                         .help("The window shown, a row a time and a column a series shown — to the clipboard only")
                 }
                 if let ask {
-                    Button("Ask Agent About This Chart…") { ask() }
+                    Button("Ask an Agent About This Chart…") { ask() }
                         .help("What this chart shows, as text, to an agent — shown whole before it is sent")
                 }
                 if let expand {

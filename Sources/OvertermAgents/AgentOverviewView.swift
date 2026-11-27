@@ -73,7 +73,7 @@ package struct AgentOverviewView: View {
         let waiting = cards.filter { $0.activity.mark == .waiting }.count
         let working = cards.filter { $0.activity.isWorking }.count
         let failed = cards.filter { $0.activity.mark == .failed }.count
-        if waiting > 0 { parts.append("\(waiting) waiting for you") }
+        if waiting > 0 { parts.append("\(waiting) waiting") }
         if working > 0 { parts.append("\(working) working") }
         if failed > 0 { parts.append("\(failed) failed") }
         let agents = cards.filter { $0.agent != nil }.count

@@ -137,10 +137,35 @@ extension E2ERunner {
         let stashes = Stashes.parse(await out(Stashes.arguments))
         check("as one stash, named", stashes.count == 1 && stashes.first?.subject.contains("wip") == true, "\(stashes.map(\.subject))")
         if let stash = stashes.first {
+            // GIT-G9: looked into before it is applied — the commit pane shows it.
+            app.showStash(stash)
+            check("a stash opens in the right-hand pane", app.rightPane.mode == .commit && app.commitDetail.sha == stash.sha)
+            check(
+                "with the files it holds", await eventually(10) { self.app.commitDetail.detail?.files.map(\.path) == ["ours.swift"] },
+                "\(app.commitDetail.detail?.files.map(\.path) ?? []) \(app.commitDetail.phase)")
             check("Pop brings them back", await app.overgit(.popStash(stash)) && exists("new.txt"))
         }
         try? await git(["checkout", "-q", "--", "."], in: repo)
         try? FileManager.default.removeItem(at: repo.appendingPathComponent("new.txt"))
+
+        // GIT-G9: only what is staged put aside.
+        write("ours.swift", "let ours = 3\n")
+        write("app.swift", "let a = 4\n")
+        try? await git(["add", "ours.swift"], in: repo)
+        await app.diff.refresh()
+        check("Stash Staged Only stashes", await app.overgit(.stashStaged, answer: "staged only"))
+        let stagedLeft = await out(["diff", "--cached", "--name-only"])
+        let unstagedLeft = await out(["diff", "--name-only"])
+        check("the staged file is put aside", stagedLeft.isEmpty && unstagedLeft == "app.swift", "staged \(stagedLeft) · unstaged \(unstagedLeft)")
+        let stagedStash = Stashes.parse(await out(Stashes.arguments)).first
+        check("as a stash of its own", stagedStash?.subject.contains("staged only") == true, stagedStash?.subject ?? "none")
+        try? await git(["checkout", "-q", "--", "."], in: repo)
+        if let stagedStash {
+            let popped = await app.overgit(.popStash(stagedStash))
+            let back = await out(["diff", "--name-only"])
+            check("and it comes back", popped && back == "ours.swift", back)
+        }
+        try? await git(["checkout", "-q", "--", "."], in: repo)
 
         // Cherry-pick, revert, reset.
         try? await git(["checkout", "-q", "-b", "pick"], in: repo)
@@ -154,12 +179,44 @@ extension E2ERunner {
         check("Revert undoes it, as a commit", await app.overgit(.revert(onMain)) && !exists("picked.swift"))
         let before = await out(["rev-list", "--count", "HEAD"])
         guard let target = await head("HEAD~1") else { return check("one back", false) }
+        // GIT-U7: commits a remote has are asked about; this checkout's own aren't.
+        let root = await out(["rev-list", "--max-parents=0", "HEAD"])
+        if let start = await head(root) {
+            let asked = await app.rewriteQuestion(.reset(start, .mixed), in: repo, current: "main")
+            check(
+                "a reset taking pushed commits off asks, naming them",
+                asked?.title.hasPrefix("Reset main to") == true && asked?.detail.contains("already on a remote") == true, asked?.detail ?? "nothing asked")
+            // A commit beside the first: rebasing onto it makes every later one again.
+            let side = await out(["commit-tree", "\(root)^{tree}", "-p", root, "-m", "Side"])
+            let rebase = await app.rewriteQuestion(.rebase(onto: side), in: repo, current: "main")
+            check(
+                "so does a rebase that would make them again", rebase?.title == "Rebase main onto \(side)?" && rebase?.detail.contains("--force") == true,
+                rebase?.detail ?? "nothing asked")
+        }
+        check("a reset of this checkout's own commits asks nothing", await app.rewriteQuestion(.reset(target, .soft), in: repo, current: "main") == nil)
+        check("nor a rebase onto an ancestor", await app.rewriteQuestion(.rebase(onto: root), in: repo, current: "main") == nil)
         let reset = await app.overgit(.reset(target, .soft))
         let after = await out(["rev-list", "--count", "HEAD"])
         check("Soft reset moves the branch back", reset && Int(after) == (Int(before) ?? 0) - 1, "\(before) → \(after)")
         // The revert undone: its removal of the picked file is staged still.
         let staged = await out(["diff", "--cached", "--name-only"])
         check("keeping what it undid staged", staged == "picked.swift", staged)
+
+        // GIT-U8: a second remote; Publish goes where git would, or where it is told.
+        let fork = scratch.appendingPathComponent("ops-fork.git")
+        try? await git(["init", "-q", "--bare", "-b", "main", fork.path], in: scratch)
+        try? await git(["remote", "add", "fork", fork.path], in: repo)
+        try? await git(["checkout", "-q", "-b", "feat/fork"], in: repo)
+        await app.diff.refresh()
+        await model.refresh()
+        check(
+            "two remotes and nothing said: Publish asks which",
+            await PushRemote.read(branch: "feat/fork", in: repo) == .ask(["fork", "origin"], suggested: "origin"))
+        let published = await app.overgit(.push, answer: "fork")
+        let onFork = await out(["branch", "--list", "feat/fork"], in: fork)
+        check("the one picked gets it, tracked", published && onFork.contains("feat/fork") && model.tracking.upstream == "fork/feat/fork", "\(model.tracking) \(onFork)")
+        try? await git(["config", "remote.pushDefault", "fork"], in: repo)
+        check("remote.pushDefault decides without asking", await PushRemote.read(branch: "feat/other", in: repo) == .remote("fork"))
         check("nothing left running", model.running == nil)
     }
 }
