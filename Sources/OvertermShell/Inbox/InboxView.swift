@@ -10,6 +10,10 @@ package struct InboxActions {
     package var askWhy: (Tab.ID) -> Void = { _ in }
     /// Show on a Left Behind note: Activity's Left Behind for the tab.
     package var showLeftBehind: (Tab.ID) -> Void = { _ in }
+    /// A CI card's Show Log: the pull request in the pane, the failed logs open.
+    package var showCILog: (Tab.ID) -> Void = { _ in }
+    /// A CI card's Ask Agent to Fix: the brief typed into the tab's agent, not sent.
+    package var fixCI: (Tab.ID) -> Void = { _ in }
     package var close: () -> Void
 }
 
@@ -149,6 +153,10 @@ private struct InboxCard: View {
                     Spacer(minLength: 0)
                     if entry.asksWhy { button("Ask Why") { actions.askWhy(entry.id) } }
                     if entry.leftBehind { button("Show") { actions.showLeftBehind(entry.id) } }
+                    if entry.ci != nil {
+                        button("Show Log") { actions.showCILog(entry.id) }
+                        button("Ask Agent to Fix") { actions.fixCI(entry.id) }
+                    }
                     button("Open tab") { actions.open(entry.id) }
                 }
             }

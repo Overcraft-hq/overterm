@@ -20,6 +20,8 @@ version is tagged `v<version>`.
 - Sheets that delete leave Return on Cancel: the button that deletes takes a click, and where a name is typed, Return deletes once it matches
 - Docker's, Redis', the SQL console's, Files' and Overgit's questions that delete use the same sheet and say what they reach: the engine, the connection, the folder, the repository and branch. Docker's Clean Up leaves Return on Cancel too
 - New Task asks what the agent is to do and types it in once the agent is up; a repository's setup copies its untracked files (.env) into the new worktree and types a command before the agent
+- Create Pull Request… from the pane, Overgit and ⌘K; Mark Ready, Approve, Request Changes and Merge on a pull request, each asked first
+- A failed CI check's log opens in the Pull Request pane, with Re-run Failed Jobs; CI going red on a branch with a tab open marks the tab and puts a "CI failed" card in the Inbox, with Ask Agent to Fix
 
 ## 1.6.7 — 2026-11-23
 

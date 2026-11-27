@@ -30,14 +30,18 @@ package struct OvergitActions {
     package var reviewPullRequest: (Int) -> Void = { _ in }
     /// Pull, push, branches, commits, tags, stashes (`overgit(_:)`).
     package var git: (OvergitCommand) -> Void = { _ in }
+    /// Create Pull Request…, for the branch that has none.
+    package var createPullRequest: () -> Void
 
     package init(
         showCommit: @escaping (Commit) -> Void, checkOut: @escaping (BranchRef) -> Void, newWorktree: @escaping (BranchRef) -> Void, showPullRequest: @escaping () -> Void,
         openPullRequest: @escaping (PullRequestSummary) -> Void, showPullRequestNumber: @escaping (PullRequestSummary) -> Void = { _ in }, applyStash: @escaping (Stash) -> Void,
         dropStash: @escaping (Stash) -> Void, showChanges: @escaping () -> Void, showChangedFile: @escaping (ChangedFile) -> Void = { _ in },
         compare: @escaping (_ base: String, _ head: String) -> Void = { _, _ in }, reviewCommits: @escaping (_ from: String, _ to: String) -> Void = { _, _ in },
-        reviewBranch: @escaping (String) -> Void = { _ in }, reviewPullRequest: @escaping (Int) -> Void = { _ in }, git: @escaping (OvergitCommand) -> Void = { _ in }
+        reviewBranch: @escaping (String) -> Void = { _ in }, reviewPullRequest: @escaping (Int) -> Void = { _ in }, git: @escaping (OvergitCommand) -> Void = { _ in },
+        createPullRequest: @escaping () -> Void = {}
     ) {
+        self.createPullRequest = createPullRequest
         self.showCommit = showCommit
         self.checkOut = checkOut
         self.newWorktree = newWorktree
@@ -180,7 +184,7 @@ package struct OvergitView: View {
             pullRequest: diff.branch.flatMap { worktrees.pullRequests[$0] }, tracking: model.tracking, inProgress: model.inProgress,
             running: model.running, theme: theme, onChanges: actions.showChanges, onPullRequest: actions.showPullRequest,
             onCommand: actions.git,
-            onCommit: { if !model.isExpanded(.changes) { model.toggle(.changes) } })
+            onCommit: { if !model.isExpanded(.changes) { model.toggle(.changes) } }, onCreatePullRequest: actions.createPullRequest)
     }
 
     // MARK: Commits

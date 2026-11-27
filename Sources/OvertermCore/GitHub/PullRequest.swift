@@ -51,6 +51,9 @@ package struct CheckSummary: Equatable {
     package var passed = 0
     package var failed = 0
     package var pending = 0
+    /// The ones that failed, as the rollup listed them: what a tab's CI
+    /// mark names, and what Ask Agent to Fix reads the logs of.
+    package var failing: [Check] = []
     package var total: Int { passed + failed + pending }
 
     package enum Overall { case none, passing, failing, pending }
@@ -72,7 +75,9 @@ package struct CheckSummary: Equatable {
         for check in checks {
             switch check.state {
             case .success: passed += 1
-            case .failure: failed += 1
+            case .failure:
+                failed += 1
+                failing.append(check)
             case .pending: pending += 1
             case .skipped: break
             }
@@ -88,7 +93,29 @@ package struct Check: Equatable, Identifiable {
     package let name: String
     package let state: State
     package let url: URL?
+    /// The workflow a GitHub Actions job is of (`CI`); nil for a status.
+    package var workflow: String? = nil
     package var id: String { name }
+
+    package init(name: String, state: State, url: URL?, workflow: String? = nil) {
+        self.name = name
+        self.state = state
+        self.url = url
+        self.workflow = workflow
+    }
+
+    /// A GitHub Actions job's run and job, from its URL
+    /// (`…/actions/runs/<run>/job/<job>`): what its log and a re-run are
+    /// asked by. Nil for another CI's status. Pure.
+    package var actionsJob: (run: Int, job: Int?)? {
+        guard let url else { return nil }
+        let parts = url.path.split(separator: "/").map(String.init)
+        guard let runs = parts.firstIndex(of: "runs"), runs > 0, parts[runs - 1] == "actions", runs + 1 < parts.count,
+            let run = Int(parts[runs + 1])
+        else { return nil }
+        let job = parts.firstIndex(of: "job").flatMap { $0 + 1 < parts.count ? Int(parts[$0 + 1]) : nil }
+        return (run, job)
+    }
 }
 
 /// Everything the Pull Request pane shows.
@@ -200,6 +227,7 @@ package enum GH {
         package let status: String?
         package let conclusion: String?
         package let detailsUrl: String?
+        package let workflowName: String?
         // StatusContext
         package let context: String?
         package let state: String?
@@ -223,7 +251,9 @@ package enum GH {
                 default: state = .failure  // FAILURE, ERROR
                 }
             }
-            return Check(name: name ?? context ?? "check", state: state, url: (detailsUrl ?? targetUrl).flatMap(URL.init))
+            return Check(
+                name: name ?? context ?? "check", state: state, url: (detailsUrl ?? targetUrl).flatMap(URL.init),
+                workflow: workflowName.flatMap { $0.isEmpty ? nil : $0 })
         }
     }
 

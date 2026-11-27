@@ -12,16 +12,26 @@ package struct PullRequestView: View {
     package let onOpenFile: (String, Int?) -> Void
     /// The pull request's changes in a review tab.
     package var onReview: (Int) -> Void = { _ in }
+    /// Create Pull Request… for the branch that has none.
+    package var onCreate: () -> Void = {}
+    /// A write on it (Mark Ready, Approve, Request Changes, Merge…, a
+    /// run's Re-run): the window asks, then sends it.
+    package var onWrite: (PullRequestWrite) -> Void = { _ in }
     @State private var draft = ""
     @State private var replies: [Int: String] = [:]
     @State private var checksOpen = false
 
-    package init(model: PullRequestModel, theme: ChromeTheme, onClose: @escaping () -> Void, onOpenFile: @escaping (String, Int?) -> Void, onReview: @escaping (Int) -> Void = { _ in }) {
+    package init(
+        model: PullRequestModel, theme: ChromeTheme, onClose: @escaping () -> Void, onOpenFile: @escaping (String, Int?) -> Void,
+        onReview: @escaping (Int) -> Void = { _ in }, onCreate: @escaping () -> Void = {}, onWrite: @escaping (PullRequestWrite) -> Void = { _ in }
+    ) {
         self._model = ObservedObject(wrappedValue: model)
         self._theme = ObservedObject(wrappedValue: theme)
         self.onClose = onClose
         self.onOpenFile = onOpenFile
         self.onReview = onReview
+        self.onCreate = onCreate
+        self.onWrite = onWrite
     }
 
     package var body: some View {
@@ -34,7 +44,17 @@ package struct PullRequestView: View {
                 .loading where model.detail == nil:
                 placeholder("Loading pull request…")
             case .none:
-                placeholder(model.branch.map { "No pull request for \($0)." } ?? "Not on a branch.")
+                if let branch = model.branch {
+                    VStack(spacing: 10) {
+                        Text(verbatim: "No pull request for \(branch).").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText)
+                        // GIT-U13: the way on from here, not a dead end.
+                        Button("Create Pull Request…", action: onCreate).accessibilityIdentifier("pullRequest.create")
+                    }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    placeholder("Not on a branch.")
+                }
             case .failed(let message) where model.detail == nil:
                 placeholder(message)
             default:
@@ -81,6 +101,7 @@ package struct PullRequestView: View {
             if let number = model.detail?.summary.number {
                 iconButton("rectangle.split.2x1", help: "Review Changes") { onReview(number) }
             }
+            if let pr = model.detail?.summary, pr.state == .open || pr.state == .draft { writes(pr) }
             if let url = model.detail?.summary.url {
                 iconButton("safari", help: "Open on GitHub") { NSWorkspace.shared.open(url) }
             }
@@ -89,6 +110,34 @@ package struct PullRequestView: View {
         }
         .padding(.horizontal, 12)
         .frame(height: ChromeMetrics.row(36))
+    }
+
+    /// Its writes (D-9 (c)), each asked by the window first. Approve and
+    /// Request Changes say what the comment box says.
+    private func writes(_ pr: PullRequestSummary) -> some View {
+        Menu {
+            if pr.state == .draft {
+                Button("Mark Ready for Review…") { onWrite(.ready(number: pr.number)) }
+                Divider()
+            }
+            Button("Approve…") { onWrite(.approve(number: pr.number, body: draft.trimmingCharacters(in: .whitespacesAndNewlines))) }
+            Button("Request Changes…") { onWrite(.requestChanges(number: pr.number, body: draft.trimmingCharacters(in: .whitespacesAndNewlines))) }
+                .help("What the comment box says is the review's body.")
+            if pr.state == .open {
+                Divider()
+                ForEach(PullRequestWrite.MergeMethod.allCases) { method in
+                    Button(method.title + "…") { onWrite(.merge(number: pr.number, method: method, head: pr.headOid)) }
+                }
+            }
+        } label: {
+            Image(systemName: "checkmark.seal").font(.system(size: ChromeMetrics.text(11)))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(theme.dimText)
+        .help("Review or merge")
+        .accessibilityIdentifier("pullRequest.writes")
     }
 
     // MARK: Content
@@ -149,25 +198,74 @@ package struct PullRequestView: View {
             .buttonStyle(.plain)
             if checksOpen || summary.overall == .failing {
                 ForEach(detail.checks.filter { checksOpen || $0.state == .failure }) { check in
-                    Button {
-                        check.url.map { NSWorkspace.shared.open($0) }
-                    } label: {
-                        HStack(spacing: 6) {
-                            CheckGlyph(state: check.state).frame(width: 12)
-                            Text(verbatim: check.name).foregroundStyle(theme.text).lineLimit(1)
-                            Spacer(minLength: 0)
-                        }
-                        .padding(.leading, 16)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(check.url?.absoluteString ?? "")
+                    checkRow(check)
                 }
             }
         }
         .font(.system(size: ChromeMetrics.text(12)))
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.selected.opacity(0.5)))
+    }
+
+    /// A check: a failed GitHub Actions job opens its failed step's log
+    /// here (GIT-G5), with Re-run (asked) and its page on GitHub beside it;
+    /// anything else opens its page.
+    @ViewBuilder private func checkRow(_ check: Check) -> some View {
+        let job = check.state == .failure ? check.actionsJob : nil
+        let log = model.logs[check.name]
+        HStack(spacing: 6) {
+            Button {
+                if job == nil {
+                    check.url.map { NSWorkspace.shared.open($0) }
+                } else if log == nil {
+                    Task { await model.loadLog(of: check) }
+                } else {
+                    model.closeLog(of: check)
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    if job != nil {
+                        Image(systemName: log == nil ? "chevron.right" : "chevron.down").font(.system(size: ChromeMetrics.text(8))).frame(width: 8)
+                    }
+                    CheckGlyph(state: check.state).frame(width: 12)
+                    Text(verbatim: check.name).foregroundStyle(theme.text).lineLimit(1)
+                    if let workflow = check.workflow { Text(verbatim: workflow).foregroundStyle(theme.dimText).lineLimit(1) }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(job == nil ? (check.url?.absoluteString ?? "") : "Its failed step's log")
+            .accessibilityIdentifier("pullRequest.check.\(check.name)")
+            if let job {
+                iconButton("arrow.counterclockwise", help: "Re-run Failed Jobs…") { onWrite(.rerunFailed(run: job.run)) }
+                if let url = check.url { iconButton("safari", help: "Open on GitHub") { NSWorkspace.shared.open(url) } }
+            }
+        }
+        .padding(.leading, 16)
+        if let log {
+            Group {
+                switch log {
+                case .loading:
+                    ProgressView().controlSize(.small)
+                case .loaded(let text):
+                    ScrollView([.vertical, .horizontal]) {
+                        Text(verbatim: text)
+                            .font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
+                            .foregroundStyle(theme.text)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: true, vertical: true)
+                            .padding(6)
+                    }
+                    .frame(maxHeight: 260)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(theme.strip))
+                    .accessibilityIdentifier("pullRequest.log.\(check.name)")
+                case .failed(let message):
+                    Text(verbatim: message).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(DiffColors.removed)
+                }
+            }
+            .padding(.leading, 30)
+        }
     }
 
     private func checksLine(_ summary: CheckSummary) -> String {

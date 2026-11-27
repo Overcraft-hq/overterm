@@ -68,6 +68,10 @@ package final class Tab: ObservableObject, Identifiable {
     /// Why its checkout's failures won't mark it now ("not watched");
     /// nil while they will, or nothing is bound.
     @Published package var kubeNotWatched: String?
+    /// Its branch's pull request went red (GIT-G5): the Inbox's "CI failed"
+    /// card, kept until CI is green again, whether the tab was looked at
+    /// or not; nil while nothing failed.
+    @Published package var ciFailure: CIFailure?
     /// One of its panes asks for a Terraform write (TerraformPrompt, 3.3):
     /// its tab's mark and the Inbox's card; never answered by Overterm.
     @Published package var terraformAskStorage: Any?
