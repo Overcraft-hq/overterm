@@ -22,6 +22,7 @@ version is tagged `v<version>`.
 - New Task asks what the agent is to do and types it in once the agent is up; a repository's setup copies its untracked files (.env) into the new worktree and types a command before the agent
 - Create Pull Request… from the pane, Overgit and ⌘K; Mark Ready, Approve, Request Changes and Merge on a pull request, each asked first
 - A failed CI check's log opens in the Pull Request pane, with Re-run Failed Jobs; CI going red on a branch with a tab open marks the tab and puts a "CI failed" card in the Inbox, with Ask Agent to Fix
+- A pull request can be checked out in a new worktree from its pane: on its own branch (fetched from origin if need be), a fork's detached
 
 ## 1.6.7 — 2026-11-23
 

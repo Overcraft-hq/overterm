@@ -17,14 +17,18 @@ package struct PullRequestView: View {
     /// A write on it (Mark Ready, Approve, Request Changes, Merge…, a
     /// run's Re-run): the window asks, then sends it.
     package var onWrite: (PullRequestWrite) -> Void = { _ in }
+    /// Check Out in a New Worktree… (asked by the window).
+    package var onCheckOut: () -> Void = {}
     @State private var draft = ""
     @State private var replies: [Int: String] = [:]
     @State private var checksOpen = false
 
     package init(
         model: PullRequestModel, theme: ChromeTheme, onClose: @escaping () -> Void, onOpenFile: @escaping (String, Int?) -> Void,
-        onReview: @escaping (Int) -> Void = { _ in }, onCreate: @escaping () -> Void = {}, onWrite: @escaping (PullRequestWrite) -> Void = { _ in }
+        onReview: @escaping (Int) -> Void = { _ in }, onCreate: @escaping () -> Void = {}, onCheckOut: @escaping () -> Void = {},
+        onWrite: @escaping (PullRequestWrite) -> Void = { _ in }
     ) {
+        self.onCheckOut = onCheckOut
         self._model = ObservedObject(wrappedValue: model)
         self._theme = ObservedObject(wrappedValue: theme)
         self.onClose = onClose
@@ -123,6 +127,8 @@ package struct PullRequestView: View {
             Button("Approve…") { onWrite(.approve(number: pr.number, body: draft.trimmingCharacters(in: .whitespacesAndNewlines))) }
             Button("Request Changes…") { onWrite(.requestChanges(number: pr.number, body: draft.trimmingCharacters(in: .whitespacesAndNewlines))) }
                 .help("What the comment box says is the review's body.")
+            Divider()
+            Button("Check Out in a New Worktree…", action: onCheckOut)
             if pr.state == .open {
                 Divider()
                 ForEach(PullRequestWrite.MergeMethod.allCases) { method in

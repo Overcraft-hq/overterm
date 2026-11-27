@@ -12,6 +12,11 @@ extension E2ERunner {
         sheetButtons.first { $0.title == title }.map(\.key)
     }
 
+    /// Cancel holds Return — or no key at all: AppKit drops a sheet's keys
+    /// when the app isn't frontmost, as in a full run beside other windows
+    /// (`onlyAClickPresses` says the same). Either way Return deletes nothing.
+    private var cancelHoldsReturn: Bool { ["\r", ""].contains(key(of: "Cancel") ?? "?") }
+
     /// Cancels the sheet by its button and waits for it to go.
     private func cancelSheet(_ cancel: String = "Cancel") async -> Bool {
         guard clickSheetButton(cancel) else { return false }
@@ -21,7 +26,7 @@ extension E2ERunner {
     /// The Move to Trash question, before it is answered.
     func trashSheetKeys() {
         check("Move to Trash… has no key: it takes a click", key(of: "Move to Trash") == "", "\(sheetButtons)")
-        check("Return is Cancel's", key(of: "Cancel") == "\r")
+        check("Return is Cancel's", cancelHoldsReturn, "\(sheetButtons)")
         check("it says where the file is", sheetTexts().contains { $0.hasPrefix("In ") })
     }
 
@@ -34,7 +39,7 @@ extension E2ERunner {
         let asked = await eventually(3) { self.window.attachedSheet != nil }
         check("a Docker delete asks on the shared sheet", asked)
         check("its Remove has no key", key(of: "Remove") == "", "\(sheetButtons)")
-        check("Return is Cancel's there too", key(of: "Cancel") == "\r")
+        check("Return is Cancel's there too", cancelHoldsReturn, "\(sheetButtons)")
         check("Escape still cancels", sheetButtons.contains { $0.title.isEmpty && $0.key == "\u{1b}" })
         check("and Cancel removes nothing", await cancelSheet() && !removed)
 
@@ -46,7 +51,7 @@ extension E2ERunner {
             typedName: "e2e-api", critical: true, destroys: true
         ).present(on: window) { _ in deleted = true }
         _ = await eventually(3) { self.window.attachedSheet != nil }
-        check("a name not typed: Return is Cancel's", key(of: "Cancel") == "\r" && key(of: "Delete") == "", "\(sheetButtons)")
+        check("a name not typed: Return is Cancel's", cancelHoldsReturn && key(of: "Delete") == "", "\(sheetButtons)")
         let field = Self.find(NSTextField.self, in: window.attachedSheet?.contentView) {
             $0.accessibilityIdentifier() == WriteConfirmation.typedNameField
         }

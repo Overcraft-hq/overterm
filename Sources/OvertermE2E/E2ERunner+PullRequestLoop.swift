@@ -128,6 +128,37 @@ extension E2ERunner {
             "then the pull request opened, draft, from its commit",
             logged().contains("write create --title Add the new thing --body  --base main --head feat/new --draft") && created == 8,
             logged())
+
+        // Check Out in a New Worktree: its branch checked out already is
+        // its tab; a branch only on origin made one, tracking it; a fork
+        // declined, nothing made.
+        var checkouts: [TerminalWindowController.PullRequestCheckout] = []
+        app.pullRequestCheckoutRecorder = {
+            checkouts.append($0); return true
+        }
+        app.checkOutPullRequest(number: 7, branch: "feat/pr", fork: false)
+        check(
+            "a pull request whose branch is a worktree's opens there, nothing asked",
+            await eventually(5) { self.app.store.selected?.workingDirectory == feature.path } && checkouts.isEmpty,
+            app.store.selected?.workingDirectory ?? "none")
+        try? await git(["branch", "feat/remote-only"], in: repo)
+        try? await git(["push", "-q", "origin", "feat/remote-only"], in: repo)
+        try? await git(["branch", "-D", "feat/remote-only"], in: repo)
+        app.checkOutPullRequest(number: 9, branch: "feat/remote-only", fork: false)
+        let made = TaskCreator.worktreePath(repo: repo, branch: "feat/remote-only", location: Settings.shared.worktreeLocation)
+        let checkedOut = await eventually(15) { self.app.store.selected?.title == "#9" }
+        let upstream = (try? await Git.run(["rev-parse", "--abbrev-ref", "@{u}"], in: made))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        check(
+            "a branch only on origin: asked, then a worktree on it, tracking origin, its tab",
+            checkedOut && checkouts.count == 1 && upstream == "origin/feat/remote-only", "\(checkouts) \(upstream ?? "no upstream")")
+        app.pullRequestCheckoutRecorder = {
+            checkouts.append($0); return false
+        }
+        app.checkOutPullRequest(number: 11, branch: "patch-1", fork: true)
+        let forkPath = TaskCreator.worktreePath(repo: repo, branch: "pr-11", location: Settings.shared.worktreeLocation)
+        _ = await eventually(5) { checkouts.count == 2 }
+        check("a fork's, declined: nothing made", checkouts.last == TerminalWindowController.PullRequestCheckout.fork(path: forkPath) && !FileManager.default.fileExists(atPath: forkPath.path))
+        app.pullRequestCheckoutRecorder = nil
     }
 }
 #endif
