@@ -87,7 +87,8 @@ package enum PullRequestWrite: Equatable, Sendable {
         }
     }
 
-    /// Whether its sheet is the critical one: a merge, not undone here.
+    /// Whether its sheet is the critical one, Return on Cancel (D-1): a
+    /// merge, not undone here.
     package var destroys: Bool { if case .merge = self { true } else { false } }
 }
 

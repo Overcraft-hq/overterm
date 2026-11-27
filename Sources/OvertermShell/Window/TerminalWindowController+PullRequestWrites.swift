@@ -94,7 +94,7 @@ extension TerminalWindowController {
             asked = pullRequestWriteRecorder(write)
         } else {
             asked =
-                await WriteConfirmation(title: words.title, scope: words.scope, detail: words.detail, button: words.button, critical: write.destroys)
+                await WriteConfirmation(title: words.title, scope: words.scope, detail: words.detail, button: words.button, critical: write.destroys, destroys: write.destroys)
                 .ask(on: window) != nil
         }
         guard asked else { return false }
