@@ -5953,8 +5953,9 @@ package final class E2ERunner {
             windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
         let menu = rightClick.flatMap { reveal.menu(for: $0) }
         check(
-            "its Open With menu: the apps, the one in use ticked, then Other…",
-            menu?.items.map(\.title) == ["Beta (default)", "Alpha", "", "Other…"] && menu?.items[1].state == .on && menu?.items[0].state == .off,
+            "its Open With menu: Reveal in Files, the apps, the one in use ticked, then Other…",
+            menu?.items.map(\.title) == ["Reveal in Files", "", "Beta (default)", "Alpha", "", "Other…"] && menu?.items[3].state == .on
+                && menu?.items[2].state == .off,
             "\(menu?.items.map { "\($0.title) \($0.state.rawValue)" } ?? [])")
         menu?.items.first { $0.title == "Beta (default)" }.map { item in _ = (item.target as? NSObject)?.perform(item.action, with: item) }
         check("choosing another app from Open With opens it there", await opened(3, with: beta), "\(apps.opened)")

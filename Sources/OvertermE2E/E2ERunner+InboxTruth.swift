@@ -16,7 +16,9 @@ extension E2ERunner {
         let entry = app.inbox.entries.first { $0.id == agent.id }
         check(
             "the wait is counted from when it began",
-            entry?.since != nil && entry?.since == agent.activity.waitingSince, "\(String(describing: entry?.since)) \(String(describing: agent.activity.waitingSince))")
+            // Within a second: another read of the screen may raise the mark again in between.
+            entry?.since.flatMap { since in agent.activity.waitingSince.map { abs(since.timeIntervalSince($0)) < 1 } } == true,
+            "\(String(describing: entry?.since)) \(String(describing: agent.activity.waitingSince))")
         check("and said", entry.flatMap { $0.since.map { InboxModel.waited(since: $0) } } == "waiting <1 min")
 
         // ⌫ on the Inbox: the card's Deny, typed into that pane (AGT-U1).
