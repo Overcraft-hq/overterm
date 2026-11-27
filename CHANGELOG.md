@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.9 — 2026-11-28
+
+- An agent's browser tab whose redirect was stopped no longer shows the address it never loaded
+
 ## 1.6.8 — 2026-11-26
 
 - The database client connects to Apache Kafka: topics and their partitions in the tree, consumer groups with their lag, the newest messages of a topic read without joining a group (nobody's offset moves), a message published; SASL and TLS; a Kafka container on the Docker page opens as one

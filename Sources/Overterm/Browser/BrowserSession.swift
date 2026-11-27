@@ -79,8 +79,17 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
         BrowserParking.shared.park(webView)
     }
 
+    /// The address the page last committed to, and one an agent's guard
+    /// stopped: WebKit leaves a cancelled redirect's target as its URL, so
+    /// a page that never loaded there said it had (the tab and the agent's
+    /// next read alike). Until the next load starts, the page is where it
+    /// committed.
+    private var committed: URL?
+    private var stoppedAt: URL?
+
     private func syncState() {
-        if url != webView.url { url = webView.url }
+        let shown = stoppedAt != nil && webView.url == stoppedAt ? committed : webView.url
+        if url != shown { url = shown }
         if title != webView.title ?? "" { title = webView.title ?? "" }
         if canGoBack != webView.canGoBack { canGoBack = webView.canGoBack }
         if canGoForward != webView.canGoForward { canGoForward = webView.canGoForward }
@@ -164,6 +173,12 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
         errorCount = 0
     }
 
+    package func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        committed = webView.url
+        stoppedAt = nil
+        syncState()
+    }
+
     package func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finishLoads() }
 
     package func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -218,6 +233,8 @@ package final class BrowserSession: NSObject, ObservableObject, WKNavigationDele
         if let allows = agentGuard, mainFrame, !personal, let url, !allows(url) {
             onAgentBlocked?(BlockedNavigation(url: url, method: navigationAction.request.httpMethod ?? "GET", page: ObjectIdentifier(self)))
             decisionHandler(.cancel)
+            stoppedAt = url
+            syncState()
             // Nothing loads now: whoever waits for the load is told it is over.
             finishLoads()
             return
