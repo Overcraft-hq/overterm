@@ -75,6 +75,69 @@ final class NotesModelTests: XCTestCase {
         XCTAssertEqual(try model.newFolder(in: nil).lastPathComponent, "Untitled")
     }
 
+    func testNewNoteTakesTheNameAskedWhereObsidianPutsNewNotes() throws {
+        try write(".obsidian/app.json", #"{"newFileLocation": "folder", "newFileFolderPath": "Inbox"}"#)
+        try write("Inbox/Untitled.md")
+        let model = NotesModel(vault: NotesVault(root: dir))
+        let folder = model.newNoteFolder(in: nil)
+        XCTAssertEqual(folder.standardizedFileURL.path, dir.appendingPathComponent("Inbox").standardizedFileURL.path)
+        XCTAssertEqual(model.suggestedNoteName(in: folder), "Untitled 1")
+        let url = try model.newNote(named: "Ideas", in: folder)
+        XCTAssertEqual(url.lastPathComponent, "Ideas.md")
+        XCTAssertEqual(try NoteFiles.read(url), "")
+        XCTAssertEqual(try model.newNote(named: "Plan.md", in: folder).lastPathComponent, "Plan.md")
+        // Never over a note that is there, never outside the vault.
+        XCTAssertThrowsError(try model.newNote(named: "Ideas", in: folder))
+        XCTAssertThrowsError(try model.newNote(named: "Away", in: dir.deletingLastPathComponent()))
+    }
+
+    func testANewNotesNameIsRefusedAsObsidianRefusesIt() throws {
+        try write("Taken.md")
+        XCTAssertNil(NoteNaming.problem("Fresh", in: dir))
+        XCTAssertNil(NoteNaming.problem("  Fresh idea.md ", in: dir))
+        XCTAssertEqual(NoteNaming.problem("   ", in: dir), "A name, please.")
+        XCTAssertEqual(NoteNaming.problem(".md", in: dir), "A name, please.")
+        XCTAssertEqual(NoteNaming.problem("Ideas: one", in: dir), "A note's name can't have “:” in it.")
+        XCTAssertNotNil(NoteNaming.problem("a/b", in: dir))
+        XCTAssertNotNil(NoteNaming.problem("Link [x]", in: dir))
+        XCTAssertNotNil(NoteNaming.problem(".hidden", in: dir))
+        XCTAssertEqual(NoteNaming.problem("Taken", in: dir), "There is a note named “Taken” here already.")
+        XCTAssertEqual(NoteNaming.problem("Taken.md", in: dir), "There is a note named “Taken” here already.")
+        XCTAssertEqual(NoteNaming.fileName(" Fresh "), "Fresh.md")
+        XCTAssertEqual(NoteNaming.fileName("Fresh.MD"), "Fresh.MD")
+    }
+
+    func testThePanesStayOnTheLastNoteWhileTheEditorShowsSomethingElse() throws {
+        try write("A.md")
+        try write("B.md")
+        let model = NotesModel(vault: NotesVault(root: dir))
+        XCTAssertNil(model.subject)
+        let a = dir.appendingPathComponent("A.md")
+        let b = dir.appendingPathComponent("B.md")
+        model.current = a
+        XCTAssertEqual(model.subject, a)
+        // A file that isn't a note: the tree marks nothing, the panes keep A.
+        model.current = nil
+        XCTAssertEqual(model.subject, a)
+        model.current = b
+        XCTAssertEqual(model.subject, b)
+        // A note outside this vault is never the panes' subject.
+        let other = NotesVault(root: dir.appendingPathComponent("Other", isDirectory: true))
+        XCTAssertNil(NotesModel.subject(current: nil, previous: b, in: other))
+        XCTAssertEqual(NotesModel.subject(current: nil, previous: b, in: model.vault), b)
+        XCTAssertEqual(NotesModel.subject(current: a, previous: b, in: other), a)
+    }
+
+    func testAFilterNamingNoNoteOffersTheContentsSearch() throws {
+        try write("Plan.md", "ship it")
+        let tree = NoteItem(url: dir, kind: .folder, children: [NoteItem(url: dir.appendingPathComponent("Plan.md"), kind: .note)])
+        XCTAssertTrue(NotesPanelView.rows(tree, query: "ship it", expanded: []).isEmpty)
+        let said = NotesPanelView.noMatch("ship it")
+        XCTAssertEqual(said.text, "No note is named “ship it”")
+        XCTAssertEqual(said.search, "Search Contents for “ship it”")
+        XCTAssertTrue(NotesPanelView.filterHelp.contains("⌘F"))
+    }
+
     func testTheTreesRowsFollowWhatIsOpenAndTheFilter() throws {
         try write("A/One.md")
         try write("A/B/Two.md")
