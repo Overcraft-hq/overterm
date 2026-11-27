@@ -1275,12 +1275,15 @@ package final class E2ERunner {
             }, app.editor?.document.url?.path ?? "nothing open")
 
         app.trashItem(readme)
-        check("Move to Trash… asks first", await eventually(2) { self.window.attachedSheet != nil && self.clickSheetButton("Move to Trash") })
+        check("Move to Trash… asks first", await eventually(2) { self.window.attachedSheet != nil })
+        trashSheetKeys()
+        check("…a click moves it", clickSheetButton("Move to Trash"))
         check(
             "…then it is gone, and so is its tab",
             await eventually(3) {
                 !FileManager.default.fileExists(atPath: readme.path) && self.app.editor?.buffers.contains { $0.url?.lastPathComponent == "README.md" } != true
             })
+        await destructiveSheetChecks()
     }
 
     /// The editor as Zed's: zoomed, tabs, tree-sitter (markdown too), Zed's
@@ -5769,7 +5772,7 @@ package final class E2ERunner {
     }
 
     /// The attached sheet's buttons, each with the key that presses it ("" for none).
-    private var sheetButtons: [(title: String, key: String)] {
+    package var sheetButtons: [(title: String, key: String)] {
         var found: [(title: String, key: String)] = []
         func walk(_ view: NSView) {
             if let button = view as? NSButton { found.append((button.title, button.keyEquivalent)) }

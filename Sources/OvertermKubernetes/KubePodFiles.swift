@@ -162,7 +162,7 @@ extension KubePodCopy: KubeTabCommand {
         if let typed { lines.append("Type \(typed) to confirm.") }
         return KubeWriteConfirmation(
             verb: nil, title: title, scope: place, detail: lines.joined(separator: "\n"), button: button, typedName: typed,
-            production: context.isProduction, kubectl: command)
+            production: context.isProduction, kubectl: command, destroys: direction == .into)
     }
 
     package func opened(context: String) -> String {

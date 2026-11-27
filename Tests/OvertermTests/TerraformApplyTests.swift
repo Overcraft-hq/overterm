@@ -337,6 +337,14 @@ final class TerraformApplyCheckTests: XCTestCase {
         XCTAssertTrue(long.detail.contains("… and 10 more"))
         XCTAssertEqual(long.button, "Destroy")
         XCTAssertEqual(long.title, "Destroy everything in envs/dev?")
+        // D-1: a plan that destroys or replaces leaves Return on Cancel; one
+        // that only updates keeps it on Apply.
+        XCTAssertTrue(sheet.destroys && long.destroys)
+        let updates = TerraformApplySheet.make(
+            root: .init(name: "envs/dev", path: "envs/dev", rootClass: .local, backend: "local", workspace: "default", worktree: "acme", branch: nil),
+            plan: plan(changes: [change("aws_instance.acme", ["update"], paths: ["tags.deployed_at"])]), mode: .normal, typed: false, versionMove: nil,
+            partial: false, createsEverything: false, risks: [], profile: nil, region: nil)
+        XCTAssertFalse(updates.destroys)
     }
 }
 

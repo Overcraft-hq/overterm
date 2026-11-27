@@ -103,7 +103,7 @@ extension TerminalWindowController {
         } else {
             answer = await WriteConfirmation(
                 title: sheet.title, scope: sheet.scope, production: sheet.production, detail: sheet.detail, button: sheet.button,
-                typedName: sheet.typedName, critical: true
+                typedName: sheet.typedName, critical: true, destroys: true
             ).ask(on: window)
         }
         guard let answer else { return .cancelled }

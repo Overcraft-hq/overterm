@@ -324,7 +324,9 @@ extension TerminalWindowController {
     }
 
     package func deleteRedisKey(_ session: DatabaseSession, _ db: Int, _ key: String) {
-        confirmRedis("Delete “\(key)”?", "From db\(db) of \(session.connection.name). This can't be undone.", "Delete") { [weak self] in
+        confirmRedis(
+            "Delete “\(key)”?", "This can't be undone.", "Delete", scope: "Redis · \(session.connection.name) · db\(db)"
+        ) { [weak self] in
             Task {
                 guard let driver = session.redis else { return }
                 do {
@@ -339,18 +341,12 @@ extension TerminalWindowController {
         }
     }
 
-    package func confirmRedis(_ title: String, _ detail: String, _ button: String, then: @escaping () -> Void) {
+    /// Every one of Redis' asks deletes or cuts something off — a key, keys,
+    /// the slow log, a client: the shared sheet, Return on Cancel (D-1).
+    /// `scope`, the connection it reaches, where the caller knows it.
+    package func confirmRedis(_ title: String, _ detail: String, _ button: String, scope: String? = nil, then: @escaping () -> Void) {
         guard let window else { return }
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = detail
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: button)
-        alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { response in
-            guard response == .alertFirstButtonReturn else { return }
-            MainActor.assumeIsolated { then() }
-        }
+        WriteConfirmation(title: title, scope: scope, detail: detail, button: button, destroys: true).present(on: window) { _ in then() }
     }
 }
 

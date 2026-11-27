@@ -162,7 +162,7 @@ extension DockerPageModel {
     package func confirmRemove(models: [RunnerModel]) {
         guard !models.isEmpty, let engine = docker.engine, let place = modelsPlace else { return }
         let names = models.map(\.name)
-        actions?.confirm(
+        actions?.confirmDestroying(
             models.count == 1 ? "Remove “\(names[0])”?" : "Remove \(models.count) models?",
             "Its files leave Model Runner's store; pulling it again downloads it all.", "Remove"
         ) { [weak self] in
@@ -412,7 +412,7 @@ extension DockerPageModel {
     package func confirmRemove(builds: [DockerBuildRecord]) {
         let removable = builds.filter { !$0.running }
         guard !removable.isEmpty else { return }
-        actions?.confirm(
+        actions?.confirmDestroying(
             removable.count == 1 ? "Remove the record of “\(removable[0].name)”?" : "Remove \(removable.count) build records?",
             removable.count == 1
                 ? "Its steps, their output and how it went leave buildx's history. What it built stays."
@@ -745,7 +745,7 @@ extension DockerPageModel {
         let removable = images.filter { image in !docker.containers(using: image).contains { $0.state.isUp } }
         guard !removable.isEmpty else { return }
         let names = removable.map { $0.tags.first ?? $0.shortID }
-        actions?.confirm(
+        actions?.confirmDestroying(
             removable.count == 1 ? "Remove “\(names[0])”?" : "Remove \(removable.count) images?",
             "Their layers go unless another image shares them. An image is pulled or built again when it is next needed.", "Remove"
         ) { [weak self] in
@@ -771,7 +771,7 @@ extension DockerPageModel {
     package func confirmRemove(volumes: [VolumeSummary]) {
         let removable = volumes.filter { docker.containers(mounting: $0).isEmpty }
         guard !removable.isEmpty else { return }
-        actions?.confirm(
+        actions?.confirmDestroying(
             removable.count == 1 ? "Remove the volume “\(removable[0].shortName)”?" : "Remove \(removable.count) volumes?",
             "Their data is deleted, and can't be brought back.", "Remove"
         ) { [weak self] in
@@ -802,7 +802,7 @@ extension DockerPageModel {
     package func confirmRemove(networks: [NetworkSummary]) {
         let removable = networks.filter { !$0.isBuiltIn && docker.containers(on: $0).isEmpty }
         guard !removable.isEmpty else { return }
-        actions?.confirm(
+        actions?.confirmDestroying(
             removable.count == 1 ? "Remove the network “\(removable[0].Name)”?" : "Remove \(removable.count) networks?",
             "Nothing is on them. Compose makes its own again at the next up.", "Remove"
         ) { [weak self] in

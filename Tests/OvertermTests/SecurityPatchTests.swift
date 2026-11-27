@@ -28,6 +28,7 @@ final class SecurityPatchTests: XCTestCase {
         XCTAssertEqual(question.scope, "PostgreSQL · shop@db.example.internal:5432/orders")
         XCTAssertTrue(question.detail.contains("OR 1 = 1"), "the whole statement, past 400 characters")
         XCTAssertTrue(question.detail.hasSuffix("Every row it matches goes."))
+        XCTAssertTrue(question.destroys, "Return is Don't Run's (D-1)")
     }
 
     // MARK: NOTE-G6

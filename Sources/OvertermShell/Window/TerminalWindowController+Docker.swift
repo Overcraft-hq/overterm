@@ -6,7 +6,7 @@ import SwiftUI
 /// terminal tabs, and the setting that turns it all off.
 extension TerminalWindowController {
     package var dockerActions: DockerActions {
-        DockerActions(
+        var actions = DockerActions(
             run: { [weak self] command, folder in self?.runDockerCommand(command, in: folder) },
             confirm: { [weak self] title, detail, button, then in self?.confirmDocker(title, detail, button, then) },
             open: { [weak self] url in self?.openDockerLink(url) },
@@ -79,6 +79,8 @@ extension TerminalWindowController {
             alert: { [weak self] title, detail in self?.alertDocker(title, detail) },
             askAgent: { [weak self] in self?.askAgent(about: $0) }
         )
+        actions.destroy = { [weak self] title, detail, button, then in self?.confirmDocker(title, detail, button, destroys: true, then) }
+        return actions
     }
 
     // MARK: The rail's panel
@@ -306,7 +308,7 @@ extension TerminalWindowController {
                     let place = if case .volume = copy.source { "the volume" } else { "the container" }
                     confirmDocker(
                         "“\((copy.path as NSString).lastPathComponent)” changed in \(copy.source.title)",
-                        "It was written in \(place) after you opened it. Saving replaces that with your copy.", "Replace"
+                        "It was written in \(place) after you opened it. Saving replaces that with your copy.", "Replace", destroys: true
                     ) { [weak self] in self?.saveDockerFile(copy, from: local, overwrite: true) }
                 case .written(let stat):
                     if let stat { dockerFileCopies[local.path]?.stat = stat }
@@ -672,8 +674,16 @@ extension TerminalWindowController {
         }
     }
 
-    package func confirmDocker(_ title: String, _ detail: String, _ button: String, _ then: @escaping () -> Void) {
+    package func confirmDocker(_ title: String, _ detail: String, _ button: String, destroys: Bool = false, _ then: @escaping () -> Void) {
         guard let window else { return }
+        if destroys {
+            // The shared sheet (D-1): which engine, Return on Cancel.
+            let docker = DockerModel.shared
+            WriteConfirmation(
+                title: title, scope: docker.endpoint?.confirmationScope(runtime: docker.runtime), detail: detail, button: button, destroys: true
+            ).present(on: window) { _ in then() }
+            return
+        }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = detail
@@ -846,7 +856,7 @@ extension TerminalWindowController {
         let endpoint = DockerModel.shared.endpoint
         confirmDocker(
             stack.count == 1 ? "Take “\(stack[0].name)” down?" : "Take \(stack.count) projects down?",
-            "docker compose down stops and removes their containers and networks, in a terminal tab. Their volumes stay.", "Down"
+            "docker compose down stops and removes their containers and networks, in a terminal tab. Their volumes stay.", "Down", destroys: true
         ) { [weak self] in
             for project in stack {
                 self?.runDockerCommand(

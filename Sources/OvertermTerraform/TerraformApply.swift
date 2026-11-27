@@ -255,8 +255,15 @@ package struct TerraformApplySheet: Equatable, Sendable {
     package var button: String
     /// 3.8's sentence, confirmed on its own after this one (D-18).
     package var versionMove: String?
+    /// A destroy, or a plan that destroys, replaces or forgets something
+    /// (`isRisky`): Return is Cancel's until the name typed matches (D-1).
+    package var destroys = false
 
-    package init(title: String, scope: String, production: Bool, detail: String, typedName: String? = nil, button: String, versionMove: String? = nil) {
+    package init(
+        title: String, scope: String, production: Bool, detail: String, typedName: String? = nil, button: String, versionMove: String? = nil,
+        destroys: Bool = false
+    ) {
+        self.destroys = destroys
         self.title = title
         self.scope = scope
         self.production = production
@@ -349,7 +356,7 @@ package struct TerraformApplySheet: Equatable, Sendable {
         return TerraformApplySheet(
             title: title, scope: scope, production: production, detail: lines.joined(separator: "\n"),
             typedName: typed ? typedName(root: root.name, workspace: root.workspace) : nil, button: mode.isDestroy ? "Destroy" : "Apply",
-            versionMove: versionMove)
+            versionMove: versionMove, destroys: mode.isDestroy || !destructive.isEmpty)
     }
 
     package static func symbol(_ action: TerraformPlan.Action) -> String {

@@ -726,8 +726,13 @@ package struct DockerCleanUpSheet: View {
             HStack {
                 Text(verbatim: "Up to \(bytes(plan.reclaimable)) freed").font(.system(size: ChromeMetrics.text(12), weight: .medium))
                 Spacer()
-                Button("Cancel") { page.cleaning = false }.keyboardShortcut(.cancelAction)
-                Button("Clean Up") { page.cleanUp() }.keyboardShortcut(.defaultAction).disabled(plan.isEmpty)
+                // It deletes (D-1): Return is Cancel's, Clean Up takes a
+                // click; Escape cancels too, by a button of its own.
+                Button("Cancel") { page.cleaning = false }.keyboardShortcut(.defaultAction)
+                    .background {
+                        Button("") { page.cleaning = false }.keyboardShortcut(.cancelAction).opacity(0).accessibilityHidden(true)
+                    }
+                Button("Clean Up", role: .destructive) { page.cleanUp() }.disabled(plan.isEmpty)
                     .accessibilityIdentifier("docker.cleanUp.go")
             }
         }

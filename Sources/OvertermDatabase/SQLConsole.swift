@@ -67,7 +67,7 @@ package final class SQLConsole: ObservableObject {
     package static func destructiveQuestion(_ sql: String, why: String, on connection: DatabaseConnection) -> WriteConfirmation {
         WriteConfirmation(
             title: "Run this on “\(connection.name)”?", scope: "\(connection.kind.title) · \(connection.summary)",
-            detail: VisibleText.displayed(sql) + "\n\n" + why, button: "Run", cancel: "Don't Run")
+            detail: VisibleText.displayed(sql) + "\n\n" + why, button: "Run", cancel: "Don't Run", destroys: true)
     }
 
     /// The statements in order, each a tab. A destroying one is asked about
