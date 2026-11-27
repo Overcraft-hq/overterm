@@ -259,7 +259,7 @@ package enum KeyCommands {
         // ⌘I is the inbox, as the designs have it; Tab Info moves to ⌃⌘I
         // (⌥⌘I is Ghostty's inspector, which it eats before the menu).
         .init("tabs.info", "Tab Info", group: "Tabs", key: "ctrl+cmd+i"),
-        .init("inbox.show", "Agent Inbox", group: "Tabs", key: "cmd+i"),
+        .init("inbox.show", "Inbox", group: "Tabs", key: "cmd+i"),
         .init("tabs.nextAttention", "Next Failure or Tab That Needs You", group: "Tabs", key: "alt+cmd+down"),
         .init("tabs.peek", "Tab Peek", group: "Tabs", key: "shift+cmd+e"),
         .init("agents.overview", "Agent Overview", group: "Tabs", key: "shift+cmd+a"),

@@ -28,7 +28,7 @@ package struct InboxView: View {
     package var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Agent Inbox").font(.system(size: ChromeMetrics.text(13), weight: .bold)).foregroundStyle(theme.text)
+                Text("Inbox").font(.system(size: ChromeMetrics.text(13), weight: .bold)).foregroundStyle(theme.text)
                 Spacer()
                 Text("J / K to move · ⌘I to close")
                     .font(.system(size: ChromeMetrics.text(11)))

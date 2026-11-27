@@ -282,7 +282,7 @@ package struct KubePodChartsList: View {
     /// A chart's Copy PromQL and Copy Values as CSV; its ⤢ (M9).
     package var copy: ((String) -> Void)? = nil
     package var expand: ((KubePodCharts.Chart) -> Void)? = nil
-    /// A chart's "Ask Agent About This Chart" (M11).
+    /// A chart's "Ask an Agent About This Chart" (M11).
     package var ask: ((KubePodCharts.Chart) -> Void)? = nil
     @State private var picked: String?
 
@@ -371,7 +371,7 @@ package struct KubeObjectChartsList: View {
     /// A chart's Copy PromQL and Copy Values as CSV; its ⤢ (M9).
     package var copy: ((String) -> Void)? = nil
     package var expand: ((KubePodCharts.Chart) -> Void)? = nil
-    /// A chart's "Ask Agent About This Chart" (M11).
+    /// A chart's "Ask an Agent About This Chart" (M11).
     package var ask: ((KubePodCharts.Chart) -> Void)? = nil
 
     private static let space = "kubernetes.metrics.charts"
