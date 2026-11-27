@@ -75,7 +75,6 @@ final class FileTreeTests: XCTestCase {
         XCTAssertEqual(tree.rows.map(\.depth), [0, 0, 0, 0])
     }
 
-    @MainActor
     /// `ln -s`: a linked folder is a folder that opens, a linked file a
     /// file, each saying its target; one whose target is gone, said.
     @MainActor func testSymbolicLinksListAsWhatTheyPointTo() throws {
