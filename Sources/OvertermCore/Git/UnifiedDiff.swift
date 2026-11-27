@@ -19,7 +19,9 @@ package enum UnifiedDiff {
         var oldLine = 0
         var newLine = 0
         var inHunk = false
-        let raw = diff.split(separator: "\n", omittingEmptySubsequences: false)
+        // "\r\n" is one Character: split on it too, or a CRLF file's whole
+        // diff was one line.
+        let raw = diff.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" })
         for (i, sub) in raw.enumerated() {
             if lines.count >= limit { return (lines, true) }
             let text = String(sub)

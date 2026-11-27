@@ -19,6 +19,9 @@ package struct DiffPanelView: View {
     package var onReview: (DiffModel.Scope) -> Void = { _ in }
     /// The file whose Discard is awaiting confirmation.
     @State private var discarding: ChangedFile?
+    /// A hunk's Discard, asked first: its file's name, the hunk.
+    /// The hunk a Discard asks about, with the checkout it was chosen in.
+    @State private var discardingHunk: (path: String, hunk: DiffModel.DiffHunk, root: URL?)?
     @State private var composing = false
     /// Commits whose message is shown.
     @State private var openCommits: Set<String> = []
@@ -58,6 +61,18 @@ package struct DiffPanelView: View {
                 }
                 if composing, editable {
                     CommitComposer(model: model, theme: theme, onDone: { composing = false })
+                } else if let error = model.actionError {
+                    // A hunk's Stage, Unstage or Discard that failed, said
+                    // with the composer closed too (it says it itself).
+                    Text(verbatim: error)
+                        .font(.system(size: ChromeMetrics.text(11)))
+                        .foregroundStyle(DiffColors.removed)
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 6)
+                        .help(error)
+                        .accessibilityIdentifier("diff.actionError")
                 }
                 if model.shownFiles.isEmpty, editable || model.commits.isEmpty {
                     placeholder(editable ? "No uncommitted changes" : "No changes on this branch")
@@ -79,6 +94,19 @@ package struct DiffPanelView: View {
                 file.kind == .untracked || file.kind == .added
                     ? "The file is moved to the Trash."
                     : "Staged and unstaged changes are lost; the file goes back to HEAD.")
+        }
+        .alert(
+            "Discard this change to \((discardingHunk?.path as NSString?)?.lastPathComponent ?? "")?",
+            isPresented: Binding(get: { discardingHunk != nil }, set: { if !$0 { discardingHunk = nil } })
+        ) {
+            Button("Discard", role: .destructive) {
+                if let asked = discardingHunk, let root = asked.root {
+                    Task { await model.apply(asked.hunk, .discard, in: root) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Only this part of the file goes back to what is staged; the rest of the file stays as it is.")
         }
     }
 
@@ -111,13 +139,17 @@ package struct DiffPanelView: View {
                         onToggle: { model.toggleFold(file.path) },
                         onStage: { Task { await model.toggleStaged(file) } },
                         onDiscard: { discarding = file },
-                        onOpen: { model.root.map { onOpen($0.appendingPathComponent(file.path)) } }
+                        onOpen: { model.root.map { onOpen($0.appendingPathComponent(file.path)) } },
+                        onHunk: editable
+                            ? { hunk, action in
+                                if action == .discard {
+                                    discardingHunk = (file.path, hunk, model.root)
+                                } else {
+                                    Task { await model.apply(hunk, action) }
+                                }
+                            } : nil
                     )
                     .id(file.path)
-                }
-                if model.shownFiles.count > DiffModel.maxDiffedFiles {
-                    Text("Diffs shown for the first \(DiffModel.maxDiffedFiles) files.")
-                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                 }
             }
             .padding(12)

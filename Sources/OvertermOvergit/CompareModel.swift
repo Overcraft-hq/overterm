@@ -14,7 +14,8 @@ package final class CompareModel: ObservableObject {
         case failed(String)
     }
 
-    package static let maxFiles = DiffModel.maxDiffedFiles
+    /// Files diffed at most, as a commit's detail.
+    package static let maxFiles = CommitDetailModel.maxFiles
     package static let maxCommits = 300
 
     @Published package private(set) var phase: Phase = .idle
