@@ -48,18 +48,20 @@ extension TerminalWindowController {
         return await TerraformTestRun.begin(
             card: card, checkout: checkout, file: file, agent: agent, writable: writable,
             settingPath: Settings.shared.terraformPath,
-            ask: { [weak self] question in await self?.askTerraformTest(question, card: card) ?? false },
+            ask: { [weak self] question in await self?.askTerraformTest(question, card: card, agent: agent != nil) ?? false },
             show: { [weak self] run in self?.showTerraformTest(run) })
     }
 
     /// A real-provider test's question: the scenario's recorder, else the
     /// write confirmation — the name typed exactly, on production.
-    private func askTerraformTest(_ question: TerraformPlanGate.Question, card: TerraformRootCard) async -> Bool {
+    /// An agent's (`tf_test`) is the pane's sheet or an Inbox card (MCPApprovals).
+    private func askTerraformTest(_ question: TerraformPlanGate.Question, card: TerraformRootCard, agent: Bool) async -> Bool {
         if let recorder = terraformPlanQuestionRecorder { return recorder(question) }
         let confirmation = WriteConfirmation(
             title: question.title, scope: "\(card.rootClass.title.uppercased()) · \(card.name) · workspace \(card.workspace)",
             production: card.isProduction, detail: question.detail, button: question.button, typedName: question.typedName, critical: card.isProduction)
-        guard let typed = await confirmation.ask(on: window) else { return false }
+        let answer: String? = agent ? (try? await MCPApprovals.shared.ask(confirmation)) ?? nil : await confirmation.ask(on: window)
+        guard let typed = answer else { return false }
         if let name = question.typedName, typed.trimmingCharacters(in: .whitespacesAndNewlines) != name {
             presentTerraformRefusal("The name typed isn't \(name): the test wasn't run.")
             return false

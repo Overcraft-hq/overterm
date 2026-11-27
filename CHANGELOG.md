@@ -25,6 +25,8 @@ version is tagged `v<version>`.
 - A pull request can be checked out in a new worktree from its pane: on its own branch (fetched from origin if need be), a fork's detached
 - A review's lines are picked by their numbers (⇧-click for a run) and copied with ⌘C; notes on them go to the checkout's agent as one message with Send, and a pull request's thread with Address This Thread — typed in, Return left to you
 - A pull request's review threads show at their lines in its review; comments on picked lines are kept and posted to GitHub as one review with Comment, Approve or Request Changes, asked first
+- An agent's write (Docker, a database, Kubernetes, Terraform's plan) is asked as a card in the Inbox when you're not looking at its window — the tab marked, a notification, Allow and Don't, the name typed on production — and as the sheet only when its window is in front; Overterm no longer jumps to the front, and a question nobody answers fails after ten minutes
+- Tab Info lists the tab's agent's last calls on Overterm's tools, secrets masked, kept in memory only; Settings ▸ Agents shows every feature's agent switch in one place
 
 ## 1.6.7 — 2026-11-23
 

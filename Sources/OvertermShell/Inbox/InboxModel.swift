@@ -37,9 +37,14 @@ package final class InboxModel: ObservableObject {
         /// Its branch's CI failed (GIT-G5): Show Log and Ask Agent to Fix,
         /// kept until CI is green again, looked at or not.
         package var ci: CIFailure? = nil
+        /// An agent's MCP call asks for a write (D-6, MCPApprovals): the
+        /// card shows it whole, with Allow and Don't — the name typed first
+        /// where the write asks for it.
+        package var approval: MCPApprovals.Request? = nil
 
         /// What the card is called: the tab, and what it is asking for.
         package var headline: String {
+            if let approval { return "\(title) — \(approval.summary)" }
             if let terraform { return "\(title) \(terraform.summary)" }
             guard let prompt else { return [title, note].compactMap { $0 }.joined(separator: " — ") }
             return "\(title) \(prompt.summary)"
@@ -47,7 +52,7 @@ package final class InboxModel: ObservableObject {
 
         package static func == (a: Entry, b: Entry) -> Bool {
             a.id == b.id && a.mark == b.mark && a.note == b.note && a.prompt == b.prompt && a.asksWhy == b.asksWhy && a.terraform == b.terraform
-                && a.leftBehind == b.leftBehind && a.ci == b.ci
+                && a.leftBehind == b.leftBehind && a.ci == b.ci && a.approval == b.approval
         }
     }
 
@@ -73,8 +78,12 @@ package final class InboxModel: ObservableObject {
     /// Rebuilt from the tabs that want something — and those a Terraform
     /// ask marked, whatever their mark says now. `screen` reads a pane's
     /// visible text — passed in so the model stays testable.
-    package func refresh(tabs: [Tab], group: (Tab) -> TabGroup?, screen: (Tab) -> String?, now: Date = Date()) {
-        let wanting = tabs.filter { $0.activity.needsAttention || $0.terraformAsk != nil || $0.ciFailure != nil }
+    /// `approval`: the agent's MCP write a tab's panes ask (MCPApprovals).
+    package func refresh(
+        tabs: [Tab], group: (Tab) -> TabGroup?, screen: (Tab) -> String?, approval: (Tab) -> MCPApprovals.Request? = { _ in nil }, now: Date = Date()
+    ) {
+        let asked = Dictionary(uniqueKeysWithValues: tabs.compactMap { tab in approval(tab).map { (tab.id, $0) } })
+        let wanting = tabs.filter { $0.activity.needsAttention || $0.terraformAsk != nil || $0.ciFailure != nil || asked[$0.id] != nil }
         let built = Self.ordered(wanting).map { tab in
             // CI's card says CI's words unless another mark is up over it.
             let ciSays = tab.ciFailure != nil && (tab.activity.fromCI || tab.activity.mark == .none)
@@ -86,10 +95,11 @@ package final class InboxModel: ObservableObject {
                 // Terraform write's is never offered as choices (3.3), and
                 // only a question with a choice marked is (AGT-G1): an
                 // answer ending in a numbered list gets Open Tab alone.
-                prompt: tab.activity.mark == .waiting && tab.terraformAsk == nil
+                // An MCP write's card answers that, never the screen's choices.
+                prompt: tab.activity.mark == .waiting && tab.terraformAsk == nil && asked[tab.id] == nil
                     ? screen(tab).flatMap { TerraformPrompt.parse($0) == nil ? AgentPrompt.question(in: $0) : nil } : nil,
                 since: tab.activity.mark == .waiting ? now : nil, asksWhy: !tab.kubeAlerts.isEmpty, terraform: tab.terraformAsk,
-                leftBehind: tab.activity.fromLeftBehind, ci: tab.ciFailure)
+                leftBehind: tab.activity.fromLeftBehind, ci: tab.ciFailure, approval: asked[tab.id])
         }
         if built != entries { entries = built }
         if highlighted == nil || !built.contains(where: { $0.id == highlighted }) { highlighted = built.first?.id }
@@ -101,6 +111,7 @@ package final class InboxModel: ObservableObject {
     package static func ordered(_ tabs: [Tab]) -> [Tab] {
         func rank(_ tab: Tab) -> Int {
             switch tab.activity.mark {
+            case _ where tab.activity.fromMCP: 0
             case .waiting: 0
             case .failed: 1
             case .done: 2

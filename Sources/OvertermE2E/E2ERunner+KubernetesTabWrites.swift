@@ -255,7 +255,10 @@ extension E2ERunner {
             contexts.text.contains("kind-fake — local, writable — agents may restart, scale and delete pods here")
                 && contexts.text.contains("fake-prod — PRODUCTION, writable for Overterm (not for agents)"), contexts.text)
 
-        // k8s_scale on kind-fake: asked in the window, the runner answers, it lands.
+        // k8s_scale on kind-fake: asked in the window — in front, so as its
+        // sheet (D-6) —, the runner answers, it lands.
+        MCPApprovals.shared.inFront = { _ in true }
+        defer { MCPApprovals.shared.inFront = nil }
         let scaling = started("k8s_scale", ["name": "batch", "replicas": 2, "context": "kind-fake", "namespace": "shop"])
         check("k8s_scale is asked in the window", await eventually(15) { self.window.attachedSheet != nil })
         let asked = sheetTexts().joined(separator: "\n")
@@ -277,12 +280,27 @@ extension E2ERunner {
             "\(fake.writes.map(\.description))")
         check("reviewed first", fake.writes.first?.isAccessReview == true)
 
-        // Declined: nothing sent.
+        // Declined from the Inbox: the window not in front, the request is a
+        // card on the calling pane's tab (D-6), no sheet — nothing sent.
+        MCPApprovals.shared.inFront = { _ in false }
         let deleting = started("k8s_delete_pod", ["name": "debug-me-0", "context": "kind-fake", "namespace": "shop"])
-        check("k8s_delete_pod is asked", await eventually(15) { self.window.attachedSheet != nil })
-        check("naming the pod", sheetTexts().contains { $0.contains("Delete pod shop/debug-me-0?") }, "\(sheetTexts())")
-        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertSecondButtonReturn) }
+        check("k8s_delete_pod is asked", await eventually(15) { !MCPApprovals.shared.pending.isEmpty })
+        let card = app.approval(of: tab)
+        check("as an Inbox card on the calling pane's tab, naming the pod", card?.summary.contains("Delete pod shop/debug-me-0?") == true, card?.summary ?? "none")
+        check("no sheet while the window isn't in front", window.attachedSheet == nil)
+        check("the tab is marked waiting", tab.activity.mark == .waiting && tab.activity.fromMCP, "\(tab.activity)")
+        if let card { MCPApprovals.shared.answer(card.id, typed: nil) }
         let declined = await deleting.value
+        check("its mark goes once answered", await eventually(3) { !tab.activity.fromMCP })
+        // In front again: what follows is asked as the sheet.
+        MCPApprovals.shared.inFront = { _ in true }
+        // The pane's calls, kept for Tab Info (MCP-U3): asked, allowed or declined.
+        let logged = MCPCallLog.shared.calls(of: [tag])
+        check(
+            "the pane's calls are listed, newest first, with how each ended",
+            logged.first?.tool == "k8s_delete_pod" && logged.first?.outcome == .declined
+                && logged.contains { $0.tool == "k8s_scale" && $0.allowed && $0.outcome == .done(error: false) && $0.arguments.contains("replicas: 2") },
+            "\(logged.map { "\($0.tool) \($0.outcome.words) \($0.allowed)" })")
         check("declined, the agent is told", declined.isError && declined.text.contains("The user declined"), declined.text)
         check("and nothing is deleted", fake.pod("debug-me-0", namespace: "shop") != nil && !fake.writes.contains { $0.method == "DELETE" })
 

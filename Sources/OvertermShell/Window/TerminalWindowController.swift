@@ -214,6 +214,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var dockerLinkRecorder: ((URL) -> Void)?
     /// The pull requests as the last poll said them, by branch (`applyCI`).
     package var ciSeen: [String: PullRequestSummary] = [:]
+    /// The note each tab was marked with for an agent's MCP write it asks
+    /// (MCPApprovals), until that request is answered.
+    package var mcpMarked: [UUID: String] = [:]
     /// A scenario's: a pull request write's question answered here, not in
     /// a sheet; a pull request opened, by its number; a write GitHub refused.
     package var pullRequestWriteRecorder: ((PullRequestWrite) -> Bool)?
@@ -824,6 +827,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         wireDockerAttention()
         wireKubernetesAttention()
         wireTerraformAgents()
+        wireMCPApprovals()
         wireActivityMCP()
         wireTerraformPlan()
         watchDockerPalette().store(in: &cancellables)
@@ -1449,6 +1453,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
 
     /// The selected tab has been seen once the window is in front.
     private func markSelectedSeen() {
+        showSelectedApproval()
         guard let tab = store.selected, isVisible(tab), tab.activity.needsAttention else { return }
         tab.activity.seen()
         AttentionNotifier.withdraw(tab: tab)
@@ -3250,7 +3255,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 // The pane that asked — its notification, its bell, or the
                 // screen check's question —, whichever has the keyboard.
                 tab.askingTerminal.visibleText
-            })
+            }, approval: { [weak self] in self?.approval(of: $0) })
     }
 
     /// J, K, Return and Esc, while the panel has the keyboard.
@@ -4156,6 +4161,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         focus.forget(tab.id)
         broadcast.forget(tab)
         for pane in tab.terminals {
+            MCPCallLog.shared.forget(pane: pane.processTag)
             retireForLeftBehind(pane, of: tab)
             pane.close()
             pane.removeFromSuperview()

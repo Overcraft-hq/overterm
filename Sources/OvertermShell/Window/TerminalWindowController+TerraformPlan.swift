@@ -153,7 +153,8 @@ extension TerminalWindowController {
         }
         if let why = TerraformProcessCheck.refused(.plan, backendType: card.facts.backend.type) { return .failure(TerraformReadFailure(message: why + ".")) }
         guard let run = await preparePlan(card, checkout: checkout, lock: .agent, agent: await MCPAsker.current() ?? "an agent") else {
-            return .failure(TerraformReadFailure(message: "The person declined the plan of \(card.name)."))
+            return .failure(
+                TerraformReadFailure(message: "The person declined the plan of \(card.name), or didn't answer in Overterm in time: nothing was run."))
         }
         showTerraformPlan(run)
         Task { @MainActor in await run.start(settingPath: Settings.shared.terraformPath) }
@@ -203,6 +204,9 @@ extension TerminalWindowController {
                 critical: question.production)
             if let recorder = terraformPlanQuestionRecorder {
                 guard recorder(question) else { return nil }
+            } else if agent != nil {
+                // An agent's tf_plan: the pane's sheet or an Inbox card (MCPApprovals).
+                guard case .allowed = await MCPApprovals.shared.request(confirmation, pane: MCPAsker.pane) else { return nil }
             } else {
                 guard await confirmation.ask(on: window) != nil else { return nil }
             }

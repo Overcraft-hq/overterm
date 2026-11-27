@@ -75,30 +75,46 @@ package enum BrowserMCP {
         case "tools/call":
             guard let name = params["name"] as? String else { return failure(-32602, "No tool name.") }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
-            if let provider = features.first(where: { $0.handles(name) }) {
-                guard provider.enabled(settings) else { return reply(errorResult(provider.unavailable)) }
-                // Read by the one call it is handed to, then dropped.
-                nonisolated(unsafe) let arguments = arguments
-                do {
-                    return reply(try await provider.call(name, arguments, Provider.Context(pane: pane, kubernetes: kubernetes, api: api())))
-                } catch let error as ToolError {
-                    return failure(-32602, error.message)
-                } catch {
-                    return reply(errorResult(provider.said(error)))
-                }
+            // The pane's call, in its log (MCP-U3): memory only.
+            guard let pane else { return await callTool(name, arguments, reply: reply, failure: failure, browser: browser, api: api, pane: nil, settings: settings, kubernetes: kubernetes) }
+            let logged = MCPCallLog.shared.begin(pane: pane, tool: name, arguments: arguments)
+            nonisolated(unsafe) let given = arguments
+            let answered = await MCPCallLog.$current.withValue((pane, logged)) {
+                await callTool(name, given, reply: reply, failure: failure, browser: browser, api: api, pane: pane, settings: settings, kubernetes: kubernetes)
             }
-            guard settings.browserAgentControl, let browser = browser() else {
-                return reply(errorResult(BrowserError.noBrowser.localizedDescription))
-            }
+            MCPCallLog.shared.end(pane: pane, id: logged, reply: answered)
+            return answered
+        default:
+            return failure(-32601, "Method not found: \(method)")
+        }
+    }
+
+    /// One tool's call: a feature's, else the browser's.
+    private static func callTool(
+        _ name: String, _ arguments: [String: Any], reply: (Any) -> [String: Any], failure: (Int, String) -> [String: Any],
+        browser: () -> AgentBrowser?, api: () -> AnyObject?, pane: String?, settings: Settings, kubernetes: (any Sendable)?
+    ) async -> [String: Any] {
+        if let provider = features.first(where: { $0.handles(name) }) {
+            guard provider.enabled(settings) else { return reply(errorResult(provider.unavailable)) }
+            // Read by the one call it is handed to, then dropped.
+            nonisolated(unsafe) let arguments = arguments
             do {
-                return reply(try await call(name, arguments, browser))
+                return reply(try await provider.call(name, arguments, Provider.Context(pane: pane, kubernetes: kubernetes, api: api())))
             } catch let error as ToolError {
                 return failure(-32602, error.message)
             } catch {
-                return reply(errorResult(error.localizedDescription))
+                return reply(errorResult(provider.said(error)))
             }
-        default:
-            return failure(-32601, "Method not found: \(method)")
+        }
+        guard settings.browserAgentControl, let browser = browser() else {
+            return reply(errorResult(BrowserError.noBrowser.localizedDescription))
+        }
+        do {
+            return reply(try await call(name, arguments, browser))
+        } catch let error as ToolError {
+            return failure(-32602, error.message)
+        } catch {
+            return reply(errorResult(error.localizedDescription))
         }
     }
 

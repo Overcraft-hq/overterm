@@ -31,6 +31,7 @@ package struct TabInfoView: View {
             processSection
             terraformSection
             portSection
+            AgentCallsSection(log: .shared, panes: model.tab.terminals.map(\.processTag), theme: theme)
             claudeSection
             diskSection
         }
@@ -335,6 +336,51 @@ package struct TabInfoView: View {
     }
 
     package nonisolated static func memory(_ bytes: UInt64) -> String { InfoText.memory(bytes) }
+}
+
+/// The tab's agents' last calls on Overterm's MCP server (MCP-U3): when,
+/// which tool, its arguments masked, how it ended and its answer's size —
+/// memory only, gone when the app quits. Nothing while there are none.
+private struct AgentCallsSection: View {
+    @ObservedObject var log: MCPCallLog
+    let panes: [String]
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        let calls = Array(log.calls(of: panes).prefix(12))
+        if !calls.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Agent's calls").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                ForEach(calls) { call in
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 8) {
+                            Text(verbatim: Self.time.string(from: call.at)).foregroundStyle(theme.dimText).font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                            Text(verbatim: call.tool).font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
+                            Spacer()
+                            Text(verbatim: (call.allowed ? "allowed · " : "") + call.outcome.words)
+                                .foregroundStyle(call.outcome == .declined || call.outcome == .timedOut || call.outcome == .done(error: true) ? TabStatusStyle.failed : theme.dimText)
+                            if let bytes = call.bytes {
+                                Text(verbatim: ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)).foregroundStyle(theme.dimText)
+                            }
+                        }
+                        if !call.arguments.isEmpty {
+                            Text(verbatim: call.arguments).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.dimText)
+                                .lineLimit(2).truncationMode(.tail)
+                        }
+                    }
+                    .font(.system(size: ChromeMetrics.text(12)))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("tabInfo.agentCall")
+                }
+            }
+        }
+    }
+
+    private static let time: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
 }
 
 private struct ProcessRow: View {

@@ -825,7 +825,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "docker.agentWrites", section: .docker, group: "Agents", title: "Agents can ask to act",
             help:
-                "Start, stop, restart or remove a container, change its memory, CPUs or restart policy, run compose, exec in a container — each asked about in the window first, and run only if you say so.",
+                "Start, stop, restart or remove a container, change its memory, CPUs or restart policy, run compose, exec in a container — each asked first — on the agent's window when it is in front, else in the Inbox — and run only if you say so.",
             kind: .toggle, defaultValue: .bool(true), requires: "docker.agentAccess", heldWhenEditedOutside: true),
         SettingSpec(
             key: "docker.showAllContainers", section: .docker, group: "Panel", title: "The panel lists what runs elsewhere too",
@@ -895,12 +895,12 @@ package enum SettingsSchema {
         SettingSpec(
             key: "kubernetes.agentAccess", section: .kubernetes, group: "Agents", title: "Agents can read the clusters",
             help:
-                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, what pods and nodes use (metrics-server's), and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply (a manifest, its dry-run diff shown; on production only where the context sets applyOnProduction), each call asked in the window first. None reads a Secret's values; what looks like a secret is taken out of every answer.",
+                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, what pods and nodes use (metrics-server's), and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply (a manifest, its dry-run diff shown; on production only where the context sets applyOnProduction), each call asked first — on the agent's window when it is in front, else in the Inbox. None reads a Secret's values; what looks like a secret is taken out of every answer.",
             kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "kubernetes.agentWrites", section: .kubernetes, group: "Agents", title: "Contexts agents may change",
             help:
-                "By name: the contexts where agents get k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply — empty, agents only read. Only while the context is writable for agents too: a local one not set writable false; a remote or production one only where its kubernetes.contexts entry sets writable true. Each call is still asked in the window, naming the context. An agent started before a name was added needs a restart to see the tools.",
+                "By name: the contexts where agents get k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply — empty, agents only read. Only while the context is writable for agents too: a local one not set writable false; a remote or production one only where its kubernetes.contexts entry sets writable true. Each call is still asked, naming the context — on the agent's window when it is in front, else in the Inbox. An agent started before a name was added needs a restart to see the tools.",
             kind: .list(placeholder: "a context's name"), defaultValue: .list([]), requires: "kubernetes.agentAccess", heldWhenEditedOutside: true),
         SettingSpec(
             key: "kubernetes.debugImage", section: .kubernetes, group: "Tabs", title: "Debug container's image",
@@ -994,7 +994,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "terraform.agentAccess", section: .terraform, group: "Agents", title: "Agents can read the checkout's Terraform",
             help:
-                "Claude Code started from Overterm gets MCP tools for its own checkout: tf_roots (roots, classes, backends), tf_fmt_check, tf_validate (no credential; only where the root is initialised and its lock file committed — never init), tf_plan_summary and tf_plan_resource (Overterm's plan, or one it saved, masked: never a sensitive value), tf_run_status and tf_why. tf_plan runs a plan in Overterm: the root's providers and data sources run with your credentials, outside the agent's sandbox — so its first plan of each root this session is asked in the window, naming the profile and what the code runs, and asked again when that grows; never on production. None applies, destroys or changes state.",
+                "Claude Code started from Overterm gets MCP tools for its own checkout: tf_roots (roots, classes, backends), tf_fmt_check, tf_validate (no credential; only where the root is initialised and its lock file committed — never init), tf_plan_summary and tf_plan_resource (Overterm's plan, or one it saved, masked: never a sensitive value), tf_run_status and tf_why. tf_plan runs a plan in Overterm: the root's providers and data sources run with your credentials, outside the agent's sandbox — so its first plan of each root this session is asked first — on the agent's window when it is in front, else in the Inbox —, naming the profile and what the code runs, and asked again when that grows; never on production. None applies, destroys or changes state.",
             kind: .toggle, defaultValue: .bool(true), requires: "terraform.enabled", heldWhenEditedOutside: true),
     ]
 

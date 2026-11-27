@@ -93,7 +93,7 @@ extension KubeMCP {
         let namespaces = Set(result.items.compactMap(\.ref.namespace))
         let kubectl = KubeApply.kubectl(file: "-", context: context.name, namespace: namespaces.count == 1 ? namespaces.first : nil)
         let confirmation = KubeApplyConfirmation.make(result, context: context, kubectl: kubectl, agent: true)
-        guard let typed = await ask(confirmation, pane: pane) else {
+        guard let typed = try await ask(confirmation, pane: pane) else {
             throw BrowserMCP.ToolError(message: "The user declined the apply: nothing was changed.")
         }
         guard confirmation.accepts(typed) else {

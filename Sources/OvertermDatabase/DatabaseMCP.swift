@@ -56,7 +56,7 @@ package enum DatabaseMCP {
                         message: "Agents only read here: \(target.kind.verb(of: statement)) writes. The user can allow writes in Settings ▸ Database.")
                 }
                 guard !target.readOnly else { throw BrowserMCP.ToolError(message: "“\(target.name)” is read-only.") }
-                guard await allow(statement, on: target) else { throw BrowserMCP.ToolError(message: "The user declined to run it.") }
+                guard try await allow(statement, on: target) else { throw BrowserMCP.ToolError(message: "The user declined to run it.") }
             }
             let limit = min(max(arguments["limit"] as? Int ?? 100, 1), 1000)
             var answer: Result<QueryResult, Error>?
@@ -160,20 +160,18 @@ package enum DatabaseMCP {
 
     /// A write an agent wants, put to the user in the window. Nothing runs
     /// unless they say so.
-    package static func allow(_ statement: String, on connection: DatabaseConnection) async -> Bool {
+    package static func allow(_ statement: String, on connection: DatabaseConnection) async throws -> Bool {
         if let answer = askOverride { return answer(statement) }
         // The one confirmation every write is asked with: all of the
         // statement, every character visible, and who asks (MCPAsker) —
-        // in the calling pane's window.
+        // the calling pane's sheet or Inbox card (MCPApprovals).
         // A DROP or a TRUNCATE leaves Return on Don't Run (D-1).
         let danger = connection.kind.danger(of: statement)
         let confirmation = WriteConfirmation(
             title: "An agent wants to run this on “\(connection.name)”",
             detail: VisibleText.displayed(statement) + (danger.map { "\n\n\($0)" } ?? ""), button: "Run It",
             cancel: "Don't Run", asker: await MCPAsker.current(), destroys: danger != nil)
-        let window = MCPAsker.window(forPane: MCPAsker.pane) ?? NSApp.windows.first(where: \.isVisible)
-        if window != nil { NSApp.activate(ignoringOtherApps: true) }
-        return await confirmation.ask(on: window) != nil
+        return try await MCPApprovals.shared.ask(confirmation) != nil
     }
 
     /// Set by tests and the E2E runner: answers instead of the alert.

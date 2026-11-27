@@ -70,6 +70,10 @@ package struct TabActivity: Equatable {
     /// The mark is CI's (`ciFailed`): the tab's branch's pull request went
     /// red; it goes once CI is green again (`ciRecovered`).
     package private(set) var fromCI = false
+    /// The mark is an agent's MCP write asked (`mcpAsked`, MCPApprovals):
+    /// it goes once that request is answered or ends (`mcpAnswered`), while
+    /// its words are still the note.
+    package private(set) var fromMCP = false
 
     package init(waitingSince: Date? = nil, note: String? = nil) {
         self.waitingSince = waitingSince
@@ -286,7 +290,35 @@ package struct TabActivity: Equatable {
     }
 
     /// You looked at the tab.
+    /// An agent's MCP call asks for a write (D-6, MCPApprovals): marked
+    /// waiting with what it asks, looked at or not — the sheet shows over
+    /// a tab in front. True when the mark or its words just changed and
+    /// nobody is looking (the moment to notify).
+    @discardableResult
+    package mutating func mcpAsked(_ text: String, visible: Bool) -> Bool {
+        let changed = mark != .waiting || note != text
+        mark = .waiting
+        note = text
+        fromCluster = false
+        fromTerraform = false
+        fromLeftBehind = false
+        fromScreen = false
+        fromCI = false
+        fromMCP = true
+        return changed && !visible
+    }
+
+    /// The request was answered, or ran out of time: its mark goes, unless
+    /// something else has marked the tab since (its note is another's).
+    @discardableResult
+    package mutating func mcpAnswered(_ text: String) -> Bool {
+        guard fromMCP, mark == .waiting, note == text else { return false }
+        seen()
+        return true
+    }
+
     package mutating func seen() {
+        fromMCP = false
         mark = .none
         note = nil
         fromCluster = false
