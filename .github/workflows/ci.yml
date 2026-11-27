@@ -244,6 +244,11 @@ jobs:
             spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
             spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
 
+      # What changed since the restored cache's commit, dated now: a branch's
+      # commit can be older than the cache (Scripts/date-changed-since-cache.sh).
+      - name: Date what changed since the cache
+        run: Scripts/date-changed-since-cache.sh "${{ steps.debug-build.outputs.cache-matched-key }}"
+
       # A step of its own, so that the compile's time shows apart from the
       # tests'.
       - name: Build for tests
@@ -397,6 +402,11 @@ jobs:
           restore-keys: |
             spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
             spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-
+
+      # What changed since the restored cache's commit, dated now: a branch's
+      # commit can be older than the cache (Scripts/date-changed-since-cache.sh).
+      - name: Date what changed since the cache
+        run: Scripts/date-changed-since-cache.sh "${{ steps.release-build.outputs.cache-matched-key }}"
 
       - name: Assemble and verify the app bundle
         id: bundle-build

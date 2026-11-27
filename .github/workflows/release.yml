@@ -161,6 +161,7 @@ jobs:
       # only — CI is what saves it, with these very paths and keys (ci.yml,
       # bundle). With this commit's, the app is only assembled.
       - name: Restore the Swift build
+        id: swift-build
         if: ${{ !inputs.clean_build }}
         uses: actions/cache/restore@v6
         with:
@@ -176,6 +177,12 @@ jobs:
           restore-keys: |
             spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
             spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-
+
+      # What changed since the restored cache's commit, dated now: a branch's
+      # commit can be older than the cache (Scripts/date-changed-since-cache.sh).
+      - name: Date what changed since the cache
+        if: ${{ !inputs.clean_build }}
+        run: Scripts/date-changed-since-cache.sh "${{ steps.swift-build.outputs.cache-matched-key }}"
 
       # As many processes at once as CI's test job runs (ci.yml's
       # TEST_WORKERS): make test's default, one a core, was never tried on

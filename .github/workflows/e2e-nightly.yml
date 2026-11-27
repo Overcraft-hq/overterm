@@ -155,6 +155,7 @@ jobs:
       # test): restored only. With the files dated by their commits, nothing
       # main's CI compiled is compiled again.
       - name: Restore the debug build
+        id: debug-build
         uses: actions/cache/restore@v6
         with:
           path: |
@@ -170,6 +171,11 @@ jobs:
           restore-keys: |
             spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
             spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
+
+      # What changed since the restored cache's commit, dated now: a branch's
+      # commit can be older than the cache (Scripts/date-changed-since-cache.sh).
+      - name: Date what changed since the cache
+        run: Scripts/date-changed-since-cache.sh "${{ steps.debug-build.outputs.cache-matched-key }}"
 
       - name: Assemble the app from the debug build
         run: |
