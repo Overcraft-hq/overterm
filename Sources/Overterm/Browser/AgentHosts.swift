@@ -69,7 +69,7 @@ package enum AgentHosts {
 
     /// The question for `host` (pure): what the agent wants there, the page,
     /// and what allowing means — the person's cookies go with it.
-    package static func question(host: String, url: URL, doing: String) -> WriteConfirmation {
+    @MainActor package static func question(host: String, url: URL, doing: String) -> WriteConfirmation {
         WriteConfirmation(
             title: "Let the agent's browser use \(host)?",
             detail:
