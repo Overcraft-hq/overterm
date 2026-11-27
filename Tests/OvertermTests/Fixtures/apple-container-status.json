@@ -1,0 +1,29 @@
+{
+  "client": {
+    "appName": "container",
+    "build": "release",
+    "commit": "a15b46097aa4c2325da13c1fb5192b9274aab083",
+    "version": "1.7.1"
+  },
+  "host": {
+    "architecture": "arm64",
+    "cpus": 10,
+    "operatingSystem": "Version 27.2.1 (Build 26B131)"
+  },
+  "paths": {
+    "appRoot": "/Users/dev/Library/Application Support/com.apple.container/",
+    "installRoot": "/usr/local/"
+  },
+  "resources": {
+    "containersRunning": 1,
+    "containersTotal": 2,
+    "images": 3
+  },
+  "server": {
+    "appName": "container-apiserver",
+    "build": "release",
+    "commit": "a15b46097aa4c2325da13c1fb5192b9274aab083",
+    "version": "1.7.1"
+  },
+  "status": "running"
+}

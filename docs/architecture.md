@@ -294,7 +294,19 @@ header picks what it lists, remembered (`diffScope` in `AppEnvironment.defaults`
   switch would; the plain ± keeps the one picked last). View ▸ Changes (⌥⌘D,
   the palette's Changes) toggles the pane on the scope picked last and is
   ticked while it shows. Diff text loads only while the pane is open, for the
-  scope shown, from that scope's base.
+  scope shown, from that scope's base — and only for a card that is open: a
+  folded card's diff is read when it opens (`DiffModel.loadDiff`), so there
+  is no cap on the files and nothing is read for a card nobody looks at.
+- **A hunk at a time** (Uncommitted): a card shows what is staged (HEAD to
+  the index, `diff --cached`) and then what isn't (the index to the file),
+  labelled when it has both (`FileDiff(staged:unstaged:)`). Each hunk's `@@`
+  line carries Unstage, or Stage and Discard… (asked first). A hunk is the
+  file's header and that hunk, cut from git's own text with every byte kept
+  — a `\r`, the no-newline marker, a rename's lines (`DiffPatch`, pure) — and
+  applied with `git apply --cached`, `--cached --reverse` or `--reverse`
+  (`DiffModel.apply`), written to a file first: `Git.run` takes no input. An
+  untracked file and Branch's diffs have no hunk buttons; the stage box
+  still takes the whole file. Lines rather than hunks are open.
 - It refreshes on FSEvents under the checkout and, for a linked worktree,
   under its git dir (`.git/worktrees/<name>`: index, HEAD) and the
   repository's `refs/` — a commit there writes nothing inside the checkout.
@@ -3412,6 +3424,38 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   first and is the runner's `DELETE /models/…`. The header copies the
   OpenAI-compatible base URL for a container and, for a runner
   container, for this Mac; agents get the same in `docker_models`.
+- **Apple Containers** (section 7, `AppleContainers` and
+  `AppleContainerCommands`, pure; `AppleContainerModel`, one for the app;
+  `DockerPageModel+Apple`, `AppleContainersView`): Apple's `container`
+  (github.com/apple/container, 1.7.1, Apple silicon, macOS 26) — Linux
+  containers in light VMs, beside whatever engine the page reaches, and
+  shown whether Docker answers or not. It speaks no Engine API: its
+  service is XPC, so it is read through its CLI's `--format json` —
+  `system status` (exit 1, still JSON, while its service is stopped),
+  `list --all`, `image list`, `volume list` — read field by field from
+  untyped JSON, a missing field or another type left out, never fatal:
+  before 1.7 a container's `status` was a word with its networks beside
+  it, and both shapes are read. The env's secret-looking values and the
+  command's are masked as they are read. The tool is looked for only where
+  its installer puts it and Homebrew's (`AppleContainerCLI.installed`),
+  never a `container` on the PATH; the section is listed only while it is
+  there, looked for again each time the page shows. It sends no events, so
+  what shows is read every 3 s while the section is on screen (`want`,
+  counted like `DockerModel.want`; images only on their tab — the tool
+  resolves each one's manifests), after each thing done, and never while
+  nobody looks. Start, Stop, Kill and the removals are the CLI's (a
+  removal asked first; an image a container is made from, or a volume one
+  mounts, greyed with who); a shell, a run, a pull, its log followed and
+  the service's start and stop go to a terminal tab, typed with the
+  tool's full path. A container's Logs tab is `container logs --follow -n
+  500` through `DockerCLI.lines`: its lines carry no timestamps, so it is
+  read afresh — never resumed from a time — when the tab shows again or
+  the container starts again. A volume's `sizeInBytes` is its sparse disk
+  image's limit, said "up to". Compose, builds, stats, events and agents'
+  tools are Docker's alone. A guarded run (isolated, a unit test) reaches
+  only `OVERTERM_APPLE_CONTAINER`'s stand-in or
+  `AppleContainerCLI.override`; `OVERTERM_APPLE_CONTAINER_TESTS=1` reads
+  the real tool, nothing made or removed.
 - **Vulnerabilities** (`DockerScout`, pure; `DockerScoutScans`;
   `DockerScoutView`): an image's detail has two tabs, Overview and
   Vulnerabilities. A scan is `docker scout cves --format sarif

@@ -1496,6 +1496,7 @@ package final class E2ERunner {
         check("the commit is in git", log == "e2e commit", log ?? "nil")
         check("the badge clears", app.diff.totals.added == 0)
         check("to a plain ±, still there to open the pane", app.diff.badge == .plain, "\(String(describing: app.diff.badge))")
+        await hunkStagingChecks(repo)
         check("View ▸ Changes again closes it", perform(changes) && app.diffItem?.isCollapsed == true)
         check("and it is no longer ticked", changes.state == .off)
     }
@@ -2530,6 +2531,22 @@ package final class E2ERunner {
                 && !GroupFocus.breaksThrough(tabGroup: nil, focused: group.id, mark: .done))
         app.toggleFocus(on: group)
         check("and leaving focus brings them back", app.store.focusedStrip.count == 2, "\(app.store.focusedStrip.count)")
+
+        // A notification's tab outside the focused island leaves focus —
+        // the window's too: what waited is let go, the bar goes.
+        app.toggleFocus(on: group)
+        app.notifyUnlessHeld(loose, note: "done")
+        check("another island's notice waits while focused", app.focus.held.count == 1, "\(app.focus.held.count)")
+        app.reveal(tabID: loose.id)
+        check(
+            "revealing a tab outside the focus leaves it",
+            app.store.focusedGroupID == nil && !app.focus.isFocusing && app.focus.held.isEmpty,
+            "store \(app.store.focusedGroupID != nil), window \(app.focus.isFocusing), held \(app.focus.held.count)")
+        check("and its bar goes", app.groupBars?.isHidden == true)
+        app.toggleFocus(on: group)
+        check("focusing again starts clean", app.focus.isFocusing && app.focus.held.isEmpty)
+        app.toggleFocus(on: group)
+        app.store.select(loose)
 
         // Broadcast types one line into every tab of the island.
         app.beginBroadcast(to: group)

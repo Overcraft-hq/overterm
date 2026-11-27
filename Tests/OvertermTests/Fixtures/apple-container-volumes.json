@@ -1,0 +1,15 @@
+[
+  {
+    "configuration": {
+      "creationDate": "2026-11-26T10:12:40Z",
+      "driver": "local",
+      "format": "ext4",
+      "labels": {},
+      "name": "overterm-probe-vol",
+      "options": {},
+      "sizeInBytes": 549755813888,
+      "source": "/Users/dev/Library/Application Support/com.apple.container/volumes/overterm-probe-vol/volume.img"
+    },
+    "id": "overterm-probe-vol"
+  }
+]

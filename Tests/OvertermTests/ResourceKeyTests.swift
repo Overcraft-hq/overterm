@@ -101,11 +101,11 @@ final class ResourceKeyTests: XCTestCase {
     func testDockersTableReadAsBefore() {
         XCTAssertEqual(DockerKey.of("\u{08}"), .remove)
         XCTAssertEqual(DockerKey.of("n"), .run)
-        for (digit, section) in [("1", DockerPageModel.Section.containers), ("2", .images), ("3", .volumes), ("4", .networks), ("5", .builds), ("6", .models)] {
+        for (digit, section) in [("1", DockerPageModel.Section.containers), ("2", .images), ("3", .volumes), ("4", .networks), ("5", .builds), ("6", .models), ("7", .apple)] {
             guard case .section(let went) = DockerKey.press(digit, sheetShowing: false) else { return XCTFail(digit) }
             XCTAssertEqual(went, section, digit)
         }
-        XCTAssertNil(DockerKey.press("7", sheetShowing: false))
+        XCTAssertNil(DockerKey.press("8", sheetShowing: false))
         guard case .help = DockerKey.press("?", sheetShowing: false) else { return XCTFail("?") }
         guard case .filter = DockerKey.press("/", sheetShowing: false) else { return XCTFail("/") }
         guard case .key(.cleanUp) = DockerKey.press("c", sheetShowing: false) else { return XCTFail("c") }

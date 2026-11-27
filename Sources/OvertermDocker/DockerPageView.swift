@@ -14,6 +14,8 @@ package struct DockerPageView: View {
     /// marks.
     @ObservedObject package var updates: DockerImageUpdates
     @ObservedObject package var theme: ChromeTheme
+    /// Apple's `container`: whether its section is listed, and its count.
+    @ObservedObject private var apple: AppleContainerModel
     package let actions: DockerActions
 
     package enum Focus: Hashable { case list, filter }
@@ -25,7 +27,13 @@ package struct DockerPageView: View {
         self._checkoutCompose = ObservedObject(wrappedValue: checkoutCompose)
         self._updates = ObservedObject(wrappedValue: updates)
         self._theme = ObservedObject(wrappedValue: theme)
+        self._apple = ObservedObject(wrappedValue: page.apple)
         self.actions = actions
+    }
+
+    /// The sections listed: Apple Containers only while the tool is there.
+    private var sections: [DockerPageModel.Section] {
+        DockerPageModel.Section.allCases.filter { $0 != .apple || apple.isInstalled }
     }
 
     package var body: some View {
@@ -58,7 +66,7 @@ package struct DockerPageView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(DockerPageModel.Section.allCases) { section in
+            ForEach(sections) { section in
                 Button {
                     page.section = section
                 } label: {
@@ -107,6 +115,7 @@ package struct DockerPageView: View {
         case .networks: docker.networks.isEmpty ? nil : docker.networks.count
         case .builds: page.builds.isEmpty ? nil : page.builds.count
         case .models: page.models.map(\.models.count)
+        case .apple: apple.read.contains(.containers) ? apple.containers.count : nil
         }
     }
 
@@ -229,57 +238,66 @@ package struct DockerPageView: View {
                 .padding(.horizontal, 20).padding(.vertical, 6)
             }
             Rectangle().fill(theme.border).frame(height: 1)
-            switch docker.connection {
-            case .running where page.section == .images:
-                DockerImagesView(page: page, docker: docker, updates: updates, scans: page.scans, theme: theme, actions: actions)
-            case .running where page.section == .volumes: DockerVolumesView(page: page, docker: docker, theme: theme, actions: actions)
-            case .running where page.section == .networks: DockerNetworksView(page: page, docker: docker, theme: theme, actions: actions)
-            case .running where page.section == .builds: DockerBuildsView(page: page, theme: theme, actions: actions)
-            case .running where page.section == .models: DockerModelsView(page: page, theme: theme, actions: actions)
-            case .running:
-                if page.isEmpty {
-                    empty("No containers", "Run one — `docker run`, or `docker compose up` in a checkout — and it shows here.")
-                } else {
-                    // The list keeps its place whether or not the detail is
-                    // beside it: moved into another container, SwiftUI made
-                    // it again, and its table took the keyboard and the
-                    // scroll position with it on the first click.
-                    GeometryReader { geometry in
-                        HStack(spacing: 0) {
-                            list
-                            if page.showDetail, let container = page.detailed {
-                                Rectangle().fill(theme.border).frame(width: 1)
-                                ContainerDetailView(
-                                    container: container, session: page.session(for: container.Id), tab: $page.detailTab,
-                                    docker: docker, theme: theme, actions: actions, verbs: { page.verbs(for: container) }
-                                )
-                                .id(container.Id)
+            // Apple's tool is its own: whether Docker answers or not.
+            if page.section == .apple {
+                AppleContainersView(page: page, apple: apple, theme: theme, actions: actions)
+            } else {
+                dockerMain
+            }
+        }
+    }
+
+    @ViewBuilder private var dockerMain: some View {
+        switch docker.connection {
+        case .running where page.section == .images:
+            DockerImagesView(page: page, docker: docker, updates: updates, scans: page.scans, theme: theme, actions: actions)
+        case .running where page.section == .volumes: DockerVolumesView(page: page, docker: docker, theme: theme, actions: actions)
+        case .running where page.section == .networks: DockerNetworksView(page: page, docker: docker, theme: theme, actions: actions)
+        case .running where page.section == .builds: DockerBuildsView(page: page, theme: theme, actions: actions)
+        case .running where page.section == .models: DockerModelsView(page: page, theme: theme, actions: actions)
+        case .running:
+            if page.isEmpty {
+                empty("No containers", "Run one — `docker run`, or `docker compose up` in a checkout — and it shows here.")
+            } else {
+                // The list keeps its place whether or not the detail is
+                // beside it: moved into another container, SwiftUI made
+                // it again, and its table took the keyboard and the
+                // scroll position with it on the first click.
+                GeometryReader { geometry in
+                    HStack(spacing: 0) {
+                        list
+                        if page.showDetail, let container = page.detailed {
+                            Rectangle().fill(theme.border).frame(width: 1)
+                            ContainerDetailView(
+                                container: container, session: page.session(for: container.Id), tab: $page.detailTab,
+                                docker: docker, theme: theme, actions: actions, verbs: { page.verbs(for: container) }
+                            )
+                            .id(container.Id)
+                            .frame(width: min(480, max(320, geometry.size.width * 0.42)))
+                        } else if page.showDetail, let project = page.detailedProject {
+                            Rectangle().fill(theme.border).frame(width: 1)
+                            ProjectDetailView(
+                                project: project, session: page.projectSession(for: project.name), page: page, ports: page.ports,
+                                updates: updates, theme: theme, actions: actions, planError: project.planned ? checkoutCompose.error : nil
+                            )
+                            .id(project.name)
+                            .frame(width: min(520, max(340, geometry.size.width * 0.45)))
+                        } else if page.showDetail, let session = page.detailedSession {
+                            Rectangle().fill(theme.border).frame(width: 1)
+                            TestcontainersSessionView(session: session, page: page, theme: theme, actions: actions)
+                                .id(DockerPageModel.sessionTag(session.id))
                                 .frame(width: min(480, max(320, geometry.size.width * 0.42)))
-                            } else if page.showDetail, let project = page.detailedProject {
-                                Rectangle().fill(theme.border).frame(width: 1)
-                                ProjectDetailView(
-                                    project: project, session: page.projectSession(for: project.name), page: page, ports: page.ports,
-                                    updates: updates, theme: theme, actions: actions, planError: project.planned ? checkoutCompose.error : nil
-                                )
-                                .id(project.name)
-                                .frame(width: min(520, max(340, geometry.size.width * 0.45)))
-                            } else if page.showDetail, let session = page.detailedSession {
-                                Rectangle().fill(theme.border).frame(width: 1)
-                                TestcontainersSessionView(session: session, page: page, theme: theme, actions: actions)
-                                    .id(DockerPageModel.sessionTag(session.id))
-                                    .frame(width: min(480, max(320, geometry.size.width * 0.42)))
-                            }
                         }
                     }
                 }
-            case .connecting:
-                VStack { ProgressView().controlSize(.small) }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .down(let reason):
-                down(reason)
-            case .off:
-                empty(
-                    "Docker isn't connected", AppEnvironment.isIsolated ? "This run reaches no Docker." : "Settings ▸ Docker has it off, or no engine set.")
             }
+        case .connecting:
+            VStack { ProgressView().controlSize(.small) }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .down(let reason):
+            down(reason)
+        case .off:
+            empty(
+                "Docker isn't connected", AppEnvironment.isIsolated ? "This run reaches no Docker." : "Settings ▸ Docker has it off, or no engine set.")
         }
     }
 

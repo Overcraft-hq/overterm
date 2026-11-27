@@ -1,0 +1,203 @@
+[
+  {
+    "configuration": {
+      "capAdd": [],
+      "capDrop": [],
+      "creationDate": "2026-11-26T10:12:56Z",
+      "dns": {
+        "nameservers": [],
+        "options": [],
+        "searchDomains": []
+      },
+      "id": "overterm-probe-web",
+      "image": {
+        "descriptor": {
+          "digest": "sha256:7fc0fb4af7bf006aeb31aea88069976060f8f0a0a86b667126742cc17f4e31ae",
+          "mediaType": "application/vnd.oci.image.index.v1+json",
+          "size": 10349
+        },
+        "reference": "docker.io/library/nginx:alpine"
+      },
+      "initProcess": {
+        "arguments": [
+          "nginx",
+          "-g",
+          "daemon off;"
+        ],
+        "environment": [
+          "PKG_RELEASE=1",
+          "NGINX_VERSION=1.31.10",
+          "NJS_VERSION=1.0.2",
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          "ACME_VERSION=0.4.2",
+          "MODE=demo",
+          "API_TOKEN=probe-not-secret",
+          "DYNPKG_RELEASE=1",
+          "NJS_RELEASE=1"
+        ],
+        "executable": "/docker-entrypoint.sh",
+        "rlimits": [],
+        "supplementalGroups": [],
+        "terminal": false,
+        "user": {
+          "id": {
+            "gid": 0,
+            "uid": 0
+          }
+        },
+        "workingDirectory": "/"
+      },
+      "labels": {
+        "app": "probe"
+      },
+      "mounts": [
+        {
+          "destination": "/data",
+          "options": [],
+          "source": "/Users/dev/Library/Application Support/com.apple.container/volumes/overterm-probe-vol/volume.img",
+          "type": {
+            "volume": {
+              "cache": {
+                "on": {}
+              },
+              "format": "ext4",
+              "name": "overterm-probe-vol",
+              "sync": {
+                "fsync": {}
+              }
+            }
+          }
+        }
+      ],
+      "networks": [
+        {
+          "network": "default",
+          "options": {
+            "hostname": "overterm-probe-web",
+            "mtu": 1280
+          }
+        }
+      ],
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux",
+        "variant": "v8"
+      },
+      "publishedPorts": [
+        {
+          "containerPort": 80,
+          "count": 1,
+          "hostAddress": "127.0.0.1",
+          "hostPort": 18080,
+          "proto": "tcp"
+        }
+      ],
+      "publishedSockets": [],
+      "readOnly": false,
+      "resources": {
+        "cpuOverhead": 1,
+        "cpus": 4,
+        "memoryInBytes": 1073741824
+      },
+      "rosetta": false,
+      "runtimeHandler": "container-runtime-linux",
+      "ssh": false,
+      "stopSignal": "SIGQUIT",
+      "sysctls": {},
+      "useInit": false,
+      "virtualization": false
+    },
+    "id": "overterm-probe-web",
+    "status": {
+      "networks": [
+        {
+          "hostname": "overterm-probe-web",
+          "ipv4Address": "192.168.64.2/24",
+          "ipv4Gateway": "192.168.64.1",
+          "ipv6Address": "fd16:8306:2aa7:38fc:fc6a:9fff:fe94:e686/64",
+          "macAddress": "fe:6a:9f:94:e6:86",
+          "mtu": 1280,
+          "network": "default",
+          "variant": "reserved"
+        }
+      ],
+      "startedDate": "2026-11-26T10:12:57Z",
+      "state": "running"
+    }
+  },
+  {
+    "configuration": {
+      "capAdd": [],
+      "capDrop": [],
+      "creationDate": "2026-11-26T10:13:02Z",
+      "dns": {
+        "nameservers": [],
+        "options": [],
+        "searchDomains": []
+      },
+      "id": "overterm-probe-stopped",
+      "image": {
+        "descriptor": {
+          "digest": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+          "mediaType": "application/vnd.oci.image.index.v1+json",
+          "size": 9218
+        },
+        "reference": "docker.io/library/alpine:latest"
+      },
+      "initProcess": {
+        "arguments": [
+          "hi"
+        ],
+        "environment": [
+          "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ],
+        "executable": "echo",
+        "rlimits": [],
+        "supplementalGroups": [],
+        "terminal": false,
+        "user": {
+          "id": {
+            "gid": 0,
+            "uid": 0
+          }
+        },
+        "workingDirectory": "/"
+      },
+      "labels": {},
+      "mounts": [],
+      "networks": [
+        {
+          "network": "default",
+          "options": {
+            "hostname": "overterm-probe-stopped",
+            "mtu": 1280
+          }
+        }
+      ],
+      "platform": {
+        "architecture": "arm64",
+        "os": "linux",
+        "variant": "v8"
+      },
+      "publishedPorts": [],
+      "publishedSockets": [],
+      "readOnly": false,
+      "resources": {
+        "cpuOverhead": 1,
+        "cpus": 4,
+        "memoryInBytes": 1073741824
+      },
+      "rosetta": false,
+      "runtimeHandler": "container-runtime-linux",
+      "ssh": false,
+      "sysctls": {},
+      "useInit": false,
+      "virtualization": false
+    },
+    "id": "overterm-probe-stopped",
+    "status": {
+      "networks": [],
+      "state": "stopped"
+    }
+  }
+]
