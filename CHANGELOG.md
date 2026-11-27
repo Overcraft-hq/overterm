@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.6.8 — 2026-11-26
 
 - The database client connects to Apache Kafka: topics and their partitions in the tree, consumer groups with their lag, the newest messages of a topic read without joining a group (nobody's offset moves), a message published; SASL and TLS; a Kafka container on the Docker page opens as one
+- An API import's notes say each thing once, with how many requests it was said of, and a long list scrolls instead of making the sheet taller than the window
 - The database client opens DuckDB files — or a database in memory — with DuckDB's own library in the app: tables in the tree, a LIST or STRUCT in the grid as `duckdb` prints it, CSV and Parquet read by a query, rows edited by their key; an agent's query that reads a file is asked first
 - The Docker page lists Apple's container tool's containers, images and volumes — a section of its own, when the tool is installed
 - Next and previous tab, ⌘1–9 and Close or Suspend Other Tabs go by the tabs the strip shows; a stashed, collapsed or unfocused island's are left alone, or named and asked about
