@@ -226,6 +226,25 @@ package struct TabActivity: Equatable {
         return true
     }
 
+    /// A Terraform run of the tab's checkout ended while nobody looked
+    /// (TF-U6): a plan, an apply, a drift check or a test — `.failed` or
+    /// `.done`, never over a higher mark. True when the mark went up or
+    /// said something new (the moment to notify).
+    @discardableResult
+    package mutating func terraformRunEnded(_ text: String, failed: Bool, visible: Bool) -> Bool {
+        guard !visible else { return false }
+        let raised: Mark = failed ? .failed : .done
+        guard raised > mark || (raised == mark && note != text) else { return false }
+        mark = raised
+        note = text
+        fromCluster = false
+        fromTerraform = false
+        fromLeftBehind = false
+        fromScreen = false
+        fromCI = false
+        return true
+    }
+
     /// What the tab's checkout deploys failed in its bound namespace
     /// (KubeAttention): a failure, as a container's is — and a newer one
     /// says itself over the last cluster mark, which isn't news any more.

@@ -96,3 +96,8 @@ extension TerminalWindowController: TerraformEditorHost {
             message: brief.message, subject: brief.subject, parts: brief.parts, diff: false, showsBrief: true)
     }
 }
+
+extension TerminalWindowController {
+    /// The editor bar's Plan (TF-U5): the panel's, asked the same way.
+    package func planFromEditor(_ card: TerraformRootCard, checkout: URL) { planTerraformRoot(card, checkout: checkout) }
+}

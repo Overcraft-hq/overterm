@@ -42,6 +42,8 @@ package final class TerraformReviewModel: ObservableObject {
     package var cancellables: Set<AnyCancellable> = []
     private var reading: Task<Void, Never>?
 
+    package init() {}
+
     /// Reads `changed`'s roots in `checkout` — the head's when `head` says
     /// one has it. Bounded as the panel's read is (`assemble`).
     package func read(changed: [String], checkout: URL, head: TerraformReview.Head?, wanted: TerraformReview.Wanted? = nil) {

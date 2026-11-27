@@ -17,6 +17,9 @@ package struct DiffPanelView: View {
     package let onOpen: (URL) -> Void
     /// The scope shown in a review tab.
     package var onReview: (DiffModel.Scope) -> Void = { _ in }
+    /// Under the scope bar: what a feature above says of the changes —
+    /// Terraform's roots they touch, with Plan (TF-G1).
+    package var accessory: AnyView = AnyView(EmptyView())
     /// The file whose Discard is awaiting confirmation.
     @State private var discarding: ChangedFile?
     /// A hunk's Discard, asked first: its file's name, the hunk.
@@ -27,8 +30,10 @@ package struct DiffPanelView: View {
     @State private var openCommits: Set<String> = []
 
     package init(
-        model: DiffModel, theme: ChromeTheme, onClose: @escaping () -> Void, onDetach: @escaping () -> Void, onOpen: @escaping (URL) -> Void, onReview: @escaping (DiffModel.Scope) -> Void = { _ in }
+        model: DiffModel, theme: ChromeTheme, onClose: @escaping () -> Void, onDetach: @escaping () -> Void, onOpen: @escaping (URL) -> Void, onReview: @escaping (DiffModel.Scope) -> Void = { _ in },
+        accessory: AnyView = AnyView(EmptyView())
     ) {
+        self.accessory = accessory
         self._model = ObservedObject(wrappedValue: model)
         self._theme = ObservedObject(wrappedValue: theme)
         self.onClose = onClose
@@ -50,6 +55,7 @@ package struct DiffPanelView: View {
                 placeholder("")
             } else {
                 scopeBar
+                accessory
                 if let note = model.scopeNote {
                     Text(verbatim: note)
                         .font(.system(size: ChromeMetrics.text(11)))

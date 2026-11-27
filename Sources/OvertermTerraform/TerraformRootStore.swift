@@ -40,6 +40,18 @@ package final class TerraformRootStore {
     /// The var files chosen for a root's plans in a checkout.
     package func varFiles(checkout: URL, root: String) -> [String] { load().varFiles?[Self.key(checkout: checkout, root: root)] ?? [] }
 
+    /// The var files a root can be planned with (TF-U4): its folder's own
+    /// `.tfvars` and `.tfvars.json` — not the ones every run loads anyway,
+    /// nothing outside it — by name, sorted. A listing of one folder.
+    package nonisolated static func choosable(in folder: URL) -> [String] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return TerraformPlanRun.offered(
+            names.filter { name in
+                var isFolder: ObjCBool = false
+                return FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path, isDirectory: &isFolder) && !isFolder.boolValue
+            })
+    }
+
     package func setVarFiles(_ files: [String], checkout: URL, root: String) {
         var current = load()
         var all = current.varFiles ?? [:]

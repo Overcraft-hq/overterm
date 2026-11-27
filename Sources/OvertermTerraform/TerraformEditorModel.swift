@@ -198,6 +198,10 @@ package final class TerraformEditorModel: ObservableObject {
 /// One module folder: its last validate, and what it found per file.
 @MainActor
 package final class TerraformFolder: ObservableObject {
+    /// The roots a file of this folder belongs to (TF-U5): the nearest root
+    /// above it, or the roots that call it as a module — the review's read
+    /// of one path, done while the editor's bar shows it.
+    package let roots = TerraformReviewModel()
     package enum State: Equatable {
         case idle
         case running

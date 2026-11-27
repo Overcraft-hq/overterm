@@ -10316,6 +10316,36 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
   -lock-timeout=0s`) refused by it and changing nothing, force-unlock's
   empty UNLOCK, two roots on one state.
 
+### The flow's links (P15)
+
+- **Var Files…** (TF-U4): a root's card, its menu and the plan's inputs
+  line open one list — the root's own `.tfvars` and `.tfvars.json`
+  (`TerraformRootStore.choosable`, the folder listed once, never what
+  every run loads), ticked as chosen; several at once, None clearing them,
+  only the root's own kept (`setVarFiles`). Before any plan has failed for
+  want of one; the missing-variable offer still stands.
+- **A run's end** (TF-U6): `TerminalWindowController+TerraformRunEnds`
+  follows every plan, drift check, init, apply and test (`$phase`) and,
+  once a run across windows, marks the checkout's tab
+  (`TabActivity.terraformRunEnded` — `.failed` or `.done`, never over a
+  higher mark) and notifies through `notifyUnlessHeld` — unless its window
+  is in front with that run in the right slot. Its words are
+  `TerraformRunEnd`'s alone — the root, its workspace, the plan's counts —
+  never terraform's output, which can carry a value it marks sensitive. A
+  run stopped or refused says nothing: the person did that, or was told.
+- **The changes pane's roots** (TF-G1): `TerraformChangesLine`, in
+  `DiffPanelView`'s accessory slot, names the roots the shown changes touch
+  — directly or through a module (`TerraformReview.touched`, the review
+  tab's read, `TerraformReviewModel`) — production red, each with Plan
+  (`planTerraformRoot`, asked as the panel's is). Read only while the pane
+  shows changes with a Terraform file among them, a moment after they
+  settle: one `git ls-files`, the touched roots' files; the changes are the
+  pane's own, never asked of git again.
+- **The editor's bar** (TF-U5): `TerraformFolder.roots` reads the open
+  file's one path the same way while the bar shows it; the bar shows its
+  root's class, workspace and Plan — in a module, Plan a Caller, the roots
+  that call it (`TerraformEditorHost.planFromEditor`).
+
 ## Simulator
 
 The browser's column shows one of two things, and the title bar has a
