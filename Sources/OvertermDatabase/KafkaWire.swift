@@ -284,10 +284,13 @@ package enum KafkaWire {
         package var topics: [Topic]
     }
 
-    package static func metadataRequest(version: Int16, topics: [String]?) -> [UInt8] {
+    /// Metadata, every topic's or those named; `create` lets a broker that
+    /// does (`auto.create.topics.enable`) make a missing one — PUBLISH's,
+    /// as producers have it, never a read's.
+    package static func metadataRequest(version: Int16, topics: [String]?, create: Bool = false) -> [UInt8] {
         var w = Writer()
         w.array(topics) { w, name in w.string(name) }
-        if version >= 4 { w.bool(false) }  // allow_auto_topic_creation: never by reading
+        if version >= 4 { w.bool(create) }
         if version >= 8 {
             w.bool(false)
             w.bool(false)

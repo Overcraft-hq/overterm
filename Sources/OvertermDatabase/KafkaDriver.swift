@@ -153,7 +153,8 @@ package actor KafkaDriver: DatabaseDriver {
                 return try KafkaWire.saslAuthenticate(
                     try await connection.send(.saslAuthenticate, version: version, body: KafkaWire.saslAuthenticateRequest(token), timeout: .seconds(15)))
             } catch let failure as KafkaWire.Failure {
-                throw DatabaseError.failed("Authentication failed: \(failure.message) — the user or the password is wrong.")
+                let said = failure.message.hasPrefix("Authentication failed") ? failure.message : "Authentication failed: \(failure.message)"
+                throw DatabaseError.failed("\(said) — the user or the password is wrong.")
             }
         }
         if mechanism == "PLAIN" {
@@ -244,6 +245,27 @@ package actor KafkaDriver: DatabaseDriver {
         guard let topic = metadata.topics.first(where: { $0.name == name }) else { throw DatabaseError.failed("No topic “\(name)” in this cluster.") }
         guard topic.error == 0 else { throw DatabaseError.failed("“\(name)”: \(KafkaWire.error(topic.error)).") }
         return topic
+    }
+
+    /// The topic a PUBLISH writes to: made by the broker when it is missing
+    /// and the cluster makes topics on first use, as a producer's would be —
+    /// its partitions given a moment to have leaders.
+    private func topicToWrite(_ name: String) async throws -> KafkaWire.Topic {
+        if let known = try await refresh().topics.first(where: { $0.name == name && $0.error == 0 }) { return known }
+        for attempt in 0..<10 {
+            let (body, version) = try await call(.metadata, { KafkaWire.metadataRequest(version: $0, topics: [name], create: true) })
+            let read = try decode { try KafkaWire.metadata(body, version: version) }
+            if let made = read.topics.first(where: { $0.name == name }) {
+                if made.error == 0, !made.partitions.isEmpty, made.partitions.allSatisfy({ $0.leader >= 0 }) {
+                    metadata = try await refresh()
+                    return made
+                }
+                // Only "not yet" is waited out; anything else is the answer.
+                if ![3, 5].contains(made.error) { throw DatabaseError.failed("“\(name)”: \(KafkaWire.error(made.error)).") }
+            }
+            try await Task.sleep(nanoseconds: UInt64(200_000_000 * (attempt + 1)))
+        }
+        throw DatabaseError.failed("No topic “\(name)” in this cluster, and it doesn't make topics on first use (auto.create.topics.enable) — create it first.")
     }
 
     /// Partitions' offsets, asked of each leader: the next one's
@@ -415,7 +437,7 @@ package actor KafkaDriver: DatabaseDriver {
     }
 
     private func publish(_ name: String, partition: Int32?, key: String?, value: String) async throws -> QueryResult {
-        let topic = try await topic(name)
+        let topic = try await topicToWrite(name)
         let index: Int32
         if let partition {
             guard topic.partitions.contains(where: { $0.index == partition }) else {
@@ -509,11 +531,13 @@ package actor KafkaDriver: DatabaseDriver {
     }
 
     private func lag(_ group: String) async throws -> QueryResult {
-        let rows = try await lagRows(group)
-        guard !rows.isEmpty else {
-            let listed = try await groupList().contains { $0.id == group }
-            throw DatabaseError.failed(listed ? "“\(group)” has committed no offsets." : "No consumer group “\(group)” in this cluster.")
+        // A group nobody has made: said so — a cluster with none yet has no
+        // coordinator to ask either.
+        guard try await groupList().contains(where: { $0.id == group }) else {
+            throw DatabaseError.failed("No consumer group “\(group)” in this cluster.")
         }
+        let rows = try await lagRows(group)
+        guard !rows.isEmpty else { throw DatabaseError.failed("“\(group)” has committed no offsets.") }
         var result = QueryResult()
         result.columns = ["topic", "partition", "committed", "end", "lag"]
         result.types = ["string", "int", "int", "int", "int"]
