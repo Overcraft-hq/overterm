@@ -1795,7 +1795,8 @@ like Zed needs a GPU renderer.
   byte offset is twice an `NSRange` location); edits in one run-loop pass
   merge into one tree edit (`SyntaxEdit`). Injections are parsed as their
   language over just their ranges of the document: markdown's inline text,
-  a fence's language, HTML's script. Only what is on screen (and a screen
+  a fence's language, HTML's script, the HTML around PHP's `<?php` (PHP's
+  scanner is C++, linked by the libc++ Ghostty already needs). Only what is on screen (and a screen
   either side) is coloured, after each parse and on scroll; spans for an
   older text are dropped. Later patterns win, as Helix 25.07's queries
   expect. The palette is Zed's One Dark / One Light (`EditorTheme`), picked by
@@ -1817,7 +1818,8 @@ like Zed needs a GPU renderer.
   or among the servers Zed downloaded. Full-text sync, debounced, flushed
   before any request; UTF-16 positions. Diagnostics, completion (with the
   file's own words, `CompletionMatch`), hover, definition, references,
-  symbols, formatting. Nothing launches in tests or isolated runs unless
+  symbols, formatting. PHP's is Intelephense (`npm i -g intelephense`),
+  else Phpactor, rooted at `composer.json`. Nothing launches in tests or isolated runs unless
   `discoveryOverride` hands in a fake.
   - **Watched files.** The client says it can watch
     (`workspace.didChangeWatchedFiles.dynamicRegistration`, relative

@@ -94,6 +94,11 @@ package final class LanguageServers {
                 .executable("bash-language-server", ["start"]),
                 .zedNode("bash-language-server/node_modules/bash-language-server/out/cli.js", ["start"]),
             ]),
+        // PHP: Intelephense (npm i -g intelephense), else Phpactor — rooted at composer.json.
+        Spec(
+            id: "php", extensions: ["php": "php", "phtml": "php", "php4": "php", "php5": "php", "phps": "php", "inc": "php", "ctp": "php"],
+            rootMarkers: ["composer.json"],
+            launch: [.executable("intelephense", ["--stdio"]), .executable("phpactor", ["language-server"])]),
         // Terraform (analysis 4.14): rooted at the git top (no markers), a
         // linked worktree's own — one server a worktree. Its validate on
         // save off: Overterm's runs it, stripped (`TerraformFolder.validate`).
