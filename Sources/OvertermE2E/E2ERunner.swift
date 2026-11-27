@@ -399,9 +399,17 @@ package final class E2ERunner {
         _ = try await Git.run(["-c", "user.email=e2e@overterm", "-c", "user.name=e2e"] + args, in: dir)
     }
 
-    /// An item of the menu bar's `menu`, as the menu bar has it.
+    /// An item of the menu bar's `menu`, as the menu bar has it — in a
+    /// submenu of it too (View ▸ Kubernetes ▸ …).
     package func menuItem(_ menu: String, _ title: String) -> NSMenuItem? {
-        NSApp.mainMenu?.items.first { $0.submenu?.title == menu }?.submenu?.items.first { $0.title == title }
+        func find(_ menu: NSMenu?) -> NSMenuItem? {
+            for item in menu?.items ?? [] {
+                if item.title == title, item.submenu == nil { return item }
+                if let found = find(item.submenu) { return found }
+            }
+            return nil
+        }
+        return find(NSApp.mainMenu?.items.first { $0.submenu?.title == menu }?.submenu)
     }
 
     /// Chooses a menu item: its action goes up the responder chain from the
@@ -5309,6 +5317,7 @@ package final class E2ERunner {
         }
         AcknowledgementsWindowController.shared.window?.close()
         app.closeOverlay(.settings)
+        await menusAndWhatsNewChecks()
     }
 
     /// How heavy Overterm is to live in: idle with ten tabs (two split),

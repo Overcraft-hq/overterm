@@ -443,7 +443,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     resume: { [weak self] in self?.resumeTab($0) },
                     resumeAll: { [weak self] in self?.store.tabs.filter(\.isSuspended).forEach { self?.resumeTab($0) } },
                     press: { [weak self] subject, event, phase in self?.stripPress(subject, event, phase) }
-                ),
+                ).with(
+                    showWhatsNew: { [weak self] in self?.showWhatsNew() },
+                    dismissWhatsNew: { UpdateChecker.shared.dismissWhatsNew() }),
                 groupActions: TabGroupActions(
                     select: { [weak self] group in self?.selectGroup(group) },
                     toggleCollapsed: { [weak self] group in self?.toggleGroupCollapsed(group) },
@@ -4161,6 +4163,14 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     }
 
     /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
+    /// The strip's "What's new in …" chip (SET-G2): the bundled changelog
+    /// at this version's entry, and the chip put away for it.
+    package func showWhatsNew() {
+        guard let version = UpdateChecker.shared.whatsNew else { return }
+        UpdateChecker.shared.dismissWhatsNew()
+        ChangelogWindowController.shared.show(version: version)
+    }
+
     package func openSettings(_ section: SettingsSection? = nil) {
         if let section { settingsPage.show(section) }
         showOverlay(.settings)

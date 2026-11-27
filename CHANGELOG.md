@@ -37,6 +37,7 @@ version is tagged `v<version>`.
 - Terraform: Var Files… on a root's card (and the plan's inputs line) ticks its .tfvars for every plan, several at once, None clearing them
 - Terraform: a plan, apply, drift check or test that ends while you're elsewhere marks the checkout's tab and notifies, in Overterm's words only
 - Terraform: the changes pane names the roots the changed files touch, directly or through a module, with Plan; the editor's bar shows the file's root, workspace and class, with Plan
+- A Help menu, with macOS's menu search, Keyboard Shortcuts, the changelog and Overterm on GitHub; View's commands grouped into submenus (Groups, Panes, Columns, Docker, Kubernetes, Activity, Terraform, Notes); after an update, a quiet "What's new in <version>" chip in the strip opens its changelog entry
 
 ## 1.6.7 — 2026-11-23
 

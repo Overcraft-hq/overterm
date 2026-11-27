@@ -1097,7 +1097,17 @@ package final class ChangelogWindowController: NSWindowController {
 
     package required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    package func show() {
+    /// The version the window is scrolled to — the strip's "What's new"
+    /// chip's; nil for the whole file from the top.
+    package private(set) var focus: String?
+
+    package func show(version: String? = nil) {
+        if version != focus || version != nil {
+            focus = version
+            window?.contentViewController = NSHostingController(
+                rootView: ChangelogView(text: Changelog.bundled ?? "No changelog in this build.", focus: version))
+            window?.title = version.map { "What’s New in Overterm \($0)" } ?? "Overterm Changelog"
+        }
         if window?.isVisible != true { window?.center() }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
@@ -1106,22 +1116,30 @@ package final class ChangelogWindowController: NSWindowController {
 
 private struct ChangelogView: View {
     let text: String
+    /// A version whose entry is scrolled to and marked.
+    var focus: String?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 6) {
-                // The file's own preamble is for committers; versions start at the first "## ".
-                let lines = text.components(separatedBy: "\n").drop { !$0.hasPrefix("## ") }
-                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                    if line.hasPrefix("## ") {
-                        Text(verbatim: String(line.dropFirst(3))).font(.headline).padding(.top, 10)
-                    } else if line.hasPrefix("- ") {
-                        Text(verbatim: "• " + line.dropFirst(2)).fixedSize(horizontal: false, vertical: true)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    // The file's own preamble is for committers; versions start at the first "## ".
+                    let lines = text.components(separatedBy: "\n").drop { !$0.hasPrefix("## ") }
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        if line.hasPrefix("## ") {
+                            let version = line.dropFirst(3).split(separator: " ").first.map(String.init)
+                            Text(verbatim: String(line.dropFirst(3))).font(.headline).padding(.top, 10)
+                                .foregroundStyle(version == focus && focus != nil ? Color.accentColor : Color.primary)
+                                .id(version ?? line)
+                        } else if line.hasPrefix("- ") {
+                            Text(verbatim: "• " + line.dropFirst(2)).fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .onAppear { if let focus { proxy.scrollTo(focus, anchor: .top) } }
         }
     }
 }
