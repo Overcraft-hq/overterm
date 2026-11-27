@@ -15,6 +15,8 @@ extension TerminalWindowController {
             sendNotes: { [weak self] in self?.sendReviewNotes($0) },
             noteRecipient: { [weak self] in self?.reviewNoteRecipient($0) },
             askAboutLines: { [weak self] in self?.askAboutReviewLines($0) },
+            addressThread: { [weak self] review, thread in self?.addressReviewThread(thread, root: review.root, title: review.title) },
+            submitReview: { [weak self] in self?.submitReview($0) },
             terraform: terraformReviewActions)
     }
 

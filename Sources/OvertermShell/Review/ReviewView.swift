@@ -12,6 +12,10 @@ package struct ReviewActions {
     package var noteRecipient: (ReviewModel) -> String? = { _ in nil }
     /// The picked lines to Ask Agent's sheet (⌘L).
     package var askAboutLines: (ReviewModel) -> Void = { _ in }
+    /// A thread drawn at its line, to the checkout's agent (Address This Thread).
+    package var addressThread: (ReviewModel, ReviewThread) -> Void = { _, _ in }
+    /// The comments kept, posted with a decision as one review — asked first (GIT-G3).
+    package var submitReview: (ReviewModel) -> Void = { _ in }
     package var terraform = TerraformReviewActions()
 }
 
@@ -205,6 +209,8 @@ private struct ReviewFilePane: View {
                 ReviewDiffView(
                     diff: diff, layout: model.layout, target: model.scrollTarget, rows: model.rows[file.path] ?? [], theme: theme,
                     fraction: $model.splitFraction, selection: model.lineSelection?.path == file.path ? model.lineSelection : nil,
+                    threads: model.placedThreads[file.path] ?? [:], address: { [weak model] thread in model.map { actions.addressThread($0, thread) } },
+                    openURL: actions.openOnGitHub,
                     pick: { [weak model] id, extending in model?.pickLine(id, extending: extending) }
                 )
                 .id(file.path)
@@ -234,10 +240,15 @@ private struct ReviewNotesBar: View {
     @FocusState private var writing: Bool
 
     var body: some View {
-        if model.lineSelection != nil || !model.notes.isEmpty {
+        if model.lineSelection != nil || !model.notes.isEmpty || !model.drafts.isEmpty {
             VStack(spacing: 0) {
                 Rectangle().fill(theme.border).frame(height: 1)
                 if let selection = model.lineSelection { picked(selection) }
+                if let problem = model.draftProblem {
+                    Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(DiffColors.removed).padding(.horizontal, 14)
+                        .accessibilityIdentifier("review.comments.problem")
+                }
+                if !model.drafts.isEmpty { drafts }
                 if !model.notes.isEmpty { notes }
             }
             .font(.system(size: ChromeMetrics.text(12)))
@@ -257,6 +268,12 @@ private struct ReviewNotesBar: View {
                 .focused($writing)
                 .onSubmit { model.addNote() }
                 .accessibilityIdentifier("review.notes.field")
+            if model.pullRequestNumber != nil {
+                Button("Comment on GitHub") { model.addDraftComment() }
+                    .disabled(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .help("Kept for your review: it goes to GitHub with Submit Review, with a decision, asked first")
+                    .accessibilityIdentifier("review.comments.add")
+            }
             Button("Add Note") { model.addNote() }
                 .disabled(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityIdentifier("review.notes.add")
@@ -280,6 +297,52 @@ private struct ReviewNotesBar: View {
         }
         .padding(.horizontal, 14)
         .frame(height: ChromeMetrics.row(40))
+    }
+
+    /// The comments kept for the pull request's review (GIT-G3).
+    private var drafts: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(model.drafts) { comment in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Image(systemName: "text.bubble").foregroundStyle(theme.dimText)
+                            Text(verbatim: "\(comment.path), \(comment.span)")
+                                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                                .foregroundStyle(theme.dimText)
+                                .lineLimit(1)
+                                .truncationMode(.head)
+                            Text(verbatim: comment.body).foregroundStyle(theme.text).lineLimit(2)
+                            Spacer(minLength: 4)
+                            Button {
+                                model.removeDraftComment(comment.id)
+                            } label: {
+                                Image(systemName: "xmark")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(theme.dimText)
+                            .help("Remove this comment")
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+            }
+            .frame(maxHeight: 110)
+            HStack(spacing: 8) {
+                Text(verbatim: model.drafts.count == 1 ? "1 comment for GitHub" : "\(model.drafts.count) comments for GitHub")
+                    .foregroundStyle(theme.dimText)
+                    .accessibilityIdentifier("review.comments.count")
+                Spacer()
+                Button("Discard") { model.clearDraftComments() }
+                Button("Submit Review…") { actions.submitReview(model) }
+                    .help("Post the comments as one review — Comment, Approve or Request Changes — asked first")
+                    .accessibilityIdentifier("review.comments.submit")
+            }
+            .padding(.horizontal, 14)
+            .frame(height: ChromeMetrics.row(36))
+            Rectangle().fill(theme.border).frame(height: 1)
+        }
     }
 
     private var notes: some View {
@@ -327,6 +390,87 @@ private struct ReviewNotesBar: View {
     }
 }
 
+/// A diff's lines or rows with the threads after the line each is on.
+private enum ReviewThreadItems {
+    enum Unified: Identifiable {
+        case line(DiffLine)
+        case threads(after: Int, [ReviewThread])
+        var id: Int {
+            switch self {
+            case .line(let line): line.id
+            case .threads(let after, _): -1 - after
+            }
+        }
+    }
+
+    enum Split: Identifiable {
+        case row(SplitDiff.Row)
+        case threads(after: Int, [ReviewThread])
+        var id: Int {
+            switch self {
+            case .row(let row): row.id
+            case .threads(let after, _): -1 - after
+            }
+        }
+    }
+
+    static func unified(_ lines: [DiffLine], _ threads: [Int: [ReviewThread]]) -> [Unified] {
+        lines.flatMap { line -> [Unified] in
+            guard let here = threads[line.id] else { return [.line(line)] }
+            return [.line(line), .threads(after: line.id, here)]
+        }
+    }
+
+    static func split(_ rows: [SplitDiff.Row], _ threads: [Int: [ReviewThread]]) -> [Split] {
+        rows.flatMap { row -> [Split] in
+            let here = [row.left?.id, row.right?.id].compactMap { $0 }.reduce(into: [ReviewThread]()) { found, id in
+                for thread in threads[id] ?? [] where !found.contains(where: { $0.id == thread.id }) { found.append(thread) }
+            }
+            return here.isEmpty ? [.row(row)] : [.row(row), .threads(after: row.id, here)]
+        }
+    }
+}
+
+/// A pull request's threads under the line they are on: who said what,
+/// Open on GitHub, Address This Thread.
+private struct ReviewThreadsView: View {
+    let threads: [ReviewThread]
+    @ObservedObject var theme: ChromeTheme
+    let address: (ReviewThread) -> Void
+    let openURL: (URL) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(threads) { thread in
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(thread.comments) { comment in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: comment.author).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text)
+                            Text(verbatim: comment.body).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(10)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    HStack(spacing: 10) {
+                        Button("Address This Thread") { address(thread) }
+                            .help("Type this thread into the checkout's agent — the reviewers' words as data, not instructions")
+                        if let url = thread.url { Button("Open on GitHub") { openURL(url) } }
+                    }
+                    .buttonStyle(.link)
+                    .font(.system(size: ChromeMetrics.text(11)))
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(theme.selected.opacity(0.5)))
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("review.thread")
+            }
+        }
+        .font(.system(size: ChromeMetrics.text(12)))
+        .padding(.horizontal, 48)
+        .padding(.vertical, 6)
+    }
+}
+
 /// A file's diff, as one column or side by side, scrolled to the change
 /// `n`/`p` picked.
 private struct ReviewDiffView: View {
@@ -339,6 +483,10 @@ private struct ReviewDiffView: View {
     @Binding var fraction: CGFloat
     /// The lines picked in this file.
     let selection: ReviewLineSelection?
+    /// A pull request's threads by the line they are drawn under (GIT-G3).
+    let threads: [Int: [ReviewThread]]
+    let address: (ReviewThread) -> Void
+    let openURL: (URL) -> Void
     let pick: (Int, Bool) -> Void
     /// The fraction as a drag began.
     @State private var dragStart: CGFloat?
@@ -383,40 +531,13 @@ private struct ReviewDiffView: View {
     }
 
     private func content(left: CGFloat?) -> some View {
-        let palette = palette
-        return ScrollViewReader { proxy in
+        ScrollViewReader { proxy in
             ScrollView {
-                // Lazy: a file at the cap is twenty thousand lines.
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    switch layout {
-                    case .unified:
-                        ForEach(diff.lines) { line in
-                            DiffLineView(
-                                line: line, style: diff.style(of: line), palette: palette, theme: theme, picked: selection?.contains(line.id) == true,
-                                onNumber: { pick(line.id, $0) }
-                            )
-                            .equatable()
-                            .id(line.id)
-                        }
-                    case .split:
-                        let colors = ReviewRowColors(theme)
-                        ForEach(rows) { row in
-                            SplitRowView(
-                                row: row, left: row.left.map(diff.style(of:)) ?? DiffLineStyle(),
-                                right: row.right.map(diff.style(of:)) ?? DiffLineStyle(), palette: palette, colors: colors,
-                                leftWidth: left, leftPicked: selection?.contains(row.left?.id) == true,
-                                rightPicked: selection?.contains(row.right?.id) == true, pick: pick
-                            )
-                            .equatable()
-                            .id(row.id)
-                        }
-                    }
-                    if diff.truncated {
-                        Text("Diff truncated.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(8)
-                    }
-                }
-                .padding(.vertical, 4)
-                .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+                // Threads between the lines in a stack of their own: a file
+                // with none keeps the plain list as it was (its scroll is
+                // measured, and a deeper choice inside the lazy stack cost
+                // a millisecond a step).
+                if threads.isEmpty { plain(left: left) } else { threaded(left: left) }
                 // No .textSelection: it cost 40% of every scroll step (a
                 // 3,000-line file side by side, 17 ms a step → 10.5 ms).
                 // Lines are picked by their numbers instead, and copied
@@ -427,6 +548,85 @@ private struct ReviewDiffView: View {
                 proxy.scrollTo(target, anchor: UnitPoint(x: 0, y: 0.2))
             }
         }
+    }
+
+    private func plain(left: CGFloat?) -> some View {
+        let palette = palette
+        // Lazy: a file at the cap is twenty thousand lines.
+        return LazyVStack(alignment: .leading, spacing: 0) {
+            switch layout {
+            case .unified:
+                ForEach(diff.lines) { line in
+                    DiffLineView(
+                        line: line, style: diff.style(of: line), palette: palette, theme: theme, picked: selection?.contains(line.id) == true,
+                        onNumber: { pick(line.id, $0) }
+                    )
+                    .equatable()
+                    .id(line.id)
+                }
+            case .split:
+                let colors = ReviewRowColors(theme)
+                ForEach(rows) { row in
+                    SplitRowView(
+                        row: row, left: row.left.map(diff.style(of:)) ?? DiffLineStyle(),
+                        right: row.right.map(diff.style(of:)) ?? DiffLineStyle(), palette: palette, colors: colors,
+                        leftWidth: left, leftPicked: selection?.contains(row.left?.id) == true,
+                        rightPicked: selection?.contains(row.right?.id) == true, pick: pick
+                    )
+                    .equatable()
+                    .id(row.id)
+                }
+            }
+            if diff.truncated { truncatedNote }
+        }
+        .padding(.vertical, 4)
+        .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+    }
+
+    private func threaded(left: CGFloat?) -> some View {
+        let palette = palette
+        return LazyVStack(alignment: .leading, spacing: 0) {
+            switch layout {
+            case .unified:
+                ForEach(ReviewThreadItems.unified(diff.lines, threads)) { item in
+                    switch item {
+                    case .line(let line):
+                        DiffLineView(
+                            line: line, style: diff.style(of: line), palette: palette, theme: theme,
+                            picked: selection?.contains(line.id) == true, onNumber: { pick(line.id, $0) }
+                        )
+                        .equatable()
+                        .id(line.id)
+                    case .threads(_, let threads):
+                        ReviewThreadsView(threads: threads, theme: theme, address: address, openURL: openURL)
+                    }
+                }
+            case .split:
+                let colors = ReviewRowColors(theme)
+                ForEach(ReviewThreadItems.split(rows, threads)) { item in
+                    switch item {
+                    case .row(let row):
+                        SplitRowView(
+                            row: row, left: row.left.map(diff.style(of:)) ?? DiffLineStyle(),
+                            right: row.right.map(diff.style(of:)) ?? DiffLineStyle(), palette: palette, colors: colors,
+                            leftWidth: left, leftPicked: selection?.contains(row.left?.id) == true,
+                            rightPicked: selection?.contains(row.right?.id) == true, pick: pick
+                        )
+                        .equatable()
+                        .id(row.id)
+                    case .threads(_, let threads):
+                        ReviewThreadsView(threads: threads, theme: theme, address: address, openURL: openURL)
+                    }
+                }
+            }
+            if diff.truncated { truncatedNote }
+        }
+        .padding(.vertical, 4)
+        .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+    }
+
+    private var truncatedNote: some View {
+        Text("Diff truncated.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(8)
     }
 }
 
