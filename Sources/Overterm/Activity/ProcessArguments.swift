@@ -259,7 +259,7 @@ package struct ProcessArguments: Hashable, Sendable {
         guard decode else { return ProcessArguments(command: "", label: nil, isCut: layout.isCut, isTitle: layout.isTitle, markers: markers) }
         var words = layout.words.map { String(decoding: UnsafeRawBufferPointer(rebasing: bytes[$0]), as: UTF8.self) }
         let agent = Agent.of(arguments: words)
-        let resumes = resumedSession(in: words)
+        let resumes = agent == .opencode ? opencodeSession(in: words) : resumedSession(in: words)
         let masked = Secrets.maskArguments(words)
         words.removeAll()
         let command = ActivityText.command(masked: masked) + (layout.isCut ? (masked.isEmpty ? "" : " ") + cutMark : "")
@@ -275,6 +275,24 @@ package struct ProcessArguments: Hashable, Sendable {
         guard let flag = words.firstIndex(where: { $0 == "--resume" || $0 == "-r" }), flag + 1 < words.count else { return nil }
         let id = words[flag + 1]
         return ClaudeSession.isValidID(id) ? id : nil
+    }
+
+    /// opencode's: the session its `--session <id>`, `-s <id>` or
+    /// `--session=<id>` picks back up (the Sessions panel's own resume), a
+    /// valid id only (`OpencodeSessions.isValidID`).
+    package static func opencodeSession(in words: [String]) -> String? {
+        for (index, word) in words.enumerated() {
+            let id: String?
+            if word == "--session" || word == "-s" {
+                id = index + 1 < words.count ? words[index + 1] : nil
+            } else if word.hasPrefix("--session=") {
+                id = String(word.dropFirst("--session=".count))
+            } else {
+                continue
+            }
+            if let id, OpencodeSessions.isValidID(id) { return id }
+        }
+        return nil
     }
 
     /// Where the layout's parts lie, found in place — no byte of it made a

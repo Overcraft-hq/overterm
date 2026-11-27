@@ -107,22 +107,41 @@ package enum AgentUsageCommand {
         process.standardOutput = out
         process.standardError = err
         process.standardInput = FileHandle.nullDevice
+        let exited = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exited.signal() }
         do { try process.run() } catch { return (nil, -1, "") }
-        // stderr drained on its own thread: either pipe filling would hold
-        // the process open while the other is read.
-        nonisolated(unsafe) var errData = Data()
-        let drained = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .utility).async {
-            errData = err.fileHandleForReading.readDataToEndOfFile()
-            drained.signal()
+        // Both pipes drained on threads of their own, and the process waited
+        // for with the deadline: a read to the pipe's end waited for every
+        // writer, so a `claude` that hung (or a child holding the pipe) held
+        // the refresh forever and the deadline never came.
+        let output = PipeDrain(out)
+        let errors = PipeDrain(err)
+        if exited.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            _ = exited.wait(timeout: .now() + 2)
         }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning, Date() < deadline { usleep(50_000) }
-        if process.isRunning { process.terminate() }
-        process.waitUntilExit()
-        drained.wait()
+        let data = output.take(within: 2)
         let text = String(decoding: data, as: UTF8.self)
-        return (text.isEmpty ? nil : text, process.terminationStatus, String(decoding: errData.prefix(4096), as: UTF8.self))
+        let status = process.isRunning ? -1 : process.terminationStatus
+        return (text.isEmpty ? nil : text, status, String(decoding: errors.take(within: 1).prefix(4096), as: UTF8.self))
+    }
+}
+
+/// A pipe read to its end on a thread of its own; what it read, waited for
+/// a bounded time (a child that kept the pipe open is left to it).
+private final class PipeDrain: @unchecked Sendable {
+    private var data = Data()
+    private let done = DispatchSemaphore(value: 0)
+
+    init(_ pipe: Pipe) {
+        let handle = pipe.fileHandleForReading
+        DispatchQueue.global(qos: .utility).async { [self] in
+            data = handle.readDataToEndOfFile()
+            done.signal()
+        }
+    }
+
+    func take(within seconds: Double) -> Data {
+        done.wait(timeout: .now() + seconds) == .success ? data : Data()
     }
 }

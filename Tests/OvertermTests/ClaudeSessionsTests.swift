@@ -102,6 +102,28 @@ final class OpencodeSessionsTests: XCTestCase {
         XCTAssertNil(listed.first?.file)
     }
 
+    func testWhatWasTypedNotWhatOpencodeAddedAndNoEmptyOnes() throws {
+        let db = try database(
+            [
+                session("ses_typed", "/w", "New session - x", updated: 2_000),
+                session("ses_empty", "/w", "New session - y", updated: 3_000),
+                "INSERT INTO message VALUES ('m1', 'ses_typed', 1000, 1000, '{\"role\":\"user\"}')",
+                "INSERT INTO part VALUES ('p1', 'm1', 'ses_typed', 1000, 1000, '{\"type\":\"text\",\"text\":\"read @main.go\"}')",
+                "INSERT INTO part VALUES ('p2', 'm1', 'ses_typed', 1001, 1001, '{\"type\":\"text\",\"synthetic\":true,\"text\":\"Called the Read tool\"}')",
+            ])
+        let listed = OpencodeSessions.list(in: ["/w"], database: db)
+        XCTAssertEqual(listed.map(\.id), ["ses_typed"], "nothing typed and no title: not a conversation to go back to")
+        XCTAssertEqual(listed.first?.lastPrompt, "read @main.go", "opencode's synthetic part isn't what was typed")
+    }
+
+    func testARunningOpencodesSessionIsReadOffItsArgv() {
+        XCTAssertEqual(ProcessArguments.opencodeSession(in: ["opencode", "--session", "ses_abc123"]), "ses_abc123")
+        XCTAssertEqual(ProcessArguments.opencodeSession(in: ["/bin/opencode", "-m", "x", "-s", "ses_abc123"]), "ses_abc123")
+        XCTAssertEqual(ProcessArguments.opencodeSession(in: ["opencode", "--session=ses_abc123"]), "ses_abc123")
+        XCTAssertNil(ProcessArguments.opencodeSession(in: ["opencode", "--session", "x; rm"]))
+        XCTAssertNil(ProcessArguments.opencodeSession(in: ["opencode", "--continue"]))
+    }
+
     func testAnUnreadableDatabaseListsNothing() throws {
         let file = folder.appendingPathComponent("opencode.db")
         try Data("not a database".utf8).write(to: file)

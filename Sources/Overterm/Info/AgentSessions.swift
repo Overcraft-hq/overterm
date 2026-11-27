@@ -63,10 +63,13 @@ package enum OpencodeSessions {
     }
 
     /// Its database: `$XDG_DATA_HOME/opencode/opencode.db`, else
-    /// ~/.local/share's — where opencode 1.x keeps it. None in an isolated
-    /// run: a scenario never reads the user's.
+    /// ~/.local/share's — where opencode 1.x keeps it. An isolated run never
+    /// reads the user's: its own support folder's, a scenario's fixture.
     package static var database: URL? {
-        guard !AppEnvironment.isIsolated else { return nil }
+        if AppEnvironment.isIsolated {
+            let fixture = AppEnvironment.supportDirectory.appendingPathComponent("opencode/opencode.db")
+            return FileManager.default.fileExists(atPath: fixture.path) ? fixture : nil
+        }
         let environment = ProcessInfo.processInfo.environment
         let data =
             environment["XDG_DATA_HOME"].map { URL(fileURLWithPath: $0) }
@@ -93,32 +96,45 @@ package enum OpencodeSessions {
         sqlite3_busy_timeout(db, 250)
 
         var rows: [(id: String, directory: String, title: String, updated: Date)] = []
+        // The checkout's own, in SQL before the limit: other repositories'
+        // newer sessions can't push them out. By prefix, never LIKE (a path's
+        // `_` and `%` would be wildcards); kept again below by the standardized path.
+        let within = roots.indices.map { "directory = ?\($0 + 1) OR substr(directory, 1, length(?\($0 + 1)) + 1) = ?\($0 + 1) || '/'" }
         let sessions = """
             SELECT id, directory, title, time_updated FROM session
-            WHERE parent_id IS NULL AND time_archived IS NULL
-            ORDER BY time_updated DESC LIMIT 1000
+            WHERE parent_id IS NULL AND time_archived IS NULL AND (\(within.joined(separator: " OR ")))
+            ORDER BY time_updated DESC LIMIT \(limit * 4)
             """
-        query(db, sessions, bind: []) { statement in
+        query(db, sessions, bind: roots) { statement in
             guard let id = text(statement, 0), isValidID(id), let directory = text(statement, 1) else { return }
             let path = URL(fileURLWithPath: directory).standardizedFileURL.path
             guard roots.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) else { return }
             let updated = Date(timeIntervalSince1970: Double(sqlite3_column_int64(statement, 3)) / 1000)
             rows.append((id, path, text(statement, 2) ?? "", updated))
         }
-        // The newest thing typed in each kept one: what its row says when it has no title.
+        // The newest thing typed in each: what its row says when it has no
+        // title. The newest user message's own text — not the parts opencode
+        // adds to it (an @-file's contents, `synthetic`).
         let prompt = """
-            SELECT json_extract(p.data, '$.text') FROM part p JOIN message m ON m.id = p.message_id
-            WHERE p.session_id = ?1 AND json_extract(m.data, '$.role') = 'user' AND json_extract(p.data, '$.type') = 'text'
-            ORDER BY p.time_created DESC LIMIT 1
+            SELECT json_extract(p.data, '$.text') FROM part p
+            WHERE p.message_id = (
+                SELECT m.id FROM message m WHERE m.session_id = ?1 AND json_extract(m.data, '$.role') = 'user'
+                ORDER BY m.time_created DESC LIMIT 1)
+              AND json_extract(p.data, '$.type') = 'text' AND coalesce(json_extract(p.data, '$.synthetic'), 0) = 0
+            ORDER BY p.time_created LIMIT 1
             """
-        return rows.prefix(limit).map { row in
+        var listed: [AgentSession] = []
+        for row in rows where listed.count < limit {
             var typed: String?
             query(db, prompt, bind: [row.id]) { statement in typed = text(statement, 0) }
-            let said = typed?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return AgentSession(
-                agent: .opencode, id: row.id, directory: row.directory, updated: row.updated, title: isPlaceholder(row.title) ? nil : row.title,
-                lastPrompt: said?.isEmpty == false ? said : nil, file: nil)
+            let said = typed?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            let title = isPlaceholder(row.title) ? nil : row.title
+            // Nothing typed and no title: not a conversation to go back to (as Claude's).
+            guard title != nil || said != nil else { continue }
+            listed.append(
+                AgentSession(agent: .opencode, id: row.id, directory: row.directory, updated: row.updated, title: title, lastPrompt: said, file: nil))
         }
+        return listed
     }
 
     /// Runs `sql` with `bind`'s texts, each row to `row`; a statement that
@@ -140,4 +156,8 @@ package enum OpencodeSessions {
         guard let bytes = sqlite3_column_text(statement, column) else { return nil }
         return String(cString: bytes)
     }
+}
+
+extension String {
+    fileprivate var nilIfEmpty: String? { isEmpty ? nil : self }
 }

@@ -16,8 +16,8 @@ package final class SessionsModel: ObservableObject {
     package struct RunningClaude: Sendable {
         package let tab: Tab.ID
         package let directory: String
-        /// The session its `--resume`/`-r` picks back up, off argv's raw
-        /// words (`PaneAgent.resumes`; Claude's only).
+        /// The session its `--resume`/`-r` (Claude) or `--session`/`-s`
+        /// (opencode) picks back up, off argv's raw words (`PaneAgent.resumes`).
         package let resumes: String?
         package var agent: Agent = .claude
 
@@ -42,11 +42,9 @@ package final class SessionsModel: ObservableObject {
         // read again (`PaneAgent.pairing`); the session files once.
         let claudes = await PaneAgent.pairing(census: census) {
             let (agents, snapshot) = PaneAgent.lookupAndSnapshot(asked, census: census, only: .claude, folders: true)
-            // opencode's from the same snapshot: a tab's Claude and its opencode alike.
-            var opencodes: [Tab.ID: PaneAgent] = [:]
-            if let snapshot {
-                for tab in asked { opencodes[tab.id] = PaneAgent.first(tab.tags, tab: tab.id, in: snapshot, only: .opencode) }
-            }
+            // A tab's opencode too, its folder waited for as Claude's is
+            // (the census's snapshot of this same tick, looked up again).
+            let opencodes = PaneAgent.lookup(asked, census: census, only: .opencode, folders: true)
             return (Self.claudes(asked.map(\.id), agents) + Self.running(asked.map(\.id), opencodes, kind: .opencode), snapshot)
         }
         let sessions = await PaneAgent.offMain { AgentSessions.list(in: directories) }
