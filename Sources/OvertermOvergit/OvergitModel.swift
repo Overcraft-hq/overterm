@@ -140,6 +140,53 @@ package final class OvergitModel: ObservableObject {
 
     package func isExpanded(_ section: Section) -> Bool { expanded.contains(section) }
 
+    // MARK: The keyboard (A11Y-U2)
+
+    /// What the keyboard can stand on: each section's title, and the
+    /// commits under an open Commits — the search's when one is shown.
+    package enum KeyItem: Hashable {
+        case section(Section)
+        case commit(String)
+    }
+
+    /// Where the keyboard is, while the panel has it.
+    @Published package var keyFocus: KeyItem?
+
+    package var keyItems: [KeyItem] {
+        Section.allCases.flatMap { section -> [KeyItem] in
+            guard section == .commits, isExpanded(.commits) else { return [.section(section)] }
+            return [.section(section)] + (searchResults ?? commits).map { .commit($0.sha) }
+        }
+    }
+
+    /// ↓/↑ (j/k): the next or previous item; a commit stood on is selected.
+    package func moveKeyFocus(by step: Int) {
+        let items = keyItems
+        guard !items.isEmpty else { return }
+        let at = keyFocus.flatMap { items.firstIndex(of: $0) }
+        let next = at.map { min(max($0 + step, 0), items.count - 1) } ?? (step > 0 ? 0 : items.count - 1)
+        keyFocus = items[next]
+        if case .commit(let sha) = items[next] { selected = sha }
+    }
+
+    /// → opens the section stood on, ← closes it — or, on a commit, closes
+    /// its section and stands on its title.
+    package func setKeySectionOpen(_ open: Bool) {
+        switch keyFocus {
+        case .section(let section) where isExpanded(section) != open: toggle(section)
+        case .commit where !open:
+            keyFocus = .section(.commits)
+            if isExpanded(.commits) { toggle(.commits) }
+        default: break
+        }
+    }
+
+    /// The commit the keyboard stands on.
+    package var keyCommit: Commit? {
+        guard case .commit(let sha) = keyFocus else { return nil }
+        return (searchResults ?? commits).first { $0.sha == sha }
+    }
+
     /// Opening a section reads it; closing one keeps what it read.
     package func toggle(_ section: Section) {
         if expanded.contains(section) {

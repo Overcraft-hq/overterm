@@ -1,6 +1,6 @@
 import AppKit
 
-/// View ▸ Presentation Mode (⌃⌘P): the terminal alone and large, for a
+/// View ▸ Presentation Mode (⇧⌃⌘P): the terminal alone and large, for a
 /// screen share or a demo — and back as it was with the same keys.
 ///
 /// Entering it notes what was open, shuts the columns beside the terminal

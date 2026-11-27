@@ -7,7 +7,7 @@ package struct PaletteItem: Identifiable {
         case action = "Action"
         case tab = "Tab"
         case worktree = "Worktree"
-        /// Containers and compose projects (⇧⌥⌘P scopes the palette to them).
+        /// Containers and compose projects (⌃⌘P scopes the palette to them).
         case container = "Docker"
         /// Contexts, namespaces and pods (⌃⌘J scopes the palette to them).
         case kubernetes = "Kubernetes"

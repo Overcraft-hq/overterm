@@ -126,22 +126,31 @@ package struct OvergitView: View {
     }
 
     private var list: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                overview
-                if let error = model.error {
-                    Text(verbatim: error)
-                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.orangeText)
-                        .padding(.horizontal, 12).padding(.bottom, 6)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    overview
+                    if let error = model.error {
+                        Text(verbatim: error)
+                            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.orangeText)
+                            .padding(.horizontal, 12).padding(.bottom, 6)
+                    }
+                    ForEach(OvergitModel.Section.allCases) { section in
+                        OvergitSectionHeader(
+                            section: section, open: model.isExpanded(section), count: count(of: section), theme: theme,
+                            onToggle: { model.toggle(section) }, highlighted: model.keyFocus == .section(section)
+                        )
+                        .id(OvergitModel.KeyItem.section(section))
+                        if model.isExpanded(section) { rows(of: section) }
+                    }
                 }
-                ForEach(OvergitModel.Section.allCases) { section in
-                    OvergitSectionHeader(
-                        section: section, open: model.isExpanded(section), count: count(of: section), theme: theme,
-                        onToggle: { model.toggle(section) })
-                    if model.isExpanded(section) { rows(of: section) }
-                }
+                .padding(.bottom, 8)
             }
-            .padding(.bottom, 8)
+            // What the keyboard moves to is brought into view; nothing else scrolls.
+            .onChange(of: model.keyFocus) { focus in
+                guard let focus else { return }
+                proxy.scrollTo(focus)
+            }
         }
     }
 
@@ -205,6 +214,7 @@ package struct OvergitView: View {
                         CompareMenuItems(ref: commit.shortSHA, model: model, actions: actions)
                         CommitGitMenuItems(commit: commit, current: diff.branch, actions: actions)
                     }
+                    .id(OvergitModel.KeyItem.commit(commit.sha))
                 }
             }
         } else if model.commits.isEmpty {
@@ -221,6 +231,7 @@ package struct OvergitView: View {
                     CompareMenuItems(ref: commit.shortSHA, model: model, actions: actions)
                     CommitGitMenuItems(commit: commit, current: diff.branch, actions: actions)
                 }
+                .id(OvergitModel.KeyItem.commit(commit.sha))
             }
         }
     }
@@ -378,6 +389,8 @@ package struct OvergitSectionHeader: View {
     package let count: Int
     @ObservedObject package var theme: ChromeTheme
     package let onToggle: () -> Void
+    /// The keyboard stands on it (A11Y-U2).
+    package var highlighted = false
     @State private var hovering = false
 
     package var body: some View {
@@ -400,7 +413,9 @@ package struct OvergitSectionHeader: View {
             .padding(.leading, 8)
             .padding(.trailing, 8)
             .frame(height: ChromeMetrics.row(28))
-            .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? theme.rowHover : .clear).padding(.horizontal, 4))
+            .background(
+                RoundedRectangle(cornerRadius: 6).fill(highlighted ? theme.rowSel : (hovering ? theme.rowHover : .clear)).padding(.horizontal, 4)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

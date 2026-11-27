@@ -454,6 +454,7 @@ final class E2ETests: XCTestCase {
     func testCleanup() throws { try run("cleanup") }
     func testSplits() throws { try run("splits") }
     func testPullRequest() throws { try run("pullRequest") }
+    func testKeyboard() throws { try run("keyboard") }
     func testMCPApprovals() throws { try run("mcpApprovals") }
     func testOverview() throws { try run("overview") }
     func testPeek() throws { try run("peek") }
