@@ -167,10 +167,10 @@ jobs:
             .build/out/Products/Debug/*
             !.build/out/Products/Debug/ExecutableModules
             !.build/out/Products/Debug/lib*.a
-          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
-            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
+            spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
+            spm-debug-v2-${{ runner.arch }}-xcode${{ env.XCODE }}-
 
       # What changed since the restored cache's commit, dated now: a branch's
       # commit can be older than the cache (Scripts/date-changed-since-cache.sh).
