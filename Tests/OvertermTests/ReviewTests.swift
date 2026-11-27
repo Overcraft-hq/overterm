@@ -321,6 +321,32 @@ final class ReviewModelTests: XCTestCase {
         XCTAssertEqual(model.viewed, [])
     }
 
+    func testPickedLinesNoteAndSurviveAReloadAsNotes() async throws {
+        let model = await loaded(.range(base: "main", head: "feat"))
+        let lines = try XCTUnwrap(model.diffs["a.txt"]?.lines)
+        let removed = try XCTUnwrap(lines.first { $0.kind == .removed }?.id)
+        let added = try XCTUnwrap(lines.first { $0.kind == .added }?.id)
+        model.pickLine(removed, extending: false)
+        model.pickLine(added, extending: true)
+        XCTAssertEqual(model.selectedLines.map(\.text), ["two", "TWO"])
+        XCTAssertEqual(model.copyText, "two\nTWO")
+        model.draft = "   "
+        XCTAssertFalse(model.addNote(), "a note says something")
+        model.draft = "Why upper case?"
+        XCTAssertTrue(model.addNote())
+        XCTAssertNil(model.lineSelection)
+        XCTAssertEqual(model.notes.map(\.span), ["line 2"])
+        // Another file shown lets go of the pick; a reload keeps the notes.
+        model.pickLine(added, extending: false)
+        model.select("c.txt")
+        XCTAssertNil(model.lineSelection)
+        await model.load()
+        XCTAssertEqual(model.notes.count, 1)
+        XCTAssertTrue(model.notesBrief.contains("1. a.txt, line 2\nWhy upper case?\n```diff\n-two\n+TWO\n```"), model.notesBrief)
+        model.clearNotes()
+        XCTAssertTrue(model.notes.isEmpty)
+    }
+
     func testTheLayoutIsRemembered() {
         let model = ReviewModel(root: repo, source: .range(base: "main", head: "feat"), defaults: defaults)
         XCTAssertEqual(model.layout, .split)

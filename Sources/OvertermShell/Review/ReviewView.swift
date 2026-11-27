@@ -6,6 +6,12 @@ package struct ReviewActions {
     /// The file as it is in the checkout, in the editor.
     package var openFile: (ReviewModel, ChangedFile) -> Void = { _, _ in }
     package var openOnGitHub: (URL) -> Void = { _ in }
+    /// The notes, as one brief, to the checkout's agent (GIT-N2).
+    package var sendNotes: (ReviewModel) -> Void = { _ in }
+    /// Who Send names: the checkout's agent, if it has one tab of them.
+    package var noteRecipient: (ReviewModel) -> String? = { _ in nil }
+    /// The picked lines to Ask Agent's sheet (⌘L).
+    package var askAboutLines: (ReviewModel) -> Void = { _ in }
     package var terraform = TerraformReviewActions()
 }
 
@@ -53,6 +59,7 @@ package struct ReviewView: View {
                     Rectangle().fill(theme.border).frame(width: 1)
                     ReviewFilePane(model: model, theme: theme, actions: actions)
                 }
+                ReviewNotesBar(model: model, theme: theme, actions: actions)
             }
         }
         .background(theme.card)
@@ -197,7 +204,8 @@ private struct ReviewFilePane: View {
             } else {
                 ReviewDiffView(
                     diff: diff, layout: model.layout, target: model.scrollTarget, rows: model.rows[file.path] ?? [], theme: theme,
-                    fraction: $model.splitFraction
+                    fraction: $model.splitFraction, selection: model.lineSelection?.path == file.path ? model.lineSelection : nil,
+                    pick: { [weak model] id, extending in model?.pickLine(id, extending: extending) }
                 )
                 .id(file.path)
             }
@@ -216,6 +224,109 @@ private struct ReviewFilePane: View {
     }
 }
 
+/// Under the diff: the lines picked — a note for them, Copy, Ask — and
+/// the notes written so far, sent to the checkout's agent as one brief.
+/// Nothing while there is neither.
+private struct ReviewNotesBar: View {
+    @ObservedObject var model: ReviewModel
+    @ObservedObject var theme: ChromeTheme
+    let actions: ReviewActions
+    @FocusState private var writing: Bool
+
+    var body: some View {
+        if model.lineSelection != nil || !model.notes.isEmpty {
+            VStack(spacing: 0) {
+                Rectangle().fill(theme.border).frame(height: 1)
+                if let selection = model.lineSelection { picked(selection) }
+                if !model.notes.isEmpty { notes }
+            }
+            .font(.system(size: ChromeMetrics.text(12)))
+        }
+    }
+
+    private func picked(_ selection: ReviewLineSelection) -> some View {
+        let lines = model.selectedLines
+        return HStack(spacing: 8) {
+            Text(verbatim: "\((selection.path as NSString).lastPathComponent), \(ReviewNotes.span(lines))")
+                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                .foregroundStyle(theme.dimText)
+                .lineLimit(1)
+                .accessibilityIdentifier("review.notes.picked")
+            TextField("Note for the agent — what should change here?", text: $model.draft)
+                .textFieldStyle(.roundedBorder)
+                .focused($writing)
+                .onSubmit { model.addNote() }
+                .accessibilityIdentifier("review.notes.field")
+            Button("Add Note") { model.addNote() }
+                .disabled(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("review.notes.add")
+            Button("Copy") {
+                guard let text = model.copyText else { return }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            }
+            .help("Copy the picked lines — ⌘C")
+            .accessibilityIdentifier("review.notes.copy")
+            Button("Ask…") { actions.askAboutLines(model) }
+                .help("Ask an agent about these lines — ⌘L")
+            Button {
+                model.clearLineSelection()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .help("Unpick — Esc")
+        }
+        .padding(.horizontal, 14)
+        .frame(height: ChromeMetrics.row(40))
+    }
+
+    private var notes: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(model.notes) { note in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(verbatim: "\(note.path), \(note.span)")
+                                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                                .foregroundStyle(theme.dimText)
+                                .lineLimit(1)
+                                .truncationMode(.head)
+                            Text(verbatim: note.text).foregroundStyle(theme.text).lineLimit(2)
+                            Spacer(minLength: 4)
+                            Button {
+                                model.removeNote(note.id)
+                            } label: {
+                                Image(systemName: "xmark")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(theme.dimText)
+                            .help("Remove this note")
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+            }
+            .frame(maxHeight: 110)
+            HStack(spacing: 8) {
+                Text(verbatim: model.notes.count == 1 ? "1 note" : "\(model.notes.count) notes")
+                    .foregroundStyle(theme.dimText)
+                    .accessibilityIdentifier("review.notes.count")
+                Spacer()
+                Button("Clear") { model.clearNotes() }
+                Button(actions.noteRecipient(model).map { "Send to \($0)" } ?? "Send to Agent…") { actions.sendNotes(model) }
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help("Type the notes into the checkout's agent, as one message — Return is yours to press")
+                    .accessibilityIdentifier("review.notes.send")
+            }
+            .padding(.horizontal, 14)
+            .frame(height: ChromeMetrics.row(36))
+        }
+    }
+}
+
 /// A file's diff, as one column or side by side, scrolled to the change
 /// `n`/`p` picked.
 private struct ReviewDiffView: View {
@@ -226,6 +337,9 @@ private struct ReviewDiffView: View {
     @ObservedObject var theme: ChromeTheme
     /// The old side's share of the width (ReviewModel.splitFraction).
     @Binding var fraction: CGFloat
+    /// The lines picked in this file.
+    let selection: ReviewLineSelection?
+    let pick: (Int, Bool) -> Void
     /// The fraction as a drag began.
     @State private var dragStart: CGFloat?
 
@@ -277,7 +391,12 @@ private struct ReviewDiffView: View {
                     switch layout {
                     case .unified:
                         ForEach(diff.lines) { line in
-                            DiffLineView(line: line, style: diff.style(of: line), palette: palette, theme: theme).equatable().id(line.id)
+                            DiffLineView(
+                                line: line, style: diff.style(of: line), palette: palette, theme: theme, picked: selection?.contains(line.id) == true,
+                                onNumber: { pick(line.id, $0) }
+                            )
+                            .equatable()
+                            .id(line.id)
                         }
                     case .split:
                         let colors = ReviewRowColors(theme)
@@ -285,7 +404,8 @@ private struct ReviewDiffView: View {
                             SplitRowView(
                                 row: row, left: row.left.map(diff.style(of:)) ?? DiffLineStyle(),
                                 right: row.right.map(diff.style(of:)) ?? DiffLineStyle(), palette: palette, colors: colors,
-                                leftWidth: left
+                                leftWidth: left, leftPicked: selection?.contains(row.left?.id) == true,
+                                rightPicked: selection?.contains(row.right?.id) == true, pick: pick
                             )
                             .equatable()
                             .id(row.id)
@@ -299,7 +419,8 @@ private struct ReviewDiffView: View {
                 .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                 // No .textSelection: it cost 40% of every scroll step (a
                 // 3,000-line file side by side, 17 ms a step → 10.5 ms).
-                // Open in Editor is where a line is copied from.
+                // Lines are picked by their numbers instead, and copied
+                // from the pick (⌘C).
             }
             .onChange(of: target) { target in
                 guard let target else { return }
@@ -318,6 +439,8 @@ package struct ReviewRowColors: Equatable {
     package var border: Color
     package var empty: Color
     package var hunk: Color
+    /// A picked line's.
+    package var picked: Color
 
     @MainActor package init(_ theme: ChromeTheme) {
         text = theme.text
@@ -325,6 +448,7 @@ package struct ReviewRowColors: Equatable {
         border = theme.border
         empty = theme.selected.opacity(0.25)
         hunk = theme.selected.opacity(0.6)
+        picked = Color.accentColor.opacity(0.28)
     }
 }
 
@@ -339,9 +463,15 @@ private struct SplitRowView: View, Equatable {
     let colors: ReviewRowColors
     /// The old side's width, the divider's place (nil: half each).
     let leftWidth: CGFloat?
+    /// Each half's line picked.
+    let leftPicked: Bool
+    let rightPicked: Bool
+    /// A click on a half's number: its line, and whether ⇧ was down.
+    let pick: (Int, Bool) -> Void
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
         a.row == b.row && a.left == b.left && a.right == b.right && a.colors == b.colors && a.leftWidth == b.leftWidth
+            && a.leftPicked == b.leftPicked && a.rightPicked == b.rightPicked
     }
 
     var body: some View {
@@ -354,16 +484,16 @@ private struct SplitRowView: View, Equatable {
                 .background(full.kind == .hunk ? colors.hunk : .clear)
         } else {
             HStack(alignment: .top, spacing: 0) {
-                half(row.left, style: left, number: row.left?.oldNumber, side: .removed)
+                half(row.left, style: left, number: row.left?.oldNumber, side: .removed, picked: leftPicked)
                     .frame(width: leftWidth.map { max(0, $0 - 0.5) })
                 colors.border.frame(width: 1)
-                half(row.right, style: right, number: row.right?.newNumber, side: .added)
+                half(row.right, style: right, number: row.right?.newNumber, side: .added, picked: rightPicked)
             }
             .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private func half(_ line: DiffLine?, style: DiffLineStyle, number: Int?, side: DiffLine.Kind) -> some View {
+    private func half(_ line: DiffLine?, style: DiffLineStyle, number: Int?, side: DiffLine.Kind, picked: Bool) -> some View {
         let changed = line?.kind == side
         let tint = side == .added ? DiffColors.added : DiffColors.removed
         return HStack(alignment: .firstTextBaseline, spacing: 0) {
@@ -371,15 +501,19 @@ private struct SplitRowView: View, Equatable {
                 .foregroundStyle(colors.dim.opacity(0.7))
                 .frame(width: 40, alignment: .trailing)
                 .padding(.trailing, 8)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if let line { pick(line.id, NSEvent.modifierFlags.contains(.shift)) }
+                }
             text(line, style)
                 .foregroundStyle(colors.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 1)
         .frame(maxWidth: .infinity, minHeight: 18, maxHeight: .infinity, alignment: .topLeading)
-        .background(line == nil ? colors.empty : (changed ? tint.opacity(0.14) : .clear))
+        .background(picked ? colors.picked : line == nil ? colors.empty : (changed ? tint.opacity(0.14) : .clear))
         .overlay(alignment: .leading) {
-            if changed { tint.frame(width: 3) }
+            if picked { Color.accentColor.frame(width: 3) } else if changed { tint.frame(width: 3) }
         }
     }
 
@@ -393,6 +527,14 @@ private struct SplitRowView: View, Equatable {
 /// The review page's host: the page's keys, when nothing in it took them.
 package final class ReviewHostingView: NSHostingView<ReviewPageView> {
     package var review: () -> ReviewModel? = { nil }
+
+    /// ⌘C: the picked lines, as the file has them.
+    @objc package func copy(_ sender: Any?) {
+        guard let text = review()?.copyText else { return NSSound.beep() }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
 
     package override var acceptsFirstResponder: Bool { true }
     /// A press in a window not in front acts at once — the divider between
@@ -410,6 +552,7 @@ package final class ReviewHostingView: NSHostingView<ReviewPageView> {
         case "n": review.moveToChange(by: 1)
         case "p": review.moveToChange(by: -1)
         case "v": review.toggleViewed()
+        case "\u{1b}" where review.lineSelection != nil: review.clearLineSelection()
         default: super.keyDown(with: event)
         }
     }

@@ -19,6 +19,8 @@ package struct PullRequestView: View {
     package var onWrite: (PullRequestWrite) -> Void = { _ in }
     /// Check Out in a New Worktree… (asked by the window).
     package var onCheckOut: () -> Void = {}
+    /// Address This Thread: the thread to the checkout's agent (GIT-N2).
+    package var onAddress: (ReviewThread) -> Void = { _ in }
     @State private var draft = ""
     @State private var replies: [Int: String] = [:]
     @State private var checksOpen = false
@@ -26,9 +28,10 @@ package struct PullRequestView: View {
     package init(
         model: PullRequestModel, theme: ChromeTheme, onClose: @escaping () -> Void, onOpenFile: @escaping (String, Int?) -> Void,
         onReview: @escaping (Int) -> Void = { _ in }, onCreate: @escaping () -> Void = {}, onCheckOut: @escaping () -> Void = {},
-        onWrite: @escaping (PullRequestWrite) -> Void = { _ in }
+        onWrite: @escaping (PullRequestWrite) -> Void = { _ in }, onAddress: @escaping (ReviewThread) -> Void = { _ in }
     ) {
         self.onCheckOut = onCheckOut
+        self.onAddress = onAddress
         self._model = ObservedObject(wrappedValue: model)
         self._theme = ObservedObject(wrappedValue: theme)
         self.onClose = onClose
@@ -333,6 +336,10 @@ package struct PullRequestView: View {
                 }
                 .controlSize(.small)
                 .disabled((replies[thread.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.posting)
+                Button("Address This Thread") { onAddress(thread) }
+                    .controlSize(.small)
+                    .help("Type this thread into the checkout's agent — the reviewers' words as data, not instructions")
+                    .accessibilityIdentifier("pullRequest.thread.address")
             }
         }
         .padding(10)
