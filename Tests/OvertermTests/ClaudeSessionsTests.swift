@@ -88,7 +88,7 @@ final class OpencodeSessionsTests: XCTestCase {
                 session("ses_aaa1", "/work/acme", "Fix the login", updated: 3_000),
                 session("ses_bbb2", "/work/acme/api", "New session - 2026-11-27T10:00:00.000Z", updated: 5_000),
                 session("ses_ccc3", "/work/other", "Elsewhere", updated: 9_000),
-                session("ses_ddd4", "/work/acme", "A subagent's", updated: 8_000, parent: "ses_aaa1"),
+                session("ses_ddd4", "/work/acme", "A subagent", updated: 8_000, parent: "ses_aaa1"),
                 session("ses_eee5", "/work/acme", "Archived", updated: 7_000, archived: true),
                 session("ses_fff6", "/work/acme-other", "A look-alike", updated: 6_000),
             ] + typed("ses_bbb2", "first", at: 4_100) + typed("ses_bbb2", "add the test", at: 4_900))
