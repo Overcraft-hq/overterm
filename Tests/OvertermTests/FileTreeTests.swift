@@ -101,6 +101,7 @@ final class FileTreeTests: XCTestCase {
         XCTAssertNil(tree.rows.first { $0.entry.name == "notes.md" }?.entry.linkTarget, "a plain file has none")
     }
 
+    @MainActor
     func testToggleExpandsAndCollapsesInPlace() throws {
         try mkdir("src")
         touch("src/main.swift")

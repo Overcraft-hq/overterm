@@ -37,6 +37,16 @@ package struct TabBarActions {
     package var resumeAll: () -> Void = {}
     /// A press, drag or release on a tab (`StripPressView`).
     package var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
+    /// The "What's new" chip: this version's changelog entry; its ×, put away.
+    package var showWhatsNew: () -> Void = {}
+    package var dismissWhatsNew: () -> Void = {}
+
+    package func with(showWhatsNew: @escaping () -> Void, dismissWhatsNew: @escaping () -> Void) -> TabBarActions {
+        var actions = self
+        actions.showWhatsNew = showWhatsNew
+        actions.dismissWhatsNew = dismissWhatsNew
+        return actions
+    }
 
     package init(
         select: @escaping (Tab) -> Void, close: @escaping (Tab) -> Void, newTab: @escaping () -> Void, newAgentTab: @escaping (Agent) -> Void, newTask: @escaping () -> Void,
@@ -241,17 +251,25 @@ package struct TabBarView: View {
             .padding(.leading, 6)
             if let release = updates.available {
                 Button(action: actions.showUpdate) {
-                    Label("Update \(release.version)", systemImage: "arrow.down.circle.fill")
-                        .font(.system(size: ChromeMetrics.text(11), weight: .medium))
-                        .padding(.horizontal, 8)
-                        .frame(height: ChromeMetrics.row(22))
-                        .background(Capsule().fill(TabStatusStyle.signal.opacity(0.22)))
-                        .contentShape(Rectangle())
+                    // Image and text, not a Label: in the toolbar a Label is drawn icon-only.
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.circle.fill")
+                        Text(verbatim: "Update \(release.version)")
+                    }
+                    .font(.system(size: ChromeMetrics.text(11), weight: .medium))
+                    .padding(.horizontal, 8)
+                    .frame(height: ChromeMetrics.row(22))
+                    .background(Capsule().fill(TabStatusStyle.signal.opacity(0.22)))
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(TabStatusStyle.signal)
                 .help("Overterm \(release.version) is out — Settings ▸ About")
                 .padding(.trailing, 6)
+            }
+            if let version = updates.whatsNew, updates.available == nil {
+                WhatsNewChip(version: version, theme: theme, open: actions.showWhatsNew, dismiss: actions.dismissWhatsNew)
+                    .padding(.trailing, 6)
             }
             AttentionChip(store: store, theme: theme, select: actions.select)
                 .padding(.trailing, 6)
@@ -979,4 +997,57 @@ package final class WindowDragView: NSView {
             window?.performDrag(with: event)
         }
     }
+}
+
+/// After an update (SET-G2): what this version changed, one press away —
+/// quiet, beside the strip's other chips, never a sheet. Its × puts it away.
+package struct WhatsNewChip: View {
+    package let version: String
+    @ObservedObject package var theme: ChromeTheme
+    package let open: () -> Void
+    package let dismiss: () -> Void
+
+    package var body: some View {
+        HStack(spacing: 4) {
+            Button(action: open) {
+                // Not a Label: in the toolbar a Label is drawn icon-only,
+                // and the chip said nothing but ✨.
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                    Text(verbatim: "What’s new in \(version)")
+                }
+                .font(.system(size: ChromeMetrics.text(11), weight: .medium))
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel(Text(verbatim: "What’s new in \(version)"))
+            .buttonStyle(.plain)
+            .help("What Overterm \(version) changed — its changelog entry")
+            .accessibilityIdentifier("strip.whatsNew")
+            Button(action: dismiss) {
+                Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(8), weight: .semibold))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Put it away — the changelog stays in Help ▸ View Latest Changelog")
+            .accessibilityIdentifier("strip.whatsNew.dismiss")
+        }
+        .foregroundStyle(theme.dimText)
+        .padding(.horizontal, 8)
+        .frame(height: ChromeMetrics.row(22))
+        .background(Capsule().fill(theme.dimText.opacity(0.12)))
+        .fixedSize()
+        // What the strip drew, for the scenarios: SwiftUI's accessibility
+        // tree in the toolbar is built lazily and never showed the chip.
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { Self.drawn = (version, proxy.frame(in: .global)) }
+                    .onChange(of: proxy.frame(in: .global)) { Self.drawn = (version, $0) }
+            }
+        )
+        .onDisappear { Self.drawn = nil }
+    }
+
+    /// The version the chip on screen names, and its frame in the strip's window.
+    @MainActor package static var drawn: (version: String, frame: CGRect)?
 }

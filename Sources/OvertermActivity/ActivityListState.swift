@@ -34,7 +34,10 @@ extension ActivityPageModel {
         if list.selection != selection { list.selection = selection }
         if list.following != following { list.following = following }
         if list.hasRead != hasRead { list.hasRead = hasRead }
-        let empty = ActivityPageView.emptySentence(section, scopedToRun: content.summary.scopedToRun, filter: filter(section))
+        // Other users' listeners are rows only for everyone's, on the Mac.
+        let othersShown = (everyone ?? Settings.shared.activityEveryone) && scope(.listening) == .mac
+        let empty = ActivityPageView.emptySentence(
+            section, scopedToRun: content.summary.scopedToRun, filter: filter(section), others: content.summary.others, othersShown: othersShown)
         if list.emptySentence != empty { list.emptySentence = empty }
     }
 }

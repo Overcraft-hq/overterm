@@ -93,6 +93,9 @@ package struct ActivityPageActions {
     package var keep: @MainActor (ActivityProcessID) -> Void = { _ in }
     /// Stop All Certain in This Checkout… (6.9): one sheet listing each.
     package var stopAll: @MainActor (_ rows: [ActivityProcessRow], _ group: String) -> Void = { _, _ in }
+    /// A key whose verb can't be done now: the system's beep, beside the
+    /// reason the page says (`keySaid`).
+    package var beep: @MainActor () -> Void = {}
 
     package init(
         goTo: @escaping @MainActor (UUID, String?) -> Void = { _, _ in }, open: @escaping @MainActor (URL, UUID?, Bool) -> Void = { _, _, _ in },
@@ -177,15 +180,21 @@ package final class ActivityPageModel: ObservableObject {
         }
     }
     /// How Processes is grouped (`G`), and whether as a tree (`t`).
+    /// Both remembered across launches (9.5), as the sorts and columns are.
     @Published package var grouping: ActivityGrouping = .checkout {
         didSet {
             guard grouping != oldValue else { return }
+            AppEnvironment.defaults.set(grouping.rawValue, forKey: Self.groupingKey)
             syncList()
             rebuild(asked: true)
         }
     }
     @Published package var tree = true {
-        didSet { if tree != oldValue { rebuild(asked: true) } }
+        didSet {
+            guard tree != oldValue else { return }
+            AppEnvironment.defaults.set(tree, forKey: Self.treeKey)
+            rebuild(asked: true)
+        }
     }
     /// Each section's filter field (6.6): not remembered, as Docker's isn't.
     @Published package private(set) var filters: [Section: String] = [:] {
@@ -248,6 +257,10 @@ package final class ActivityPageModel: ObservableObject {
     /// What a link said of a port it couldn't show (6.12): ":N isn't
     /// listed"; cleared by the next link, the person's hand, or a hide.
     @Published package private(set) var linkSaid: String?
+    /// What a key said it couldn't do (6.3): the reason its verb is greyed
+    /// with in the menu, beside a beep — one source for both words. Cleared
+    /// by the next key, the person's hand, or a hide.
+    @Published package private(set) var keySaid: String?
     /// The columns the person left: each section's, kept (6.5).
     @Published package private(set) var layout: ActivityColumns.Layout = ActivityColumns.load() {
         didSet { syncList() }
@@ -267,6 +280,7 @@ package final class ActivityPageModel: ObservableObject {
     @Published package var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false) {
         didSet {
             guard processSort != oldValue else { return }
+            Self.saveSort(processSort, forKey: Self.processSortKey)
             syncList()
             rebuild(asked: true)
         }
@@ -274,6 +288,7 @@ package final class ActivityPageModel: ObservableObject {
     @Published package var portSort: ResourceSort? = ResourceSort(column: "port") {
         didSet {
             guard portSort != oldValue else { return }
+            Self.saveSort(portSort, forKey: Self.portSortKey)
             syncList()
             rebuild(asked: true)
         }
@@ -389,10 +404,51 @@ package final class ActivityPageModel: ObservableObject {
         for section in Section.allCases {
             if let saved = AppEnvironment.defaults.string(forKey: Self.scopeKey(section)), saved == "allTabs" { scopes[section] = .allTabs }
         }
+        // The view as it was left (9.5): grouping, tree or flat, the sorts.
+        // Set in init, so no observer runs and nothing is rebuilt yet.
+        let defaults = AppEnvironment.defaults
+        if let raw = defaults.string(forKey: Self.groupingKey), let saved = ActivityGrouping(rawValue: raw) { grouping = saved }
+        if defaults.object(forKey: Self.treeKey) != nil { tree = defaults.bool(forKey: Self.treeKey) }
+        if let saved = Self.savedSort(forKey: Self.processSortKey) { processSort = saved }
+        if let saved = Self.savedSort(forKey: Self.portSortKey) { portSort = saved }
         syncList(rows: true)
     }
 
     private static func scopeKey(_ section: Section) -> String { "activity.page.scope.\(section.rawValue)" }
+    package nonisolated static let groupingKey = "activity.page.grouping"
+    package nonisolated static let treeKey = "activity.page.tree"
+    package nonisolated static let processSortKey = "activity.page.sort.processes"
+    package nonisolated static let portSortKey = "activity.page.sort.listening"
+
+    /// The view's keys, forgotten: a test's page starts as a new one does.
+    package nonisolated static func forgetView() {
+        for key in [groupingKey, treeKey, processSortKey, portSortKey] { AppEnvironment.defaults.removeObject(forKey: key) }
+    }
+
+    /// A sort as it is kept: `column:asc` or `column:desc`, "" for none.
+    /// Pure.
+    package nonisolated static func sortText(_ sort: ResourceSort?) -> String {
+        sort.map { "\($0.column):\($0.ascending ? "asc" : "desc")" } ?? ""
+    }
+
+    /// What `sortText` kept: nil when it isn't one (`.some(nil)` is "no
+    /// sort"). Pure.
+    package nonisolated static func sort(fromText text: String) -> ResourceSort?? {
+        if text.isEmpty { return .some(nil) }
+        guard let colon = text.lastIndex(of: ":") else { return nil }
+        let column = String(text[..<colon])
+        let order = text[text.index(after: colon)...]
+        guard !column.isEmpty, order == "asc" || order == "desc" else { return nil }
+        return .some(ResourceSort(column: column, ascending: order == "asc"))
+    }
+
+    private static func saveSort(_ sort: ResourceSort?, forKey key: String) {
+        AppEnvironment.defaults.set(sortText(sort), forKey: key)
+    }
+
+    private static func savedSort(forKey key: String) -> ResourceSort?? {
+        AppEnvironment.defaults.string(forKey: key).flatMap { sort(fromText: $0) }
+    }
 
     /// The scope of `section`: the Mac by default (⌥⌘A).
     package func scope(_ section: Section) -> ActivityScope { scopes[section] ?? .mac }
@@ -592,6 +648,7 @@ package final class ActivityPageModel: ObservableObject {
         if !visible {
             pendingPort = nil
             linkSaid = nil
+            keySaid = nil
         }
     }
 
@@ -956,58 +1013,96 @@ package final class ActivityPageModel: ObservableObject {
         return true
     }
 
+    /// Each key does what the row's menu says it does, in every section
+    /// (6.3): the verbs that are a row's are found in `verbs(for:)` by
+    /// their key, so a key and the menu never disagree; one that can't be
+    /// done now says why, as the greyed item does (`refuse`).
     private func press(_ key: ActivityKey) -> Bool {
-        let processes = section == .processes
         switch key {
         case .goTo: goToSelection()
         case .detail: showsDetail.toggle()
-        case .open: return openSelection(defaultBrowser: false)
-        case .files where processes:
-            guard let row = detail?.row, row.isOwn else { return false }
-            if showsFiles, openFiles?.identity == row.identity {
-                showsFiles = false
-            } else {
-                showsFiles = true
-                readFiles()
-            }
-        case .sample where processes:
-            guard let row = selectedProcess, row.isOwn, !content.summary.nearProcessLimit else { return false }
-            actions.sample(row.identity.pid)
-        case .reveal:
-            guard let path = selectedProcess?.path else { return false }
-            actions.reveal(path)
-        case .terminal:
-            guard let folder = selectedFolder, !content.summary.nearProcessLimit else { return false }
-            actions.terminal(ActivityTerminalRequest(directory: folder))
-        case .tabInfo:
-            guard let tab = selectedProcess?.tab else { return false }
-            actions.tabInfo(tab)
-        case .tree where processes: tree.toggle()
-        case .group where processes: grouping = grouping.next
+        case .open, .reveal, .tabInfo, .sample, .terminal, .free, .ask: return pressVerb(key.key)
+        case .files: return pressFiles()
+        case .tree, .group:
+            guard section == .processes else { return refuse(Self.arrangesProcesses(key, in: section)) }
+            if key == .tree { tree.toggle() } else { grouping = grouping.next }
         case .narrower: narrowScope()
         case .wider: widenScope()
         case .follow: following.toggle()
         case .pause: paused.toggle()
         case .mine: everyone = !(everyone ?? Settings.shared.activityEveryone)
-        case .connections where !processes: connections.toggle()
-        case .free where !processes:
-            guard selection.count == 1, let id = selection.first, let row = content.ports.first(where: { $0.id == id }),
-                ActivityPortHolder.unavailable(row) == nil
-            else { return false }
-            actions.free(row)
+        case .connections:
+            guard section == .listening else { return refuse(Self.connectionsAreListenings) }
+            connections.toggle()
         case .stop, .forceQuit, .signal, .suspend, .background, .lower: return pressSignalKey(key)
-        case .ask: return askAboutSelection()
-        case .sortCPU where processes: processSort = ResourceSort(column: "cpu", ascending: false)
-        case .sortMemory where processes: processSort = ResourceSort(column: "memory", ascending: false)
-        case .sortTime where processes: processSort = ResourceSort(column: "time", ascending: false)
-        case .sortPID where processes: processSort = ResourceSort(column: "pid")
-        case .invert where processes:
-            guard var sort = processSort else { return false }
-            sort.ascending.toggle()
-            processSort = sort
+        case .sortCPU, .sortMemory, .sortTime, .sortPID, .invert:
+            // Processes' and Left Behind's: both list processes by it.
+            guard section != .listening else { return refuse(Self.listeningSorts) }
+            switch key {
+            case .sortCPU: processSort = ResourceSort(column: "cpu", ascending: false)
+            case .sortMemory: processSort = ResourceSort(column: "memory", ascending: false)
+            case .sortTime: processSort = ResourceSort(column: "time", ascending: false)
+            case .sortPID: processSort = ResourceSort(column: "pid")
+            default:
+                guard var sort = processSort else { return refuse(Self.nothingToInvert) }
+                sort.ascending.toggle()
+                processSort = sort
+            }
         default: return false
         }
         return true
+    }
+
+    /// A key that can't be done now (6.3): the reason the menu greys its
+    /// verb with, said in the header, and a beep. The key is taken — it
+    /// meant something, so it goes on to nothing else.
+    @discardableResult
+    package func refuse(_ why: String) -> Bool {
+        keySaid = why
+        actions.beep()
+        return true
+    }
+
+    /// The row's verb with `key` (`o`, `r`, `i`, `s`, `e`, `f`, `a`, ⌥o,
+    /// ⌥r): done, or its greyed reason said.
+    private func pressVerb(_ key: String) -> Bool {
+        guard selection.count == 1 else { return refuse(selection.isEmpty ? Self.nothingSelected : Self.severalSelected) }
+        guard let verb = verbs(for: selection, copy: { _ in }).first(where: { $0.key == key }) else {
+            return refuse(key == ActivityKey.free.key && section != .listening ? Self.freeIsListenings : Self.notForThisRow)
+        }
+        if let why = verb.unavailable { return refuse(why) }
+        verb.perform()
+        return true
+    }
+
+    /// `l`: the detail's Files, the selection's process's — a listener's
+    /// holder, a left-behind row — read now, or hidden again.
+    private func pressFiles() -> Bool {
+        guard selection.count == 1 else { return refuse(selection.isEmpty ? Self.nothingSelected : Self.severalSelected) }
+        guard let row = detail?.row else { return refuse(Self.notForThisRow) }
+        guard row.isOwn else { return refuse(Self.othersFiles) }
+        if showsFiles, openFiles?.identity == row.identity {
+            showsFiles = false
+        } else {
+            showsFiles = true
+            readFiles()
+        }
+        return true
+    }
+
+    package nonisolated static let nothingSelected = "Select a row first"
+    package nonisolated static let severalSelected = "Select one row: it acts on one"
+    package nonisolated static let notForThisRow = "Not for this row: it names no process of yours to act on"
+    package nonisolated static let othersFiles = "Another user's: its open files aren't read"
+    package nonisolated static let freeIsListenings = "f frees a port: select it in Listening (2)"
+    package nonisolated static let connectionsAreListenings = "c shows connections in Listening (2)"
+    package nonisolated static let listeningSorts = "Listening sorts by its column headers: P M T N I sort processes"
+    package nonisolated static let nothingToInvert = "No sort to invert: pick one with P, M, T or N"
+
+    /// Why `t` or `G` does nothing in `section`. Pure.
+    package nonisolated static func arrangesProcesses(_ key: ActivityKey, in section: Section) -> String {
+        let listed = section == .listening ? "Listening lists ports" : "Left Behind is grouped by checkout"
+        return "\(key.key) arranges Processes (1): \(listed)"
     }
 
     /// The selected process — a listener's holder in Listening.
@@ -1053,25 +1148,15 @@ package final class ActivityPageModel: ObservableObject {
         return content.listeners.first { $0.holder == row.identity && $0.url != nil }
     }
 
-    /// `o`: a listener's URL, or the selected process's first one, in its
-    /// tab's browser column; ⌥o the default browser.
-    private func openSelection(defaultBrowser: Bool) -> Bool {
-        guard let id = selection.first, let port = openable(id), let url = port.url else { return false }
-        actions.open(url, port.tab, defaultBrowser)
-        return true
-    }
-
     /// A key with ⌥ while the list has the keyboard: ⌥o opens in the
     /// default browser (6.3). `characters` ignore the modifier.
     @discardableResult
     package func pressOption(_ characters: String) -> Bool {
         guard !cheatSheet else { return false }
         switch characters {
-        case "o": return openSelection(defaultBrowser: true)
-        case "r":
-            guard let folder = selectedFolder else { return false }
-            actions.reveal(folder)
-            return true
+        case "o", "r":
+            byHand()
+            return pressVerb("⌥" + characters)
         default: return false
         }
     }
@@ -1287,6 +1372,7 @@ package final class ActivityPageModel: ObservableObject {
         guard !linking else { return }
         pendingPort = nil
         linkSaid = nil
+        keySaid = nil
     }
 
     /// The scope a port link opens Listening at (6.5): the tab's

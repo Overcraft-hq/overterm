@@ -37,6 +37,8 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     package var noteObserver: AnyCancellable?
     /// A #tag clicked in a note.
     package var onNoteTag: ((String) -> Void)?
+    /// The header's menu: Reveal in Files (the window's sidebar).
+    package var onRevealInFiles: ((URL) -> Void)?
 
     package let chrome: ChromeTheme
     package private(set) var theme: EditorTheme
@@ -66,6 +68,9 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     package private(set) var gutter: EditorGutter!
     package private(set) var scrollView: NSScrollView!
     private var header: EditorHeaderView!
+    /// Over a file you have edits in that changed on disk (EDIT-G3).
+    package private(set) var diskBar: EditorDiskBar!
+    private var diskBarHeight: NSLayoutConstraint!
     package private(set) var breadcrumb: EditorBreadcrumbView!
     package private(set) var statusBar: EditorStatusBar!
     /// A `.sql` file's console, under its text (EditorViewController+Database).
@@ -142,8 +147,13 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             self.opener.open(url)
         }
         header.revealMenu = { [weak self] in
-            guard let self, let url = self.active?.url else { return nil }
-            return self.opener.menu(for: url)
+            guard let self, let buffer = self.active, let url = buffer.url else { return nil }
+            let menu = self.opener.menu(for: url)
+            if let reveal = self.onRevealInFiles, !buffer.document.isVirtual {
+                menu.insertItem(ClosureMenuItem("Reveal in Files") { reveal(url) }, at: 0)
+                menu.insertItem(.separator(), at: 1)
+            }
+            return menu
         }
         header.onClose = { [weak self] in self?.requestClose() }
         opener.$current
@@ -236,12 +246,25 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         // The view sizes to the pane, never the pane to it.
         requestHost.sizingOptions = []
 
+        let diskBar = EditorDiskBar(theme: theme)
+        diskBar.isHidden = true
+        diskBar.onReload = { [weak self] in
+            guard let self, let buffer = self.active else { return }
+            self.reloadFromDisk(buffer)
+            self.updateDiskBar()
+        }
+        diskBar.onKeep = { [weak self] in
+            guard let self, let buffer = self.active else { return }
+            buffer.keptDiskVersion = buffer.document.diskModification
+            self.updateDiskBar()
+        }
+
         let message = NSTextField(labelWithString: "")
         message.textColor = theme.text.withAlphaComponent(0.6)
         message.alignment = .center
         message.isHidden = true
 
-        for view in [header, breadcrumb, scrollView, preview, requestHost, consoleHost, statusBar, message] as [NSView] {
+        for view in [header, breadcrumb, diskBar, scrollView, preview, requestHost, consoleHost, statusBar, message] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)
         }
@@ -254,7 +277,10 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             breadcrumb.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             breadcrumb.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             breadcrumb.heightAnchor.constraint(equalToConstant: embedded ? 0 : 26),
-            scrollView.topAnchor.constraint(equalTo: breadcrumb.bottomAnchor),
+            diskBar.topAnchor.constraint(equalTo: breadcrumb.bottomAnchor),
+            diskBar.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            diskBar.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: diskBar.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: consoleHost.topAnchor),
@@ -285,6 +311,9 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         self.gutter = gutter
         self.scrollView = scrollView
         self.header = header
+        self.diskBar = diskBar
+        diskBarHeight = diskBar.heightAnchor.constraint(equalToConstant: 0)
+        diskBarHeight.isActive = true
         self.breadcrumb = breadcrumb
         self.statusBar = statusBar
         self.consoleHost = consoleHost
@@ -665,25 +694,55 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     }
 
     /// An agent may have rewritten a file: pick that up unless you have
-    /// edits of your own.
-    package func reloadIfChangedOnDisk() {
+    /// edits of your own — then the bar over the file asks (Reload, Keep
+    /// Mine). `root`: only the files under it (the checkout a watcher saw
+    /// change); nil, every open file (the window became key).
+    package func reloadIfChangedOnDisk(under root: URL? = nil) {
+        let prefix = root.map { $0.standardizedFileURL.path }
         for buffer in buffers {
-            guard let url = buffer.url, buffer.document.changedOnDisk, !buffer.document.isDirty else { continue }
-            let isActive = buffer === active
-            let selection = isActive ? textView.selectedRange() : buffer.selection.first ?? NSRange(location: 0, length: 0)
-            buffer.document.load(url)
-            buffer.setText(buffer.document.text, attributes: baseAttributes)
-            buffer.requestPart?.textChanged(buffer.storage.string)
-            Self.notes?.textChanged(buffer, in: self)
-            buffer.selection = [NSRange(location: min(selection.location, buffer.storage.length), length: 0)]
-            bufferDidReload(buffer)
-            if isActive {
-                textView.setSelectedRange(buffer.selection[0])
-                gutter.textDidChange()
-                paintVisible()
-                updatePreview()
-            }
+            guard let url = buffer.url, !buffer.document.isVirtual else { continue }
+            if let prefix, FileTreeMarks.relative(url.standardizedFileURL.path, to: prefix) == nil { continue }
+            guard buffer.document.changedOnDisk, !buffer.document.isDirty else { continue }
+            reloadFromDisk(buffer)
         }
+        updateDiskBar()
+    }
+
+    /// `buffer` as the disk has it now, its edits (if any) dropped.
+    package func reloadFromDisk(_ buffer: EditorBuffer) {
+        guard let url = buffer.url, !buffer.document.isVirtual else { return }
+        let isActive = buffer === active
+        let selection = isActive ? textView.selectedRange() : buffer.selection.first ?? NSRange(location: 0, length: 0)
+        buffer.document.load(url)
+        buffer.keptDiskVersion = nil
+        buffer.setText(buffer.document.text, attributes: baseAttributes)
+        buffer.requestPart?.textChanged(buffer.storage.string)
+        Self.notes?.textChanged(buffer, in: self)
+        buffer.selection = [NSRange(location: min(selection.location, buffer.storage.length), length: 0)]
+        bufferDidReload(buffer)
+        if isActive {
+            textView.setSelectedRange(buffer.selection[0])
+            gutter.textDidChange()
+            paintVisible()
+            updatePreview()
+        }
+    }
+
+    /// Whether the active file has edits here and a newer version on disk
+    /// nobody chose to keep yours over.
+    package var showsDiskConflict: Bool {
+        guard let buffer = active, buffer.url != nil, !buffer.document.isVirtual, buffer.document.isDirty, buffer.document.changedOnDisk
+        else { return false }
+        return buffer.keptDiskVersion == nil || buffer.keptDiskVersion != buffer.document.diskModification
+    }
+
+    package func updateDiskBar() {
+        guard isViewLoaded, !embedded else { return }
+        let show = showsDiskConflict
+        if show, let name = active?.name { diskBar.show(name: name) }
+        guard diskBar.isHidden == show else { return }
+        diskBar.isHidden = !show
+        diskBarHeight.constant = show ? EditorDiskBar.height : 0
     }
 
     package func focus() {
@@ -1010,6 +1069,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             buffers.map { .init(name: $0.name, path: $0.url?.path ?? "", dirty: $0.document.isDirty) }, active: activeIndex)
         updateBreadcrumb()
         updateStatus()
+        updateDiskBar()
         onActiveChanged?(active?.url)
     }
 

@@ -51,7 +51,7 @@ package enum TerraformProcessCheck {
     /// `plan -out` there starts a remote, or saved cloud, run in the team's
     /// workspace. Stages 1–2 give them the guards, the editor and a link.
     package static let remoteExecution: Set<String> = ["cloud", "remote"]
-    package static let remoteExecutionRefusal = "HCP runs remotely: plan it in HCP (stage 3)"
+    package static let remoteExecutionRefusal = "This root runs in HCP Terraform: Overterm doesn't start its runs — plan it in HCP Terraform"
 
     /// Why `verb` may not start in a root whose backend is `backendType`
     /// — plan and init, never on an HCP root; force unlock, never on the

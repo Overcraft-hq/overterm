@@ -72,4 +72,43 @@ final class MainMenuTests: XCTestCase {
             XCTAssertNotNil(KeyCommands.byID[id], "\(item.title) claims \(id), which is not a command")
         }
     }
+
+    // MARK: Help and View's submenus (DISC-U1, DISC-U2)
+
+    private func menu(_ title: String, in main: NSMenu) -> NSMenu? { main.items.first { $0.submenu?.title == title }?.submenu }
+
+    func testTheHelpMenuIsTheAppsHelpMenu() throws {
+        let main = MainMenu.build()
+        let help = try XCTUnwrap(menu("Help", in: main))
+        XCTAssertTrue(NSApp.helpMenu === help, "macOS's menu search goes in NSApp.helpMenu")
+        XCTAssertEqual(main.items.last?.submenu, help, "Help is the last menu")
+        let titles = help.items.map(\.title)
+        XCTAssertTrue(titles.contains("Keyboard Shortcuts") && titles.contains("Overterm on GitHub") && titles.contains("View Latest Changelog"), "\(titles)")
+        XCTAssertNil(help.items.first { $0.title == "View Latest Changelog" }?.identifier.map(\.rawValue).flatMap { KeyCommands.byID[$0] }, "the mirror carries no command id")
+        XCTAssertEqual(AppDelegate.gitHubURL.absoluteString, "https://github.com/Overcraft-hq/overterm")
+    }
+
+    func testViewGroupsEachFeatureInASubmenu() throws {
+        let view = try XCTUnwrap(menu("View", in: MainMenu.build()))
+        let submenus = view.items.compactMap(\.submenu).map(\.title)
+        XCTAssertEqual(submenus, ["Groups", "Panes", "Columns", "Docker", "Kubernetes", "Activity", "Terraform", "Notes"])
+        let top = Set(view.items.filter { $0.submenu == nil && !$0.isSeparatorItem }.compactMap(\.identifier?.rawValue))
+        for id in ["palette.show", "inbox.show", "agents.overview", "sidebar.toggle", "changes.toggle", "browser.toggle", "review.branch", "tabs.peek", "view.presentation"] {
+            XCTAssertTrue(top.contains(id), "\(id) stays at View's top level")
+        }
+        XCTAssertLessThan(view.items.count, 35, "View is no longer one long list")
+        let groups = try XCTUnwrap(view.items.first { $0.title == "Groups" }?.submenu)
+        XCTAssertEqual(groups.items.filter { $0.identifier?.rawValue.hasPrefix("groups.goto") == true }.map(\.tag), Array(1...9))
+    }
+
+    /// A key put on a command in a submenu lands on its item, as at the top.
+    func testRebindingReachesASubmenusItem() throws {
+        let main = MainMenu.build()
+        let item = try XCTUnwrap(items(of: main).first { $0.identifier?.rawValue == "splits.zoom" })
+        item.keyEquivalent = ""
+        Keybindings.shared.apply(to: main)
+        let expected = Keybindings.shared.key(for: try XCTUnwrap(KeyCommands.byID["splits.zoom"]))?.menuKey.0 ?? ""
+        XCTAssertEqual(item.keyEquivalent, expected)
+        XCTAssertFalse(expected.isEmpty, "Zoom Pane has a key")
+    }
 }

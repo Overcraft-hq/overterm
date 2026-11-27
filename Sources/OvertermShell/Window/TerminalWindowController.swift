@@ -170,6 +170,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     private var pullRequestPoll: Timer?
     private var finalSaveDone = false
     package private(set) var editor: EditorViewController?
+    /// The file the tree last followed the editor to (EDIT-U2): only a new
+    /// one moves it, so a folder closed by hand stays closed while you type.
+    package var lastRevealedInTree: URL?
     /// Opens files in the app picked for them (the file tree, the editor's ↗).
     package let opener = ExternalOpener()
     package private(set) var editorItem: NSSplitViewItem?
@@ -212,6 +215,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// A scenario's: a Docker link (a port pill's) handed here instead of
     /// the browser.
     package var dockerLinkRecorder: ((URL) -> Void)?
+    /// A scenario's: a Terraform refusal said, and the HCP link beside it (TF-G6).
+    package var terraformRefusalRecorder: ((String, URL?) -> Void)?
     /// The pull requests as the last poll said them, by branch (`applyCI`).
     package var ciSeen: [String: PullRequestSummary] = [:]
     /// What takes the keyboard in the sidebar's panel on screen (A11Y-U2):
@@ -445,7 +450,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     resume: { [weak self] in self?.resumeTab($0) },
                     resumeAll: { [weak self] in self?.store.tabs.filter(\.isSuspended).forEach { self?.resumeTab($0) } },
                     press: { [weak self] subject, event, phase in self?.stripPress(subject, event, phase) }
-                ),
+                ).with(
+                    showWhatsNew: { [weak self] in self?.showWhatsNew() },
+                    dismissWhatsNew: { UpdateChecker.shared.dismissWhatsNew() }),
                 groupActions: TabGroupActions(
                     select: { [weak self] group in self?.selectGroup(group) },
                     toggleCollapsed: { [weak self] group in self?.toggleGroupCollapsed(group) },
@@ -834,6 +841,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         wireGroupFocus()
         wireAPI()
         wireNotes()
+        wireEditorBeside()
         wireDatabase()
         declarePage(settingsWorkspacePage())
         wireDockerPage()
@@ -1439,10 +1447,13 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// context's `KUBECONFIG` — and pinned to `kubePin`'s context.
     /// `command`, when given, is typed as soon as its shell starts.
     @discardableResult
-    package func newTab(in directory: URL, environment: [String: String], kubePin: KubeTerminalPin?, running command: String? = nil) -> Tab? {
+    /// `typing`: a line typed at the prompt and left there — no Return, the person's to press.
+    package func newTab(in directory: URL, environment: [String: String], kubePin: KubeTerminalPin?, running command: String? = nil, typing: String? = nil)
+        -> Tab?
+    {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let terminal = TerminalView(
-            workingDirectory: directory.path, initialInput: command.map { $0 + "\n" }, fontSize: fontSize, environment: environment, kubePin: kubePin)
+            workingDirectory: directory.path, initialInput: command.map { $0 + "\n" } ?? typing, fontSize: fontSize, environment: environment, kubePin: kubePin)
         addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
         if kubePin != nil { followKubernetesPins() }
         return tab(containing: terminal)
@@ -2846,7 +2857,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     self?.infoPopover?.close()
                     self?.openLink(url, for: tab)
                 },
-                showInActivity: Settings.shared.activityEnabled ? { [weak self] link in self?.showInActivity(link) } : nil))
+                showInActivity: Settings.shared.activityEnabled ? { [weak self] link in self?.showInActivity(link) } : nil,
+                freePort: { [weak self, weak model] port in
+                    guard let self, let model else { return }
+                    self.freeTabInfoPort(port, model: model)
+                }))
         popover.delegate = self
         // Strip frames are top-left; the host is flipped, so that is its space.
         var rect = frame
@@ -3109,6 +3124,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             if !ask() { NSSound.beep() }
             return
         }
+        // The editor's keyboard and a selection there: its file and lines.
+        if let editor, editor.hasKeyboard, let asked = editor.askAboutSelection() { return askAboutEditor(asked) }
         guard let tab = store.selected, let pane = tab.terminal.selectionText == nil ? nil : tab.terminal,
             let text = pane.selectionText
         else {
@@ -3466,6 +3483,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             },
             PaletteItem(id: "a.focusEditor", group: .action, title: "Focus the Editor", subtitle: "⌃⌥⌘3", symbol: "doc.text") {
                 [weak self] _, _ in self?.focusColumn(.editor)
+            },
+            PaletteItem(id: "a.goToFile", group: .action, title: "Go to File…", subtitle: "A file of this checkout by name, name:line  ⌘P in the editor", symbol: "doc.text.magnifyingglass") {
+                [weak self] _, _ in self?.goToFile()
             },
             PaletteItem(id: "a.focusRight", group: .action, title: "Focus the Right Pane", subtitle: "Changes, pull request, browser…  ⌃⌥⌘4", symbol: "sidebar.right") {
                 [weak self] _, _ in self?.focusColumn(.right)
@@ -4203,6 +4223,14 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     }
 
     /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
+    /// The strip's "What's new in …" chip (SET-G2): the bundled changelog
+    /// at this version's entry, and the chip put away for it.
+    package func showWhatsNew() {
+        guard let version = UpdateChecker.shared.whatsNew else { return }
+        UpdateChecker.shared.dismissWhatsNew()
+        ChangelogWindowController.shared.show(version: version)
+    }
+
     package func openSettings(_ section: SettingsSection? = nil) {
         if let section { settingsPage.show(section) }
         showOverlay(.settings)

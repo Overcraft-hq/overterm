@@ -68,6 +68,8 @@ extension TerminalWindowController {
             ask: { [weak self] brief, tab in self?.presentActivityBrief(brief, tab: tab) },
             keep: { identity in LeftBehindLedger.shared.keep([identity]) },
             stopAll: { [weak self] rows, group in self?.leftBehindStopAll(rows, group: group) })
+        // A key whose verb can't be done now: beeped, its reason said (6.3).
+        activityPage.actions.beep = { NSSound.beep() }
         activityPage.known = { Self.activityKnown() }
         activityPage.containers = { Self.activityContainers() }
         activityPage.contextFacts = { context in Self.activityContextFacts(&context) }

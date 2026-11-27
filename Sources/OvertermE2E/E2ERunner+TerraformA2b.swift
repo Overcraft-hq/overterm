@@ -140,6 +140,39 @@ extension E2ERunner {
                 if case .needsInit = plainFolder?.state { return true }
                 return false
             }, "\(String(describing: plainFolder?.state))")
+        await terraformDeadEndChecks(card: card, editor: editor, needsInitFolder: plain.appendingPathComponent("envs/dev"), recorder: recorder)
+    }
+
+    /// #31's Terraform patch: the card's Validate opens nothing and says its
+    /// result there (TF-U11); a needs-init bar types `terraform init` in a
+    /// terminal in that folder and never runs it (TF-U2).
+    private func terraformDeadEndChecks(card: TerraformRootCard?, editor: EditorViewController, needsInitFolder: URL, recorder: TerraformRecorder) async {
+        guard let card, let view = app.window?.contentView else { return check("the card for the dead-end checks", false) }
+        let opened = editor.active?.url
+        let validates = recorder.calls().count { $0.subcommand == "validate" }
+        app.validateTerraformRoot(card)
+        let folder = TerraformEditorModel.shared.existingFolder(at: card.folder)
+        check(
+            "the card's Validate validates the root",
+            await eventually(30) { recorder.calls().count { $0.subcommand == "validate" } > validates && folder?.state == .valid(warnings: 0) },
+            "\(String(describing: folder?.state))")
+        check("and opens no file", editor.active?.url == opened, editor.active?.url?.path ?? "-")
+        check(
+            "its result is on the card",
+            await eventually(5) { Self.accessibilityPress("terraform.panel.validated.\(card.path)", in: view, press: false) })
+
+        let tabs = app.store.tabs.count
+        let inits = recorder.calls().count { $0.subcommand == "init" }
+        check("the needs-init bar offers the line", await eventually(5) { Self.accessibilityPress("terraform.editor.typeInit", in: view) })
+        check("a terminal opens", await eventually(5) { self.app.store.tabs.count == tabs + 1 })
+        let typed = app.store.selected?.terminal
+        check(
+            "in that folder, terraform init typed",
+            await eventually(10) { (typed?.visibleText ?? "").contains("terraform init") }, String((typed?.visibleText ?? "").suffix(120)).debugDescription)
+        check("its terminal is the root's", typed?.terraformRoot == needsInitFolder.lastPathComponent, typed?.terraformRoot ?? "-")
+        try? await Task.sleep(for: .milliseconds(800))
+        check("and not run", recorder.calls().count { $0.subcommand == "init" } == inits && !(typed?.visibleText ?? "").contains("Initializing"))
+        if let tab = app.store.selected { app.closeTabsWithoutAsking([tab]) }
     }
 }
 #endif

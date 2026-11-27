@@ -25,6 +25,10 @@ package final class TerraformEditorModel: ObservableObject {
 
     /// The folder `file` is in: its module, the root terraform runs in.
     /// Its checkout is found once, here, never on a redraw or a save.
+    /// The folder already made for `url`, else nil: what a card shows
+    /// without making one (TF-U11).
+    package func existingFolder(at url: URL) -> TerraformFolder? { folders[url.standardizedFileURL.path] }
+
     package func folder(for file: URL) -> TerraformFolder {
         let url = file.standardizedFileURL.deletingLastPathComponent()
         if let folder = folders[url.path] { return folder }

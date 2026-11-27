@@ -456,6 +456,9 @@ final class E2ETests: XCTestCase {
     func testSplits() throws { try run("splits") }
     func testPullRequest() throws { try run("pullRequest") }
     func testKeyboard() throws { try run("keyboard") }
+    /// Issue #31's editor beside an agent: Undo/Redo/Cut, a rewritten file
+    /// reloaded or asked about, the tree's marks and following, Go to File, ⌘L.
+    func testEditorBeside() throws { try run("editorBeside") }
     func testMCPApprovals() throws { try run("mcpApprovals") }
     func testOverview() throws { try run("overview") }
     func testPeek() throws { try run("peek") }

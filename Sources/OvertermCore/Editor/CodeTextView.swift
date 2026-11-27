@@ -58,6 +58,28 @@ package final class CodeTextView: NSTextView {
         if host?.codeTextView(self, paste: .general) == true { return }
         super.paste(sender)
     }
+
+    // The Edit menu's Undo and Redo (EDIT-U3): answered here, before the
+    // window's own `undo:` — which would ask the window's undo manager, not
+    // the file's (`undoManager` is the delegate's: the buffer's own).
+    @objc package func undo(_ sender: Any?) {
+        guard let undo = undoManager, undo.canUndo else { return NSSound.beep() }
+        breakUndoCoalescing()
+        undo.undo()
+    }
+
+    @objc package func redo(_ sender: Any?) {
+        guard let undo = undoManager, undo.canRedo else { return NSSound.beep() }
+        undo.redo()
+    }
+
+    package override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        switch item.action {
+        case Selector(("undo:")): return isEditable && undoManager?.canUndo == true
+        case Selector(("redo:")): return isEditable && undoManager?.canRedo == true
+        default: return super.validateUserInterfaceItem(item)
+        }
+    }
     package var theme = EditorTheme(dark: true, background: .black) {
         didSet { needsDisplay = true }
     }

@@ -33,6 +33,11 @@ final class ActivityRingTests: XCTestCase {
     private let base: UInt64 = 1_000 * ActivityRing.cellLength
     private let process = ActivityProcessID(pid: 4242, start: 1_000)
 
+    override func tearDown() {
+        ActivityPageModel.forgetView()
+        super.tearDown()
+    }
+
     // MARK: The strip
 
     func testACellKeepsItsHighestAndLowestAndAGapIsNil() throws {

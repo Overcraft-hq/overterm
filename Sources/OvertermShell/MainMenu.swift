@@ -53,6 +53,13 @@ package enum MainMenu {
 
         let editItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
+        // First-responder actions: the editor's text view answers them with
+        // its file's own undo; the terminal never sees them (Ghostty holds
+        // ⌘Z and ⇧⌘Z there, and has nothing to cut).
+        command(editMenu, "Undo", Selector(("undo:")), "edit.undo")
+        command(editMenu, "Redo", Selector(("redo:")), "edit.redo")
+        editMenu.addItem(.separator())
+        command(editMenu, "Cut", #selector(NSText.cut(_:)), "edit.cut")
         command(editMenu, "Copy", #selector(NSText.copy(_:)), "edit.copy")
         command(editMenu, "Paste", #selector(NSText.paste(_:)), "edit.paste")
         command(editMenu, "Select All", #selector(NSText.selectAll(_:)), "edit.selectAll")
@@ -75,6 +82,9 @@ package enum MainMenu {
         editItem.submenu = editMenu
         main.addItem(editItem)
 
+        // View: what is used every day at the top; each feature's commands
+        // in a submenu of its own (DISC-U2). Keybindings finds an item by its
+        // identifier in any submenu, so keys and rebinding are unchanged.
         let viewItem = NSMenuItem()
         let viewMenu = NSMenu(title: "View")
         command(viewMenu, "Command Palette", #selector(TerminalWindowController.showPalette(_:)), "palette.show")
@@ -84,62 +94,16 @@ package enum MainMenu {
         command(
             viewMenu, "Next Failure or Tab That Needs You", #selector(TerminalWindowController.showNextAttention(_:)),
             "tabs.nextAttention")
-        for n in 1...9 {
-            // One selector, the group's number in the tag: nine near-identical
-            // selectors would be nine places to keep in step.
-            command(viewMenu, "Go to Group \(n)", #selector(TerminalWindowController.showGroup(_:)), "groups.goto\(n)").tag = n
-        }
         // ⇧⌘E is free in Ghostty v1.3.1 (only ⌘E and ⌃⇧E are bound); ⇧⌘↓
         // would never arrive — jump_to_prompt eats it in performKeyEquivalent.
         command(viewMenu, "Tab Peek", #selector(TerminalWindowController.toggleTabPeek(_:)), "tabs.peek")
         command(viewMenu, "Presentation Mode", #selector(TerminalWindowController.togglePresentation(_:)), "view.presentation")
         viewMenu.addItem(.separator())
-        command(viewMenu, "Focus the Sidebar", #selector(TerminalWindowController.focusSidebarColumn(_:)), "columns.sidebar")
-        command(viewMenu, "Focus the Terminal", #selector(TerminalWindowController.focusTerminalColumn(_:)), "columns.terminal")
-        command(viewMenu, "Focus the Editor", #selector(TerminalWindowController.focusEditorColumn(_:)), "columns.editor")
-        command(viewMenu, "Focus the Right Pane", #selector(TerminalWindowController.focusRightColumn(_:)), "columns.right")
-        command(viewMenu, "Focus the Inbox", #selector(TerminalWindowController.focusInboxColumn(_:)), "columns.inbox")
-        command(viewMenu, "Next Column", #selector(TerminalWindowController.focusNextColumn(_:)), "columns.next")
-        command(viewMenu, "Previous Column", #selector(TerminalWindowController.focusPreviousColumn(_:)), "columns.previous")
-        viewMenu.addItem(.separator())
-        command(viewMenu, "Group Selected Tabs", #selector(TerminalWindowController.groupSelectedTabs(_:)), "groups.new")
-        command(viewMenu, "Group Switcher", #selector(TerminalWindowController.showGroupSwitcher(_:)), "groups.switcher")
-        command(viewMenu, "Focus on This Group", #selector(TerminalWindowController.toggleFocusedGroup(_:)), "groups.focus")
-        command(viewMenu, "Stash Group", #selector(TerminalWindowController.stashSelectedGroup(_:)), "groups.stash")
-        command(viewMenu, "Broadcast Input to Group…", #selector(TerminalWindowController.broadcastToGroup(_:)), "groups.broadcast")
-        viewMenu.addItem(.separator())
         command(viewMenu, "Toggle Sidebar", #selector(TerminalWindowController.toggleFileTree(_:)), "sidebar.toggle")
         // Ticked while the sidebar is on it.
         command(viewMenu, "Overgit", #selector(TerminalWindowController.showOvergit(_:)), "overgit.show")
         command(viewMenu, "API Client", #selector(TerminalWindowController.showAPIClient(_:)), "api.show")
-        command(viewMenu, "Notes", #selector(TerminalWindowController.showNotes(_:)), "notes.show")
         command(viewMenu, "Database", #selector(TerminalWindowController.showDatabase(_:)), "database.show")
-        // A page over the body, as Settings; ⌥⌘P again goes back to the terminal.
-        command(viewMenu, "Docker", #selector(TerminalWindowController.toggleDockerPage(_:)), "docker.page")
-        command(viewMenu, "Docker Switcher", #selector(TerminalWindowController.showDockerSwitcher(_:)), "docker.switch")
-        command(viewMenu, "Compose Up", #selector(TerminalWindowController.composeUp(_:)), "docker.composeUp")
-        command(viewMenu, "Compose Down…", #selector(TerminalWindowController.composeDown(_:)), "docker.composeDown")
-        command(viewMenu, "Compose Restart", #selector(TerminalWindowController.composeRestart(_:)), "docker.composeRestart")
-        command(viewMenu, "Compose Watch", #selector(TerminalWindowController.composeWatch(_:)), "docker.composeWatch")
-        // Docker's way: ⌥⌘J again goes back to the terminal.
-        command(viewMenu, "Kubernetes", #selector(TerminalWindowController.toggleKubernetesPage(_:)), "kubernetes.page")
-        command(viewMenu, "Kubernetes Switcher", #selector(TerminalWindowController.showKubernetesSwitcher(_:)), "kubernetes.switch")
-        command(viewMenu, "Terminal in Kubernetes Context…", #selector(TerminalWindowController.openKubernetesTerminalPicker(_:)), "kubernetes.terminal")
-        // Enabled while the page shows a list (TerminalWindowController.validateMenuItem).
-        command(viewMenu, "Export Kubernetes List as CSV…", #selector(TerminalWindowController.exportKubernetesList(_:)), "kubernetes.exportCSV")
-        // Docker's way: ⌥⌘A again goes back to the terminal.
-        command(viewMenu, "Activity", #selector(TerminalWindowController.toggleActivityPage(_:)), "activity.page")
-        command(viewMenu, "Activity Switcher", #selector(TerminalWindowController.showActivitySwitcher(_:)), "activity.switch")
-        command(viewMenu, "Activity: Listening", #selector(TerminalWindowController.showActivityListening(_:)), "activity.listening")
-        command(viewMenu, "Free a Port…", #selector(TerminalWindowController.showActivityFreePort(_:)), "activity.freePort")
-        // The rail's Terraform panel; its switcher scopes the palette to the roots.
-        command(viewMenu, "Terraform", #selector(TerminalWindowController.showTerraformPanel(_:)), "terraform.show")
-        command(viewMenu, "Terraform Switcher", #selector(TerminalWindowController.showTerraformSwitcher(_:)), "terraform.switch")
-        command(viewMenu, "Terminal in Terraform Root…", #selector(TerminalWindowController.openTerraformTerminalPicker(_:)), "terraform.terminal")
-        command(viewMenu, "Plan Terraform Root", #selector(TerminalWindowController.planSelectedTerraformRoot(_:)), "terraform.plan")
-        command(viewMenu, "Copy Terraform Plan Summary", #selector(TerminalWindowController.copyTerraformPlanSummary(_:)), "terraform.copySummary")
-        command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
-        command(viewMenu, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
         command(viewMenu, "Changes", #selector(TerminalWindowController.toggleDiff(_:)), "changes.toggle")
         // Ticked while the column shows; off with Settings ▸ Browser.
@@ -148,14 +112,78 @@ package enum MainMenu {
         command(viewMenu, "Create Pull Request…", #selector(TerminalWindowController.createPullRequest(_:)), "pullRequest.create")
         command(viewMenu, "Review Branch", #selector(TerminalWindowController.reviewBranch(_:)), "review.branch")
         command(viewMenu, "Usage", #selector(TerminalWindowController.showUsage(_:)), "usage.show")
-        // Ghostty's own defaults, so they also work while the editor has the keyboard.
         viewMenu.addItem(.separator())
-        command(viewMenu, "Split Right", #selector(TerminalWindowController.splitRight(_:)), "splits.right")
-        command(viewMenu, "Split Down", #selector(TerminalWindowController.splitDown(_:)), "splits.down")
-        command(viewMenu, "Next Pane", #selector(TerminalWindowController.selectNextPane(_:)), "splits.next")
-        command(viewMenu, "Previous Pane", #selector(TerminalWindowController.selectPreviousPane(_:)), "splits.previous")
-        command(viewMenu, "Zoom Pane", #selector(TerminalWindowController.togglePaneZoom(_:)), "splits.zoom")
-        command(viewMenu, "Equalize Panes", #selector(TerminalWindowController.equalizePanes(_:)), "splits.equalize")
+
+        let groups = submenu(viewMenu, "Groups")
+        for n in 1...9 {
+            // One selector, the group's number in the tag: nine near-identical
+            // selectors would be nine places to keep in step.
+            command(groups, "Go to Group \(n)", #selector(TerminalWindowController.showGroup(_:)), "groups.goto\(n)").tag = n
+        }
+        groups.addItem(.separator())
+        command(groups, "Group Selected Tabs", #selector(TerminalWindowController.groupSelectedTabs(_:)), "groups.new")
+        command(groups, "Group Switcher", #selector(TerminalWindowController.showGroupSwitcher(_:)), "groups.switcher")
+        command(groups, "Focus on This Group", #selector(TerminalWindowController.toggleFocusedGroup(_:)), "groups.focus")
+        command(groups, "Stash Group", #selector(TerminalWindowController.stashSelectedGroup(_:)), "groups.stash")
+        command(groups, "Broadcast Input to Group…", #selector(TerminalWindowController.broadcastToGroup(_:)), "groups.broadcast")
+
+        // Ghostty's own defaults, so they also work while the editor has the keyboard.
+        let panes = submenu(viewMenu, "Panes")
+        command(panes, "Split Right", #selector(TerminalWindowController.splitRight(_:)), "splits.right")
+        command(panes, "Split Down", #selector(TerminalWindowController.splitDown(_:)), "splits.down")
+        command(panes, "Next Pane", #selector(TerminalWindowController.selectNextPane(_:)), "splits.next")
+        command(panes, "Previous Pane", #selector(TerminalWindowController.selectPreviousPane(_:)), "splits.previous")
+        command(panes, "Zoom Pane", #selector(TerminalWindowController.togglePaneZoom(_:)), "splits.zoom")
+        command(panes, "Equalize Panes", #selector(TerminalWindowController.equalizePanes(_:)), "splits.equalize")
+
+        let columns = submenu(viewMenu, "Columns")
+        command(columns, "Focus the Sidebar", #selector(TerminalWindowController.focusSidebarColumn(_:)), "columns.sidebar")
+        command(columns, "Focus the Terminal", #selector(TerminalWindowController.focusTerminalColumn(_:)), "columns.terminal")
+        command(columns, "Focus the Editor", #selector(TerminalWindowController.focusEditorColumn(_:)), "columns.editor")
+        command(columns, "Focus the Right Pane", #selector(TerminalWindowController.focusRightColumn(_:)), "columns.right")
+        command(columns, "Focus the Inbox", #selector(TerminalWindowController.focusInboxColumn(_:)), "columns.inbox")
+        command(columns, "Next Column", #selector(TerminalWindowController.focusNextColumn(_:)), "columns.next")
+        command(columns, "Previous Column", #selector(TerminalWindowController.focusPreviousColumn(_:)), "columns.previous")
+        viewMenu.addItem(.separator())
+
+        // A page over the body, as Settings; ⌥⌘P again goes back to the terminal.
+        let docker = submenu(viewMenu, "Docker")
+        command(docker, "Show Docker", #selector(TerminalWindowController.toggleDockerPage(_:)), "docker.page")
+        command(docker, "Docker Switcher", #selector(TerminalWindowController.showDockerSwitcher(_:)), "docker.switch")
+        docker.addItem(.separator())
+        command(docker, "Compose Up", #selector(TerminalWindowController.composeUp(_:)), "docker.composeUp")
+        command(docker, "Compose Down…", #selector(TerminalWindowController.composeDown(_:)), "docker.composeDown")
+        command(docker, "Compose Restart", #selector(TerminalWindowController.composeRestart(_:)), "docker.composeRestart")
+        command(docker, "Compose Watch", #selector(TerminalWindowController.composeWatch(_:)), "docker.composeWatch")
+        // Docker's way: ⌥⌘J again goes back to the terminal.
+        let kubernetes = submenu(viewMenu, "Kubernetes")
+        command(kubernetes, "Show Kubernetes", #selector(TerminalWindowController.toggleKubernetesPage(_:)), "kubernetes.page")
+        command(kubernetes, "Kubernetes Switcher", #selector(TerminalWindowController.showKubernetesSwitcher(_:)), "kubernetes.switch")
+        command(
+            kubernetes, "Terminal in Kubernetes Context…", #selector(TerminalWindowController.openKubernetesTerminalPicker(_:)),
+            "kubernetes.terminal")
+        // Enabled while the page shows a list (TerminalWindowController.validateMenuItem).
+        command(
+            kubernetes, "Export Kubernetes List as CSV…", #selector(TerminalWindowController.exportKubernetesList(_:)), "kubernetes.exportCSV")
+        // Docker's way: ⌥⌘A again goes back to the terminal.
+        let activity = submenu(viewMenu, "Activity")
+        command(activity, "Show Activity", #selector(TerminalWindowController.toggleActivityPage(_:)), "activity.page")
+        command(activity, "Activity Switcher", #selector(TerminalWindowController.showActivitySwitcher(_:)), "activity.switch")
+        command(activity, "Activity: Listening", #selector(TerminalWindowController.showActivityListening(_:)), "activity.listening")
+        command(activity, "Free a Port…", #selector(TerminalWindowController.showActivityFreePort(_:)), "activity.freePort")
+        // The rail's Terraform panel; its switcher scopes the palette to the roots.
+        let terraform = submenu(viewMenu, "Terraform")
+        command(terraform, "Show Terraform", #selector(TerminalWindowController.showTerraformPanel(_:)), "terraform.show")
+        command(terraform, "Terraform Switcher", #selector(TerminalWindowController.showTerraformSwitcher(_:)), "terraform.switch")
+        command(
+            terraform, "Terminal in Terraform Root…", #selector(TerminalWindowController.openTerraformTerminalPicker(_:)), "terraform.terminal")
+        command(terraform, "Plan Terraform Root", #selector(TerminalWindowController.planSelectedTerraformRoot(_:)), "terraform.plan")
+        command(
+            terraform, "Copy Terraform Plan Summary", #selector(TerminalWindowController.copyTerraformPlanSummary(_:)), "terraform.copySummary")
+        let notes = submenu(viewMenu, "Notes")
+        command(notes, "Show Notes", #selector(TerminalWindowController.showNotes(_:)), "notes.show")
+        command(notes, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
+        command(notes, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         viewItem.submenu = viewMenu
         main.addItem(viewItem)
 
@@ -169,7 +197,29 @@ package enum MainMenu {
         main.addItem(windowItem)
         NSApp.windowsMenu = windowMenu
 
+        // Help (DISC-U1): macOS puts its menu search here — every item of
+        // every menu found by typing a word of its title.
+        let helpItem = NSMenuItem()
+        let helpMenu = NSMenu(title: "Help")
+        helpMenu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "")
+        // Mirrored from the app menu, without its identifier: a key the
+        // person gives it belongs on one item.
+        helpMenu.addItem(withTitle: "View Latest Changelog", action: #selector(AppDelegate.showChangelog(_:)), keyEquivalent: "")
+        helpMenu.addItem(.separator())
+        helpMenu.addItem(withTitle: "Overterm on GitHub", action: #selector(AppDelegate.openGitHub(_:)), keyEquivalent: "")
+        helpItem.submenu = helpMenu
+        main.addItem(helpItem)
+        NSApp.helpMenu = helpMenu
+
         return main
+    }
+
+    /// A submenu of `menu`, under an item of the same title.
+    private static func submenu(_ menu: NSMenu, _ title: String) -> NSMenu {
+        let item = menu.addItem(withTitle: title, action: nil, keyEquivalent: "")
+        let sub = NSMenu(title: title)
+        item.submenu = sub
+        return sub
     }
 
     /// An item for a KeyCommand, with the command's default key.

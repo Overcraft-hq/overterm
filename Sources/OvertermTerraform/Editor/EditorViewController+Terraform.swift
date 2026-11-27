@@ -48,6 +48,20 @@ extension EditorViewController {
                     : { [weak self, weak folder] path in
                         guard let folder, let card = folder.roots.cards[path], let checkout = folder.roots.readCheckout else { return NSSound.beep() }
                         self?.terraformHost?.planFromEditor(card, checkout: checkout)
+                    },
+                test: terraformHost == nil || !(active?.url.map { TerraformEditorTest.isTestFile($0) } ?? false)
+                    ? nil
+                    : { [weak self, weak folder] in
+                        guard let self, let folder, let file = self.active?.url,
+                            let (card, checkout, relative) = TerraformEditorTest.target(file, roots: folder.roots)
+                        else { return NSSound.beep() }
+                        self.terraformHost?.testFromEditor(card, checkout: checkout, file: relative)
+                    },
+                typeInTerminal: terraformHost == nil
+                    ? nil
+                    : { [weak self, weak folder] line in
+                        guard let folder else { return }
+                        self?.terraformHost?.typeInTerminal(line, in: folder.url)
                     }))
         consoleHeight.constant = TerraformEditorBar.height
     }
@@ -208,6 +222,10 @@ package struct TerraformEditorBar: View {
     package var askWhy: (() -> Void)? = nil
     /// Plan the root at this path (TF-U5); nil where nobody can plan.
     package var plan: ((String) -> Void)? = nil
+    /// This test file's run alone (TF-G4); nil unless the file is a `.tftest.hcl`.
+    package var test: (() -> Void)? = nil
+    /// A terminal in the folder with a line typed (TF-U2): needs-init's.
+    package var typeInTerminal: ((String) -> Void)? = nil
 
     package static let height: CGFloat = 33
 
@@ -246,6 +264,12 @@ package struct TerraformEditorBar: View {
                 .help("terraform validate in this folder, with no credential in its environment — it starts the providers, never init")
                 .fixedSize()
                 .accessibilityIdentifier("terraform.editor.validate")
+            if let test {
+                Button("Test") { test() }
+                    .help("terraform test of this file alone (-filter), asked as the panel's Test is")
+                    .fixedSize()
+                    .accessibilityIdentifier("terraform.editor.test")
+            }
             Button("Format") { format() }
                 .help("terraform fmt over this file, as one edit you can undo  ⇧⌥F")
                 .fixedSize()
@@ -254,6 +278,11 @@ package struct TerraformEditorBar: View {
                 Text(verbatim: folder.state.text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(stateColor).lineLimit(1)
                     .truncationMode(.tail).help(folder.state.text)
                     .accessibilityIdentifier("terraform.editor.state")
+            }
+            if case .needsInit = folder.state, let typeInTerminal {
+                Button(TerraformTerminalLine.title(TerraformTerminalLine.initialize)) { typeInTerminal(TerraformTerminalLine.initialize) }
+                    .help(TerraformTerminalLine.help)
+                    .accessibilityIdentifier("terraform.editor.typeInit")
             }
             if failed, let askWhy {
                 Button("Ask Why") { askWhy() }
@@ -321,5 +350,25 @@ private struct TerraformEditorRootChip: View {
             )
             .help("\(root.name): \(root.rootClass.title)")
             .accessibilityIdentifier("terraform.editor.class")
+    }
+}
+
+/// Test from a test file's bar (TF-G4): the file's root, and the file as
+/// `-filter=` names it — relative to the root. Pure but for the roots read.
+@MainActor
+package enum TerraformEditorTest {
+    package static func isTestFile(_ url: URL) -> Bool {
+        let name = url.lastPathComponent
+        return name.hasSuffix(".tftest.hcl") || name.hasSuffix(".tftest.json")
+    }
+
+    package static func target(_ file: URL, roots: TerraformReviewModel) -> (TerraformRootCard, URL, String)? {
+        guard let checkout = roots.readCheckout else { return nil }
+        let path = file.standardizedFileURL.path
+        // The nearest root above the file: the longest path that holds it.
+        let held = roots.cards.values.filter { card in path.hasPrefix(card.folder.standardizedFileURL.path + "/") }
+        guard let card = held.max(by: { $0.folder.path.count < $1.folder.path.count }) else { return nil }
+        let relative = String(path.dropFirst(card.folder.standardizedFileURL.path.count + 1))
+        return TerraformCommands.isTestFile(relative) ? (card, checkout, relative) : nil
     }
 }

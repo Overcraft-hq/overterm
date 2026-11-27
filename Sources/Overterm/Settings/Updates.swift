@@ -58,6 +58,41 @@ package final class UpdateChecker: ObservableObject {
         Task { await check() }
     }
 
+    // MARK: What's new (SET-G2)
+
+    /// The version last run, in the app's own defaults (an isolated run's
+    /// are its own).
+    package static let lastRunKey = "app.lastVersionRun"
+
+    /// This version, on its first launch after an older one: the strip's
+    /// "What's new in …" chip, until it is opened or put away.
+    @Published package private(set) var whatsNew: String?
+
+    /// At launch: the first run ever remembers this version and says
+    /// nothing; a newer one than the last run offers its entry. The version
+    /// is remembered when the chip is opened or dismissed, so a chip not
+    /// yet seen is there at the next launch too.
+    package func noteLaunch(defaults: UserDefaults = AppEnvironment.defaults) {
+        let current = currentVersion
+        let last = defaults.string(forKey: Self.lastRunKey)
+        whatsNew = Self.whatsNew(lastRun: last, current: current)
+        if whatsNew == nil, last != current { defaults.set(current, forKey: Self.lastRunKey) }
+    }
+
+    /// The chip opened or put away: not offered again for this version.
+    package func dismissWhatsNew(defaults: UserDefaults = AppEnvironment.defaults) {
+        guard let version = whatsNew else { return }
+        defaults.set(version, forKey: Self.lastRunKey)
+        whatsNew = nil
+    }
+
+    /// `current` when it is newer than `lastRun`; nil on a first run ever
+    /// (no `lastRun`), the same version, or an older one run after a newer.
+    package nonisolated static func whatsNew(lastRun: String?, current: String) -> String? {
+        guard let lastRun, isNewer(current, than: lastRun) else { return nil }
+        return current
+    }
+
     /// The release's DMG into ~/Downloads (through gh: the repository is
     /// private), then opened — Finder mounts it; the app goes to Applications.
     package func download(_ release: Release, into folder: URL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]) async {
