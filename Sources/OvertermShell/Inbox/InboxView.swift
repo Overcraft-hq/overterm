@@ -73,6 +73,9 @@ private struct InboxCard: View {
     let actions: InboxActions
 
     private var glyph: (String, Color) {
+        if let approval = entry.approval {
+            return ("hand.raised.fill", approval.confirmation.production ? WriteConfirmationColors.production : TabStatusStyle.waiting)
+        }
         if let ask = entry.terraform { return ("exclamationmark.octagon.fill", ask.isProduction ? TerraformPanelView.production : TabStatusStyle.waiting) }
         switch entry.mark {
         case .waiting: return ("exclamationmark.circle.fill", TabStatusStyle.waiting)
@@ -98,7 +101,9 @@ private struct InboxCard: View {
                     }
                 }
             }
-            if let ask = entry.terraform {
+            if let approval = entry.approval {
+                MCPApprovalCard(request: approval, theme: theme, open: { actions.open(entry.id) })
+            } else if let ask = entry.terraform {
                 VStack(alignment: .leading, spacing: 1) {
                     ForEach(Array(ask.preview.enumerated()), id: \.offset) { _, line in
                         Text(verbatim: line)
@@ -215,5 +220,65 @@ package final class InboxHostingView<Content: View>: NSHostingView<Content> {
         let key = event.keyCode == 53 ? "escape" : (event.keyCode == 36 ? "return" : (event.charactersIgnoringModifiers ?? ""))
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty, onKey?(key) == true { return }
         super.keyDown(with: event)
+    }
+}
+
+/// The colours an agent's write asked in the Inbox is drawn in.
+@MainActor enum WriteConfirmationColors {
+    static let production = Color(nsColor: WriteConfirmation.productionRed)
+}
+
+/// An agent's MCP write, asked in the Inbox (D-6 (b)): who asks, what and
+/// where — every character of it —, the name to type where the write asks
+/// for one, then Allow and Don't. Return answers nothing here.
+private struct MCPApprovalCard: View {
+    let request: MCPApprovals.Request
+    @ObservedObject var theme: ChromeTheme
+    let open: () -> Void
+    @State private var typed = ""
+
+    private var confirmation: WriteConfirmation { request.confirmation }
+    private var matches: Bool { MCPApprovals.accepts(typed, name: confirmation.typedName) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let asker = confirmation.asker {
+                Text(verbatim: asker).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(2)
+                    .accessibilityIdentifier("inbox.approval.asker")
+            }
+            if let scope = confirmation.scope {
+                Text(verbatim: (confirmation.production ? WriteConfirmation.productionMark : "") + scope)
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
+                    .foregroundStyle(confirmation.production ? WriteConfirmationColors.production : theme.text2)
+                    .lineLimit(2)
+            }
+            ScrollView {
+                Text(verbatim: confirmation.detail)
+                    .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
+                    .foregroundStyle(theme.text2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            .frame(maxHeight: 160)
+            .padding(8)
+            .background(RoundedRectangle(cornerRadius: 6).fill(theme.term))
+            .accessibilityIdentifier("inbox.approval.detail")
+            if let name = confirmation.typedName {
+                TextField("Type \(name) to allow", text: $typed)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+                    .accessibilityIdentifier("inbox.approval.name")
+            }
+            HStack(spacing: 6) {
+                Button(confirmation.button) { MCPApprovals.shared.answer(request.id, typed: typed) }
+                    .disabled(!matches)
+                    .accessibilityIdentifier("inbox.approval.allow")
+                Button(confirmation.cancel) { MCPApprovals.shared.answer(request.id, typed: nil) }
+                    .accessibilityIdentifier("inbox.approval.decline")
+                Spacer(minLength: 0)
+                Button("Open tab", action: open)
+            }
+            .controlSize(.small)
+        }
     }
 }

@@ -114,7 +114,7 @@ package enum DockerMCP {
             guard let action = string("action"), ["start", "stop", "restart", "pause", "unpause", "remove"].contains(action) else {
                 throw BrowserMCP.ToolError(message: "“action” is one of start, stop, restart, pause, unpause, remove.")
             }
-            guard await allow("An agent wants to \(action) “\(target.name)”", target.Image + " — " + target.Status, destroys: action == "remove") else {
+            guard try await allow("An agent wants to \(action) “\(target.name)”", target.Image + " — " + target.Status, destroys: action == "remove") else {
                 throw BrowserMCP.ToolError(message: "The user declined.")
             }
             if action == "remove" {
@@ -138,7 +138,7 @@ package enum DockerMCP {
             let command = try composeCommand(
                 project, action: action, service: service, endpoint: docker.endpoint, files: ComposePortStore.shared.files(for: project))
             guard
-                await allow(
+                try await allow(
                     "An agent wants to run compose \(action) on “\(project.name)”" + (service.map { " (\($0))" } ?? ""), command, destroys: action == "down")
             else {
                 throw BrowserMCP.ToolError(message: "The user declined.")
@@ -168,7 +168,7 @@ package enum DockerMCP {
             }
             // Quoted as a shell reads it: joined with spaces, where one
             // argument ended and the next began didn't show.
-            guard await allow("An agent wants to run this in “\(target.name)”", command.map(DockerCommands.quote).joined(separator: " ")) else {
+            guard try await allow("An agent wants to run this in “\(target.name)”", command.map(DockerCommands.quote).joined(separator: " ")) else {
                 throw BrowserMCP.ToolError(message: "The user declined.")
             }
             // An agent's command may never end, or never stop writing.
@@ -237,7 +237,7 @@ package enum DockerMCP {
         }
         if let problem = settings.problem { throw BrowserMCP.ToolError(message: problem) }
         guard let change = settings.update else { return BrowserMCP.textResult("\(target.name) already has those settings.") }
-        guard await allow("An agent wants to change “\(target.name)”", settings.line(prefix: DockerCommands.prefix(for: docker.endpoint))) else {
+        guard try await allow("An agent wants to change “\(target.name)”", settings.line(prefix: DockerCommands.prefix(for: docker.endpoint))) else {
             throw BrowserMCP.ToolError(message: "The user declined.")
         }
         let warnings = try await engine.update(container: target.Id, change)
@@ -247,20 +247,18 @@ package enum DockerMCP {
     }
 
     /// `destroys`: a remove or a down — Return is "Don't"'s (D-1).
-    package static func allow(_ title: String, _ detail: String, destroys: Bool = false) async -> Bool {
+    package static func allow(_ title: String, _ detail: String, destroys: Bool = false) async throws -> Bool {
         let shown = displayed(detail)
         // Who asks: the calling pane's tab and agent (MCPAsker).
         let asker = await MCPAsker.current()
         if let answer = askOverride { return answer(([title, asker].compactMap(\.self) + [shown]).joined(separator: "\n")) }
         // The one confirmation every write is asked with; all of it shown,
-        // never cut — in the calling pane's window.
+        // never cut — the calling pane's sheet or Inbox card (MCPApprovals).
         let docker = DockerModel.shared
         let confirmation = WriteConfirmation(
             title: title, scope: destroys ? docker.endpoint?.confirmationScope(runtime: docker.runtime) : nil, detail: shown, button: "Allow", cancel: "Don't",
             asker: asker, destroys: destroys)
-        let window = MCPAsker.window(forPane: MCPAsker.pane) ?? NSApp.windows.first(where: \.isVisible)
-        if window != nil { NSApp.activate(ignoringOtherApps: true) }
-        return await confirmation.ask(on: window) != nil
+        return try await MCPApprovals.shared.ask(confirmation) != nil
     }
 
     /// What a write's confirmation shows (`VisibleText.displayed`).

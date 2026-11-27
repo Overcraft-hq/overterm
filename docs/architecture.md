@@ -1861,9 +1861,23 @@ driving it are in the same window as the code.
   agent); pi has no MCP. Every write an
   MCP call asks about says who asks — "Asked through MCP by Claude in the
   tab “…”" (`MCPAsker`: the call's pane as a task-local, its tab by
-  `tab.terminals`, the agent by `tab.agent` or its process) — in that
-  pane's window (`WriteConfirmation.ask` fills it in; Docker's, Kubernetes'
-  and the databases' writes). Left open: a same-user process outside a
+  `tab.terminals`, the agent by `tab.agent` or its process). Where it is
+  asked is `MCPApprovals` (D-6 (b), P09): every agent write — Docker's,
+  Kubernetes', the databases', Terraform's `tf_plan` and real `tf_test` —
+  is a request held for the calling pane, shown as the sheet only when
+  that pane's window is key in the active app; otherwise an Inbox card
+  (`InboxModel.Entry.approval`: who asks, the scope, the whole detail, the
+  name to type, Allow and Don't — Return answers nothing there) with the
+  pane's tab marked waiting (`TabActivity.mcpAsked`/`mcpAnswered`) and a
+  notification. The sheet comes when the tab is looked at
+  (`showSelectedApproval`); an answer from either closes the other. The
+  app never brings itself forward. Unanswered for `MCPApprovals.timeout`
+  (ten minutes), the call ends in an error the agent reads. Every call a
+  pane makes is kept, newest first and 50 a pane, by `MCPCallLog` — tool,
+  arguments masked (`Secrets`) and cut, outcome, the answer's size, asked
+  and allowed — in memory only, dropped with its pane; Tab Info lists a
+  tab's, and Settings ▸ Agents shows every feature's switch
+  (`AgentToolsSummary`) and whether the bridge serves. Left open: a same-user process outside a
   sandbox can read another process's environment (`KERN_PROCARGS2`), and
   so another pane's token; the sheet then names the pane it pretends to
   be. Each pane gets `OVERTERM_MCP_CONFIG`, a Claude Code

@@ -213,7 +213,45 @@ package struct SettingsPageView: View {
         default:
             SpecRows(section: model.section, model: model, settings: settings, theme: theme)
             if model.section == .appearance || model.section == .terminal { GhosttyNote(theme: theme) }
+            if model.section == .agents { AgentToolsOverview(settings: settings, theme: theme) }
         }
+    }
+}
+
+/// Settings ▸ Agents: what agents may reach through Overterm's MCP server,
+/// every feature's switch at a glance (MCP-U3) — read only; each is
+/// changed in its own section.
+private struct AgentToolsOverview: View {
+    @ObservedObject var settings: Settings
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Overterm's tools for agents").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.dimText)
+                .padding(.bottom, 4)
+            Text(verbatim: bridge)
+                .font(.caption).foregroundStyle(theme.dimText).padding(.bottom, 6)
+                .accessibilityIdentifier("settings.agentTools.bridge")
+            ForEach(AgentToolsSummary.rows { settings.value($0) }) { row in
+                HStack {
+                    Text(verbatim: row.feature).foregroundStyle(theme.text)
+                    Spacer()
+                    Text(verbatim: row.state).foregroundStyle(row.state == "off" ? theme.dimText : theme.text)
+                    Text(verbatim: "Settings ▸ \(row.section)").font(.caption).foregroundStyle(theme.dimText).frame(width: 150, alignment: .trailing)
+                }
+                .font(.system(size: ChromeMetrics.text(12)))
+                .padding(.vertical, 5)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("settings.agentTools.\(row.feature)")
+                Rectangle().fill(theme.dimText.opacity(0.12)).frame(height: 1)
+            }
+            Text("Every write is asked first: on the agent's window when it is in front, else as a card in the Inbox. Tab Info lists a tab's last calls.")
+                .font(.caption).foregroundStyle(theme.dimText).fixedSize(horizontal: false, vertical: true).padding(.top, 6)
+        }
+    }
+
+    private var bridge: String {
+        BrowserBridge.shared.port.map { "The bridge is serving on 127.0.0.1:\($0), a path and token per pane." } ?? "The bridge isn't serving: no agent reaches these tools now."
     }
 }
 

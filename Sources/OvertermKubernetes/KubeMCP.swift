@@ -769,7 +769,7 @@ package enum KubeMCP {
         let rule = KubeWriteCheck.rule(verb, for: target.context, kind: kind, replicas: replicas)
         let confirmation = KubeWriteConfirmation.make(
             verb, ref, context: target.context, rule: rule, from: from, to: replicas, discovery: known(for: target, kubernetes: kubernetes))
-        guard let typed = await ask(confirmation, pane: pane) else {
+        guard let typed = try await ask(confirmation, pane: pane) else {
             throw BrowserMCP.ToolError(message: "The user declined \(confirmation.kubectl ?? object): nothing was changed.")
         }
         guard confirmation.accepts(typed) else {
@@ -803,17 +803,16 @@ package enum KubeMCP {
     /// The confirmation in the window — the context and namespace in its
     /// title, all of the detail shown, a field for the name where asked —
     /// or a test's answer: what was typed, nil when refused.
-    package static func ask(_ confirmation: KubeWriteConfirmation, pane: String? = nil) async -> String? {
+    package static func ask(_ confirmation: KubeWriteConfirmation, pane: String? = nil) async throws -> String? {
         if let askOverride { return askOverride(confirmation) }
         let sheet = WriteConfirmation(
             title: KubeAgentWrites.title(confirmation), scope: confirmation.scope, production: confirmation.production,
             detail: DockerMCP.displayed(confirmation.detail), button: "Allow", cancel: "Don't", typedName: confirmation.typedName,
             critical: confirmation.production || confirmation.typedName != nil, destroys: confirmation.destroys)
-        let window = window(forPane: pane)
         // An isolated run never stops on a dialog of its own: no window, no.
-        if window == nil, AppEnvironment.isIsolated { return nil }
-        if window != nil { NSApp.activate(ignoringOtherApps: true) }
-        return await sheet.ask(on: window)
+        if window(forPane: pane) == nil, AppEnvironment.isIsolated { return nil }
+        // The pane's sheet when its window is in front, else an Inbox card (MCPApprovals).
+        return try await MCPApprovals.shared.ask(sheet, pane: pane)
     }
 
     /// The window of the pane that called, else the main one, else any
@@ -832,7 +831,7 @@ package enum KubeMCP {
         ]
         let namespace: [String: Any] = ["type": "string", "description": "Its namespace. Default: the page's namespace on that context, else the context's own."]
         let asked =
-            " Only on a context k8s_contexts says agents may write in; asked of the user in Overterm's window first, naming the context and namespace; declined, nothing changes."
+            " Only on a context k8s_contexts says agents may write in; asked of the user in Overterm first (unanswered for 10 minutes, it fails), naming the context and namespace; declined, nothing changes."
         return [
             tool(
                 "k8s_restart", "Restart a workload's rollout, as kubectl rollout restart does: its pods are replaced one by one." + asked,
@@ -1001,7 +1000,7 @@ package enum KubeMCP {
     }
 
     package static let instructions =
-        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history, k8s_top what pods and nodes use now (metrics-server's), k8s_metrics an object's usage over a range against its requests and limits, k8s_gitops Argo CD's and Flux's objects and why they fail — where Argo CD runs in another cluster, its apps read from the marks on their objects (checkout: what deploys this checkout, and whether this branch has reached the cluster); k8s_why takes those objects too. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
+        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history, k8s_top what pods and nodes use now (metrics-server's), k8s_metrics an object's usage over a range against its requests and limits, k8s_gitops Argo CD's and Flux's objects and why they fail — where Argo CD runs in another cluster, its apps read from the marks on their objects (checkout: what deploys this checkout, and whether this branch has reached the cluster); k8s_why takes those objects too. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply change it — each call is asked of the user in Overterm first, and a declined or unanswered one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [

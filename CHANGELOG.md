@@ -23,6 +23,8 @@ version is tagged `v<version>`.
 - Create Pull Request… from the pane, Overgit and ⌘K; Mark Ready, Approve, Request Changes and Merge on a pull request, each asked first
 - A failed CI check's log opens in the Pull Request pane, with Re-run Failed Jobs; CI going red on a branch with a tab open marks the tab and puts a "CI failed" card in the Inbox, with Ask Agent to Fix
 - A pull request can be checked out in a new worktree from its pane: on its own branch (fetched from origin if need be), a fork's detached
+- An agent's write (Docker, a database, Kubernetes, Terraform's plan) is asked as a card in the Inbox when you're not looking at its window — the tab marked, a notification, Allow and Don't, the name typed on production — and as the sheet only when its window is in front; Overterm no longer jumps to the front, and a question nobody answers fails after ten minutes
+- Tab Info lists the tab's agent's last calls on Overterm's tools, secrets masked, kept in memory only; Settings ▸ Agents shows every feature's agent switch in one place
 
 ## 1.6.7 — 2026-11-23
 
