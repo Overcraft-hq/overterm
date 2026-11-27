@@ -724,7 +724,7 @@ the URL and **no rectangle** — so there is nothing to anchor a popover
 to, and one placed at the pointer would fight selecting the text it is
 over. The pane header says what is under the pointer instead.
 
-## Agent Inbox (⌘I)
+## Inbox (⌘I)
 
 A column of everything waiting on you, to the right of the terminal. The
 marks in the strip say *which* tab wants you; the inbox puts the question
@@ -4183,7 +4183,7 @@ A log tab's pieces, whoever writes the log (`Sources/Overterm/Logs/`):
   below); what a source may do is read.
 - `LogsPane` (filter, level, the source picker, Following/Stopped, wrap,
   timestamps, newest first, Save As when the page gives it a place,
-  Follow in a Terminal Tab), `LogFilter` (pure: the text plain or a
+  Follow Logs in a Tab), `LogFilter` (pure: the text plain or a
   regular expression — case aside; one that isn't is said and picks
   nothing out — and picking the lines it matches or marking them,
   `highlight`; `matcher()` makes the expression once for the thousands of
@@ -8089,7 +8089,7 @@ sampled while shown) — from what the brief read (`KubeBriefReads`, from
 `KubeAgentBriefing.read`: the object, its events, a Deployment's
 ReplicaSets, none read twice), within `KubeMCP.usageLimit` (8 s; a slow
 or paused Prometheus never holds the brief, the read cancelled), left out
-where no number can be given. A chart's menu has "Ask Agent About This Chart…"
+where no number can be given. A chart's menu has "Ask an Agent About This Chart…"
 (`KubernetesPageModel.askAboutChart`): the chart as `KubeMetricsText.about`
 says it, nothing read for it, in the Ask Agent sheet shown whole before
 it is sent. `KubeMetricsTextTests`, `KubeMCPMetricsTests` (as an agent

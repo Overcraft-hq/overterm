@@ -178,7 +178,7 @@ package enum GroupSummary {
         let waiting = tabs.filter { $0.activity.mark == .waiting }.count
         let working = tabs.filter(\.activity.isWorking).count
         let failed = tabs.filter { $0.activity.mark == .failed }.count
-        if waiting > 0 { parts.append("\(waiting) waiting for you") }
+        if waiting > 0 { parts.append("\(waiting) waiting") }
         if working > 0 { parts.append("\(working) working") }
         if failed > 0 { parts.append("\(failed) failed") }
         if parts.count == 1 && !tabs.isEmpty { parts.append("all idle") }

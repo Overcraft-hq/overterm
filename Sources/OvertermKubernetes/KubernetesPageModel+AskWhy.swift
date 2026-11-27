@@ -288,10 +288,10 @@ extension KubernetesPageModel {
     }
 }
 
-// MARK: Ask Agent About This Chart (metrics.md 3.9; stage M11)
+// MARK: Ask an Agent About This Chart (metrics.md 3.9; stage M11)
 
 extension KubernetesPageModel {
-    /// A chart's "Ask Agent About This Chart": the chart as `k8s_metrics`
+    /// A chart's "Ask an Agent About This Chart": the chart as `k8s_metrics`
     /// says it (`KubeMetricsText.about`) — its object and context first,
     /// every word through `Secrets` — in the Ask Agent sheet, shown whole
     /// before anything is sent. Nothing is read for it: what the chart

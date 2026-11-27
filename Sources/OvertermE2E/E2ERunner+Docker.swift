@@ -565,10 +565,10 @@ extension E2ERunner {
             "\(titles(volumeVerbs, .button))")
         check(
             "the rest behind More",
-            titles(volumeVerbs, .more) == ["Open a Shell on It in a Tab", "Import Into a New Volume…", "Copy Name", "Copy Mountpoint"],
+            titles(volumeVerbs, .more) == ["Shell in a Tab", "Import Into a New Volume…", "Copy Name", "Copy Mountpoint"],
             "\(titles(volumeVerbs, .more))")
         check("and removal last", titles(volumeVerbs, .remove) == ["Remove…"])
-        volumeVerbs.first { $0.title == "Open a Shell on It in a Tab" }?.perform()
+        volumeVerbs.first { $0.title == "Shell in a Tab" }?.perform()
         check("a shell on it opens in a tab", commands.last?.contains("-v ot-old-data:/volume") == true, commands.last ?? "nothing")
         await capture("volume")
 
@@ -2602,7 +2602,7 @@ extension E2ERunner {
         check(
             "a service's verbs as buttons, the rest behind More",
             titles(serviceVerbs, .button) == ["Rebuild and Start in a Tab", "Restart", "Show Its Logs"]
-                && titles(serviceVerbs, .more) == ["Follow Its Logs in a Tab", "Pull in a Tab", "Run a One-Off in a Tab", "Copy Name"],
+                && titles(serviceVerbs, .more) == ["Follow Logs in a Tab", "Pull in a Tab", "Run a One-Off in a Tab", "Copy Name"],
             "\(serviceVerbs.map(\.title))")
         count = commands.count
         serviceVerbs.first { $0.title == "Rebuild and Start in a Tab" }?.perform()

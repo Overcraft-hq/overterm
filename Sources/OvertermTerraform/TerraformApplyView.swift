@@ -103,7 +103,7 @@ package struct TerraformApplyView: View {
                     button("Plan Again", "arrow.clockwise") { actions.planAfterApply(apply) }.accessibilityIdentifier("terraform.apply.planAgain")
                     // The apply's own failure, a reattached one's too (2.3, 6.4).
                     if case .failed = apply.phase {
-                        button("Ask Why", "questionmark.bubble") { actions.askWhyApply(apply) }.accessibilityIdentifier("terraform.apply.askWhy")
+                        button("Ask Why", "sparkles") { actions.askWhyApply(apply) }.accessibilityIdentifier("terraform.apply.askWhy")
                     }
                 }
             }

@@ -106,7 +106,7 @@ package struct LogsPane: View {
     /// `docker.logs.filter`, `docker.logs.service` and `docker.text`.
     package let identifier: String
     /// Types a command into a new terminal tab: the feed's
-    /// `terminalCommand`, Follow in a Terminal Tab.
+    /// `terminalCommand`, Follow Logs in a Tab.
     package let runInTerminal: (String) -> Void
     /// The merged feed's sources, for the picker; with `source`, the one
     /// shown (the project's session keeps it).
@@ -272,7 +272,7 @@ package struct LogsPane: View {
                     }
                 }
                 Button("Clear") { feed.clear() }
-                if let command = feed.terminalCommand { Button("Follow in a Terminal Tab") { runInTerminal(command) } }
+                if let command = feed.terminalCommand { Button("Follow Logs in a Tab") { runInTerminal(command) } }
             } label: {
                 Image(systemName: "ellipsis.circle").font(.system(size: ChromeMetrics.text(12)))
             }
