@@ -54,7 +54,7 @@ package final class ProjectSession: ObservableObject {
         updateFollowing()
     }
 
-    /// What "Follow in a Terminal Tab" types: the service shown, or all.
+    /// What "Follow Logs in a Tab" types: the service shown, or all.
     private func terminalCommand(_ project: ComposeProject) -> String {
         DockerCommands.compose(project, "logs -f --tail 100", services: service.map { [$0] } ?? [], endpoint: docker.endpoint)
     }

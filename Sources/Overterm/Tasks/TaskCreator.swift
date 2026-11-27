@@ -48,11 +48,13 @@ package enum TaskCreator {
     package enum Failure: LocalizedError {
         case invalidBranch(String)
         case pathExists(URL)
+        case unknownBase(String)
 
         package var errorDescription: String? {
             switch self {
             case .invalidBranch(let name): "“\(name)” isn’t a valid branch name."
             case .pathExists(let url): "\(url.path) already exists."
+            case .unknownBase(let base): "No branch, tag or commit is called “\(base)” here."
             }
         }
     }
@@ -71,6 +73,8 @@ package enum TaskCreator {
         if exists {
             _ = try await Git.run(["worktree", "add", path.path, branch], in: repo, timeout: nil)
         } else {
+            // Checked before anything is made: a typo in From said plainly, never read as an option.
+            guard await TaskFields.resolves(base, in: repo) else { throw Failure.unknownBase(base) }
             _ = try await Git.run(["worktree", "add", "-b", branch, path.path, base], in: repo, timeout: nil)
         }
         return path

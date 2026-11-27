@@ -35,6 +35,19 @@ package struct NewTaskView: View {
     @State private var copyField = ""
     @State private var setupCommand = ""
     @State private var showsSetup = false
+    /// The repository's branches, read once as the sheet opens (From's menu,
+    /// and whether Branch exists).
+    @State private var localBranches: [String] = []
+    @State private var remoteBranches: [String] = []
+    /// Whether From names a commit; nil while it is read.
+    @State private var baseResolves: Bool?
+
+    private var branchNote: (text: String, isProblem: Bool)? { TaskFields.branchNote(branch, local: Set(localBranches)) }
+    private var branchExists: Bool { localBranches.contains(branch.trimmingCharacters(in: .whitespaces)) }
+    private var baseNote: (text: String, isProblem: Bool)? {
+        TaskFields.baseNote(base, resolves: baseResolves, branchExists: branchExists)
+    }
+    private var blocked: Bool { branchNote?.isProblem == true || baseNote?.isProblem == true }
 
     package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -45,7 +58,30 @@ package struct NewTaskView: View {
 
             Form {
                 TextField("Branch", text: $branch, prompt: Text("feat/something"))
-                TextField("From", text: $base)
+                    .help("A new branch for the task, or an existing one to check out as it is")
+                    .accessibilityIdentifier("newTask.branch")
+                if let note = branchNote { fieldNote(note) }
+                HStack(spacing: 4) {
+                    TextField("From", text: $base, prompt: Text("main"))
+                        .help("Where the new branch starts: a branch, a remote branch, a tag or a commit")
+                        .accessibilityIdentifier("newTask.from")
+                    Menu {
+                        if !localBranches.isEmpty {
+                            Section("Branches") { ForEach(localBranches.prefix(30), id: \.self) { name in Button(name) { base = name } } }
+                        }
+                        if !remoteBranches.isEmpty {
+                            Section("Remote branches") { ForEach(remoteBranches.prefix(30), id: \.self) { name in Button(name) { base = name } } }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.up.chevron.down")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .disabled(localBranches.isEmpty && remoteBranches.isEmpty)
+                    .help("Pick a branch to start from")
+                }
+                .disabled(branchExists)
+                if let note = baseNote { fieldNote(note) }
                 Picker("Start", selection: $agent) {
                     ForEach(Agent.allCases) { Text($0.name).tag(Agent?.some($0)) }
                     Text("Shell only").tag(Agent?.none)
@@ -103,7 +139,7 @@ package struct NewTaskView: View {
                     .keyboardShortcut(.cancelAction)
                 Button(working ? "Creating…" : "Create") { create() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(branch.trimmingCharacters(in: .whitespaces).isEmpty || working)
+                    .disabled(branch.trimmingCharacters(in: .whitespaces).isEmpty || working || blocked)
             }
         }
         .padding(20)
@@ -116,11 +152,32 @@ package struct NewTaskView: View {
             showsSetup = !setup.isEmpty
         }
         .task {
+            let refs = await TaskFields.refs(in: repo)
+            localBranches = refs.local
+            remoteBranches = refs.remote
+        }
+        .task(id: base) {
+            // A pause while typing, then git says whether it names a commit.
+            baseResolves = nil
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            let resolved = await TaskFields.resolves(base, in: repo)
+            guard !Task.isCancelled else { return }
+            baseResolves = resolved
+        }
+        .task {
             guard let kubernetes else { return }
             let read = await kubernetes()
             offer = read
             pin = read.suggested
         }
+    }
+
+    private func fieldNote(_ note: (text: String, isProblem: Bool)) -> some View {
+        Text(verbatim: note.text)
+            .font(.caption)
+            .foregroundStyle(note.isProblem ? Color.red : Color.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func create() {

@@ -42,10 +42,64 @@ extension E2ERunner {
         check("and is the one the tree marks", await eventually(2) { notes.current?.standardizedFileURL == plan.standardizedFileURL })
         check("its folder is open in the tree", notes.expanded.contains(plan.deletingLastPathComponent().standardizedFileURL.path))
 
-        app.newNote(in: nil)
+        // A file that isn't a note in the editor: the tree marks nothing, but
+        // the lower panes stay on the last note, named — they went blank.
+        let outside = scratch.appendingPathComponent("not-a-note.txt")
+        try? "plain text\n".write(to: outside, atomically: true, encoding: .utf8)
+        app.openInEditor(outside)
+        check("a file outside the vault marks no note", await eventually(3) { editor.active?.url?.lastPathComponent == "not-a-note.txt" && notes.current == nil })
+        check(
+            "the panes stay on the last note",
+            notes.subject?.standardizedFileURL == plan.standardizedFileURL, notes.subject?.lastPathComponent ?? "none")
+        notes.detail = .outline
+        if let sidebar = app.sidebarItem?.viewController.view {
+            Self.accessibilityTree(true)
+            check(
+                "and say which note they are for",
+                await eventually(3) { Self.accessibilityElement("notesDetailSubject", in: sidebar)?.text.contains("Plan") == true },
+                Self.accessibilityElement("notesDetailSubject", in: sidebar)?.text ?? "not shown")
+            Self.accessibilityTree(false)
+        }
+        app.openNote(plan)
+        check("the note again is the panes' own", await eventually(3) { notes.current?.standardizedFileURL == plan.standardizedFileURL })
+
+        // New Note asks the name first: "Untitled" offered, selected, and
+        // nothing made until it is answered.
         let untitled = root.appendingPathComponent("Untitled.md")
-        check("New Note makes Untitled.md and opens it", await eventually(3) { editor.active?.url?.lastPathComponent == "Untitled.md" })
+        func nameField() -> NSTextField? {
+            Self.find(NSTextField.self, in: window.attachedSheet?.contentView, where: { $0.identifier?.rawValue == "fileNameField" })
+        }
+        app.newNote(in: nil)
+        check("New Note asks for the note's name", await eventually(2) { nameField() != nil })
+        check("offering Untitled", nameField()?.stringValue == "Untitled", nameField()?.stringValue ?? "no field")
+        check(
+            "selected, to be typed over",
+            await eventually(2) { nameField()?.currentEditor()?.selectedRange == NSRange(location: 0, length: 8) },
+            "\(nameField()?.currentEditor()?.selectedRange ?? NSRange(location: NSNotFound, length: 0))")
+        _ = clickSheetButton("Cancel")
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+        check("Cancel makes no note", !FileManager.default.fileExists(atPath: untitled.path))
+        app.newNote(in: nil)
+        _ = await eventually(2) { nameField() != nil }
+        nameField()?.stringValue = "Ideas: one"
+        _ = clickSheetButton("Create")
+        check(
+            "a name Obsidian can't take is refused, saying why",
+            await eventually(2) { self.sheetTexts().contains { $0.contains("can't have “:”") } }, "\(sheetTexts())")
+        nameField()?.stringValue = "Untitled"
+        _ = clickSheetButton("Create")
+        check("New Note makes the note named and opens it", await eventually(3) { editor.active?.url?.lastPathComponent == "Untitled.md" })
         check("in the vault", FileManager.default.fileExists(atPath: untitled.path))
+        app.newNote(in: nil)
+        _ = await eventually(2) { nameField() != nil }
+        check("the next one offers a name not taken", nameField()?.stringValue == "Untitled 1", nameField()?.stringValue ?? "no field")
+        nameField()?.stringValue = "Untitled"
+        _ = clickSheetButton("Create")
+        check(
+            "and a taken one is refused",
+            await eventually(2) { self.sheetTexts().contains { $0.contains("already") } }, "\(sheetTexts())")
+        _ = clickSheetButton("Cancel")
+        _ = await eventually(2) { self.window.attachedSheet == nil }
 
         app.openDailyNote(nil)
         let daily = notes.vault.dailyNote(for: Date())
@@ -145,6 +199,32 @@ extension E2ERunner {
                 })
             app.spotlight.close(keepTerminalSearch: false)
         }
+
+        // The panel's filter is names only, and says so; a name nothing has
+        // offers ⌘F's Notes scope, which reads what notes say.
+        notes.query = "ship it"
+        if let sidebar = app.sidebarItem?.viewController.view {
+            Self.accessibilityTree(true)
+            check(
+                "a filter naming no note says so and offers searching contents",
+                await eventually(3) {
+                    let said = Self.accessibilityElement("notesNoMatch", in: sidebar)?.text ?? ""
+                    return said.contains("No note is named") && said.contains("Search Contents")
+                }, Self.accessibilityElement("notesNoMatch", in: sidebar)?.text ?? "not shown")
+            Self.accessibilityTree(false)
+        }
+        app.notesActions.searchContents(notes.query)
+        check("which opens ⌘F on its Notes scope", app.spotlight.scope == .notes && app.spotlight.query == "ship it", "\(app.spotlight.scope) \(app.spotlight.query)")
+        check(
+            "finding the note that says it",
+            await eventually(5) {
+                app.spotlight.rows.contains {
+                    if case .note(let m) = $0 { return m.path == "Projects/Plan.md" && m.line > 0 }; return false
+                }
+            }, "\(app.spotlight.rows.map(\.id))")
+        app.hideSpotlight(keepTerminalSearch: false)
+        app.spotlight.scope = .all
+        notes.query = ""
 
         // ⌘L for a note: Ask Agent's sheet, with the note in it.
         app.openNote(plan)
@@ -361,6 +441,28 @@ extension E2ERunner {
         check("a heading keeps its size as the caret moves", Set(sizes).count == 1 && (sizes.first ?? 0) < 40, "\(sizes)")
         check("and the text under it is the body's", body > 0 && body < 20, "\(body)")
 
+        // A link clicked in Live Preview opens its note in Live Preview —
+        // the reading view it used to switch to changed the mode mid-sentence.
+        editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let toRich = (editor.textView.string as NSString).range(of: "[[Rich]]").location + 3
+        check(
+            "Live Preview draws a link as a link",
+            await eventually(3) { editor.textView.textStorage?.attribute(.noteLink, at: toRich, effectiveRange: nil) != nil })
+        check("a click on it follows it", editor.liveClick(at: toRich))
+        check("its note opens", await eventually(3) { editor.active?.url?.lastPathComponent == "Rich.md" })
+        check(
+            "in Live Preview, as the link was clicked — not the reading view",
+            editor.active?.showsPreview == false && editor.active?.livePreview == true && !editor.scrollView.isHidden,
+            "showsPreview \(editor.active?.showsPreview == true), livePreview \(editor.active?.livePreview == true)")
+        editor.textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let toPlan = (editor.textView.string as NSString).range(of: "the plan]]").location + 2
+        _ = await eventually(3) { editor.textView.textStorage?.attribute(.noteLink, at: toPlan, effectiveRange: nil) != nil }
+        check("a link to a heading follows it in Live Preview", editor.liveClick(at: toPlan))
+        check(
+            "to the heading's line in the text",
+            await eventually(3) { editor.active?.url?.lastPathComponent == "Plan.md" && editor.active?.showsPreview == false && editor.selectedLine == 4 },
+            "\(editor.active?.url?.lastPathComponent ?? "-") line \(editor.selectedLine)")
+
         // Dragged in the panel: a note into a folder, a folder into another
         // — the links to them written again, as a rename writes them.
         do {
@@ -482,7 +584,7 @@ extension E2ERunner {
         if editor.active?.showsPreview == false { editor.toggleMarkdownPreview() }
 
         // A link to a note not written yet writes it.
-        editor.followNoteLink("Nowhere", anchor: nil, markdown: false)
+        editor.followNoteLink("Nowhere", anchor: nil, markdown: false, from: .reader)
         check("following a link opens its note", await eventually(3) { editor.active?.url?.lastPathComponent == "Nowhere.md" })
         check("a note not written yet is written", FileManager.default.fileExists(atPath: root.appendingPathComponent("Nowhere.md").path))
         check("and read, as the link was", editor.active?.showsPreview == true)

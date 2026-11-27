@@ -122,6 +122,6 @@ extension EditorViewController {
         target = String(target.split(separator: "|", maxSplits: 1).first ?? "")
         let parts = target.split(separator: "#", maxSplits: 1).map(String.init)
         guard let name = parts.first, !name.isEmpty else { return }
-        followNoteLink(name, anchor: parts.count > 1 ? parts[1] : nil, markdown: false)
+        followNoteLink(name, anchor: parts.count > 1 ? parts[1] : nil, markdown: false, from: .drawing)
     }
 }

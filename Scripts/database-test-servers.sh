@@ -21,6 +21,12 @@
 # its management API on :55672, user `ot` / `otpass`. Then:
 #   OVERTERM_DB_TESTS=1 swift test --filter RabbitMQTests
 # `… queues stop` removes it.
+# Kafka is apart too: Scripts/database-test-servers.sh kafka — Apache Kafka
+# 4.1 (KRaft, one node): plaintext on :59092, SASL on :59093 (PLAIN, and
+# SCRAM-SHA-256/512 for `ot` / `otpass`), and a topic per codec — ot.codec.gzip,
+# .snappy, .lz4, .zstd — written by Kafka's own console producer. Then:
+#   OVERTERM_DB_TESTS=1 swift test --filter KafkaTests
+# `… kafka stop` removes it.
 # Oracle Database is larger still (~2.3 GB), and apart too:
 #   Scripts/database-test-servers.sh oracle
 # Oracle Database Free (gvenzl/oracle-free:slim) on :51521, service
@@ -44,6 +50,45 @@ if [[ "${1:-}" == "queues" ]]; then
   done
   curl -sf -u ot:otpass "http://127.0.0.1:55672/api/overview" >/dev/null || { echo "error: RabbitMQ didn't come up" >&2; exit 1; }
   echo "==> RabbitMQ management :55672 (ot/otpass)"
+  exit 0
+fi
+
+if [[ "${1:-}" == "kafka" ]]; then
+  docker rm -f ot-kafka >/dev/null 2>&1 || true
+  if [[ "${2:-}" == "stop" ]]; then
+    echo "==> stopped"
+    exit 0
+  fi
+  docker run -d --name ot-kafka -p 59092:9092 -p 59093:9093 \
+    -e KAFKA_NODE_ID=1 -e KAFKA_PROCESS_ROLES=broker,controller \
+    -e KAFKA_LISTENERS='PLAINTEXT://:9092,SASL_PLAINTEXT://:9093,CONTROLLER://:9094,INTERNAL://:9095' \
+    -e KAFKA_ADVERTISED_LISTENERS='PLAINTEXT://127.0.0.1:59092,SASL_PLAINTEXT://127.0.0.1:59093,INTERNAL://localhost:9095' \
+    -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP='CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,SASL_PLAINTEXT:SASL_PLAINTEXT,INTERNAL:PLAINTEXT' \
+    -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9094 \
+    -e KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+    -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 -e KAFKA_NUM_PARTITIONS=3 \
+    -e KAFKA_SASL_ENABLED_MECHANISMS='PLAIN,SCRAM-SHA-256,SCRAM-SHA-512' \
+    -e KAFKA_OPTS='-Djava.security.auth.login.config=/tmp/jaas.conf' \
+    --entrypoint sh apache/kafka:4.1.0 -c '
+      # The image wants the SASL users in a JAAS file KAFKA_OPTS names: PLAIN
+      # lists its users here, SCRAM keeps them in the cluster (added below).
+      printf "KafkaServer {\n org.apache.kafka.common.security.plain.PlainLoginModule required user_ot=\"otpass\";\n org.apache.kafka.common.security.scram.ScramLoginModule required;\n};\n" >/tmp/jaas.conf
+      exec /etc/kafka/docker/run' >/dev/null
+  bin=/opt/kafka/bin
+  for _ in $(seq 1 90); do
+    if docker exec ot-kafka "$bin/kafka-broker-api-versions.sh" --bootstrap-server localhost:9095 >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
+  # One credential a request: Kafka refuses two for one user at once.
+  for scram in SCRAM-SHA-256 SCRAM-SHA-512; do
+    docker exec ot-kafka "$bin/kafka-configs.sh" --bootstrap-server localhost:9095 --alter --entity-type users --entity-name ot \
+      --add-config "$scram=[password=otpass]" >/dev/null
+  done
+  for codec in gzip snappy lz4 zstd; do
+    printf 'one\ntwo\nthree\n' | docker exec -i ot-kafka "$bin/kafka-console-producer.sh" --bootstrap-server localhost:9095 \
+      --topic "ot.codec.$codec" --compression-codec "$codec" >/dev/null
+  done
+  echo "==> Kafka :59092 (plaintext), :59093 (SASL, ot/otpass)"
   exit 0
 fi
 

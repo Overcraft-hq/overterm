@@ -61,6 +61,7 @@ package struct DatabaseConnectionForm: View {
                 case .prometheus, .loki, .tempo: observabilityFields
                 case .elasticsearch, .opensearch: searchFields
                 case .oracle: oracleFields
+                case .kafka: kafkaFields
                 case .dynamodb, .influxdb, .neo4j, .rabbitmq:
                     HTTPKindFields(connection: $connection, password: $password, hasSavedPassword: hasSavedPassword) { tested = nil }
                     // AWS's DynamoDB is signed for its own host: no tunnel.
@@ -293,6 +294,49 @@ package struct DatabaseConnectionForm: View {
             )
             .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
         }
+    }
+
+    /// Kafka's: the bootstrap servers (several: `a:9092,b:9092`), SASL —
+    /// PLAIN or SCRAM, its mechanism kept in `authSource` — and TLS from the
+    /// first byte or off. Through a tunnel, one broker.
+    @ViewBuilder private var kafkaFields: some View {
+        TextField("Bootstrap servers (several: a:9092,b:9092)", text: $connection.host)
+        TextField(
+            "Port",
+            text: Binding(
+                get: { connection.port.map(String.init) ?? "" },
+                set: { connection.port = Int($0.filter(\.isNumber)) }))
+        Picker("Sign in", selection: $connection.authSource) {
+            Text("No SASL").tag("")
+            ForEach(KafkaDriver.mechanisms, id: \.self) { Text(verbatim: "SASL \($0)").tag($0) }
+        }
+        if !connection.authSource.isEmpty {
+            TextField("User", text: $connection.user)
+            SecureField(hasSavedPassword ? "Password (saved — empty keeps it)" : "Password", text: $password)
+        }
+        Picker("TLS", selection: $connection.sslMode) {
+            Text("Off").tag(DatabaseSSLMode.disable)
+            Text("On — don't check the certificate").tag(DatabaseSSLMode.require)
+            Text("On — verify the certificate").tag(DatabaseSSLMode.verifyFull)
+        }
+        .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
+        if connection.sslMode == .verifyFull {
+            HStack {
+                TextField("CA bundle (optional — else the system's)", text: $connection.caFile)
+                Button("Choose…") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = true
+                    panel.allowsOtherFileTypes = true
+                    if panel.runModal() == .OK, let url = panel.url { connection.caFile = (url.path as NSString).abbreviatingWithTildeInPath }
+                }
+            }
+        }
+        Toggle("Through an SSH tunnel (one broker)", isOn: $connection.sshEnabled)
+        if connection.sshEnabled { sshFields }
+        Text(
+            "Reading never joins a consumer group: PEEK fetches by offset, so nobody's committed offset moves. Each partition is read from its leader, at the address the cluster advertises."
+        )
+        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
     }
 
     /// Oracle's: an Easy Connect string (or a JDBC URL, or SQL*Plus's

@@ -91,7 +91,7 @@ extension DockerPageModel {
             ResourceVerb(title: up ? "Stop" : "Start", symbol: up ? "stop.fill" : "play.fill", place: .button, key: "s") { [weak self] in
                 self?.startOrStopApple([container])
             },
-            ResourceVerb(title: "Open a Shell in a Tab", label: "Shell", symbol: "terminal", place: .button, key: "e", unavailable: notRunning) { [weak self] in
+            ResourceVerb(title: "Shell in a Tab", label: "Shell", symbol: "terminal", place: .button, key: "e", unavailable: notRunning) { [weak self] in
                 self?.actions?.run(AppleContainerCommands.shell(tool, in: id), nil)
             },
             ResourceVerb(title: "Logs", symbol: "text.alignleft", place: .button, key: "l") { [weak self] in

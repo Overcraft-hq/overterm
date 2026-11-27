@@ -32,6 +32,14 @@ package struct OvergitActions {
     package var git: (OvergitCommand) -> Void = { _ in }
     /// Create Pull Request…, for the branch that has none.
     package var createPullRequest: () -> Void
+    /// A stash's changes in the right-hand pane, before it is applied (GIT-G9).
+    package var showStash: (Stash) -> Void = { _ in }
+
+    package func with(showStash: @escaping (Stash) -> Void) -> OvergitActions {
+        var actions = self
+        actions.showStash = showStash
+        return actions
+    }
 
     package init(
         showCommit: @escaping (Commit) -> Void, checkOut: @escaping (BranchRef) -> Void, newWorktree: @escaping (BranchRef) -> Void, showPullRequest: @escaping () -> Void,
@@ -174,7 +182,7 @@ package struct OvergitView: View {
             OvergitChanges(
                 diff: diff, theme: theme, ahead: ref?.ahead ?? 0, hasUpstream: ref?.upstream != nil,
                 onOpen: { actions.showChangedFile($0) },
-                onCommitted: { Task { await model.refresh([.commits, .branches]) } })
+                onCommitted: { Task { await model.refresh([.commits, .branches]) } }, onPush: { actions.git(.push) })
         case .commits: commits
         case .branches: branches
         case .pullRequests: pullRequests
@@ -278,13 +286,21 @@ package struct OvergitView: View {
         } else if livePullRequests.isEmpty {
             OvergitEmpty(text: "No open pull requests", theme: theme)
         } else {
-            ForEach(livePullRequests, id: \.number) { pr in
-                PullRequestRowView(
-                    pullRequest: pr, isCurrent: pr.branch == diff.branch, theme: theme,
-                    // In the right-hand pane, whichever it is; ↗ for GitHub.
-                    onOpen: { actions.showPullRequestNumber(pr) },
-                    onOpenExternally: { actions.openPullRequest(pr) },
-                    onReview: { actions.reviewPullRequest(pr.number) })
+            // Needs your review, yours, the rest (GIT-G4) — one list without gh's login.
+            ForEach(PullRequestSummary.grouped(livePullRequests, me: worktrees.viewerLogin), id: \.title) { group in
+                if let title = group.title {
+                    Text(verbatim: title.uppercased())
+                        .font(.system(size: ChromeMetrics.text(10), weight: .semibold)).foregroundStyle(theme.text3)
+                        .padding(.leading, 26).padding(.top, 4).padding(.bottom, 1)
+                }
+                ForEach(group.pullRequests, id: \.number) { pr in
+                    PullRequestRowView(
+                        pullRequest: pr, isCurrent: pr.branch == diff.branch, theme: theme,
+                        // In the right-hand pane, whichever it is; ↗ for GitHub.
+                        onOpen: { actions.showPullRequestNumber(pr) },
+                        onOpenExternally: { actions.openPullRequest(pr) },
+                        onReview: { actions.reviewPullRequest(pr.number) }, me: worktrees.viewerLogin)
+                }
             }
         }
     }
@@ -350,7 +366,8 @@ package struct OvergitView: View {
                 )
                 .contextMenu {
                     Button("Check Out (Detached)") { actions.git(.checkOutCommit(tag.name)) }
-                    Button("Push to origin") { actions.git(.pushTag(tag)) }
+                    Button("Push to Remote") { actions.git(.pushTag(tag)) }
+                        .help("To the current branch's remote, as git would push it; asked when there are several")
                     Button("Delete…", role: .destructive) { actions.git(.deleteTag(tag)) }
                     Divider()
                     CompareMenuItems(ref: tag.name, model: model, actions: actions)

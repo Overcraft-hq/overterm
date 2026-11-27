@@ -76,6 +76,31 @@ final class FileTreeTests: XCTestCase {
     }
 
     @MainActor
+    /// `ln -s`: a linked folder is a folder that opens, a linked file a
+    /// file, each saying its target; one whose target is gone, said.
+    func testSymbolicLinksListAsWhatTheyPointTo() throws {
+        try mkdir("shared")
+        touch("shared/a.txt")
+        touch("notes.md")
+        let manager = FileManager.default
+        try manager.createSymbolicLink(atPath: dir.appendingPathComponent("linked").path, withDestinationPath: "shared")
+        try manager.createSymbolicLink(atPath: dir.appendingPathComponent("readme.md").path, withDestinationPath: "notes.md")
+        try manager.createSymbolicLink(atPath: dir.appendingPathComponent("gone").path, withDestinationPath: "nowhere")
+        let tree = FileTreeModel()
+        tree.setRoot(dir)
+        let linked = try XCTUnwrap(tree.rows.first { $0.entry.name == "linked" })
+        XCTAssertTrue(linked.entry.isDirectory, "a linked folder is a folder")
+        XCTAssertEqual(linked.entry.linkTarget, "shared")
+        tree.toggle(linked)
+        XCTAssertTrue(tree.rows.contains { $0.depth == 1 && $0.entry.name == "a.txt" }, "and opens: \(tree.rows.map(\.entry.name))")
+        let readme = try XCTUnwrap(tree.rows.first { $0.entry.name == "readme.md" })
+        XCTAssertFalse(readme.entry.isDirectory)
+        XCTAssertEqual(readme.entry.linkTarget, "notes.md")
+        let gone = try XCTUnwrap(tree.rows.first { $0.entry.name == "gone" })
+        XCTAssertTrue(gone.entry.isBrokenLink)
+        XCTAssertNil(tree.rows.first { $0.entry.name == "notes.md" }?.entry.linkTarget, "a plain file has none")
+    }
+
     func testToggleExpandsAndCollapsesInPlace() throws {
         try mkdir("src")
         touch("src/main.swift")

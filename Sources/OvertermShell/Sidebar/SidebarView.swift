@@ -138,6 +138,14 @@ private struct FileRowView: View {
                 .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1)
                 .truncationMode(.middle)
+            // A symbolic link says where it points, a missing target in orange.
+            if let target = row.entry.linkTarget {
+                Text(verbatim: "→ \(target)")
+                    .font(.system(size: ChromeMetrics.text(11)))
+                    .foregroundStyle(row.entry.isBrokenLink ? theme.orangeText : theme.text3)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
             Spacer(minLength: 0)
         }
         .foregroundStyle(isSelected ? theme.text : theme.text2)
@@ -173,7 +181,8 @@ private struct FileRowView: View {
         // path), Finder, another app.
         .onDrag { FileTreeDrag.item(for: row.entry.url) }
         .contextMenu { menu }
-        .help(row.entry.url.path)
+        .help(
+            row.entry.linkTarget.map { "\(row.entry.url.path) → \($0)\(row.entry.isBrokenLink ? " (missing)" : "")" } ?? row.entry.url.path)
     }
 
     @ViewBuilder private var menu: some View {

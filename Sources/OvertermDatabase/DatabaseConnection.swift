@@ -12,6 +12,8 @@ package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable
     case mongodb, documentdb, mariadb, elasticsearch, opensearch, dynamodb, influxdb, neo4j, rabbitmq, oracle
     /// A DuckDB file, or one in memory: DuckDB's own library (DuckDBDriver).
     case duckdb
+    /// Apache Kafka: its own protocol on NIO (KafkaDriver) — topics, consumer groups.
+    case kafka
     /// Buckets and their files: S3 and everything that speaks it (Spaces,
     /// MinIO, R2, B2, Wasabi, GCS's interoperability), and GCS's own API.
     case s3, gcs
@@ -44,6 +46,7 @@ package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable
         case .rabbitmq: "RabbitMQ"
         case .oracle: "Oracle Database"
         case .duckdb: "DuckDB"
+        case .kafka: "Apache Kafka"
         case .s3: "S3-Compatible Storage"
         case .gcs: "Google Cloud Storage"
         }
@@ -72,6 +75,7 @@ package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable
         // The management API's; AMQP is 5672.
         case .rabbitmq: 15672
         case .oracle: 1521
+        case .kafka: 9092
         case .sqlite, .duckdb, .bigquery, .s3, .gcs: nil
         }
     }
@@ -80,7 +84,7 @@ package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable
     package var usesServer: Bool {
         [
             .postgres, .mysql, .redshift, .clickhouse, .redis, .prometheus, .loki, .tempo, .mongodb, .documentdb, .mariadb, .elasticsearch, .opensearch,
-            .dynamodb, .influxdb, .neo4j, .rabbitmq, .oracle,
+            .dynamodb, .influxdb, .neo4j, .rabbitmq, .oracle, .kafka,
         ].contains(self)
     }
 
@@ -101,6 +105,7 @@ package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable
         case .loki: "text.alignleft"
         case .tempo: "point.3.connected.trianglepath.dotted"
         case .elasticsearch, .opensearch: "magnifyingglass"
+        case .kafka: "arrow.left.arrow.right"
         default: "cylinder"
         }
     }
@@ -120,6 +125,7 @@ package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable
         switch self {
         case .postgres, .redshift: "public"
         case .duckdb: "main"
+        case .kafka: KafkaText.topicsSchema
         default: nil
         }
     }
@@ -291,6 +297,9 @@ package struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, S
             if let port, !(1...65535).contains(port) { return "The port is 1 to 65535." }
             if sshEnabled, sshHost.trimmingCharacters(in: .whitespaces).isEmpty { return "The SSH host, please." }
             if sshEnabled, port == nil, kind.defaultPort == nil { return "The database's port, for the tunnel." }
+            if kind == .kafka, sshEnabled, host.contains(",") {
+                return "Through a tunnel, one broker: its address — a cluster's other brokers can't be reached that way."
+            }
             if kind.isMongo, sshEnabled, srv || host.contains(",") {
                 return "Through a tunnel, one host: the cluster's endpoint or the primary — not an srv name or a list."
             }

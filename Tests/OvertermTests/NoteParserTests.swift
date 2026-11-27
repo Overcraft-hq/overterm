@@ -131,4 +131,19 @@ final class NoteParserTests: XCTestCase {
         XCTAssertEqual(doc.links[0].context, "see [[A]] here")
         XCTAssertEqual(doc.links.map(\.target), ["A", "Note.md", "My Note.md"])
     }
+
+    /// A link followed in Live Preview goes to its heading's or block's
+    /// line in the text, matched as the reading view matches it.
+    func testAnAnchorIsFoundAtItsLine() {
+        let text = "---\ntags: [a]\n---\n# Plan\n\n## Next Steps \nA line. ^step1\n```\nnot here ^code\n```\n- item\n^tail\n"
+        XCTAssertEqual(NoteAnchor.line(of: "Plan", in: text), 3)
+        XCTAssertEqual(NoteAnchor.line(of: "next steps", in: text), 5)
+        XCTAssertEqual(NoteAnchor.line(of: "Plan#Next Steps", in: text), 5)
+        XCTAssertEqual(NoteAnchor.line(of: "^step1", in: text), 6)
+        XCTAssertEqual(NoteAnchor.line(of: "^tail", in: text), 11)
+        XCTAssertNil(NoteAnchor.line(of: "^code", in: text))
+        XCTAssertNil(NoteAnchor.line(of: "Missing", in: text))
+        XCTAssertNil(NoteAnchor.line(of: "", in: text))
+        XCTAssertNil(NoteAnchor.line(of: "^", in: text))
+    }
 }

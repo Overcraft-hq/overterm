@@ -303,6 +303,22 @@ package final class APIWorkspace: ObservableObject {
         /// Its first request, to open.
         package let firstRequest: URL?
         package let notes: [String]
+
+        /// The notes as the sheet says them: each once, in the order they
+        /// came, with how many requests it was said of — an OpenAPI file's
+        /// cookie scheme on every operation was the same line 40 times.
+        package var summary: String {
+            var order: [String] = []
+            var counts: [String: Int] = [:]
+            for note in notes {
+                if counts[note] == nil { order.append(note) }
+                counts[note, default: 0] += 1
+            }
+            return order.map { note in
+                let count = counts[note] ?? 1
+                return "• " + note + (count > 1 ? " (×\(count))" : "")
+            }.joined(separator: "\n")
+        }
     }
 
     /// Where an import goes.

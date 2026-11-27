@@ -463,9 +463,9 @@ final class DockerPageTests: XCTestCase {
         let web = try XCTUnwrap(shop.services.first)
         let verbs = page.verbs(for: web, in: shop)
         XCTAssertEqual(verbs.filter { $0.place == .button }.map(\.title), ["Rebuild and Start in a Tab", "Restart", "Show Its Logs"])
-        XCTAssertEqual(verbs.filter { $0.place == .more }.map(\.title), ["Follow Its Logs in a Tab", "Pull in a Tab", "Run a One-Off in a Tab", "Copy Name"])
+        XCTAssertEqual(verbs.filter { $0.place == .more }.map(\.title), ["Follow Logs in a Tab", "Pull in a Tab", "Run a One-Off in a Tab", "Copy Name"])
         XCTAssertTrue(verbs.allSatisfy { $0.unavailable == nil })
-        for title in ["Rebuild and Start in a Tab", "Run a One-Off in a Tab", "Pull in a Tab", "Follow Its Logs in a Tab"] {
+        for title in ["Rebuild and Start in a Tab", "Run a One-Off in a Tab", "Pull in a Tab", "Follow Logs in a Tab"] {
             verbs.first { $0.title == title }?.perform()
         }
         XCTAssertEqual(

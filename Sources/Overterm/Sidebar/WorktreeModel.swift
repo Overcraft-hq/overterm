@@ -19,6 +19,27 @@ package final class WorktreeModel: ObservableObject {
     /// gh is network: a tab switch reuses what a minute-old list said.
     private var pullRequestCache: [URL: (at: Date, byBranch: [String: PullRequestSummary])] = [:]
     package static let pullRequestMaxAge: TimeInterval = 60
+    /// gh's own login — whom "Needs your review" and "Yours" mean (GIT-G4).
+    /// Asked of gh once a run, the first time a list has a pull request,
+    /// never a row at a time; nil until then, or when gh wouldn't say.
+    @Published package private(set) var viewerLogin: String?
+    private static var viewerAsked = false
+    private static var viewer: String?
+
+    private func readViewer(in repo: URL, list: [String: PullRequestSummary]) async {
+        if let known = Self.viewer {
+            if viewerLogin != known { viewerLogin = known }
+            return
+        }
+        guard !Self.viewerAsked, !list.isEmpty else { return }
+        Self.viewerAsked = true
+        let login = (try? await GitHub.run(["api", "user", "--jq", ".login"], in: repo))
+            .map { String(decoding: $0, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let login, !login.isEmpty, !login.contains(where: \.isWhitespace) else { return }
+        Self.viewer = login
+        viewerLogin = login
+    }
+
     /// What the selected tab shows, and why (set by the window).
     @Published package var showing: (root: URL, reason: CheckoutReason)?
     /// A directory inside the repository (the file tree's root).
@@ -64,6 +85,7 @@ package final class WorktreeModel: ObservableObject {
         self.merged = merged
         self.pullRequests = pullRequests
         pullRequestError = pullRequestErrors[repo]
+        await readViewer(in: repo, list: pullRequests)
     }
 
     /// Asks gh again for the current repository's pull requests (CI moves on
