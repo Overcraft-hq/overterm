@@ -151,7 +151,16 @@ package enum SetupPanelProbe {
             if setting.hasPrefix("/"), looksExecutable(setting) {
                 facts.terraform = SetupPanelFacts.Terraform(binary: URL(fileURLWithPath: setting), fromSetting: true)
             } else {
-                facts.terraform = SetupPanelFacts.Terraform(binary: terraformBinary(looksExecutable), fromSetting: false)
+                // A closure that captures one non-escaping parameter can't be
+                // handed to another (exclusivity): the check is made escapable
+                // for the length of this call only.
+                let binary = withoutActuallyEscaping(isExecutable) { isExecutable in
+                    terraformBinary { path in
+                        if SetupProbe.isProtected(path, home: home.path), !chosen.contains((path as NSString).standardizingPath) { return false }
+                        return isExecutable(path)
+                    }
+                }
+                facts.terraform = SetupPanelFacts.Terraform(binary: binary, fromSetting: false)
             }
         }
         if inputs.kubernetes || inputs.database {
