@@ -1,7 +1,7 @@
 #if E2E
 import AppKit
 
-/// Tab Peek shows what the strip offers (PEEK-U2) — no stashed island's
+/// Tab Peek shows what the strip draws (PEEK-U2) — no stashed or collapsed island's
 /// tabs, the focused island's alone — and is typed into (PEEK-U1): what
 /// it doesn't find dimmed in place, 1–9 the nth found, ⌫ and Esc, and a
 /// waiting card answered as the Inbox answers.
@@ -36,6 +36,11 @@ extension E2ERunner {
         check("nor are their terminals shown", tabs[2...3].allSatisfy { app.host(of: $0)?.isHidden != false })
         app.peek.close()
         app.restoreGroup(web)
+        app.store.setCollapsed(web, true)
+        app.toggleTabPeek(nil)
+        check("nor a collapsed island's: the strip shows its chip alone", cardIDs() == Set(tabs[0...1].map(\.id)), "\(app.peek.model.cards.count)")
+        app.peek.close()
+        app.store.setCollapsed(web, false)
         app.store.setFocused(api)
         app.toggleTabPeek(nil)
         check("while focusing, only the focused island's tabs", cardIDs() == Set(tabs[0...1].map(\.id)), "\(app.peek.model.cards.count)")
