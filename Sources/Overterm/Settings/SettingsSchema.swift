@@ -421,6 +421,13 @@ package enum SettingsSchema {
             key: "general.snippets", section: .general, group: "Sidebar", title: "Snippets",
             help: "Commands you keep, in the sidebar and ⌘K. Off: neither shows them; snippets.json is kept as it is.",
             kind: .toggle, defaultValue: .bool(true)),
+        // Onboarding D-11: the Start card and the tips, one switch; What's
+        // New is updates.whatsNew's. Not held: a tip is no security setting.
+        SettingSpec(
+            key: "general.tips", section: .general, group: "Help", title: "Getting started and tips",
+            help:
+                "A list in the sidebar on a new install, and a tip the first time something comes up. Help ▸ Getting Started opens the list any time.",
+            kind: .toggle, defaultValue: .bool(true)),
     ]
 
     private static let appearance: [SettingSpec] = [

@@ -1,0 +1,165 @@
+import Combine
+import Foundation
+
+/// The app's one learner (docs/design/onboarding/analysis.md, 7.10): the
+/// Start card's state, kept, and told what happened by one-line
+/// `note(_:)` calls where the work is done — `createTask`, the Inbox, the
+/// changes pane, a tab selected. A call carries no logic of its own:
+/// `StartState` has the rules.
+///
+/// Its state goes in `AppEnvironment.defaults` (`onboarding.card`,
+/// `onboarding.steps`), never settings.json: any agent may write that
+/// file, people sync it between Macs, and a flag there would turn up in
+/// Settings' search. Nothing about the person's files, folders or
+/// commands is kept, nor what the probe found.
+///
+/// Inert in an isolated run — every scenario and picture would otherwise
+/// look like a first launch — unless the run is the `onboarding` scenario,
+/// which hands it a launch itself.
+@MainActor
+package final class Start: ObservableObject {
+    package static let shared = Start(
+        defaults: AppEnvironment.defaults, active: isActive(isolated: AppEnvironment.isIsolated, scenario: AppEnvironment.e2eScenario))
+
+    package nonisolated static let cardKey = "onboarding.card"
+    package nonisolated static let stepsKey = "onboarding.steps"
+    /// The scenario that drives it in an isolated run.
+    package nonisolated static let scenario = "onboarding"
+
+    /// Whether a run's `Start` does anything: the person's app, or the
+    /// `onboarding` scenario. Pure.
+    package nonisolated static func isActive(isolated: Bool, scenario: String?) -> Bool {
+        !isolated || scenario == Self.scenario
+    }
+
+    package let active: Bool
+    @Published package private(set) var state: StartState
+    /// What the probe found for the second step; nil until it has been asked.
+    @Published package private(set) var setup: SetupFacts?
+    /// `agents.newTaskAgent` as Settings has it: the menu's choice.
+    @Published package private(set) var taskAgent: String
+    /// The optional panels and whether each is on, for the done state's ticks.
+    @Published package private(set) var panels: [SidebarPanel: Bool]
+    /// Some tab needs you: the fourth step offers Open Inbox.
+    @Published package private(set) var anyNeedsYou = false
+    /// The clock steps are dated by; a test's own.
+    package var now: () -> Date = { Date() }
+
+    private let defaults: UserDefaults
+    private let settings: Settings
+    private var probing: Task<Void, Never>?
+    private var settingsChanges: AnyCancellable?
+
+    package init(defaults: UserDefaults, active: Bool, settings: Settings = .shared) {
+        self.defaults = defaults
+        self.active = active
+        self.settings = settings
+        state = StartState(storedCard: defaults.string(forKey: Self.cardKey), storedSteps: defaults.dictionary(forKey: Self.stepsKey), tips: settings.tips)
+        taskAgent = settings.taskAgent
+        panels = Self.panels(of: settings)
+        settingsChanges = settings.changes.sink { [weak self] keys in self?.settingsChanged(keys) }
+    }
+
+    /// What happened. Cheap, main-thread, and nothing at all while inert:
+    /// a step already done changes nothing and publishes nothing.
+    package func note(_ event: StartState.Event) {
+        guard active else { return }
+        update(state.applying(event, now: now()))
+    }
+
+    /// Whether some tab needs you now — the badge's own count, from the window.
+    package func noteNeedsYou(_ any: Bool) {
+        guard active, any != anyNeedsYou else { return }
+        anyNeedsYou = any
+    }
+
+    /// This launch, once the window shows (7.2): a fresh install's card
+    /// open, an open one collapsed after the first launch, none after an update.
+    package func begin(_ launch: FirstRun.Launch) {
+        guard active else { return }
+        update(state.launched(launch))
+    }
+
+    /// Help ▸ Getting Started.
+    package func gettingStarted() {
+        guard active else { return }
+        update(state.gettingStarted())
+    }
+
+    /// The chevron, or the collapsed row.
+    package func toggle() {
+        guard active else { return }
+        update(state.toggled())
+    }
+
+    /// × or Done: gone for good.
+    package func close() {
+        guard active else { return }
+        update(state.closed())
+    }
+
+    /// Turn Off Tips: `general.tips` off — the card and every tip go.
+    package func turnOffTips() {
+        guard active else { return }
+        settings.set("general.tips", .bool(false))
+        update(state.withTips(false))
+    }
+
+    /// The second step's menu: what New Task starts, written where
+    /// Settings ▸ Agents writes it.
+    package func chooseAgent(_ value: String) {
+        guard active else { return }
+        settings.set("agents.newTaskAgent", .string(value))
+        taskAgent = settings.taskAgent
+        note(.agentChosen)
+    }
+
+    /// A done-state tick: the panel's own setting (DISC-N4). Nothing is
+    /// unticked for the person.
+    package func setPanel(_ panel: SidebarPanel, _ on: Bool) {
+        guard active, let key = panel.toggleKey else { return }
+        settings.set(key, .bool(on))
+        panels = Self.panels(of: settings)
+    }
+
+    /// Asks the probe, once, while the second step shows; `force`: Check Again.
+    package func probe(force: Bool = false) {
+        guard active, probing == nil, force || setup == nil else { return }
+        probing = Task { [weak self] in
+            let facts = await SetupProbe.read()
+            guard let self else { return }
+            self.setup = facts
+            self.probing = nil
+        }
+    }
+
+    // MARK: Private
+
+    private func update(_ next: StartState) {
+        guard next != state else { return }
+        let kept = next.card != state.card || next.steps != state.steps
+        state = next
+        guard kept else { return }
+        if let card = next.card {
+            defaults.set(card.rawValue, forKey: Self.cardKey)
+        } else {
+            defaults.removeObject(forKey: Self.cardKey)
+        }
+        defaults.set(next.storedSteps, forKey: Self.stepsKey)
+    }
+
+    private func settingsChanged(_ keys: Set<String>) {
+        if keys.contains("general.tips") { update(state.withTips(settings.tips)) }
+        if keys.contains("agents.newTaskAgent") { taskAgent = settings.taskAgent }
+        let toggles = Set(SidebarPanel.allCases.compactMap(\.toggleKey))
+        if !keys.isDisjoint(with: toggles) { panels = Self.panels(of: settings) }
+    }
+
+    private static func panels(of settings: Settings) -> [SidebarPanel: Bool] {
+        var panels: [SidebarPanel: Bool] = [:]
+        for panel in SidebarPanel.allCases {
+            if let key = panel.toggleKey { panels[panel] = settings.bool(key) }
+        }
+        return panels
+    }
+}

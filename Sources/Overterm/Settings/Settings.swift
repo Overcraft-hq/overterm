@@ -387,6 +387,8 @@ package final class Settings: ObservableObject {
     package var checkForUpdates: Bool { bool("updates.checkDaily") }
     /// The strip's "What's new in …" chip after an update (onboarding 7.9).
     package var whatsNewAfterUpdate: Bool { bool("updates.whatsNew") }
+    /// The Start card and the tips (onboarding D-11): off, neither shows.
+    package var tips: Bool { bool("general.tips") }
 
     package var notifications: Bool { bool("notifications.enabled") }
     package var dockBadge: Bool { bool("notifications.dockBadge") }

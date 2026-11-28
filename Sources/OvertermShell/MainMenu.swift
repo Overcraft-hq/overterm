@@ -208,6 +208,8 @@ package enum MainMenu {
         // every menu found by typing a word of its title.
         let helpItem = NSMenuItem()
         let helpMenu = NSMenu(title: "Help")
+        // Onboarding 7.10: the sidebar shown, its Start card open.
+        command(helpMenu, "Getting Started", #selector(TerminalWindowController.showGettingStarted(_:)), "help.gettingStarted")
         command(helpMenu, "Keyboard Shortcuts", #selector(AppDelegate.showKeyboardShortcuts(_:)), "help.shortcuts")
         // The keys of wherever the keyboard is (DISC-N1).
         command(helpMenu, "Keys Here", #selector(TerminalWindowController.showKeysHere(_:)), "help.keysHere")

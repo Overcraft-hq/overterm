@@ -247,6 +247,8 @@ package enum KeyCommands {
         .init("help.shortcuts", "Keyboard Shortcuts", group: "Overterm"),
         // Help ▸ What's New in …: Settings ▸ About at the changelog. No key by default.
         .init("help.whatsNew", "What's New", group: "Overterm"),
+        // Help ▸ Getting Started: the sidebar and its Start card. No key by default.
+        .init("help.gettingStarted", "Getting Started", group: "Overterm"),
         .init("app.hide", "Hide Overterm", group: "Overterm", key: "cmd+h"),
         .init("app.hideOthers", "Hide Others", group: "Overterm", key: "alt+cmd+h"),
         .init("app.quit", "Quit Overterm", group: "Overterm", key: "cmd+q", ghostty: "quit"),

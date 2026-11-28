@@ -27,6 +27,8 @@ version is tagged `v<version>`.
 - Outside a repository, Overgit, Kubernetes and Terraform offer Open Folder…, and Files over your home folder says what to open instead
 - The empty Inbox and Sessions say what lands there and how to start; ⌘K's own rows, the group switcher and the plan pane say the key bound now, and ⌘K has a Keyboard Shortcuts row
 - After an update, the strip's "What's new in …" chip opens Settings ▸ About, which lists every version since the one you ran before; Help ▸ What's New (and ⌘K) opens it any time, and Settings ▸ About ▸ Updates can turn the chip off
+- A new install's sidebar has a Getting Started card: what Overterm is, and five steps — open a repository, pick what New Task starts, start a task, answer a tab that needs you, see what it changed — that tick themselves as you do them, in any order
+- Once they are done, the card offers the optional panels to keep; × puts it away, Turn Off Tips (Settings ▸ General) ends it and the tips, and Help ▸ Getting Started (and ⌘K) brings it back
 
 ## 1.6.8 — 2026-11-26
 

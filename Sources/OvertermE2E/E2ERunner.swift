@@ -64,6 +64,7 @@ package final class E2ERunner {
         "layout": { await $0.layout() },
         "session": { await $0.session() },
         "task": { await $0.task() },
+        "onboarding": { await $0.onboardingScenario() },
         "snippets": { await $0.snippetsScenario() },
         "attention": { await $0.attention() },
         "marks": { await $0.marks() },

@@ -2,8 +2,8 @@
 import AppKit
 import Foundation
 
-/// Onboarding's stage 0, run in the `task` scenario (steps 3 and 5 of the
-/// `onboarding` scenario to come): New Task outside a repository offers
+/// Onboarding's stage 0, run in the `task` scenario (its steps 3 and 5 in
+/// the `onboarding` scenario too): New Task outside a repository offers
 /// Open Folder…, and an agent's CLI that a new tab's shell wouldn't find is
 /// said before its command is typed. Stage 1's checks run in the
 /// `sidebarPanels` and `palette` scenarios. No synthetic input: the window's
@@ -67,6 +67,9 @@ extension E2ERunner {
         }
         app.sidebarPanel.panel = .files
         check("Files in a folder that isn't home has no home strip", !present("files.homeStrip"))
+        // Stage 3 (risk 3): every other scenario is a first launch too, and shows no Start card.
+        app.beginStart(.fresh)
+        check("no Start card in any scenario but onboarding", !Start.shared.active && !Start.shared.state.isShown && !present("start.card"))
     }
 
     /// Stage 1, in the `palette` scenario (9.1, 7.8): a hand-written row's
@@ -97,7 +100,8 @@ extension E2ERunner {
         // The rows the window writes: each names its command, and its
         // words hold no key of their own.
         let named = [
-            "a.newTab", "a.splitRight", "a.splitDown", "a.newTask", "a.openFolder", "a.shortcuts", "a.whatsNew", "a.overview", "a.focusSidebar",
+            "a.newTab", "a.splitRight", "a.splitDown", "a.newTask", "a.openFolder", "a.shortcuts", "a.whatsNew", "a.gettingStarted", "a.overview",
+            "a.focusSidebar",
             "a.focusTerminal", "a.focusEditor", "a.goToFile", "a.focusRight", "a.focusInbox", "a.nextColumn", "a.previousColumn", "a.peek",
             "a.reviewBranch", "a.sidebar", "a.overgit", "a.api", "a.notes", "a.diff",
         ]
@@ -117,6 +121,181 @@ extension E2ERunner {
         }
         check("Help's Keyboard Shortcuts is a row of its own", row("a.shortcuts") != nil && row("menu.help.shortcuts") == nil)
         check("Help's What's New is a row of its own", row("a.whatsNew") != nil && row("menu.help.whatsNew") == nil)
+        check("Help's Getting Started is a row of its own", row("a.gettingStarted") != nil && row("menu.help.gettingStarted") == nil)
+    }
+
+    /// Stage 3, the `onboarding` scenario (onboarding 7.3, 7.10): the
+    /// Start card's five steps done through the window's own methods and
+    /// the card's own buttons — pressed through the accessibility tree,
+    /// never with synthetic input — and after every one the keyboard still
+    /// in the terminal (7.14): a press on the card must not take it. That
+    /// last check is the design's gate (risk 1); a real click is the
+    /// person's to try (issue-tracker#132).
+    func onboardingScenario() async {
+        guard let root = window.contentView else { return check("the window's content", false) }
+        let start = Start.shared
+        check("the onboarding scenario wakes Start in an isolated run", start.active)
+        guard start.active else { return }
+        func present(_ id: String) -> Bool { Self.accessibilityPress(id, in: root, press: false) }
+        func press(_ id: String) -> Bool { Self.accessibilityPress(id, in: root) }
+        func keyboardStays(_ after: String) async {
+            check(
+                "after \(after), the keyboard is still the terminal's",
+                await eventually(2) { self.window.firstResponder === self.app.store.selected?.terminal },
+                "\(String(describing: self.window.firstResponder))")
+        }
+        // No agent on the PATH, git there, no gh: the second step's facts.
+        SetupProbe.override = SetupFacts(
+            shellAnswered: true, agents: Dictionary(uniqueKeysWithValues: Agent.allCases.map { agent in (agent, AgentFinder.Result.missing) }),
+            developerTools: true, gh: nil)
+        defer { SetupProbe.override = nil }
+        await waitForPrompt()
+
+        // 1. A fresh launch: nothing in front of the shell, the card open at the sidebar's foot.
+        app.beginStart(.fresh)
+        check("a fresh install's card is open", start.state.card == .open && start.state.isShown)
+        check("no sheet, page or overlay in front of the shell", window.attachedSheet == nil && app.store.showingOverlay == nil)
+        check("the card shows in the sidebar", await eventually(3) { present("start.card") && present("start.title") })
+        check("with nothing done yet", StartText.collapsed(start.state) == "Getting started · 0 of 5", StartText.collapsed(start.state))
+        check("its first step open, with Open Folder…", present("start.button.file.openFolder") && present("start.step.repository"))
+        await keyboardStays("the card appeared")
+
+        // The chevron and the collapsed row: open, collapsed, open.
+        check("the chevron pressed", press("start.chevron"))
+        check("collapsed to one row", await eventually(2) { start.state.card == .collapsed && present("start.collapsed") })
+        await keyboardStays("the chevron")
+        check("the collapsed row pressed", press("start.collapsed"))
+        check("open again", await eventually(2) { start.state.card == .open && present("start.title") })
+        await keyboardStays("the collapsed row")
+
+        // Turn Off Tips on the open card: the card goes; tips on again, back.
+        check("Turn Off Tips pressed", press("start.turnOffTips"))
+        check("tips off, the card gone", await eventually(2) { !Settings.shared.tips && !present("start.card") })
+        await keyboardStays("Turn Off Tips")
+        Settings.shared.set("general.tips", nil)
+        check("tips on again, the card is back", await eventually(2) { present("start.card") })
+
+        // Its Open Folder… is the menu item's: Finder's panel, as a sheet.
+        check("Open Folder… pressed on the card", press("start.button.file.openFolder"))
+        let panel = await eventually(3) { self.window.attachedSheet != nil }
+        check("opens Finder's panel", panel)
+        await keyboardStays("Open Folder… on the card")
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .cancel) }
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+
+        // 3. New Task outside a repository offers Open Folder….
+        await newTaskOutsideARepositoryChecks()
+        await keyboardStays("New Task outside a repository")
+
+        // 4. A repository opened: the first step done.
+        let repo = scratch.appendingPathComponent("onboarding-repo")
+        try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: repo)
+        try? await git(["commit", "-q", "--allow-empty", "-m", "init"], in: repo)
+        app.open([repo])
+        check("a repository opened does the first step", await eventually(10) { start.state.isDone(.repository) })
+        await keyboardStays("a repository opened")
+
+        // 5. No agent found: said on the second step; an agent's tab types nothing.
+        check(
+            "no agent found: the second step says so and offers A shell only",
+            await eventually(5) { StartText.agentStep(start.setup) == .noneFound && present("start.shellOnly") },
+            "\(String(describing: start.setup))")
+        var opened: [Agent] = []
+        app.agentTabRecorder = { agent, _ in opened.append(agent) }
+        app.findAgent = { _ in .missing }
+        app.newAgentTab(.claude)
+        check("an agent not on the PATH is said before anything is typed", await eventually(3) { self.window.attachedSheet != nil } && opened.isEmpty)
+        clickSheetButton("Cancel")
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+        app.findAgent = { AgentFinder.find($0) }
+        app.agentTabRecorder = nil
+        check("nothing opened", opened.isEmpty)
+
+        // 6. A shell only, chosen on the card: written where Settings ▸ Agents writes it.
+        check("A shell only pressed", press("start.shellOnly"))
+        check(
+            "the second step is done, New Task starts a shell",
+            await eventually(2) { start.state.isDone(.agent) } && Settings.shared.taskAgent == "shell", Settings.shared.taskAgent)
+        await keyboardStays("A shell only")
+
+        // 7. A task made: the third step done.
+        do {
+            try await app.createTask(repo: repo, branch: "first-task", base: "main", agent: nil)
+        } catch {
+            check("New Task makes its worktree", false, error.localizedDescription)
+        }
+        check("a task made does the third step", start.state.isDone(.task))
+        app.focusSelectedTerminal()
+
+        // 8. A tab that needs you, answered from the Inbox the card offers.
+        guard let worked = app.store.selected, let other = app.store.tabs.first(where: { $0 !== worked }) else {
+            return check("two tabs to switch between", false)
+        }
+        app.store.select(other)
+        _ = await eventually(2) { self.window.firstResponder === other.terminal }
+        _ = worked.activity.handle(.notification(title: "zsh", body: "finished"), visible: false)
+        app.updateAttentionBadge()
+        check("while a tab needs you, the card offers Open Inbox", await eventually(3) { start.anyNeedsYou && present("start.button.inbox.show") })
+        check("Open Inbox pressed", press("start.button.inbox.show"))
+        check("the Inbox opens, and the fourth step is done", await eventually(3) { self.app.inboxItem?.isCollapsed == false && start.state.isDone(.answered) })
+        await keyboardStays("Open Inbox")
+        app.toggleInbox(nil)
+
+        // 13. The changes shown: all five done, the loop said, the panels offered.
+        check("Show Changes pressed", await eventually(3) { present("start.button.changes.toggle") } && press("start.button.changes.toggle"))
+        check("the changes pane shows, the fifth step done", await eventually(3) { self.app.diffItem?.isCollapsed == false && start.state.allDone })
+        check("the card says That's the loop.", await eventually(3) { present("start.doneTitle") && present("start.done") })
+        let toggled = SidebarPanel.allCases.filter { $0.toggleKey != nil }
+        check("eight ticks, one for each panel with a switch", toggled.count == 8 && toggled.allSatisfy { present("start.panel.\($0.rawValue)") })
+        check("each ticked as its setting says", toggled.allSatisfy { start.panels[$0] == Settings.shared.bool($0.toggleKey ?? "") })
+        await keyboardStays("Show Changes")
+        app.toggleDiff(nil)
+
+        // 14. Kubernetes unticked: its setting off, its icon off the rail.
+        if SidebarPanel.shown.contains(.kubernetes) {
+            app.performStartAction(.setPanel(.kubernetes, false))
+            check("unticked, kubernetes.enabled is off", !Settings.shared.bool("kubernetes.enabled"))
+            check("and the rail loses its icon", await eventually(3) { !present("sidebar.rail.kubernetes") })
+            Settings.shared.set("kubernetes.enabled", nil)
+            await keyboardStays("a tick")
+        }
+
+        // 15. Done: put away for good — a second Start from the same defaults shows nothing.
+        check("Done pressed", press("start.done"))
+        check("the card is put away", await eventually(2) { !start.state.isShown && !present("start.card") })
+        check("kept as closed", AppEnvironment.defaults.string(forKey: Start.cardKey) == "closed")
+        let again = Start(defaults: AppEnvironment.defaults, active: true)
+        again.begin(.same)
+        check("the next launch shows none", !again.state.isShown)
+        await keyboardStays("Done")
+
+        // 16. Help ▸ Getting Started brings it back, open: the one way in that moves the keyboard.
+        app.showGettingStarted(nil)
+        check("Getting Started brings the card back, open", await eventually(3) { start.state.card == .open && present("start.card") })
+        check(
+            "and gives the sidebar the keyboard, as asked",
+            (window.firstResponder as? NSView)?.accessibilityIdentifier() == "sidebar.keyboard", "\(String(describing: window.firstResponder))")
+        app.focusSelectedTerminal()
+
+        // 17. Turn Off Tips (the open card's; the done state has Done):
+        // general.tips off, the card gone, nothing shown after.
+        app.performStartAction(.turnOffTips)
+        check("general.tips is off, the card gone", await eventually(2) { !Settings.shared.tips && !present("start.card") })
+        start.note(.changesShown)
+        start.note(.inRepository)
+        check("later events show nothing", !start.state.isShown)
+        Settings.shared.set("general.tips", nil)
+
+        // 20. An update's defaults: no card.
+        let suite = scratch.appendingPathComponent("updated-defaults").path
+        if let updated = UserDefaults(suiteName: suite) {
+            updated.set("1.6.2", forKey: FirstRun.lastRunVersionKey)
+            let upgraded = Start(defaults: updated, active: true)
+            upgraded.begin(.upgraded(from: "1.6.2"))
+            check("an update gets no card", !upgraded.state.isShown && updated.object(forKey: Start.cardKey) == nil)
+            updated.removePersistentDomain(forName: suite)
+        }
     }
 
     private func sheetHasButton(_ title: String) -> Bool {

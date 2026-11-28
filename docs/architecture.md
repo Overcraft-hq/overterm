@@ -1724,6 +1724,54 @@ state, the Inbox's header, a rail tooltip or a ⌘K row shows is read from
 (`PaletteItem.command`) and `PaletteCommands.withLiveKeys` appends that
 command's key as bound now, so no row writes one into its words.
 
+The Start card (7.3, 7.10) is the one thing a fresh install shows by
+itself (D-2): at the foot of the sidebar's panel column — the last child of
+`SidebarView`'s column, under whichever panel shows, never a rail icon or a
+`SidebarPanel` — what the app is in one sentence and five steps that tick
+themselves. Hidden with the sidebar; past 40% of the column's height it
+scrolls inside itself; nothing is added to the window or a split.
+
+- `StartState` (pure) holds every rule: the steps done and when
+  (`onboarding.steps`, D-12), the card open, collapsed or closed
+  (`onboarding.card`), `general.tips` (D-11, a `SettingsSchema` entry: off,
+  neither the card nor a tip shows). `applying(event, now:)` marks a step
+  the first time its event comes, in any order; `launched(_:)` opens the
+  card on `.fresh`, collapses an open one on later launches, and offers
+  none after an update.
+- `Start` is the app's one learner: the state kept in
+  `AppEnvironment.defaults` — never settings.json — and `note(_:)`, a
+  one-line call where the work is done (`WorktreeModel.refresh` for a
+  checkout, `createTask`, an agent's tab made, the Inbox opened while a tab
+  needs you, a waiting tab selected — `markSelectedSeen` —, the changes pane
+  on screen — `updateRightPaneVisibility`). A step already done publishes
+  nothing. Inert in an isolated run unless the scenario is `onboarding`
+  (`Start.isActive`), so no other scenario or picture looks like a first
+  launch.
+- `StartText` (pure) makes every sentence and button from the state, the
+  window's facts and the keys bound now, passed in as a map; an unbound
+  command is said by its name. `StartCardView` draws it, observing `Start`,
+  the window's theme and `Keybindings` — never all of `Settings.shared`.
+- `SetupCheck` (pure: `SetupFacts` → `SetupRow`s) has the three rows the
+  second step needs — the agents, git, the GitHub CLI; the Setup page
+  (stage 5) adds the rest. `SetupProbe` fills the facts off the main
+  thread with the features' own finders: `ShellEnvironment.login()`'s PATH,
+  `AgentFinder`, the existence of `~/.claude/projects` and `~/.codex/
+  sessions` ("used here before"), of Command Line Tools or Xcode, and
+  `GitHub.executable`. It runs nothing and writes nothing; it is asked only
+  while the second step shows; a scenario sets `SetupProbe.override`.
+
+`AppDelegate` hands the launch to the window after `showWindow`
+(`beginStart`), never in an isolated run. Every press on the card goes
+through `TerminalWindowController.performStartAction`: a step's button
+runs its menu item's action — the opening half where the item toggles —
+and a click that left the keyboard on a control in the card hands it back
+to the selected terminal (a key press, Full Keyboard Access, leaves it).
+Help ▸ Getting Started (`help.gettingStarted`, no key) and its ⌘K row show
+the sidebar, open the card whatever the flags say, and give the sidebar
+the keyboard — the one way in that moves it, and the person asked. Done's
+ticks are the optional panels' own switches (`SidebarPanel.toggleKey`,
+DISC-N4); none is unticked for the person (D-8).
+
 ## Microphone and other privacy prompts
 
 macOS charges what a program in the terminal asks for to Overterm, the app

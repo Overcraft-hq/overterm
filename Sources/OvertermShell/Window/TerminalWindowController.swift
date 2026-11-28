@@ -578,6 +578,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 terraformActions: terraformPanelActions,
                 openKubernetesPage: { [weak self] in self?.toggleKubernetesPage(nil) },
                 railAction: { [weak self] in self?.performRailAction($0) },
+                startAction: { [weak self] in self?.performStartAction($0) },
                 onKey: { [weak self] in self?.sidebarKey($0) ?? false },
                 keyView: { [weak self] view in self?.sidebarKeyTarget = { [weak view] in view } }
             ))
@@ -1429,6 +1430,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
         terminal.terraformAgentGuard = start?.launch ?? .none
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+        if agent != nil, startAgent { Start.shared.note(.agentTabStarted) }
     }
 
     /// What starts `agent` in `directory`: its command (`base`, else its
@@ -1452,6 +1454,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             environment: environment, kubePin: kubePin)
         terminal.terraformAgentGuard = start?.launch ?? .none
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+        if agent != nil { Start.shared.note(.agentTabStarted) }
         followKubernetesPins()
     }
 
@@ -1500,6 +1503,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     private func markSelectedSeen() {
         showSelectedApproval()
         guard let tab = store.selected, isVisible(tab), tab.activity.needsAttention else { return }
+        Start.shared.note(.waitingTabSelected)
         tab.activity.seen()
         AttentionNotifier.withdraw(tab: tab)
         updateAttentionBadge()
@@ -1561,6 +1565,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package func updateAttentionBadge() {
         AttentionNotifier.updateBadge(count: store.tabs.filter { $0.activity.needsAttention }.count)
         updateMenuBarItem(count: store.tabs.count { $0.activity.needsAttention })
+        Start.shared.noteNeedsYou(store.tabs.contains { $0.activity.needsAttention })
         if inboxItem?.isCollapsed == false { refreshInbox() }
     }
 
@@ -3340,6 +3345,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         let show = item.isCollapsed
         item.animator().isCollapsed = !show
         if show {
+            Start.shared.note(.inboxOpened(waiting: store.tabs.contains { $0.activity.needsAttention }))
             refreshInbox()
             inboxPoll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshInbox() }
@@ -3515,8 +3521,12 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             PaletteItem(id: "a.openFolder", group: .action, title: "Open Folder…", subtitle: "A tab in a folder you pick", symbol: "folder", command: "file.openFolder") {
                 [weak self] _, _ in self?.openFolder(nil)
             },
-            // Help's rows (onboarding 7.8): Open Folder… above; Getting
-            // Started, Check Setup and Reset Tips come with their stages.
+            // Help's rows (onboarding 7.8): Open Folder… above; Check Setup
+            // and Reset Tips come with their stages.
+            PaletteItem(
+                id: "a.gettingStarted", group: .action, title: "Getting Started", subtitle: "Five steps, in the sidebar", symbol: "checklist",
+                command: "help.gettingStarted"
+            ) { [weak self] _, _ in self?.showGettingStarted(nil) },
             PaletteItem(
                 id: "a.shortcuts", group: .action, title: "Keyboard Shortcuts", subtitle: "Every key, and yours to change", symbol: "keyboard",
                 command: "help.shortcuts"
@@ -3863,6 +3873,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             let timeout = setup.command.isEmpty ? TaskPromptWait.timeout : TaskPromptWait.timeoutAfterSetup
             Task { @MainActor [weak self] in await self?.sendTaskText(text, to: tab, branch: branch, timeout: timeout) }
         }
+        Start.shared.note(.taskCreated)
         await worktrees.refresh()
         await prepareTerraformWorktree(path)
         // Its own stack, in a tab beside it — the page's Up, which looks at
@@ -4652,6 +4663,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// agents' logs.
     package func updateRightPaneVisibility() {
         let shown = diffItem?.isCollapsed == false
+        if shown, rightPane.mode == .changes { Start.shared.note(.changesShown) }
         pullRequest.visible = shown && rightPane.mode == .pullRequest
         usage.visible = shown && rightPane.mode == .usage
         commitDetail.visible = shown && rightPane.mode == .commit

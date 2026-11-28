@@ -842,6 +842,24 @@ panels' Open Folder… from the accessibility tree (`sidebar.rail.<id>`,
 the rows' keys follow a rebinding in the run's own keybindings.json, reset
 after.
 
+Stage 3's Start card: `StartStateTests` (steps from events in any order,
+the first time kept, the card by launch, tips off showing nothing, the
+kept form), `StartTextTests` (each step's line and button for no agent
+found, a shell only, outside a repository and the shell still asked; a
+rebinding changes the line, an unbound command is named, no key glyph a
+line wasn't given), `StartTests` (inert unless the `onboarding` scenario;
+the state in a throwaway defaults suite and settings.json, never the
+app's) and `SetupCheckTests` (the rows, and every path the probe touches —
+existence and executability only, nothing under Documents, Desktop or
+iCloud). The `onboarding` scenario hands `Start` a fresh launch and does
+the five steps through the window's own methods and the card's buttons,
+pressed through the accessibility tree (`start.*` identifiers), with
+`SetupProbe.override`'s facts; after each it checks the terminal still has
+the keyboard. That check is the design's gate (risk 1), and an
+accessibility press is not a click: a real click on the card, and on the
+second step's menu, is a check by hand. `sidebarPanels` checks no other
+scenario shows a card.
+
 ## End-to-end — `Sources/OvertermE2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

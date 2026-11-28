@@ -97,6 +97,11 @@ final class MainMenuTests: XCTestCase {
         XCTAssertEqual(whatsNew.title, MainMenu.whatsNewTitle(FirstRun.currentVersion))
         XCTAssertEqual(whatsNew.action, #selector(AppDelegate.showWhatsNew(_:)))
         XCTAssertEqual(whatsNew.keyEquivalent, "")
+        // Onboarding 7.10: Getting Started, a command with no key.
+        let gettingStarted = try XCTUnwrap(help.items.first { $0.identifier?.rawValue == "help.gettingStarted" })
+        XCTAssertEqual(gettingStarted.title, "Getting Started")
+        XCTAssertEqual(gettingStarted.action, #selector(TerminalWindowController.showGettingStarted(_:)))
+        XCTAssertEqual(gettingStarted.keyEquivalent, "")
         let ours = items(of: main).compactMap(\.identifier?.rawValue).filter { $0.contains(".") && !$0.hasSuffix(":") }
         XCTAssertEqual(ours.count, Set(ours).count, "no command id on two items")
     }

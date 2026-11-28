@@ -74,6 +74,10 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         GhosttyRuntime.shared.setColorScheme()
         controller.autosaveSession()
         controller.showWindow(nil)
+        // The Start card (onboarding 7.2): only now, after the window and
+        // whatever the session restored; never by itself in an isolated run
+        // — the `onboarding` scenario hands it a launch.
+        if !AppEnvironment.isIsolated { controller.beginStart(Self.launch) }
         // Every launch, once the window shows.
         FirstRun.remember(FirstRun.currentVersion, in: AppEnvironment.defaults)
         UpdateChecker.shared.checkIfDue()
