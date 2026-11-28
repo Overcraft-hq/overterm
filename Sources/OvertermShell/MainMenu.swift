@@ -104,10 +104,15 @@ package enum MainMenu {
         command(viewMenu, "Overgit", #selector(TerminalWindowController.showOvergit(_:)), "overgit.show")
         command(viewMenu, "API Client", #selector(TerminalWindowController.showAPIClient(_:)), "api.show")
         command(viewMenu, "Database", #selector(TerminalWindowController.showDatabase(_:)), "database.show")
+        command(viewMenu, "Files", #selector(TerminalWindowController.showFiles(_:)), "files.show")
+        command(viewMenu, "Sessions", #selector(TerminalWindowController.showSessions(_:)), "sessions.show")
+        command(viewMenu, "Snippets", #selector(TerminalWindowController.showSnippets(_:)), "snippets.show")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).
         command(viewMenu, "Changes", #selector(TerminalWindowController.toggleDiff(_:)), "changes.toggle")
         // Ticked while the column shows; off with Settings ▸ Browser.
         command(viewMenu, "Browser", #selector(TerminalWindowController.toggleBrowser(_:)), "browser.toggle")
+        // The title bar's phone; off with Settings ▸ Simulator.
+        command(viewMenu, "Simulator", #selector(TerminalWindowController.toggleSimulator(_:)), "simulator.toggle")
         viewMenu.addItem(withTitle: "Pull Request", action: #selector(TerminalWindowController.showPullRequest(_:)), keyEquivalent: "")
         command(viewMenu, "Create Pull Request…", #selector(TerminalWindowController.createPullRequest(_:)), "pullRequest.create")
         command(viewMenu, "Review Branch", #selector(TerminalWindowController.reviewBranch(_:)), "review.branch")
@@ -202,6 +207,8 @@ package enum MainMenu {
         let helpItem = NSMenuItem()
         let helpMenu = NSMenu(title: "Help")
         helpMenu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "")
+        // The keys of wherever the keyboard is (DISC-N1).
+        command(helpMenu, "Keys Here", #selector(TerminalWindowController.showKeysHere(_:)), "help.keysHere")
         // Mirrored from the app menu, without its identifier: a key the
         // person gives it belongs on one item.
         helpMenu.addItem(withTitle: "View Latest Changelog", action: #selector(AppDelegate.showChangelog(_:)), keyEquivalent: "")

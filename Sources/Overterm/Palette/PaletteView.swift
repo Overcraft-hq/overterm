@@ -95,6 +95,7 @@ package struct PaletteView: View {
         case .kubernetes: "Kubernetes"
         case .terraform: "Terraform"
         case .activity: "Activity"
+        case .setting: "Settings"
         }
     }
 
@@ -143,6 +144,7 @@ package struct PaletteView: View {
         case .kubernetes: "show it on the Kubernetes page"
         case .terraform: "show it in the Terraform panel"
         case .activity: "show it on the Activity page"
+        case .setting: "open it in Settings"
         }
     }
 

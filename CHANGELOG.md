@@ -17,6 +17,10 @@ version is tagged `v<version>`.
 - Runnable notes: a shell block has ▶ Run in terminal — shown and asked first, then typed into the selected tab
 - Fold Heading folds a note's section in Live Preview, and Unfold All opens them
 - Notes tables: a ```dataview block lists notes by their properties — FROM a folder or tag, WHERE, SORT, LIMIT — as Obsidian's Dataview does
+- ⌘K finds every menu command — Inbox, Tab Info, Usage, Presentation… — and every setting, which Return opens in Settings at its row; every row shows the key bound now
+- View ▸ Files, Sessions, Snippets and Simulator, and Help ▸ Keys Here: the keys of wherever the keyboard is; `?` on a review lists its keys
+- Docker's and Activity's `?` group their keys and list the page's window commands; the filter fields say their syntax
+- Tooltips, the Inbox and empty panels say the key bound now, not the default
 - Tab Peek shows only the tabs the strip shows, filters its cards as you type, picks one with 1–9, and answers a waiting agent from its card
 
 ## 1.6.8 — 2026-11-26

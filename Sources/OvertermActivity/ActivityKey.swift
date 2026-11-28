@@ -30,6 +30,17 @@ package enum ActivityKey: String, ResourceKey {
         }
     }
 
+    /// The heading `?` lists it under (DISC-U6).
+    package var sheetGroup: String? {
+        switch self {
+        case .processes, .listening, .leftBehind: "Sections"
+        case .goTo, .detail, .filter, .help: "Navigation"
+        case .open, .reveal, .tabInfo, .sample, .terminal, .files, .ask: "The selection"
+        case .tree, .group, .narrower, .wider, .follow, .pause, .mine, .connections, .sortCPU, .sortMemory, .sortTime, .sortPID, .invert: "The list"
+        case .stop, .forceQuit, .signal, .suspend, .background, .lower, .free: "Verbs — each asked first"
+        }
+    }
+
     package var key: String {
         switch self {
         case .processes: "1"

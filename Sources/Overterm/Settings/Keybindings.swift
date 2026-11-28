@@ -241,6 +241,8 @@ package enum KeyCommands {
         .init("app.settings", "Settings", group: "Overterm", key: "cmd+,", ghostty: "open_config"),
         // No default key since D-21 gave ⌥⌘O to opencode's tab.
         .init("app.changelog", "View Latest Changelog", group: "Overterm"),
+        // No key by default (DISC-N1): ⌘/ is the editor's Toggle Line Comment.
+        .init("help.keysHere", "Keys Here", group: "Overterm"),
         .init("app.hide", "Hide Overterm", group: "Overterm", key: "cmd+h"),
         .init("app.hideOthers", "Hide Others", group: "Overterm", key: "alt+cmd+h"),
         .init("app.quit", "Quit Overterm", group: "Overterm", key: "cmd+q", ghostty: "quit"),
@@ -323,6 +325,12 @@ package enum KeyCommands {
         .init("api.show", "API Client", group: "Panels", key: "alt+cmd+r"),
         .init("notes.show", "Notes", group: "Panels", key: "alt+cmd+n"),
         .init("database.show", "Database", group: "Panels", key: "alt+cmd+b"),
+        // No key by default (DISC-U8): in the menu, ⌘K and the shortcuts
+        // page, for the person to bind.
+        .init("files.show", "Files", group: "Panels"),
+        .init("sessions.show", "Sessions", group: "Panels"),
+        .init("snippets.show", "Snippets", group: "Panels"),
+        .init("simulator.toggle", "Simulator", group: "Panels"),
         .init("docker.page", "Docker", group: "Panels", key: "alt+cmd+p"),
         .init("docker.switch", "Docker Switcher", group: "Panels", key: "ctrl+cmd+p"),
         .init("docker.composeUp", "Compose Up (the checkout's stack)", group: "Panels"),

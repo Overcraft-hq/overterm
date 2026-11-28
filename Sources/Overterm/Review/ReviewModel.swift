@@ -32,6 +32,8 @@ package final class ReviewModel: ObservableObject, Identifiable {
     package var terraformStorage: AnyObject?
 
     @Published package private(set) var phase: Phase = .loading
+    /// `?`'s sheet of the page's keys (`ReviewKey`): any key closes it.
+    @Published package var showsKeys = false
     /// In the order the list shows them: by folder, then name.
     @Published package private(set) var files: [ChangedFile] = [] {
         didSet { listRows = ReviewListRow.rows(files) }

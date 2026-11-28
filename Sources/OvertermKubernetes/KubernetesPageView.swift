@@ -406,6 +406,7 @@ package struct KubernetesPageView: View {
             .padding(.horizontal, 8)
             .frame(width: 240, height: 26)
             .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
+            .help(ResourceKeys.filterHelp(KubernetesKey.filter.title))
             KubeSavedFilterMenu(page: page, theme: theme)
             Button {
                 page.copyKubectl()
