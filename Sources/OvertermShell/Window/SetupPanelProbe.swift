@@ -25,6 +25,9 @@ package enum SetupPanelProbe {
         package var terraform: Bool
         package var simulator: Bool
         package var languageServers: Bool
+        /// The Database (BigQuery's gcloud) and the API client (gRPC's protoc).
+        package var database: Bool
+        package var api: Bool
         package var kubectlPath: String
         package var helmPath: String
         package var terraformPath: String
@@ -33,11 +36,13 @@ package enum SetupPanelProbe {
         /// The contexts as the Kubernetes page read them; nil when it hasn't this launch.
         package var contexts: [KubeContext]?
         package var ghosttyConfig: Bool
+        /// The panels a fresh install hid (`FreshInstall.panelsHiddenKey`).
+        package var hiddenAtInstall: [SidebarPanel]
 
         package init(
             home: URL, appPath: String?, docker: Bool, kubernetes: Bool, terraform: Bool, simulator: Bool, languageServers: Bool,
-            kubectlPath: String = "", helmPath: String = "", terraformPath: String = "", guardsKubeconfig: Bool = false, contexts: [KubeContext]? = nil,
-            ghosttyConfig: Bool = false
+            database: Bool = false, api: Bool = false, kubectlPath: String = "", helmPath: String = "", terraformPath: String = "",
+            guardsKubeconfig: Bool = false, contexts: [KubeContext]? = nil, ghosttyConfig: Bool = false, hiddenAtInstall: [SidebarPanel] = []
         ) {
             self.home = home
             self.appPath = appPath
@@ -46,6 +51,9 @@ package enum SetupPanelProbe {
             self.terraform = terraform
             self.simulator = simulator
             self.languageServers = languageServers
+            self.database = database
+            self.api = api
+            self.hiddenAtInstall = hiddenAtInstall
             self.kubectlPath = kubectlPath
             self.helmPath = helmPath
             self.terraformPath = terraformPath
@@ -68,6 +76,9 @@ package enum SetupPanelProbe {
     ) -> SetupPanelFacts {
         var facts = SetupPanelFacts(ghosttyConfig: inputs.ghosttyConfig)
         let home = inputs.home
+        // Only those still off: one turned back on is a panel like any other.
+        let on: [SidebarPanel: Bool] = [.docker: inputs.docker, .kubernetes: inputs.kubernetes, .terraform: inputs.terraform]
+        facts.hiddenAtInstall = inputs.hiddenAtInstall.filter { panel in on[panel] == false }
         if inputs.docker {
             let endpoint = dockerEndpoint()
             var socket: String?
@@ -117,6 +128,17 @@ package enum SetupPanelProbe {
                 facts.terraform = SetupPanelFacts.Terraform(binary: terraformBinary(), fromSetting: false)
             }
         }
+        if inputs.kubernetes || inputs.database {
+            // gcloud where BigQuery's sign-in looks; its GKE plugin where a context's proxy looks.
+            facts.gcloud = SetupPanelFacts.GCloud(
+                cli: BigQueryDriver.gcloudCandidates(home: home).first(where: isExecutable).map(URL.init(fileURLWithPath:)),
+                gkePlugin: inputs.kubernetes ? login.flatMap { login in ShellEnvironment.executable("gke-gcloud-auth-plugin", in: login, isExecutable: isExecutable) } : nil,
+                gkePluginLooked: inputs.kubernetes && login != nil, database: inputs.database, kubernetes: inputs.kubernetes)
+        }
+        if inputs.api {
+            // As gRPC looks: the login shell's environment, else the one Overterm was started with.
+            facts.protoc = .some(GRPCProtoc.locate(environment: login ?? ["PATH": inputs.appPath ?? ""], isExecutable: isExecutable))
+        }
         if inputs.languageServers {
             facts.languageServers = LanguageServers.specs.map { spec in
                 SetupPanelFacts.LanguageServer(id: spec.id, found: discovery.command(for: spec)?.executable)
@@ -139,9 +161,11 @@ package enum SetupPanelProbe {
         let inputs = Inputs(
             home: FileManager.default.homeDirectoryForCurrentUser, appPath: ProcessInfo.processInfo.environment["PATH"], docker: settings.dockerEnabled,
             kubernetes: settings.kubernetesEnabled, terraform: settings.terraformEnabled, simulator: settings.simulatorEnabled,
-            languageServers: settings.editorLanguageServers, kubectlPath: settings.kubernetesKubectlPath, helmPath: settings.kubernetesHelmPath,
+            languageServers: settings.editorLanguageServers, database: settings.databaseEnabled, api: settings.apiEnabled, kubectlPath: settings.kubernetesKubectlPath,
+            helmPath: settings.kubernetesHelmPath,
             terraformPath: settings.terraformPath, guardsKubeconfig: AppEnvironment.guardsKubeconfig,
-            contexts: kubernetes.contextsRead ? kubernetes.contexts.contexts : nil, ghosttyConfig: AppEnvironment.ghosttyConfigFile != nil)
+            contexts: kubernetes.contextsRead ? kubernetes.contexts.contexts : nil, ghosttyConfig: AppEnvironment.ghosttyConfigFile != nil,
+            hiddenAtInstall: FreshInstall.hidden(stored: AppEnvironment.defaults.stringArray(forKey: FreshInstall.panelsHiddenKey)))
         let extra = settings.kubernetesKubeconfigs
         return await withCheckedContinuation { (continuation: CheckedContinuation<SetupPanelFacts?, Never>) in
             // Spelled `@Sendable`: a block for a queue written here would

@@ -28,8 +28,8 @@ final class SetupProbeTests: XCTestCase {
 
     private func inputs(all on: Bool, contexts: [KubeContext]? = nil) -> SetupPanelProbe.Inputs {
         SetupPanelProbe.Inputs(
-            home: home, appPath: "/usr/bin:/bin", docker: on, kubernetes: on, terraform: on, simulator: on, languageServers: on, contexts: contexts,
-            ghosttyConfig: true)
+            home: home, appPath: "/usr/bin:/bin", docker: on, kubernetes: on, terraform: on, simulator: on, languageServers: on, database: on, api: on,
+            contexts: contexts, ghosttyConfig: true)
     }
 
     private func context(_ name: String, production: Bool, plugin: String?) -> KubeContext {
@@ -69,6 +69,8 @@ final class SetupProbeTests: XCTestCase {
         XCTAssertNil(facts.terraform)
         XCTAssertNil(facts.languageServers)
         XCTAssertNil(facts.simulator)
+        XCTAssertNil(facts.gcloud)
+        XCTAssertNil(facts.protoc)
         XCTAssertEqual(SetupCheck.panelRows(facts, home: home.path).map(\.id), [.ghosttyConfig])
     }
 
@@ -111,7 +113,18 @@ final class SetupProbeTests: XCTestCase {
         XCTAssertEqual(rows[.kubectl]?.detail, "No kubectl found. Install it, or set Settings ▸ Kubernetes ▸ kubectl.")
         XCTAssertEqual(rows[.kubectl]?.action, .command("brew install kubectl"))
         XCTAssertEqual(rows[.kubeconfig]?.detail, "No kubeconfig")
-        XCTAssertNil(rows[.kubePlugins], "no context read: plugins aren't looked for")
+        XCTAssertEqual(
+            rows[.kubePlugins]?.detail, "Open Kubernetes once to check its contexts' plugins", "no context read: not looked for, and said so")
+        XCTAssertEqual(rows[.kubePlugins]?.isProblem, false)
+        XCTAssertEqual(
+            rows[.gcloud]?.detail,
+            "not found · BigQuery's and Cloud Storage's gcloud sign-in needs it · gke-gcloud-auth-plugin not on your PATH — a GKE context needs it")
+        XCTAssertEqual(rows[.gcloud]?.action, SetupCheck.gcloudInstallPage.map(SetupRow.Action.page))
+        XCTAssertTrue(executable.contains("/opt/homebrew/bin/gcloud") && executable.contains(home.path + "/google-cloud-sdk/bin/gcloud"), "where BigQuery looks")
+        XCTAssertTrue(executable.contains("/opt/homebrew/bin/gke-gcloud-auth-plugin"), "where a GKE context's proxy looks")
+        XCTAssertEqual(rows[.protoc]?.detail, "not found · a gRPC request from .proto files needs it; a server with reflection doesn't")
+        XCTAssertEqual(rows[.protoc]?.action, .command("brew install protobuf"))
+        XCTAssertTrue(executable.contains("/usr/local/bin/protoc"), "Homebrew's folders after the PATH")
         XCTAssertEqual(rows[.helm]?.detail, "helm isn't installed (or set kubernetes.helmPath in Settings ▸ Kubernetes).")
         XCTAssertEqual(rows[.terraform]?.detail, "No terraform found: set Settings ▸ Terraform ▸ terraform, or install it.")
         XCTAssertEqual(rows[.tofu]?.detail, "not looked for · set Settings ▸ Terraform ▸ terraform to tofu; untried until then")
@@ -168,6 +181,35 @@ final class SetupProbeTests: XCTestCase {
         XCTAssertEqual(facts.terraform, SetupPanelFacts.Terraform(binary: URL(fileURLWithPath: "/opt/tools/tofu"), fromSetting: true))
         XCTAssertEqual(
             SetupCheck.panelRows(facts, home: home.path).first { $0.id == .terraform }?.detail, "/opt/tools/tofu · Settings ▸ Terraform ▸ terraform")
+    }
+
+    /// gcloud for the Database alone, and protoc on the PATH: each where its feature looks.
+    func testGcloudAndProtocFound() {
+        var given = inputs(all: false)
+        given.database = true
+        given.api = true
+        let present: Set<String> = [home.path + "/google-cloud-sdk/bin/gcloud", "/opt/homebrew/bin/protoc"]
+        let facts = SetupPanelProbe.facts(
+            given, login: ["PATH": "/opt/homebrew/bin"], exists: { _ in false }, isExecutable: { path in present.contains(path) },
+            dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") }, kubeconfigs: { [] }, terraformBinary: { nil },
+            discovery: discovery)
+        XCTAssertEqual(facts.gcloud?.gkePluginLooked, false, "Kubernetes is off: its plugin isn't looked for")
+        let rows = Dictionary(uniqueKeysWithValues: SetupCheck.panelRows(facts, home: home.path).map { row in (row.id, row) })
+        XCTAssertEqual(rows[.gcloud]?.detail, "~/google-cloud-sdk/bin/gcloud · BigQuery and Cloud Storage can sign in with it")
+        XCTAssertEqual(rows[.gcloud]?.found, true)
+        XCTAssertNil(rows[.gcloud]?.action)
+        XCTAssertEqual(rows[.protoc]?.detail, "/opt/homebrew/bin/protoc · gRPC from .proto files")
+        XCTAssertNil(rows[.kubectl], "Kubernetes off: no rows of its own")
+    }
+
+    /// The contexts read but the login shell silent: the plugins' row says why it didn't look.
+    func testPluginsWithTheShellSilent() {
+        let facts = SetupPanelProbe.facts(
+            inputs(all: true, contexts: [context("dev", production: false, plugin: "aws")]), login: nil, exists: { _ in false },
+            isExecutable: { _ in false }, dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") },
+            kubeconfigs: { [] }, terraformBinary: { nil }, discovery: discovery)
+        let row = SetupCheck.panelRows(facts, home: home.path).first { $0.id == .kubePlugins }
+        XCTAssertEqual(row?.detail, "not looked for — your login shell didn't say its PATH")
     }
 
     /// A remote engine is never reached from here.

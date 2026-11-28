@@ -51,6 +51,11 @@ package final class Start: ObservableObject {
     @Published package private(set) var panels: [SidebarPanel: Bool]
     /// Some tab needs you: the fourth step offers Open Inbox.
     @Published package private(set) var anyNeedsYou = false
+    /// The panels a fresh install hid, their tool not found (`FreshInstall`),
+    /// as the defaults keep them; the card names those still off.
+    @Published package private(set) var hiddenAtInstall: [SidebarPanel]
+    /// The terminal's theme, for the done state's line.
+    @Published package private(set) var theme: StartText.Theme
     /// The clock steps are dated by; a test's own.
     package var now: () -> Date = { Date() }
 
@@ -68,6 +73,8 @@ package final class Start: ObservableObject {
             storedTips: defaults.stringArray(forKey: Self.tipsSeenKey), paletteOpens: defaults.integer(forKey: Self.paletteOpensKey))
         taskAgent = settings.taskAgent
         panels = Self.panels(of: settings)
+        hiddenAtInstall = FreshInstall.hidden(stored: defaults.stringArray(forKey: FreshInstall.panelsHiddenKey))
+        theme = Self.theme(of: settings)
         settingsChanges = settings.changes.sink { [weak self] keys in self?.settingsChanged(keys) }
     }
 
@@ -161,6 +168,27 @@ package final class Start: ObservableObject {
         panels = Self.panels(of: settings)
     }
 
+    /// The panels a fresh install hid that are still off: what the card's
+    /// line names, and its Show turns on.
+    package var stillHidden: [SidebarPanel] { hiddenAtInstall.filter { panel in panels[panel] == false } }
+
+    /// The fresh install's decision made (`FreshInstallSetup.decidePanels`): read again.
+    package func hiddenAtInstallChanged() {
+        let now = FreshInstall.hidden(stored: defaults.stringArray(forKey: FreshInstall.panelsHiddenKey))
+        if now != hiddenAtInstall { hiddenAtInstall = now }
+        panels = Self.panels(of: settings)
+    }
+
+    /// The hidden line's Show: each panel it hid that is still off, on again
+    /// — its own switch back to its default, as a tick does it.
+    package func showHidden() {
+        guard active else { return }
+        for panel in stillHidden {
+            if let key = panel.toggleKey { settings.set(key, nil) }
+        }
+        panels = Self.panels(of: settings)
+    }
+
     /// Asks the probe while the second step shows: once, and again while
     /// the shell hasn't answered (it is asked again after a minute,
     /// `ShellEnvironment.retryAfter`); `force`: Check Again.
@@ -203,6 +231,16 @@ package final class Start: ObservableObject {
         if keys.contains("agents.newTaskAgent") { taskAgent = settings.taskAgent }
         let toggles = Set(SidebarPanel.allCases.compactMap(\.toggleKey))
         if !keys.isDisjoint(with: toggles) { panels = Self.panels(of: settings) }
+        if !keys.isDisjoint(with: FreshInstall.themeKeys) {
+            let now = Self.theme(of: settings)
+            if now != theme { theme = now }
+        }
+    }
+
+    private static func theme(of settings: Settings) -> StartText.Theme {
+        StartText.Theme(
+            dark: settings.string("appearance.theme"), light: settings.string("appearance.themeLight"), follows: settings.followsSystemAppearance,
+            ghosttyConfig: AppEnvironment.ghosttyConfigFile != nil)
     }
 
     private static func panels(of settings: Settings) -> [SidebarPanel: Bool] {

@@ -198,6 +198,9 @@ extension E2ERunner {
         if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .cancel) }
         _ = await eventually(2) { self.window.attachedSheet == nil }
 
+        // 1b. A fresh install's two settings: its tools' panels and the theme.
+        await freshInstallChecks(root: root, keyboardStays: keyboardStays)
+
         // 3. New Task outside a repository offers Open Folder….
         await newTaskOutsideARepositoryChecks()
         await keyboardStays("New Task outside a repository")
@@ -418,6 +421,21 @@ extension E2ERunner {
         // 20. An update's defaults: no card.
         let suite = scratch.appendingPathComponent("updated-defaults").path
         if let updated = UserDefaults(suiteName: suite) {
+        // The theme line (a fresh install's pair, chosen in step 1b), and its Change….
+        let themeWords = Self.accessibilityElement("start.theme", in: root)?.text ?? ""
+        check(
+            "the done state says the theme, following macOS",
+            themeWords == "Theme: \(FreshInstall.darkTheme) / \(FreshInstall.lightTheme), following macOS" && present("start.changeTheme"), themeWords)
+        check("Change… pressed", press("start.changeTheme"))
+        check(
+            "Change… opens Settings ▸ Themes", await eventually(3) { self.app.store.settingsShowing && self.app.settingsPage.section == .themes },
+            "\(app.settingsPage.section)")
+        let sidebar = app.sidebarItem?.viewController.view
+        let onCard = (window.firstResponder as? NSView).map { view in sidebar.map { column in view.isDescendant(of: column) } ?? false } ?? false
+        check("and leaves no keyboard on the card", !onCard, "\(String(describing: window.firstResponder))")
+        app.closeOverlay(.settings)
+        app.focusSelectedTerminal()
+        for key in FreshInstall.themeKeys { Settings.shared.set(key, nil) }
             updated.set("1.6.2", forKey: FirstRun.lastRunVersionKey)
             let upgraded = Start(defaults: updated, active: true)
             upgraded.begin(.upgraded(from: "1.6.2"))
@@ -564,6 +582,127 @@ extension E2ERunner {
         app.findAgent = { _ in .missing }
         app.newAgentTab(.claude)
         check("an agent not on the PATH is said first", await eventually(3) { self.window.attachedSheet != nil })
+    /// Step 1b: a fresh install's two settings (`FreshInstall`), through
+    /// `FreshInstallSetup` with the scenario's own look at the Mac — an
+    /// isolated run looks at nothing of the user's. The panels whose tool
+    /// isn't there start hidden and the card says so in one line, with
+    /// Show; the PATH unknown, an update or the same version hides nothing;
+    /// the theme follows macOS with the chosen pair unless a Ghostty config
+    /// or settings.json names one. Each decided once.
+    private func freshInstallChecks(root: NSView, keyboardStays: (String) async -> Void) async {
+        func present(_ id: String) -> Bool { Self.accessibilityPress(id, in: root, press: false) }
+        func press(_ id: String) -> Bool { Self.accessibilityPress(id, in: root) }
+        let settings = Settings.shared
+        let defaults = AppEnvironment.defaults
+        let start = Start.shared
+        let panelKeys = FreshInstall.toolPanels.compactMap(\.toggleKey)
+        let others = ["api.enabled", "database.enabled", "notes.enabled", "general.sessions", "general.snippets"]
+        func forget() {
+            for key in [FreshInstall.panelsDecidedKey, FreshInstall.panelsHiddenKey, FreshInstall.themeDecidedKey] { defaults.removeObject(forKey: key) }
+        }
+        func reset() {
+            for key in panelKeys + FreshInstall.themeKeys { settings.set(key, nil) }
+            forget()
+        }
+        func noneSet(_ keys: [String]) -> Bool { !keys.contains { key in settings.isSet(key) } }
+        reset()
+        defer {
+            FreshInstallSetup.toolsOverride = nil
+            FreshInstallSetup.ghosttyThemeOverride = nil
+        }
+
+        // Nothing handed over: an isolated run looks at nothing, decides nothing.
+        FreshInstallSetup.toolsOverride = nil
+        FreshInstallSetup.ghosttyThemeOverride = nil
+        let unlooked = await FreshInstallSetup.decidePanels(.fresh)
+        check(
+            "an isolated run without the scenario's look hides nothing and decides nothing",
+            unlooked.isEmpty && noneSet(panelKeys) && defaults.object(forKey: FreshInstall.panelsDecidedKey) == nil)
+        check(
+            "nor chooses a theme",
+            !FreshInstallSetup.chooseTheme(.fresh) && noneSet(FreshInstall.themeKeys)
+                && defaults.object(forKey: FreshInstall.themeDecidedKey) == nil)
+
+        // The login shell silent: the PATH unknown, nothing hidden — and decided, once.
+        FreshInstallSetup.toolsOverride = .unknown
+        let silent = await FreshInstallSetup.decidePanels(.fresh)
+        check("the PATH unknown: nothing hidden", silent.isEmpty && noneSet(panelKeys), "\(silent)")
+        check("and decided: it never runs again", defaults.bool(forKey: FreshInstall.panelsDecidedKey))
+        forget()
+
+        // An update, or the same version: nothing changes, whatever is missing.
+        FreshInstallSetup.toolsOverride = FreshInstall.Tools(pathKnown: true)
+        FreshInstallSetup.ghosttyThemeOverride = false
+        for launch in [FirstRun.Launch.upgraded(from: "1.6.8"), .same] {
+            let hidden = await FreshInstallSetup.decidePanels(launch)
+            let themed = FreshInstallSetup.chooseTheme(launch)
+            check(
+                "\(launch == .same ? "the same version" : "an update"): no panel hidden, no theme chosen",
+                hidden.isEmpty && !themed && noneSet(panelKeys + FreshInstall.themeKeys)
+                    && defaults.object(forKey: FreshInstall.panelsDecidedKey) == nil && defaults.object(forKey: FreshInstall.themeDecidedKey) == nil)
+        }
+
+        // Fresh, no docker, kubectl or terraform — Terraform's switch the
+        // person's own already, in settings.json: Docker and Kubernetes hidden.
+        settings.set("terraform.enabled", .bool(false))
+        let hidden = await FreshInstallSetup.decidePanels(.fresh)
+        check("no docker, kubectl or terraform: Docker and Kubernetes hidden", hidden == [.docker, .kubernetes], "\(hidden)")
+        check("their switches off in settings.json", !settings.bool("docker.enabled") && !settings.bool("kubernetes.enabled"))
+        check(
+            "Terraform's, the person's, kept and not claimed",
+            settings.isSet("terraform.enabled") && FreshInstall.hidden(stored: defaults.stringArray(forKey: FreshInstall.panelsHiddenKey)) == [.docker, .kubernetes])
+        check("API, Database, Notes, Sessions and Snippets left as they are", noneSet(others))
+        let twice = await FreshInstallSetup.decidePanels(.fresh)
+        check("decided once: never again", twice.isEmpty && defaults.bool(forKey: FreshInstall.panelsDecidedKey))
+        settings.set("terraform.enabled", nil)
+
+        // The card: one line, and Show.
+        start.hiddenAtInstallChanged()
+        check(
+            "the card says what was hidden, in one line, with Show",
+            await eventually(3) { present("start.hiddenPanels") && present("start.showHidden") })
+        let words = Self.accessibilityElement("start.hiddenPanels", in: root)?.text ?? ""
+        check("“Docker, Kubernetes hidden — not found on this Mac”", words.contains("Docker, Kubernetes hidden — not found on this Mac"), words)
+        // Check Setup's "Tools the panels use" says the same.
+        let inputs = SetupPanelProbe.Inputs(
+            home: scratch, appPath: nil, docker: settings.dockerEnabled, kubernetes: settings.kubernetesEnabled, terraform: false, simulator: false,
+            languageServers: false, hiddenAtInstall: start.hiddenAtInstall)
+        let facts = SetupPanelProbe.facts(
+            inputs, login: nil, exists: { _ in false }, isExecutable: { _ in false },
+            dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") }, kubeconfigs: { [] }, terraformBinary: { nil },
+            discovery: ServerDiscovery(home: scratch, searchDirectories: [], toolchainDirectories: [], runsXcrun: false))
+        let rows = SetupCheck.panelRows(facts).filter { row in row.detail == SetupCheck.hiddenAtInstallDetail }
+        check("and Check Setup agrees", rows.map(\.id) == [.panelHidden(.docker), .panelHidden(.kubernetes)], "\(rows.map(\.id))")
+        check("Show pressed", press("start.showHidden"))
+        check(
+            "Show turns them on again, and the line goes",
+            await eventually(3) { settings.dockerEnabled && settings.kubernetesEnabled && !present("start.hiddenPanels") })
+        await keyboardStays("Show")
+
+        // The theme: a Ghostty config naming one keeps it.
+        FreshInstallSetup.ghosttyThemeOverride = true
+        check("a Ghostty config naming a theme: untouched", !FreshInstallSetup.chooseTheme(.fresh) && noneSet(FreshInstall.themeKeys))
+        check("and decided", defaults.bool(forKey: FreshInstall.themeDecidedKey))
+        forget()
+        // settings.json naming one keeps it.
+        FreshInstallSetup.ghosttyThemeOverride = false
+        settings.set("appearance.theme", .string("Claude Dark"))
+        check(
+            "settings.json naming a theme: untouched",
+            !FreshInstallSetup.chooseTheme(.fresh) && settings.string("appearance.theme") == "Claude Dark" && !settings.followsSystemAppearance)
+        settings.set("appearance.theme", nil)
+        forget()
+        // Fresh, nothing named: it follows macOS with the pair.
+        check("fresh: the pair chosen", FreshInstallSetup.chooseTheme(.fresh))
+        check(
+            "the terminal follows macOS, \(FreshInstall.darkTheme) after dark and \(FreshInstall.lightTheme) in daylight",
+            settings.followsSystemAppearance && settings.string("appearance.theme") == FreshInstall.darkTheme
+                && settings.string("appearance.themeLight") == FreshInstall.lightTheme)
+        check("chosen once", !FreshInstallSetup.chooseTheme(.fresh))
+        check("the card knows it", await eventually(2) { start.theme.follows && start.theme.dark == FreshInstall.darkTheme })
+        forget()
+    }
+
         let texts = sheetTexts()
         check(
             "as Claude Code isn't on your PATH",

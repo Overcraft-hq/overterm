@@ -92,15 +92,20 @@ package actor BigQueryDriver: DatabaseDriver {
         return signing + "." + encode(signature.rawRepresentation)
     }
 
+    /// Where gcloud is installed, in the order it is looked for (a GUI
+    /// app's PATH has no Homebrew); the Setup page looks the same way.
+    package static func gcloudCandidates(home: URL) -> [String] {
+        [
+            "/opt/homebrew/bin/gcloud", "/usr/local/bin/gcloud", home.appendingPathComponent("google-cloud-sdk/bin/gcloud").path,
+            "/opt/homebrew/share/google-cloud-sdk/bin/gcloud",
+        ]
+    }
+
     /// `gcloud auth print-access-token`, from where gcloud is installed (a
     /// GUI app's PATH has no Homebrew).
     package static func gcloudToken() async throws -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = [
-            "/opt/homebrew/bin/gcloud", "/usr/local/bin/gcloud", home.appendingPathComponent("google-cloud-sdk/bin/gcloud").path,
-            "/opt/homebrew/share/google-cloud-sdk/bin/gcloud",
-        ]
-        guard let gcloud = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+        guard let gcloud = gcloudCandidates(home: home).first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
             throw DatabaseError.failed("gcloud isn't installed — or use a service account key.")
         }
         do {

@@ -897,7 +897,31 @@ facts: its rows those facts word for word, Put in a New Tab recorded
 switch, the panels' section read only once opened
 (`SetupProbe.panelsOverride`), and Esc and `hideOverlay` leaving the terminal the first
 responder. Full Keyboard Access over the page, and what each finder says
-on a clean account, are checks by hand.
+on a clean account, are checks by hand. `SetupProbeTests` also cover the
+gcloud and protoc rows (looked for where BigQuery's sign-in, a GKE
+context's proxy and gRPC look) and the credential plugins' row before the
+Kubernetes page has read the contexts, or with the shell silent.
+
+A fresh install's settings: `FreshInstallTests` (the panels to hide from
+the tools found — none with the PATH unknown, never a switch the person
+set —, each tool looked for where its feature looks with injected
+closures and nothing else touched, decided once, an update or the same
+version changing nothing, an isolated run with nothing handed over
+deciding nothing; the theme chosen only where neither a Ghostty config —
+`theme =` read as Ghostty reads it, includes followed, bounded — nor
+settings.json names one; the card's line and the Setup page's row in the
+same words). The `onboarding` scenario's step 1b hands `FreshInstallSetup`
+its own look (`toolsOverride`, `ghosttyThemeOverride`): nothing handed over
+decides nothing; the PATH unknown hides nothing; an update and the same
+version change nothing; no docker, kubectl or terraform hides Docker and
+Kubernetes — Terraform's switch the scenario's "person" set is kept — and
+the card says so in one line whose Show turns them on, the keyboard still
+the terminal's; a Ghostty theme, or one in settings.json, is left alone;
+fresh, the terminal follows macOS with the pair. Step 13 reads the done
+state's theme line and presses Change… (Settings ▸ Themes, no keyboard
+left on the card). The `updates` scenario's What's New checks put an update chip in the strip
+beside a waiting What's New (`UpdateChecker.scenarioRelease`, E2E builds
+only): only the update's shows, and What's New is back when it goes.
 
 ## End-to-end — `Sources/OvertermE2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 

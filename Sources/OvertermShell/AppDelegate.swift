@@ -32,6 +32,9 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         Self.launch = FirstRun.read(
             defaults: AppEnvironment.defaults, sessionURL: SessionState.defaultURL, settingsURL: Settings.sharedURL,
             current: FirstRun.currentVersion)
+        // A fresh install's theme, before the window writes Ghostty's
+        // overrides from settings: the first pane already follows macOS.
+        FreshInstallSetup.chooseTheme(Self.launch)
         NSApp.mainMenu = MainMenu.build()
         NSApp.servicesProvider = self
         UNUserNotificationCenter.current().delegate = self
@@ -77,7 +80,11 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         // The Start card (onboarding 7.2): only now, after the window and
         // whatever the session restored; never by itself in an isolated run
         // — the `onboarding` scenario hands it a launch.
-        if !AppEnvironment.isIsolated { controller.beginStart(Self.launch) }
+        if !AppEnvironment.isIsolated {
+            controller.beginStart(Self.launch)
+            // A fresh install's panels, once the login shell has said its PATH.
+            controller.decideFreshPanels(Self.launch)
+        }
         // Every launch, once the window shows.
         FirstRun.remember(FirstRun.currentVersion, in: AppEnvironment.defaults)
         UpdateChecker.shared.checkIfDue()

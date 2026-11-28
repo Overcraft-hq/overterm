@@ -228,4 +228,17 @@ final class StartTextTests: XCTestCase {
         XCTAssertEqual(StartText.tipButtons(.agentTools, permission: .notAsked).map(\.action), [.settings(.agents)])
         XCTAssertNil(StartText.tipOffer(.agentTools, permission: .notAsked))
     }
+
+    /// The done state's theme line: the pair following macOS, one theme,
+    /// or none in Settings — the person's Ghostty config's, or Ghostty's own.
+    func testTheThemeLine() {
+        XCTAssertEqual(
+            StartText.themeLine(StartText.Theme(dark: "Catppuccin Mocha", light: "Catppuccin Latte", follows: true, ghosttyConfig: false)),
+            "Theme: Catppuccin Mocha / Catppuccin Latte, following macOS")
+        XCTAssertEqual(StartText.themeLine(StartText.Theme(dark: "Nord", light: "One Half Light", follows: false, ghosttyConfig: false)), "Theme: Nord")
+        XCTAssertEqual(StartText.themeLine(StartText.Theme(dark: "Nord", light: "", follows: true, ghosttyConfig: false)), "Theme: Nord")
+        XCTAssertEqual(StartText.themeLine(StartText.Theme(dark: "", light: "", follows: false, ghosttyConfig: true)), "Theme: your Ghostty config's")
+        XCTAssertEqual(StartText.themeLine(StartText.Theme(dark: "", light: "", follows: false, ghosttyConfig: false)), "Theme: Ghostty's default")
+        XCTAssertEqual(StartText.changeTheme, "Change…")
+    }
 }

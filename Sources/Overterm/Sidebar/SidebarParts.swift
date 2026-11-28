@@ -107,7 +107,7 @@ package struct SessionActions {
 
 /// What the sidebar can show, one at a time — the rail down its left
 /// edge picks between them (`SidebarRail`).
-package enum SidebarPanel: String, CaseIterable, Identifiable {
+package enum SidebarPanel: String, CaseIterable, Identifiable, Sendable {
     case files, git, sessions, snippets, api, notes, database, docker, kubernetes, terraform
 
     package var id: String { rawValue }
@@ -166,6 +166,9 @@ package enum SidebarPanel: String, CaseIterable, Identifiable {
     }
 
     @MainActor package var isEnabled: Bool { toggleKey.map { Settings.shared.bool($0) } ?? true }
+
+    /// The Settings page its switch is on, as the schema files it; nil for Files and Overgit.
+    package var settingsSection: SettingsSection? { toggleKey.flatMap { key in SettingsSchema.byKey[key]?.section } }
 
     /// What the stored choice means. `worktrees` had an icon of its own
     /// until Overgit took it in; somebody who left the sidebar there finds

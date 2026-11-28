@@ -81,6 +81,29 @@ package struct SetupPanelFacts: Equatable, Sendable {
         }
     }
 
+    /// gcloud, for the Database's BigQuery and Cloud Storage sign-in and
+    /// a GKE context's credential plugin.
+    package struct GCloud: Equatable, Sendable {
+        /// `gcloud`, where the BigQuery sign-in finds it (`BigQueryDriver.gcloudCandidates`).
+        package var cli: URL?
+        /// `gke-gcloud-auth-plugin` on the login shell's PATH, as a GKE
+        /// context's proxy looks for it (`KubeProxyPlanner.isInstalled`).
+        package var gkePlugin: URL?
+        /// The plugin was looked for: Kubernetes on, and the shell answered.
+        package var gkePluginLooked: Bool
+        /// Which panels that are on lean on it.
+        package var database: Bool
+        package var kubernetes: Bool
+
+        package init(cli: URL?, gkePlugin: URL? = nil, gkePluginLooked: Bool = false, database: Bool, kubernetes: Bool) {
+            self.cli = cli
+            self.gkePlugin = gkePlugin
+            self.gkePluginLooked = gkePluginLooked
+            self.database = database
+            self.kubernetes = kubernetes
+        }
+    }
+
     package struct Simulator: Equatable, Sendable {
         package var xcode: Bool
         package var coreSimulator: Bool
@@ -96,19 +119,30 @@ package struct SetupPanelFacts: Equatable, Sendable {
     package var terraform: Terraform?
     package var languageServers: [LanguageServer]?
     package var simulator: Simulator?
+    /// Shown while Kubernetes or Database is on.
+    package var gcloud: GCloud?
+    /// `protoc`, where the API client's gRPC finds it (`GRPCProtoc.locate`);
+    /// the outer nil: the API client is off, so it isn't looked for.
+    package var protoc: URL??
     /// `~/.config/ghostty/config` exists (`AppEnvironment.ghosttyConfigFile`).
     package var ghosttyConfig: Bool
+    /// The panels a fresh install hid, their tool not found, that are still
+    /// off (`FreshInstall`): said here as the Start card says them.
+    package var hiddenAtInstall: [SidebarPanel]
 
     package init(
         docker: Docker? = nil, kubernetes: Kubernetes? = nil, terraform: Terraform? = nil, languageServers: [LanguageServer]? = nil,
-        simulator: Simulator? = nil, ghosttyConfig: Bool = false
+        simulator: Simulator? = nil, gcloud: GCloud? = nil, protoc: URL?? = nil, ghosttyConfig: Bool = false, hiddenAtInstall: [SidebarPanel] = []
     ) {
         self.docker = docker
         self.kubernetes = kubernetes
         self.terraform = terraform
         self.languageServers = languageServers
         self.simulator = simulator
+        self.gcloud = gcloud
+        self.protoc = protoc
         self.ghosttyConfig = ghosttyConfig
+        self.hiddenAtInstall = hiddenAtInstall
     }
 }
 
@@ -123,14 +157,23 @@ extension SetupCheck {
         SetupRow.ID.kubectl.key: "brew install kubectl",
         SetupRow.ID.helm.key: "brew install helm",
         SetupRow.ID.terraform.key: "brew install hashicorp/tap/terraform",
+        SetupRow.ID.protoc.key: "brew install protobuf",
     ]
+
+    /// gcloud's install page: its installer is Google's, and a command for it would go stale (risk 13).
+    package static let gcloudInstallPage = URL(string: "https://cloud.google.com/sdk/docs/install")
+
+    /// A panel a fresh install hid, as the Start card says it.
+    package static let hiddenAtInstallDetail = "hidden — not found on this Mac"
 
     /// The panels' rows, for the panels that are on; each in its feature's own words.
     package static func panelRows(_ facts: SetupPanelFacts, home: String = NSHomeDirectory()) -> [SetupRow] {
-        var rows: [SetupRow] = []
+        var rows: [SetupRow] = facts.hiddenAtInstall.map(hiddenRow)
         if let docker = facts.docker { rows += dockerRows(docker, home: home) }
         if let kubernetes = facts.kubernetes { rows += kubernetesRows(kubernetes, home: home) }
         if let terraform = facts.terraform { rows += terraformRows(terraform, home: home) }
+        if let gcloud = facts.gcloud { rows.append(gcloudRow(gcloud, home: home)) }
+        if let protoc = facts.protoc { rows.append(protocRow(protoc, home: home)) }
         if let servers = facts.languageServers { rows.append(languageServersRow(servers, home: home)) }
         if let simulator = facts.simulator { rows.append(simulatorRow(simulator)) }
         rows.append(
@@ -210,6 +253,14 @@ extension SetupCheck {
                     id: .kubePlugins, title: "Credential plugins",
                     detail: missing.isEmpty ? "found for every context" : missing.map { name in "\(name) isn't installed." }.joined(separator: " "),
                     found: missing.isEmpty, isProblem: !missing.isEmpty, looked: "On your login shell's PATH, for each context. Never run."))
+        } else {
+            // Never silent: the contexts are the Kubernetes page's to read, and
+            // only its reading this launch names their plugins.
+            rows.append(
+                SetupRow(
+                    id: .kubePlugins, title: "Credential plugins",
+                    detail: kube.contexts == nil ? kubePluginsUnread : "not looked for — your login shell didn't say its PATH", found: false,
+                    looked: "Only the contexts the Kubernetes page read this launch; the kubeconfigs aren't read here for them. Never run."))
         }
         rows.append(
             kube.helm.map { helm in
@@ -239,6 +290,50 @@ extension SetupCheck {
                 id: .tofu, title: "OpenTofu", detail: "not looked for · set Settings ▸ Terraform ▸ terraform to tofu; untried until then", found: false,
                 looked: "Nowhere: Overterm runs terraform, or what that setting names.", action: .settings(.terraform, key: "terraform.path")))
         return rows
+    }
+
+    /// The credential plugins' row before the Kubernetes page has read the contexts.
+    package static let kubePluginsUnread = "Open Kubernetes once to check its contexts' plugins"
+
+    private static func hiddenRow(_ panel: SidebarPanel) -> SetupRow {
+        let section = panel.settingsSection
+        return SetupRow(
+            id: .panelHidden(panel), title: panel.title, detail: hiddenAtInstallDetail, found: false,
+            looked: "Once, at the first launch: your login shell's PATH and the tool's install folders, as the panel looks. Nothing was run."
+                + (section.map { section in " On again in Settings ▸ \(section.title)." } ?? ""),
+            action: section.map { section in .settings(section, key: panel.toggleKey) })
+    }
+
+    private static func gcloudRow(_ gcloud: SetupPanelFacts.GCloud, home: String) -> SetupRow {
+        var parts = [gcloud.cli.map { cli in tilde(cli.path, home: home) } ?? "not found"]
+        if gcloud.database {
+            parts.append(gcloud.cli == nil ? "BigQuery's and Cloud Storage's gcloud sign-in needs it" : "BigQuery and Cloud Storage can sign in with it")
+        }
+        if gcloud.kubernetes {
+            if let plugin = gcloud.gkePlugin {
+                parts.append("gke-gcloud-auth-plugin at \(tilde(plugin.path, home: home))")
+            } else if gcloud.gkePluginLooked {
+                parts.append("gke-gcloud-auth-plugin not on your PATH — a GKE context needs it")
+            } else {
+                parts.append("gke-gcloud-auth-plugin not looked for — your login shell didn't say its PATH")
+            }
+        }
+        let found = gcloud.cli != nil || gcloud.gkePlugin != nil
+        return SetupRow(
+            id: .gcloud, title: "gcloud", detail: parts.joined(separator: " · "), found: found,
+            looked:
+                "gcloud: Homebrew's folders and ~/google-cloud-sdk, as the Database's BigQuery sign-in looks; gke-gcloud-auth-plugin: your login shell's PATH, as a GKE context's proxy looks. Never run.",
+            action: found ? nil : gcloudInstallPage.map(SetupRow.Action.page))
+    }
+
+    private static func protocRow(_ protoc: URL?, home: String) -> SetupRow {
+        let looked = "Your login shell's PATH, then Homebrew's two folders, as the API client's gRPC looks. Never run."
+        guard let protoc else {
+            return SetupRow(
+                id: .protoc, title: "protoc", detail: "not found · a gRPC request from .proto files needs it; a server with reflection doesn't",
+                found: false, looked: looked, action: panelInstallCommands[SetupRow.ID.protoc.key].map(SetupRow.Action.command))
+        }
+        return SetupRow(id: .protoc, title: "protoc", detail: "\(tilde(protoc.path, home: home)) · gRPC from .proto files", found: true, looked: looked)
     }
 
     private static func languageServersRow(_ servers: [SetupPanelFacts.LanguageServer], home: String) -> SetupRow {

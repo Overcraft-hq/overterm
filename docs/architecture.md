@@ -1809,9 +1809,17 @@ is added to the window or a split. Its foot is Check Setup · Turn Off Tips.
   plugins by `KubeProxyPlanner.isInstalled`, `terraform.path` or
   `TerraformCLI.binary()` (never `binary(forRoot:)`'s `mise which`),
   `ServerDiscovery` without xcrun, Xcode's and CoreSimulator's existence,
-  the Ghostty config's. Its words are `SetupCheck.panelRows`' (pure), the
-  features' own where they have them. An isolated run looks at none of
-  them (`SetupProbe.panelsOverride` stands in).
+  the Ghostty config's; gcloud for Kubernetes or Database
+  (`BigQueryDriver.gcloudCandidates`, and `gke-gcloud-auth-plugin` on the
+  login shell's PATH as a GKE context's proxy looks) and protoc for the
+  API client (`GRPCProtoc.locate(environment:)`, as gRPC looks). The
+  credential plugins' row is never silent: before the Kubernetes page has
+  read the contexts it says "Open Kubernetes once to check its contexts'
+  plugins". A panel a fresh install hid is a row of its own, in the card's
+  words (`SetupCheck.hiddenAtInstallDetail`). Its words are
+  `SetupCheck.panelRows`' (pure), the features' own where they have them.
+  An isolated run looks at none of them (`SetupProbe.panelsOverride`
+  stands in).
 
 `AppDelegate` hands the launch to the window after `showWindow`
 (`beginStart`), never in an isolated run. Every press on the card goes
@@ -1823,7 +1831,39 @@ Help ▸ Getting Started (`help.gettingStarted`, no key) and its ⌘K row show
 the sidebar, open the card whatever the flags say, and give the sidebar
 the keyboard — the one way in that moves it, and the person asked. Done's
 ticks are the optional panels' own switches (`SidebarPanel.toggleKey`,
-DISC-N4); none is unticked for the person (D-8).
+DISC-N4), every optional panel listed; a tick never changes for the person.
+
+A fresh install sets two things once (`FreshInstall`, pure — the owner
+reversed D-8 —; `FreshInstallSetup`, in the shell for the features'
+finders), only on `.fresh`, each never over a setting the person has in
+settings.json and remembered as made in `AppEnvironment.defaults`
+(`onboarding.panelsDecided`, `onboarding.themeDecided`):
+
+- The panels whose tool isn't on this Mac start hidden: Docker with no
+  `docker` in its folders (`DockerCLI.folders`) and no Docker Desktop or
+  OrbStack app, Kubernetes with no `kubectl` where `KubectlLocator` looks,
+  Terraform with neither `terraform` nor `tofu` on the PATH or in Homebrew's
+  folders. API, Database, Notes, Sessions and Snippets are left alone.
+  Existence and executability only — no socket, no kubeconfig, no tool run.
+  `decidePanels` runs once the window shows (`decideFreshPanels`), on a
+  queue of its own, with `ShellEnvironment.login()`'s PATH — the answer it
+  keeps, so the card's second step and the Setup page read the same one
+  and the shell is asked once; unanswered, nothing is hidden. What it hid
+  is kept (`onboarding.panelsHidden`): the card's open and done states say
+  those still off in one line with Show (`Start.stillHidden`,
+  `showHidden`), the Setup page agrees.
+- The terminal follows macOS between `FreshInstall.darkTheme` and
+  `lightTheme` (Catppuccin Mocha and Latte: one palette drawn as a pair),
+  set by `chooseTheme` in `applicationDidFinishLaunching` before the window
+  writes Ghostty's overrides — unless the Ghostty config libghostty loads
+  names a theme (`AppEnvironment.ghosttyConfigFiles` and what they include,
+  read as Ghostty reads `theme =`, bounded) or settings.json has an
+  appearance theme key. The done state says the theme in force
+  (`StartText.themeLine`) with Change… to Settings ▸ Themes, through
+  `performStartAction`.
+
+An isolated run decides neither unless a scenario hands over what it would
+have found (`FreshInstallSetup.toolsOverride`, `ghosttyThemeOverride`).
 
 The tips (7.6, D-9) are four — T1 needs you, T2 production, T3 Clear
 moved, T4 agents' tools —, each shown once, never more than five

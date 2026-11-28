@@ -15,6 +15,10 @@ package enum StartCardAction: Equatable {
     case chooseAgent(String)
     /// A done-state tick.
     case setPanel(SidebarPanel, Bool)
+    /// The hidden panels' Show: those a fresh install hid, on again.
+    case showHidden
+    /// A Settings page: the theme line's Change….
+    case settings(SettingsSection)
     /// A step's button: the command it is, as its menu item runs it.
     case command(String)
 }
@@ -131,6 +135,7 @@ package struct StartCardView: View {
                 line(StartText.pitch, color: theme.text)
                 line(StartText.privacy, color: theme.text3)
             }
+            hiddenPanels
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(StartState.Step.allCases, id: \.self) { step in
                     stepView(step)
@@ -307,6 +312,7 @@ package struct StartCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             header(StartText.doneTitle, identifier: "start.doneTitle", collapsible: false)
             line(text.doneLine, color: theme.text2)
+            hiddenPanels
             line(StartText.whatYouUse, color: theme.text)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), alignment: .leading)], alignment: .leading, spacing: 4) {
                 ForEach(SidebarPanel.allCases.filter { $0.toggleKey != nil }) { panel in
@@ -319,9 +325,44 @@ package struct StartCardView: View {
                     .accessibilityIdentifier("start.panel.\(panel.rawValue)")
                 }
             }
+            themeLine
             Button(StartText.done) { perform(.close) }
                 .controlSize(.small)
                 .accessibilityIdentifier("start.done")
+        }
+    }
+
+    // MARK: A fresh install's own
+
+    /// "Docker, Kubernetes hidden — not found on this Mac · Show": the
+    /// panels a fresh install hid while they are still off. Show turns them
+    /// on; the done state's ticks list them as every other.
+    @ViewBuilder private var hiddenPanels: some View {
+        if let words = FreshInstall.hiddenLine(start.stillHidden) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                line(words, color: theme.text2, size: 10.5)
+                    .accessibilityIdentifier("start.hiddenPanels")
+                Button(FreshInstall.show) { perform(.showHidden) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: ChromeMetrics.text(10.5)))
+                    .foregroundStyle(theme.accentText)
+                    .accessibilityLabel("Show \(start.stillHidden.map(\.title).joined(separator: ", "))")
+                    .accessibilityIdentifier("start.showHidden")
+            }
+        }
+    }
+
+    /// "Theme: … · Change…": the theme in force, and Settings ▸ Themes.
+    private var themeLine: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            line(StartText.themeLine(start.theme), color: theme.text2, size: 10.5)
+                .accessibilityIdentifier("start.theme")
+            Button(StartText.changeTheme) { perform(.settings(.themes)) }
+                .buttonStyle(.plain)
+                .font(.system(size: ChromeMetrics.text(10.5)))
+                .foregroundStyle(theme.accentText)
+                .accessibilityLabel("Change the theme")
+                .accessibilityIdentifier("start.changeTheme")
         }
     }
 }

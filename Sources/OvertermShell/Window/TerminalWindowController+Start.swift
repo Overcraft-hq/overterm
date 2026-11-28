@@ -32,6 +32,17 @@ extension TerminalWindowController {
         Start.shared.begin(launch)
     }
 
+    /// A fresh install's panels (`FreshInstallSetup.decidePanels`): those
+    /// whose tool isn't on this Mac turned off once the login shell has said
+    /// its PATH, and the card told. Never by itself in an isolated run.
+    package func decideFreshPanels(_ launch: FirstRun.Launch) {
+        guard launch == .fresh else { return }
+        Task {
+            await FreshInstallSetup.decidePanels(launch)
+            Start.shared.hiddenAtInstallChanged()
+        }
+    }
+
     /// Help ▸ Getting Started and its ⌘K row: the sidebar shown and the
     /// card open, whatever the flags say — the one way into it that moves
     /// the keyboard, and the person asked: to the sidebar, where Tab
@@ -57,6 +68,8 @@ extension TerminalWindowController {
         case .checkAgain: start.probe(force: true)
         case .chooseAgent(let value): start.chooseAgent(value)
         case .setPanel(let panel, let on): start.setPanel(panel, on)
+        case .showHidden: start.showHidden()
+        case .settings(let section): openSettings(section)
         case .command(let id): runStartCommand(id)
         }
         if NSApp.currentEvent?.type != .keyDown { keepKeyboardOutOfStartCard() }

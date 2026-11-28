@@ -102,6 +102,45 @@ package struct StartText: Sendable {
     package static let checkSetup = "Check Setup"
     package static let needsRepository = "Open a repository first"
 
+    // MARK: The done state's theme line
+
+    /// The terminal's theme as Settings has it, for the done state's line.
+    package struct Theme: Equatable, Sendable {
+        /// `appearance.theme`: the one theme, or the pair's dark half.
+        package var dark: String
+        /// `appearance.themeLight`: the pair's light half.
+        package var light: String
+        /// `appearance.followSystemAppearance`.
+        package var follows: Bool
+        /// The person's own Ghostty config is there: with no theme in
+        /// Settings, it decides.
+        package var ghosttyConfig: Bool
+
+        package init(dark: String, light: String, follows: Bool, ghosttyConfig: Bool) {
+            self.dark = dark
+            self.light = light
+            self.follows = follows
+            self.ghosttyConfig = ghosttyConfig
+        }
+    }
+
+    /// "Theme: Catppuccin Mocha / Catppuccin Latte, following macOS" — the
+    /// theme in force, said as Settings ▸ Themes would; its button beside it.
+    package static func themeLine(_ theme: Theme) -> String {
+        let names: String
+        if theme.follows, !theme.dark.isEmpty, !theme.light.isEmpty {
+            names = "\(theme.dark) / \(theme.light), following macOS"
+        } else if !theme.dark.isEmpty {
+            names = theme.dark
+        } else {
+            names = theme.ghosttyConfig ? "your Ghostty config's" : "Ghostty's default"
+        }
+        return "Theme: \(names)"
+    }
+
+    /// The theme line's button: Settings ▸ Themes.
+    package static let changeTheme = "Change…"
+
     /// The collapsed row: "Getting started · 2 of 5".
     package static func collapsed(_ state: StartState) -> String {
         "Getting started · \(state.doneCount) of \(StartState.Step.allCases.count)"

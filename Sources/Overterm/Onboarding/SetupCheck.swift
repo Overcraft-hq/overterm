@@ -69,6 +69,9 @@ package struct SetupRow: Equatable, Sendable {
         case docker, dockerEngine
         case dockerPlugin(String)
         case kubectl, kubeconfig, kubePlugins, helm, terraform, tofu, languageServers, simulator, ghosttyConfig
+        case gcloud, protoc
+        /// A panel a fresh install hid, its tool not found (`FreshInstall`).
+        case panelHidden(SidebarPanel)
 
         /// Its accessibility identifier's last part.
         package var key: String {
@@ -91,6 +94,9 @@ package struct SetupRow: Equatable, Sendable {
             case .languageServers: "languageServers"
             case .simulator: "simulator"
             case .ghosttyConfig: "ghosttyConfig"
+            case .gcloud: "gcloud"
+            case .protoc: "protoc"
+            case .panelHidden(let panel): "panelHidden.\(panel.rawValue)"
             }
         }
     }
