@@ -73,6 +73,7 @@ extension E2ERunner {
         check("the list follows by its watch", await eventually(10) { model.rows[KubeRowID(namespace: "shop", name: "doomed-0")] == nil })
         check("the outcome is said", await eventually(10) { page.writeStatus == .done("Deleted pod shop/doomed-0 in kind-fake.") }, "\(String(describing: page.writeStatus))")
         check("the outcome drawn", await shownText(15) { $0.contains("Deleted pod shop/doomed-0") } != nil)
+        await kubernetesBulkWrites(model, page, fake)
 
         // A scale, by = and its sheet.
         guard let deployments = model.discovery?.kind("deploy") else { return check("kind-fake serves deployments", false) }
@@ -204,6 +205,66 @@ extension E2ERunner {
         check(
             "and no write went to a subresource but a scale and an eviction's",
             fake.writes.allSatisfy { !$0.isSubresource || $0.path.hasSuffix("/scale") || $0.path.hasSuffix("/eviction") })
+    }
+
+    /// K8S-G1: three pods picked, ⌫ deletes all of them, asked once; two
+    /// Deployments restarted together from the row menu's verb.
+    private func kubernetesBulkWrites(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+        for name in ["bulk-0", "bulk-1", "bulk-2"] { fake.addPod(name, namespace: "shop") }
+        let ids: Set<String> = ["shop/bulk-0", "shop/bulk-1", "shop/bulk-2"]
+        check(
+            "three more pods listed", await eventually(15) { ids.allSatisfy { id in page.rows.contains { $0.id == id } } },
+            "\(page.rows.map(\.id))")
+        page.selection = ids
+        page.giveListTheKeyboard()
+        check(
+            "Delete 3 is offered once each namespace's review says yes",
+            await eventually(10) { page.verbs(for: ids).first { $0.title == "Delete 3" }.map { $0.unavailable == nil } == true },
+            page.verbs(for: ids).map { "\($0.title): \($0.unavailable ?? "ok")" }.joined(separator: ", "))
+        check("the list has the keyboard for ⌫", await eventually(3) { self.app.kubernetesListHasKeyboard() })
+        let before = fake.writes.filter { $0.method == "DELETE" }.count
+        if let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, characters: "\u{7F}",
+            charactersIgnoringModifiers: "\u{7F}", isARepeat: false, keyCode: 51)
+        {
+            check("⌫ with three picked is the list's", app.handlePageKey(event))
+        }
+        check("all three asked at once, in the window", await eventually(10) { self.window.attachedSheet != nil })
+        let asked = sheetTexts().joined(separator: "\n")
+        check("one question for the three", asked.contains("Delete 3 pods?") && ["bulk-0", "bulk-1", "bulk-2"].allSatisfy(asked.contains), asked)
+        check("with the kubectl naming each", asked.contains("kubectl delete po bulk-0 bulk-1 bulk-2 --context kind-fake -n shop"), asked)
+        check("nothing written while it asks", fake.writes.filter { $0.method == "DELETE" }.count == before)
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
+        check(
+            "confirmed, a DELETE each", await eventually(10) { fake.writes.filter { $0.method == "DELETE" }.count == before + 3 },
+            "\(fake.writes.map(\.description))")
+        check("the outcome is said for all", await eventually(10) { page.writeStatus == .done("Deleted 3 pods.") }, "\(String(describing: page.writeStatus))")
+
+        guard let deployments = model.discovery?.kind("deploy") else { return check("deployments served", false) }
+        fake.add(
+            "deployments.apps", "batch-b", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1],
+            fields: ["spec": ["replicas": 1, "selector": ["matchLabels": ["app": "batch-b"]]], "status": ["replicas": 1]])
+        page.showKind(deployments)
+        let two: Set<String> = ["shop/batch", "shop/batch-b"]
+        check("two deployments listed", await eventually(15) { two.allSatisfy { id in page.rows.contains { $0.id == id } } }, "\(page.rows.map(\.id))")
+        page.selection = two
+        let restart = { page.verbs(for: two).first { $0.title == "Restart 2" } }
+        check("Restart 2 is offered", await eventually(10) { restart()?.unavailable == nil && restart() != nil }, restart()?.unavailable ?? "none")
+        let patches = fake.writes.filter { $0.method == "PATCH" }.count
+        restart()?.perform()
+        check("asked once for both", await eventually(10) { self.window.attachedSheet != nil })
+        let restarting = sheetTexts().joined(separator: "\n")
+        check("restarting two deployments", restarting.contains("Restart 2 deployments?"), restarting)
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
+        check(
+            "a rollout restart each",
+            await eventually(10) {
+                let restarts = fake.writes.dropFirst(0).filter { $0.method == "PATCH" && $0.path.hasPrefix("/apis/apps/v1/namespaces/shop/deployments/batch") }
+                return fake.writes.filter { $0.method == "PATCH" }.count == patches + 2 && restarts.count >= 2
+            }, "\(fake.writes.map(\.description))")
+        check("and said", await eventually(10) { page.writeStatus == .done("Restarted 2 deployments.") }, "\(String(describing: page.writeStatus))")
+        page.selection = []
+        page.showKind(model.discovery?.kind("po") ?? .pods)
     }
 
     /// The typed-name field of the confirmation showing.

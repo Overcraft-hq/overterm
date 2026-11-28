@@ -38,6 +38,9 @@ version is tagged `v<version>`.
 - On a new install, Docker, Kubernetes and Terraform start hidden when their tool isn't on this Mac — said on the Getting Started card with Show, and on the Setup page — and the terminal follows macOS between Catppuccin Mocha and Latte unless your Ghostty config or settings already name a theme; the done card says the theme, with Change…
 - The Setup page's "Tools the panels use" lists gcloud (GKE and BigQuery) and protoc (gRPC), and says to open Kubernetes once to check its contexts' credential plugins
 - Every tooltip and hint that names a key — the strip's buttons and chips, the panes' close buttons, the pane header, Tab Info, the editor's header — says the key bound now
+- Kubernetes port-forwards are kept for the next launch: listed stopped, started again with Start Again or Start All — never by themselves, production's each asked
+- Kubernetes: several pods or Jobs picked are deleted together, several workloads restarted together — one question naming each, the count typed on production
+- A git push or pull that fails is said plainly with its next step — Pull then Push, Pull with Rebase, Force Push with Lease… (asked, never on the default branch), Publish, Stash
 
 ## 1.6.8 — 2026-11-26
 
