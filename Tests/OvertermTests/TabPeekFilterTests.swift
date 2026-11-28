@@ -32,7 +32,7 @@ final class TabPeekFilterTests: XCTestCase {
         XCTAssertEqual(model.shownCards.count, 3)
     }
 
-    func testPeekShowsWhatTheStripOffers() throws {
+    func testPeekShowsWhatTheStripDraws() throws {
         let store = TabStore()
         func tab(_ name: String) -> Tab {
             let tab = Tab(terminal: TerminalView())
@@ -43,12 +43,14 @@ final class TabPeekFilterTests: XCTestCase {
         let loose = tab("loose")
         let api = try XCTUnwrap(store.addToNewGroup([tab("server"), tab("tests")], name: "shop-api"))
         let web = try XCTUnwrap(store.addToNewGroup([tab("vite")], name: "web"))
-        XCTAssertEqual(store.stripTabs.map(\.title), ["loose", "server", "tests", "vite"])
+        XCTAssertEqual(store.drawnTabs.map(\.title), ["loose", "server", "tests", "vite"])
         store.stash(web)
-        XCTAssertEqual(store.stripTabs.map(\.title), ["loose", "server", "tests"], "a stashed island's tabs aren't offered")
+        XCTAssertEqual(store.drawnTabs.map(\.title), ["loose", "server", "tests"], "a stashed island's tabs aren't drawn")
         store.setFocused(api)
-        XCTAssertEqual(store.stripTabs.map(\.title), ["server", "tests"], "focusing, only that island's")
+        XCTAssertEqual(store.drawnTabs.map(\.title), ["server", "tests"], "focusing, only that island's")
         store.setFocused(nil)
-        XCTAssertTrue(store.stripTabs.contains { $0 === loose })
+        XCTAssertTrue(store.drawnTabs.contains { $0 === loose })
+        api.isCollapsed = true
+        XCTAssertEqual(store.drawnTabs.map(\.title), ["loose"], "nor a collapsed island's: the strip shows its chip alone")
     }
 }

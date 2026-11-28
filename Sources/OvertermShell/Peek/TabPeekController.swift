@@ -43,13 +43,13 @@ package final class TabPeekController {
 
     /// ⇧⌘E and the palette: straight to the grid, or back out.
     package func toggle() {
-        guard let owner, owner.store.stripTabs.count > 1 || isOpen else { return }
+        guard let owner, owner.store.drawnTabs.count > 1 || isOpen else { return }
         isOpen ? close() : open(.overview)
     }
 
     package func open(_ stage: TabPeek.Stage) {
         guard stage != .closed else { return close() }
-        guard let owner, !owner.store.stripTabs.isEmpty else { return }
+        guard let owner, !owner.store.drawnTabs.isEmpty else { return }
         // The stage first: `begin` installs the key monitor, which only
         // arms itself while the peek counts as open.
         let wasClosed = self.stage == .closed
@@ -118,7 +118,7 @@ package final class TabPeekController {
             break
         case .update(let progress):
             if !isOpen {
-                guard let owner, owner.store.stripTabs.count > 1 else { return }
+                guard let owner, owner.store.drawnTabs.count > 1 else { return }
                 stage = .peek
                 begin()
             }
@@ -289,7 +289,7 @@ package final class TabPeekController {
         guard let owner else { return }
         let bounds = container.bounds
         let cards = TabPeek.placements(
-            tabs: owner.store.stripTabs.map(\.id), selected: owner.store.selectedID,
+            tabs: owner.store.drawnTabs.map(\.id), selected: owner.store.selectedID,
             progress: progress, in: bounds)
 
         CATransaction.begin()
@@ -343,10 +343,10 @@ package final class TabPeekController {
         guard let owner else { return }
         stopSlowDraw()
         var live = 0
-        // What the strip offers only (PEEK-U2): a stashed island's tabs, or
-        // another island's while focusing, stay hidden — hidden here too, as
+        // What the strip draws only (PEEK-U2): a stashed or collapsed island's
+        // tabs, or another island's while focusing, stay hidden — hidden here too, as
         // a peek opened again before the last one settled left them shown.
-        let offered = owner.store.stripTabs
+        let offered = owner.store.drawnTabs
         let ids = Set(offered.map(\.id))
         for tab in owner.store.tabs where !ids.contains(tab.id) && tab.id != owner.store.selectedID {
             owner.host(of: tab)?.setVisible(false)
@@ -379,7 +379,7 @@ package final class TabPeekController {
     private func refreshEntries() {
         guard let owner else { return }
         model.entries = Dictionary(
-            uniqueKeysWithValues: owner.store.stripTabs.map {
+            uniqueKeysWithValues: owner.store.drawnTabs.map {
                 (
                     $0.id,
                     TabPeekModel.Entry(
