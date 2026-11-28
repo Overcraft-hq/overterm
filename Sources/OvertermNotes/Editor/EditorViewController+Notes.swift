@@ -46,6 +46,11 @@ extension EditorViewController {
         reader.onOpenURL = { Self.openExternal($0) }
         reader.onToggleTask = { [weak self] line in self?.toggleNoteTask(line: line) }
         reader.onTag = { [weak self] tag in self?.onNoteTag?(tag) }
+        reader.noteUndo = { [weak self] in self?.active.flatMap { $0.isNote ? $0.undo : nil } }
+        reader.onUndone = { [weak self] in
+            guard let self, let buffer = self.active, buffer.showsPreview else { return }
+            self.renderNote(buffer)
+        }
         // A note written or renamed elsewhere: links in this one may
         // resolve now.
         noteObserver = notes.$index
