@@ -414,6 +414,8 @@ extension TerminalWindowController {
         guard let switcherView else { return }
         if !switcherView.isHidden { return hideGroupSwitcher() }
         guard !store.groups.isEmpty else { return }
+        store.switcherQuery = ""
+        store.switcherTab = nil
         store.switcherHighlight = store.selected.flatMap { $0.groupID } ?? store.groups.first?.id
         switcherView.isHidden = false
         switcherView.superview?.addSubview(switcherView, positioned: .above, relativeTo: nil)
@@ -426,36 +428,70 @@ extension TerminalWindowController {
         focusSelectedTerminal()
     }
 
-    /// The switcher's own keys: the arrows walk the list, ⌥↩ moves the
-    /// current tab into the highlighted group.
+    /// The switcher's own keys: the arrows walk the islands, → into the
+    /// highlighted one's tabs and ← back out; typing filters them, ⌫ takes
+    /// a character off (GRP-U1); ↩ switches, ⌥↩ moves the current tab into
+    /// the highlighted group.
     package func handleSwitcher(key event: NSEvent) -> Bool {
-        let order = switcherGroups
-        guard !order.isEmpty else { return false }
-        let current = order.firstIndex { $0.id == store.switcherHighlight } ?? 0
+        let shown = switcherGroups
+        let current = shown.firstIndex { $0.id == store.switcherHighlight } ?? 0
+        let tabs = shown.indices.contains(current) ? switcherTabs(of: shown[current]) : []
+        let inTabs = store.switcherTab.flatMap { id in tabs.firstIndex { $0.id == id } }
         switch Int(event.keyCode) {
-        case 125:  // down
-            store.switcherHighlight = order[min(current + 1, order.count - 1)].id
-            return true
-        case 126:  // up
-            store.switcherHighlight = order[max(current - 1, 0)].id
-            return true
-        case 36:  // return
-            guard let group = store.group(store.switcherHighlight) else { return false }
-            if event.modifierFlags.contains(.option) {
-                moveSelectedTab(to: group)
-            } else {
-                chooseGroup(group)
+        case 125, 126:  // down, up
+            let step = event.keyCode == 125 ? 1 : -1
+            if let inTabs {
+                store.switcherTab = tabs[max(0, min(inTabs + step, tabs.count - 1))].id
+            } else if !shown.isEmpty {
+                store.switcherHighlight = shown[max(0, min(current + step, shown.count - 1))].id
             }
             return true
+        case 124:  // right: into the island's tabs, the selected one if it is there
+            guard inTabs == nil, let first = tabs.first else { return true }
+            store.switcherTab = tabs.first { $0.id == store.selectedID }?.id ?? first.id
+            return true
+        case 123:  // left: back to the islands
+            store.switcherTab = nil
+            return true
+        case 36, 76:  // return, enter
+            if let inTabs { chooseGroupTab(tabs[inTabs]); return true }
+            guard shown.indices.contains(current) else { return true }
+            let group = shown[current]
+            if event.modifierFlags.contains(.option) { moveSelectedTab(to: group) } else { chooseGroup(group) }
+            return true
         default:
-            return false
+            let modifiers = !event.modifierFlags.intersection([.command, .control]).isEmpty
+            guard
+                let query = GroupSwitcherFilter.query(
+                    store.switcherQuery, typing: event.characters, delete: event.keyCode == 51, modifiers: modifiers)
+            else { return event.keyCode == 51 }
+            setSwitcherQuery(query)
+            return true
         }
     }
 
+    /// The filter changed: back on the islands, the first one left highlighted.
+    package func setSwitcherQuery(_ query: String) {
+        store.switcherQuery = query
+        store.switcherTab = nil
+        let shown = switcherGroups
+        if !shown.contains(where: { $0.id == store.switcherHighlight }) { store.switcherHighlight = shown.first?.id }
+    }
+
+    /// Esc: the filter cleared first, then the switcher closed.
+    package func escapeGroupSwitcher() {
+        if !store.switcherQuery.isEmpty { return setSwitcherQuery("") }
+        hideGroupSwitcher()
+    }
+
+    /// The islands the switcher lists: strip order, stashed last, filtered by what was typed.
     package var switcherGroups: [TabGroup] {
-        var seen: [TabGroup] = []
-        for case .group(let g, _) in store.strip where !seen.contains(where: { $0.id == g.id }) { seen.append(g) }
-        return seen + store.stashedGroups
+        GroupSwitcherFilter.groups(GroupSwitcherFilter.order(store), tabs: { self.store.tabs(in: $0) }, query: store.switcherQuery)
+    }
+
+    /// An island's tabs as the switcher's tab column lists them.
+    package func switcherTabs(of group: TabGroup) -> [Tab] {
+        GroupSwitcherFilter.tabs(of: group, store.tabs(in: group), query: store.switcherQuery)
     }
 
     package func chooseGroup(_ group: TabGroup) {
