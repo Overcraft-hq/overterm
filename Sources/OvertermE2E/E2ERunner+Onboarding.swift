@@ -214,6 +214,49 @@ extension E2ERunner {
         check("a repository opened does the first step", await eventually(10) { start.state.isDone(.repository) })
         await keyboardStays("a repository opened")
 
+        // 2. In the home folder outside a repository: Files' strip says what
+        // to open instead (stage 1's rule) — a scratch home of the run's own.
+        // After step 4: the git home below is a repository, and would do step 1.
+        let home = scratch.appendingPathComponent("onboarding-home", isDirectory: true)
+        try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let first = app.store.selected
+        // The home folder as the window names it once the tab is there (the
+        // temporary folder's /var is /private/var to a shell), then the
+        // sidebar drawn again for it.
+        func becomeHome(_ folder: URL) async {
+            _ = await eventually(8) { self.app.tree.root?.lastPathComponent == folder.lastPathComponent }
+            EmptyStates.homeOverride = app.tree.root ?? folder
+            app.sidebarPanel.panel = .git
+            app.sidebarPanel.panel = .files
+        }
+        app.newTab(in: home)
+        let homeTab = app.store.selected
+        await becomeHome(home)
+        check(
+            "Files over the home folder shows its strip, with Open Folder…",
+            await eventually(8) { present("files.homeStrip") && present("files.openFolder") },
+            "root \(app.tree.root?.path ?? "nil"), checked \(app.diff.root?.path ?? "nil"), not a repository: \(app.diff.notARepository)")
+        await keyboardStays("the home strip")
+        // A home folder kept in git is a repository: no strip.
+        let gitHome = scratch.appendingPathComponent("onboarding-git-home", isDirectory: true)
+        try? FileManager.default.createDirectory(at: gitHome, withIntermediateDirectories: true)
+        try? await git(["init", "-q", "-b", "main"], in: gitHome)
+        try? await git(["commit", "-q", "--allow-empty", "-m", "home"], in: gitHome)
+        app.newTab(in: gitHome)
+        let gitHomeTab = app.store.selected
+        await becomeHome(gitHome)
+        // Its read in: the window's own, which said it is a repository.
+        _ = await eventually(8) { self.app.diff.root?.lastPathComponent == gitHome.lastPathComponent && self.app.diff.branch == "main" }
+        check(
+            "a home folder that is a repository shows none",
+            app.diff.root?.lastPathComponent == gitHome.lastPathComponent && !app.diff.notARepository && !present("files.homeStrip"),
+            "checked \(app.diff.root?.path ?? "nil"), not a repository: \(app.diff.notARepository)")
+        EmptyStates.homeOverride = nil
+        app.closeTabsWithoutAsking([homeTab, gitHomeTab].compactMap { tab in tab })
+        if let first { app.store.select(first) }
+        app.focusSelectedTerminal()
+        await keyboardStays("the home tabs closed")
+
         // 5a. The login shell silent: said, with what can be done — never "Asking…" for good.
         // The card's own probe first (Check Again waits for one in flight).
         _ = await eventually(5) { start.setup != nil }
@@ -378,6 +421,21 @@ extension E2ERunner {
         check("eight ticks, one for each panel with a switch", toggled.count == 8 && toggled.allSatisfy { present("start.panel.\($0.rawValue)") })
         check("each ticked as its setting says", toggled.allSatisfy { start.panels[$0] == Settings.shared.bool($0.toggleKey ?? "") })
         await keyboardStays("Show Changes")
+        // The theme line (a fresh install's pair, chosen in step 1b), and its Change….
+        let themeWords = Self.accessibilityElement("start.theme", in: root)?.text ?? ""
+        check(
+            "the done state says the theme, following macOS",
+            themeWords == "Theme: \(FreshInstall.darkTheme) / \(FreshInstall.lightTheme), following macOS" && present("start.changeTheme"), themeWords)
+        check("Change… pressed", press("start.changeTheme"))
+        check(
+            "Change… opens Settings ▸ Themes", await eventually(3) { self.app.store.settingsShowing && self.app.settingsPage.section == .themes },
+            "\(app.settingsPage.section)")
+        let sidebar = app.sidebarItem?.viewController.view
+        let onCard = (window.firstResponder as? NSView).map { view in sidebar.map { column in view.isDescendant(of: column) } ?? false } ?? false
+        check("and leaves no keyboard on the card", !onCard, "\(String(describing: window.firstResponder))")
+        app.closeOverlay(.settings)
+        app.focusSelectedTerminal()
+        for key in FreshInstall.themeKeys { Settings.shared.set(key, nil) }
         app.toggleDiff(nil)
 
         // 14. Kubernetes unticked: its setting off, its icon off the rail.
@@ -421,21 +479,6 @@ extension E2ERunner {
         // 20. An update's defaults: no card.
         let suite = scratch.appendingPathComponent("updated-defaults").path
         if let updated = UserDefaults(suiteName: suite) {
-        // The theme line (a fresh install's pair, chosen in step 1b), and its Change….
-        let themeWords = Self.accessibilityElement("start.theme", in: root)?.text ?? ""
-        check(
-            "the done state says the theme, following macOS",
-            themeWords == "Theme: \(FreshInstall.darkTheme) / \(FreshInstall.lightTheme), following macOS" && present("start.changeTheme"), themeWords)
-        check("Change… pressed", press("start.changeTheme"))
-        check(
-            "Change… opens Settings ▸ Themes", await eventually(3) { self.app.store.settingsShowing && self.app.settingsPage.section == .themes },
-            "\(app.settingsPage.section)")
-        let sidebar = app.sidebarItem?.viewController.view
-        let onCard = (window.firstResponder as? NSView).map { view in sidebar.map { column in view.isDescendant(of: column) } ?? false } ?? false
-        check("and leaves no keyboard on the card", !onCard, "\(String(describing: window.firstResponder))")
-        app.closeOverlay(.settings)
-        app.focusSelectedTerminal()
-        for key in FreshInstall.themeKeys { Settings.shared.set(key, nil) }
             updated.set("1.6.2", forKey: FirstRun.lastRunVersionKey)
             let upgraded = Start(defaults: updated, active: true)
             upgraded.begin(.upgraded(from: "1.6.2"))
@@ -539,49 +582,6 @@ extension E2ERunner {
         app.closeOverlay(.setup)
     }
 
-    private func sheetHasButton(_ title: String) -> Bool {
-        Self.find(NSButton.self, in: window.attachedSheet?.contentView, where: { $0.title == title }) != nil
-    }
-
-    private func endSheet() async {
-        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
-        _ = await eventually(2) { self.window.attachedSheet == nil }
-    }
-
-    /// Step 3: the alert keeps its words and gains the next step.
-    private func newTaskOutsideARepositoryChecks() async {
-        let outside = scratch.appendingPathComponent("not-a-repository", isDirectory: true)
-        try? FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
-        app.newTab(in: outside)
-        await pause(0.5)
-        await app.worktrees.refresh()
-        guard app.worktrees.main == nil else { return check("the first tab is outside a repository", false, "\(app.worktrees.worktrees)") }
-        app.newTask(nil)
-        check("New Task outside a repository says so", await eventually(3) { self.window.attachedSheet != nil })
-        let texts = sheetTexts()
-        check(
-            "in the words it always had",
-            texts.contains("Not in a git repository") && texts.contains { $0.contains("Open a tab inside a repository first; the task’s worktree is created from it.") },
-            "\(texts)")
-        check("and offers Open Folder… beside OK", sheetHasButton("Open Folder…") && sheetHasButton("OK"))
-        await endSheet()
-        check("nothing else opened", window.attachedSheet == nil)
-    }
-
-    /// Step 5: no agent found — nothing typed, the warning, Open the Tab
-    /// Anyway; not known yet — as before.
-    private func missingAgentChecks() async {
-        var opened: [Agent] = []
-        app.agentTabRecorder = { agent, _ in opened.append(agent) }
-        defer {
-            app.findAgent = { AgentFinder.find($0) }
-            app.agentTabRecorder = nil
-        }
-        let tabs = app.store.tabs.count
-
-        app.findAgent = { _ in .missing }
-        app.newAgentTab(.claude)
-        check("an agent not on the PATH is said first", await eventually(3) { self.window.attachedSheet != nil })
     /// Step 1b: a fresh install's two settings (`FreshInstall`), through
     /// `FreshInstallSetup` with the scenario's own look at the Mac — an
     /// isolated run looks at nothing of the user's. The panels whose tool
@@ -703,6 +703,49 @@ extension E2ERunner {
         forget()
     }
 
+    private func sheetHasButton(_ title: String) -> Bool {
+        Self.find(NSButton.self, in: window.attachedSheet?.contentView, where: { $0.title == title }) != nil
+    }
+
+    private func endSheet() async {
+        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+    }
+
+    /// Step 3: the alert keeps its words and gains the next step.
+    private func newTaskOutsideARepositoryChecks() async {
+        let outside = scratch.appendingPathComponent("not-a-repository", isDirectory: true)
+        try? FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        app.newTab(in: outside)
+        await pause(0.5)
+        await app.worktrees.refresh()
+        guard app.worktrees.main == nil else { return check("the first tab is outside a repository", false, "\(app.worktrees.worktrees)") }
+        app.newTask(nil)
+        check("New Task outside a repository says so", await eventually(3) { self.window.attachedSheet != nil })
+        let texts = sheetTexts()
+        check(
+            "in the words it always had",
+            texts.contains("Not in a git repository") && texts.contains { $0.contains("Open a tab inside a repository first; the task’s worktree is created from it.") },
+            "\(texts)")
+        check("and offers Open Folder… beside OK", sheetHasButton("Open Folder…") && sheetHasButton("OK"))
+        await endSheet()
+        check("nothing else opened", window.attachedSheet == nil)
+    }
+
+    /// Step 5: no agent found — nothing typed, the warning, Open the Tab
+    /// Anyway; not known yet — as before.
+    private func missingAgentChecks() async {
+        var opened: [Agent] = []
+        app.agentTabRecorder = { agent, _ in opened.append(agent) }
+        defer {
+            app.findAgent = { AgentFinder.find($0) }
+            app.agentTabRecorder = nil
+        }
+        let tabs = app.store.tabs.count
+
+        app.findAgent = { _ in .missing }
+        app.newAgentTab(.claude)
+        check("an agent not on the PATH is said first", await eventually(3) { self.window.attachedSheet != nil })
         let texts = sheetTexts()
         check(
             "as Claude Code isn't on your PATH",

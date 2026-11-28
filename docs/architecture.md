@@ -1722,8 +1722,9 @@ Terraform's panels with no checkout or outside a repository's top folder
 `TerraformPanelActions.openFolder`); Files rooted at the home folder shows
 `HomeFolderStrip` when the window's `DiffModel` — already read for the
 badge — said that folder is no repository (`EmptyStates.showsHomeStrip`,
-pure). No empty state runs a tool to decide what it says. Every key such a
-state, the Inbox's header, a rail tooltip or a ⌘K row shows is read from
+pure; `EmptyStates.home`, a scenario's scratch home in `homeOverride`). No
+empty state runs a tool to decide what it says. Every key such a state,
+the Inbox's header, a rail tooltip or a ⌘K row shows is read from
 `Keybindings` (`KeyHint`, `KeyHints`): a ⌘K row names its command
 (`PaletteItem.command`) and `PaletteCommands.withLiveKeys` appends that
 command's key as bound now, so no row writes one into its words. So does

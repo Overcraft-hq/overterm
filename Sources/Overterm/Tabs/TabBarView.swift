@@ -267,6 +267,9 @@ package struct TabBarView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(TabStatusStyle.signal)
                 .help("Overterm \(release.version) is out — Settings ▸ About")
+                .accessibilityIdentifier("strip.update")
+                .onAppear { WhatsNewChip.updateDrawn = release.version }
+                .onDisappear { WhatsNewChip.updateDrawn = nil }
                 .padding(.trailing, 6)
             } else if let version = updates.whatsNew {
                 // The update chip's place (onboarding 7.9): never two chips
@@ -602,10 +605,10 @@ package struct TabItemView: View {
 /// A review's tab: what it is of and its name, closable as any tab.
 private struct ReviewTabItem: View {
     @ObservedObject var review: ReviewModel
+    @ObservedObject var keys = Keybindings.shared
     let selected: Bool
     @ObservedObject var theme: ChromeTheme
     let select: () -> Void
-    @ObservedObject var keys = Keybindings.shared
     let close: () -> Void
     @State private var hovering = false
 
@@ -644,10 +647,10 @@ private struct OverlayTabItem: View {
     let overlay: WorkspaceOverlay
     let selected: Bool
     @ObservedObject var theme: ChromeTheme
+    @ObservedObject var keys = Keybindings.shared
     let select: () -> Void
     let close: () -> Void
     @State private var hovering = false
-    @ObservedObject var keys = Keybindings.shared
 
     var body: some View {
         HStack(spacing: 6) {
@@ -763,10 +766,10 @@ private struct WindowDragArea: NSViewRepresentable {
 private struct DiffBadge: View {
     let badge: DiffModel.Badge
     @ObservedObject var theme: ChromeTheme
+    @ObservedObject var keys = Keybindings.shared
     let action: () -> Void
     @State private var hovering = false
 
-    @ObservedObject var keys = Keybindings.shared
     /// None for the plain ±.
     private var totals: (added: Int, removed: Int)? {
         switch badge {
@@ -811,10 +814,10 @@ private struct DiffBadge: View {
 package struct BrowserButton: View {
     package let isOpen: Bool
     @ObservedObject package var theme: ChromeTheme
+    @ObservedObject var keys = Keybindings.shared
     package let action: () -> Void
     @State private var hovering = false
 
-    @ObservedObject var keys = Keybindings.shared
     package var body: some View {
         Button(action: action) {
             // The icon alone, as the phone beside it: the word took room
@@ -838,10 +841,10 @@ package struct BrowserButton: View {
 package struct SimulatorButton: View {
     package let isOpen: Bool
     @ObservedObject package var theme: ChromeTheme
+    @ObservedObject var keys = Keybindings.shared
     package let action: () -> Void
     @State private var hovering = false
 
-    @ObservedObject var keys = Keybindings.shared
     package var body: some View {
         Button(action: action) {
             Image(systemName: "iphone").font(.system(size: ChromeMetrics.text(12), weight: .medium))
@@ -1061,4 +1064,7 @@ package struct WhatsNewChip: View {
 
     /// The version the chip on screen names, and its frame in the strip's window.
     @MainActor package static var drawn: (version: String, frame: CGRect)?
+    /// The update chip's version while it is drawn in the same place: the
+    /// scenarios' check that only one of the two shows.
+    @MainActor package static var updateDrawn: String?
 }

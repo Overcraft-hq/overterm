@@ -36,6 +36,19 @@ package final class UpdateChecker: ObservableObject {
         return nil
     }
 
+    #if E2E
+    /// A scenario's newer release, as a check would have found it — the
+    /// update chip, in the place What's New shares (onboarding 7.9) —
+    /// or none (nil), without asking GitHub.
+    package func scenarioRelease(_ version: String?) {
+        if let version {
+            state = .available(Release(version: version, url: nil, dmgName: nil))
+        } else {
+            state = .idle
+        }
+    }
+    #endif
+
     package func check() async {
         state = .checking
         do {

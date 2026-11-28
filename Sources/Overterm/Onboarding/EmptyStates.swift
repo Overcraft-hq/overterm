@@ -18,6 +18,12 @@ package enum EmptyStates {
     /// The command every "not in a repository" state offers.
     package static let openFolderCommand = "file.openFolder"
 
+    /// A scenario's home folder, a scratch one of its own: an isolated run
+    /// never opens a tab in the user's.
+    @MainActor package static var homeOverride: URL?
+    /// The home folder Files' strip is about.
+    @MainActor package static var home: URL { homeOverride ?? FileManager.default.homeDirectoryForCurrentUser }
+
     /// Whether Files shows `filesHome`: its root is the home folder, and the
     /// window's own read of that folder (`DiffModel`, already made for the
     /// badge) said it is no repository — a home folder kept in git is one,

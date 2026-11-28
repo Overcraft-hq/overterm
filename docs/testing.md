@@ -840,7 +840,15 @@ rebound or unbound). `sidebarPanels` reads the rail's tooltips and the
 panels' Open Folder… from the accessibility tree (`sidebar.rail.<id>`,
 `<panel>.openFolder`) in a tab outside a repository, and `palette` checks
 the rows' keys follow a rebinding in the run's own keybindings.json, reset
-after.
+after. `sidebarPanels` also reads the pane header's Split Right tooltip
+(`pane.splitRight`) before and after a rebinding. `KeysInTextTests` scans
+`Sources` — the scenarios aside — for a string literal with a modifier and a
+letter, and fails on any not in its small, explained allow-list;
+`KeysReadAsBoundTests` checks the words that used to carry a key (a list's
+`?` foot, the editor header's tips) follow a rebinding and drop an unbound
+key. The `onboarding` scenario's step 2 opens a tab in a scratch home folder
+(`EmptyStates.homeOverride` — never the user's) and checks Files' strip
+shows there, then none over a home folder that is a repository.
 
 Stage 3's Start card: `StartStateTests` (steps from events in any order,
 the first time kept, the card by launch, tips off showing nothing, the

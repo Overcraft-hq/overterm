@@ -103,7 +103,7 @@ package struct SidebarView: View {
         // The home folder, outside any repository (onboarding 7.5): what
         // to open instead, from the read the window already made.
         if EmptyStates.showsHomeStrip(
-            root: tree.root, home: FileManager.default.homeDirectoryForCurrentUser, checked: diff.root, notARepository: diff.notARepository)
+            root: tree.root, home: EmptyStates.home, checked: diff.root, notARepository: diff.notARepository)
         {
             HomeFolderStrip(theme: theme, openFolder: worktreeActions.openFolder)
         }

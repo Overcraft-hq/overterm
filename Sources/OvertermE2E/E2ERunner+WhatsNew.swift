@@ -93,6 +93,19 @@ extension E2ERunner {
             updates.whatsNew == current && defaults.string(forKey: UpdateChecker.whatsNewFromKey) == "1.6.1",
             "\(updates.whatsNew ?? "none") from \(defaults.string(forKey: UpdateChecker.whatsNewFromKey) ?? "none")")
         check("still drawn in the strip", await eventually(3) { WhatsNewChip.drawn?.version == current })
+
+        // The update chip shares What's New's place: with both due, only one shows.
+        updates.scenarioRelease("99.0.0")
+        check(
+            "an update found: its chip in the place, What's New out of it",
+            await eventually(3) { WhatsNewChip.updateDrawn == "99.0.0" && WhatsNewChip.drawn == nil },
+            "update \(WhatsNewChip.updateDrawn ?? "none"), what's new \(String(describing: WhatsNewChip.drawn))")
+        check("What's New is kept for after it, not put away", updates.whatsNew == current && defaults.string(forKey: UpdateChecker.whatsNewSeenKey) == nil)
+        updates.scenarioRelease(nil)
+        check(
+            "the update gone, What's New is back in its place",
+            await eventually(3) { WhatsNewChip.drawn?.version == current && WhatsNewChip.updateDrawn == nil },
+            "\(String(describing: WhatsNewChip.drawn))")
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
             await pause(0.4)
             app.captureWindow(to: (png as NSString).deletingPathExtension + "-whatsnew.png")
