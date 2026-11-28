@@ -273,7 +273,18 @@ package enum DatabaseMCP {
             return [result.affected.map { "\($0) row\($0 == 1 ? "" : "s") affected." }, result.message].compactMap { $0 }.joined(separator: " ")
                 .nonEmpty ?? "Done."
         }
-        var text = ResultExport.text(.markdown, columns: result.columns, rows: result.rows)
+        // A column whose name says it holds a secret is masked whole (DB-G3):
+        // a bcrypt hash or a session token has no shape `AgentText` knows.
+        let secret = result.columns.map(Secrets.isSecretColumn)
+        let rows =
+            secret.contains(true)
+            ? result.rows.map { row in
+                row.enumerated().map { index, value in
+                    guard secret[safe: index] == true, let value, !value.isEmpty else { return value }
+                    return Secrets.mask(value)
+                }
+            } : result.rows
+        var text = ResultExport.text(.markdown, columns: result.columns, rows: rows)
         if text.count > maxChars { text = String(text.prefix(maxChars)) + "\n… (cut at \(maxChars) characters)" }
         let more = result.truncated ? " — there are more; add a LIMIT, or raise “limit”" : ""
         return text + "\n\(result.rows.count) row\(result.rows.count == 1 ? "" : "s")\(more)."

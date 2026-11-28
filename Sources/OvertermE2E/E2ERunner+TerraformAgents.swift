@@ -106,7 +106,7 @@ extension E2ERunner {
         await pause(0.5)
         check("asked to answer anyway, Overterm types nothing", pane.visibleText == before)
         // Ask Agent and Ask Why never type into it either (3.3).
-        check("Ask Agent won't type into a tab at the ask", !app.type("acme: why does this fail?", intoAgent: agentTab))
+        check("Ask Agent won't type into a tab at the ask", !app.type(AgentText(scrubbing: "acme: why does this fail?"), intoAgent: agentTab))
         await pause(0.3)
         check("and nothing reached its screen", pane.visibleText == before)
         check("nor is it offered as Ask Why's target", app.terraformAsking(agentTab))

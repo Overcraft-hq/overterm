@@ -117,8 +117,12 @@ package final class AskAgentModel: ObservableObject {
     ///
     /// `diff` has no default on purpose: a caller that forgets it drops
     /// the chip's whole point without saying so, which is exactly what
-    /// the window did. Pass nil to mean "there is none".
-    package func prompt(diff: String?) -> String {
+    /// the window did. Pass nil to mean "there is none". Scrubbed
+    /// (`AgentText`): what the sheet shows is what is typed.
+    package func prompt(diff: String?) -> String { agentText(diff: diff).text }
+
+    /// The prompt as it is handed to the agent.
+    package func agentText(diff: String?) -> AgentText {
         var sections: [String] = []
         if !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { sections.append(message) }
         if extras.command, let command {
@@ -129,7 +133,7 @@ package final class AskAgentModel: ObservableObject {
         sections.append(selection)
         sections += parts.filter(\.on).map(\.text)
         if extras.diff, let diff, !diff.isEmpty { sections.append("git diff:\n\(diff)") }
-        return sections.joined(separator: "\n\n")
+        return AgentText(scrubbing: sections.joined(separator: "\n\n"))
     }
 }
 

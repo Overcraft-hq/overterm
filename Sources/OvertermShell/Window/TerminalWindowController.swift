@@ -3217,7 +3217,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     private func sendToAgent() {
         Task { [weak self] in
             guard let self else { return }
-            self.deliverToAgent(await self.askAgentPrompt())
+            self.deliverToAgent(AgentText(scrubbing: await self.askAgentPrompt()))
         }
     }
 
@@ -3249,7 +3249,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         return text.utf8.count >= limit ? text + "\n… diff truncated." : text
     }
 
-    private func deliverToAgent(_ prompt: String) {
+    private func deliverToAgent(_ prompt: AgentText) {
         let folder = askAgent.folder
         let chosen = askAgent.chosen
         askAgent.stop()
@@ -3274,15 +3274,16 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
 
     /// Types `prompt` into `target`'s agent, not sent: what it should do
     /// with it is yours to finish. Never into a tab at a Terraform ask
-    /// (3.3): the text would land in the agent's permission prompt.
+    /// (3.3): the text would land in the agent's permission prompt. Only
+    /// `AgentText`: what is typed into an agent has been scrubbed (SEC-N1).
     @discardableResult
-    package func type(_ prompt: String, intoAgent target: Tab) -> Bool {
+    package func type(_ prompt: AgentText, intoAgent target: Tab) -> Bool {
         guard !terraformAsking(target) else {
             NSSound.beep()
             return false
         }
         store.reveal(target)
-        target.terminal.insertText(prompt)
+        target.terminal.insertText(prompt.text)
         window?.makeFirstResponder(target.terminal)
         return true
     }
