@@ -49,7 +49,10 @@ package struct ThemesSettings: View {
 
     /// Where ⌘K's Themes settings land: the block that holds them, marked.
     package static let currentID = "themes.current"
-    private var isFocused: Bool { model.focus.map { SettingsSchema.all.first(where: { s in s.key == $0 })?.section == .themes } ?? false }
+    private var isFocused: Bool {
+        guard let key = model.focus else { return false }
+        return SettingsSchema.all.first { $0.key == key }?.section == .themes
+    }
 
     private var shown: [ThemeCatalog.Entry] {
         ThemeCatalog.filter(catalog.entries, search: model.themeSearch, showing: model.themeShowing)
