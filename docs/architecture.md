@@ -1679,6 +1679,37 @@ call `TerminalWindowController.open(_:)`. `make install` runs `lsregister -f`
 and `pbs -update` so Finder sees a change at once. `public.data` alone did not
 get files listed; the explicit text types did.
 
+## Onboarding
+
+Learn as you go (docs/design/onboarding/analysis.md, D-1): nothing is shown
+on a first launch only; the dead ends get a next step instead.
+`Sources/Overterm/Onboarding/`:
+
+- `FirstRun` decides a launch — `.fresh`, `.upgraded(from:)`, `.same` —
+  from the last version run (`onboarding.lastRunVersion`), session.json,
+  settings.json and `updates.lastCheck`. `AppDelegate` reads it right
+  after `carryOverFormerDefaults()`, before the session's autosave and the
+  update check write anything, and writes this version once the window
+  shows. The key is in `AppEnvironment.defaults`, never settings.json (any
+  agent writes that file; it is synced; Settings' search would list it).
+  Nothing reads the decision yet: later stages do.
+- `AgentFinder` says whether an agent's CLI is where a new tab's shell
+  looks: the login shell's PATH as `ShellEnvironment.known()` has it
+  (never asked, never waited for — `.unknown` until it answers, and in an
+  isolated run), then Claude Code's installers' places, shared with
+  `AgentUsageCommand`. `newAgentTab` asks before typing: missing, or found
+  only off the PATH, is a sheet with Open the Tab Anyway — never a refusal,
+  since an alias or a shell function is invisible to the lookup. New
+  Task's picker marks such an agent and starts on Shell only. No CLI is run.
+
+File ▸ Open Folder… (`file.openFolder`, no key by default — D-10) and its
+⌘K row pick a folder in `NSOpenPanel` and hand it to `open(_:)`
+(`TerminalWindowController+Start`); New Task's alert outside a repository
+offers it. Overterm never runs `git init`. Help holds Keyboard Shortcuts
+(`help.shortcuts`), Keys Here and a plain, id-less mirror of View Latest
+Changelog, so no id or key is on two menus; `NSApp.helpMenu` brings
+macOS's menu search.
+
 ## Microphone and other privacy prompts
 
 macOS charges what a program in the terminal asks for to Overterm, the app

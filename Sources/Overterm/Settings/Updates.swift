@@ -52,7 +52,7 @@ package final class UpdateChecker: ObservableObject {
     /// Once a day at launch, when Settings allows it; quiet unless newer.
     package func checkIfDue(defaults: UserDefaults = AppEnvironment.defaults, now: Date = Date()) {
         guard Settings.shared.checkForUpdates, !AppEnvironment.isIsolated else { return }
-        let key = "updates.lastCheck"
+        let key = FirstRun.lastUpdateCheckKey
         if let last = defaults.object(forKey: key) as? Date, now.timeIntervalSince(last) < 24 * 3600 { return }
         defaults.set(now, forKey: key)
         Task { await check() }

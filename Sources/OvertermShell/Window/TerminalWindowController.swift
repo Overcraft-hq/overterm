@@ -250,6 +250,12 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var taskTextRecorder: ((TaskTextOutcome) -> Void)?
     /// A scenario's: what New Task's setup didn't copy, said here.
     package var taskSetupRecorder: ((TaskSetupCopy.Report) -> Void)?
+    /// Where an agent's CLI is, as a new tab's shell would find it
+    /// (`AgentFinder`); a scenario's facts in its place.
+    package var findAgent: (Agent) -> AgentFinder.Result = { AgentFinder.find($0) }
+    /// A scenario's: an agent tab opened anyway is said here, not opened —
+    /// its command would reach whatever `claude` the run's PATH has.
+    package var agentTabRecorder: ((Agent, URL) -> Void)?
     /// A scenario's: a link `openLink` would open — a pane pill's, Tab
     /// Info's — handed here with whether Settings ▸ Browser opens it in
     /// the browser column, instead of either browser.
@@ -1919,10 +1925,31 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         }
     }
 
-    /// An agent tab in the selected tab's directory.
+    /// An agent tab in the selected tab's directory. A CLI a new tab's
+    /// shell wouldn't find is said first, before anything is typed
+    /// (onboarding 7.4) — never refused: an alias or a shell function of
+    /// that name is invisible to the lookup, so the tab can open anyway.
     package func newAgentTab(_ agent: Agent) {
         let cwd = store.selected?.terminal.inheritedSettings().workingDirectory
-        newTab(in: URL(fileURLWithPath: cwd ?? FileManager.default.homeDirectoryForCurrentUser.path), agent: agent)
+        let folder = URL(fileURLWithPath: cwd ?? FileManager.default.homeDirectoryForCurrentUser.path)
+        guard let window, let warning = AgentFinder.warning(agent, findAgent(agent)) else {
+            return openAgentTab(agent, in: folder)
+        }
+        let alert = NSAlert()
+        alert.messageText = warning.title
+        alert.informativeText = warning.detail
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open the Tab Anyway")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            MainActor.assumeIsolated { self?.openAgentTab(agent, in: folder) }
+        }
+    }
+
+    private func openAgentTab(_ agent: Agent, in folder: URL) {
+        if let agentTabRecorder { return agentTabRecorder(agent, folder) }
+        newTab(in: folder, agent: agent)
     }
 
     // MARK: Find in terminal
@@ -2255,7 +2282,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// the menu item passes nothing and the setting decides.
     package func newTask(base: String?) {
         guard let repo = worktrees.main?.path else {
-            showAlert("Not in a git repository", "Open a tab inside a repository first; the task’s worktree is created from it.")
+            // The next step offered: a folder picked, a tab opened there (onboarding 7.4).
+            showAlert(
+                "Not in a git repository", "Open a tab inside a repository first; the task’s worktree is created from it.",
+                action: (title: "Open Folder…", run: { [weak self] in self?.openFolder(nil) }))
             return
         }
         presentSheet { close in
@@ -2267,6 +2297,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 composeFile: Settings.shared.dockerEnabled ? ComposeProjects.composeFile(in: repo)?.lastPathComponent : nil,
                 kubernetes: Settings.shared.kubernetesEnabled ? { await Self.kubernetesTaskOffer(for: repo) } : nil,
                 setup: TaskSetupStore.setup(for: repo),
+                agents: Dictionary(uniqueKeysWithValues: Agent.allCases.map { candidate in (candidate, findAgent(candidate)) }),
                 onCreate: { [weak self] branch, base, agent, startStack, pin, task, setup in
                     guard let self else { return nil }
                     do {
@@ -3480,6 +3511,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent  ⇧⌘N", symbol: "arrow.triangle.branch") {
                 [weak self] _, _ in self?.newTask(nil)
             },
+            PaletteItem(id: "a.openFolder", group: .action, title: "Open Folder…", subtitle: "A tab in a folder you pick", symbol: "folder") {
+                [weak self] _, _ in self?.openFolder(nil)
+            },
             PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance  ⇧⌘A", symbol: "square.grid.2x2") {
                 [weak self] _, _ in self?.showAgentOverview(nil)
             },
@@ -3880,12 +3914,24 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         }
     }
 
-    private func showAlert(_ title: String, _ message: String) {
+    /// `action`, when given, is a second button beside OK, run once the
+    /// alert is gone.
+    private func showAlert(_ title: String, _ message: String, action: (title: String, run: @MainActor () -> Void)? = nil) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        alert.beginSheetModal(for: window)
+        guard let action else {
+            alert.beginSheetModal(for: window)
+            return
+        }
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: action.title)
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertSecondButtonReturn else { return }
+            // After the sheet has gone: the action may begin one of its own.
+            Task { @MainActor in action.run() }
+        }
     }
 
     // MARK: Paths

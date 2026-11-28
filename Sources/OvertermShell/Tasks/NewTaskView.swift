@@ -16,6 +16,10 @@ package struct NewTaskView: View {
     /// The repository's setup as kept (`TaskSetupStore`): what the fields
     /// start with; what they say at Create is kept for the next task.
     package var setup = TaskSetup()
+    /// Where each agent's CLI is, as a new tab's shell would find it
+    /// (`AgentFinder`), read as the sheet opens: one it wouldn't find is
+    /// marked, and isn't what the sheet starts with.
+    package var agents: [Agent: AgentFinder.Result] = [:]
     /// Called with (branch, base, agent, start the stack, the context to
     /// pin the tab to, what the agent is to do, the repository's setup) —
     /// agent nil means a plain shell. Returns an error message to show, or
@@ -83,7 +87,7 @@ package struct NewTaskView: View {
                 .disabled(branchExists)
                 if let note = baseNote { fieldNote(note) }
                 Picker("Start", selection: $agent) {
-                    ForEach(Agent.allCases) { Text($0.name).tag(Agent?.some($0)) }
+                    ForEach(Agent.allCases) { Text(verbatim: Self.pickerTitle($0, agents[$0])).tag(Agent?.some($0)) }
                     Text("Shell only").tag(Agent?.none)
                 }
                 if let agent {
@@ -146,7 +150,7 @@ package struct NewTaskView: View {
         .frame(width: 440)
         .onAppear {
             base = defaultBase
-            agent = defaultAgent
+            agent = Self.startingAgent(defaultAgent, agents)
             copyField = setup.copy.joined(separator: ", ")
             setupCommand = setup.command
             showsSetup = !setup.isEmpty
@@ -171,6 +175,20 @@ package struct NewTaskView: View {
             offer = read
             pin = read.suggested
         }
+    }
+
+    /// The picker's row: the agent's name, and "(not found)" when a new
+    /// tab's shell wouldn't find it. Pure.
+    package nonisolated static func pickerTitle(_ agent: Agent, _ found: AgentFinder.Result?) -> String {
+        guard let note = found?.pickerNote else { return agent.name }
+        return "\(agent.name) (\(note))"
+    }
+
+    /// What the picker starts with: Settings ▸ Agents' agent, or Shell only
+    /// when a new tab's shell wouldn't find it. Pure.
+    package nonisolated static func startingAgent(_ preferred: Agent?, _ agents: [Agent: AgentFinder.Result]) -> Agent? {
+        guard let preferred, agents[preferred]?.isNotFound != true else { return nil }
+        return preferred
     }
 
     private func fieldNote(_ note: (text: String, isProblem: Bool)) -> some View {

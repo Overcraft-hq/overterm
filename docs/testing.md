@@ -821,6 +821,18 @@ and `task_name_for_pid` answer under that signing — and `OVERTERM_E2E=
 splits`, whose `E2E INFO` line counts netstat's rows in a pane, 0 under ad
 hoc signing.
 
+### Onboarding
+
+`FirstRunTests` decide a launch from injected facts — the last version,
+session.json, settings.json, the update check — and read them from a
+throwaway folder and defaults suite, never the app's. `AgentFinderTests`
+look an agent up on an injected PATH with an injected `isExecutable`: no
+CLI is run and no real folder is looked at. An isolated run never asks
+the login shell, so `AgentFinder` answers `.unknown` there; the `task`
+scenario puts its own facts in `TerminalWindowController.findAgent` and
+records an agent tab opened anyway (`agentTabRecorder`) rather than type
+whatever `claude` the run's PATH has.
+
 ## End-to-end — `Sources/OvertermE2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

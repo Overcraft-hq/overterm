@@ -19,6 +19,13 @@ extension E2ERunner {
         } else {
             check("Help ▸ Keyboard Shortcuts exists", false)
         }
+        check("Help ▸ Keyboard Shortcuts is a command", menuItem("Help", "Keyboard Shortcuts")?.identifier?.rawValue == "help.shortcuts")
+        // Onboarding 7.4: into a folder without `cd`, no key by default (D-10).
+        let openFolder = menuItem("File", "Open Folder…")
+        check(
+            "File ▸ Open Folder…, with no key",
+            openFolder?.identifier?.rawValue == "file.openFolder" && openFolder?.keyEquivalent == ""
+                && openFolder?.action == #selector(TerminalWindowController.openFolder(_:)))
         check("Help ▸ Overterm on GitHub", menuItem("Help", "Overterm on GitHub")?.action == #selector(AppDelegate.openGitHub(_:)))
         check("Help mirrors View Latest Changelog", menuItem("Help", "View Latest Changelog")?.action == #selector(AppDelegate.showChangelog(_:)))
 

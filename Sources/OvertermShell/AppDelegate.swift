@@ -9,6 +9,9 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     package static var e2eStart: (@MainActor (String, TerminalWindowController) -> Void)?
 
     private var windowController: TerminalWindowController?
+    /// This launch, as `FirstRun` decided it before anything was written:
+    /// a fresh install, an update, or the same version again.
+    package private(set) static var launch: FirstRun.Launch = .same
     /// The census's context from the app's windows (`wireActivityCensus`).
     private var activityCensus: AnyCancellable?
 
@@ -24,6 +27,11 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
             exit(1)
         }
         AppEnvironment.carryOverFormerDefaults()
+        // Before anything writes (onboarding 7.2): the session's autosave and
+        // the update check below would make a first launch look like an update.
+        Self.launch = FirstRun.read(
+            defaults: AppEnvironment.defaults, sessionURL: SessionState.defaultURL, settingsURL: Settings.sharedURL,
+            current: FirstRun.currentVersion)
         NSApp.mainMenu = MainMenu.build()
         NSApp.servicesProvider = self
         UNUserNotificationCenter.current().delegate = self
@@ -66,6 +74,8 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         GhosttyRuntime.shared.setColorScheme()
         controller.autosaveSession()
         controller.showWindow(nil)
+        // Every launch, once the window shows; read by later stages, not yet.
+        FirstRun.remember(FirstRun.currentVersion, in: AppEnvironment.defaults)
         UpdateChecker.shared.checkIfDue()
         UpdateChecker.shared.noteLaunch()
         windowController = controller

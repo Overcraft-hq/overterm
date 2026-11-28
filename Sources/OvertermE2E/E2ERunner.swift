@@ -2762,6 +2762,8 @@ package final class E2ERunner {
 
     /// New Task: a worktree on a new branch next to the repo, a tab in it.
     private func task() async {
+        // Onboarding's stage 0: outside a repository first, then the agent's check.
+        await onboardingTaskChecks()
         let repo = scratch.appendingPathComponent("proj")
         try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
         try? await git(["init", "-q", "-b", "main"], in: repo)

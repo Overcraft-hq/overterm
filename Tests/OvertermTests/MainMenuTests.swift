@@ -86,6 +86,22 @@ final class MainMenuTests: XCTestCase {
         XCTAssertTrue(titles.contains("Keyboard Shortcuts") && titles.contains("Overterm on GitHub") && titles.contains("View Latest Changelog"), "\(titles)")
         XCTAssertNil(help.items.first { $0.title == "View Latest Changelog" }?.identifier.map(\.rawValue).flatMap { KeyCommands.byID[$0] }, "the mirror carries no command id")
         XCTAssertEqual(AppDelegate.gitHubURL.absoluteString, "https://github.com/Overcraft-hq/overterm")
+        // Onboarding 7.8: Keyboard Shortcuts is a command of its own; the
+        // changelog's mirror keeps no id, so no id or key is on two menus.
+        XCTAssertEqual(help.items.first { $0.title == "Keyboard Shortcuts" }?.identifier?.rawValue, "help.shortcuts")
+        XCTAssertEqual(help.items.first { $0.title == "Keyboard Shortcuts" }?.action, #selector(AppDelegate.showKeyboardShortcuts(_:)))
+        XCTAssertEqual(help.items.first { $0.title == "View Latest Changelog" }?.keyEquivalent, "")
+        let ours = items(of: main).compactMap(\.identifier?.rawValue).filter { $0.contains(".") && !$0.hasSuffix(":") }
+        XCTAssertEqual(ours.count, Set(ours).count, "no command id on two items")
+    }
+
+    /// Onboarding 7.4: into a folder without `cd` — no key by default (D-10).
+    func testFileOpensAFolder() throws {
+        let file = try XCTUnwrap(menu("File", in: MainMenu.build()))
+        let item = try XCTUnwrap(file.items.first { $0.title == "Open Folder…" })
+        XCTAssertEqual(item.identifier?.rawValue, "file.openFolder")
+        XCTAssertEqual(item.action, #selector(TerminalWindowController.openFolder(_:)))
+        XCTAssertEqual(item.keyEquivalent, "")
     }
 
     func testViewGroupsEachFeatureInASubmenu() throws {

@@ -61,6 +61,19 @@ final class KeybindingsTests: XCTestCase {
         XCTAssertEqual(free?.group, "Panels")
     }
 
+    /// Onboarding's commands: menu commands that can be bound, with no key
+    /// by default (D-10 for Open Folder…).
+    func testOnboardingsCommandsHaveNoDefaultKey() {
+        for id in ["file.openFolder", "help.shortcuts"] {
+            let command = KeyCommands.byID[id]
+            XCTAssertNotNil(command, id)
+            XCTAssertNil(command?.defaultKey, id)
+            XCTAssertEqual(command?.menu, true, id)
+        }
+        XCTAssertEqual(KeyCommands.byID["file.openFolder"]?.title, "Open Folder…")
+        XCTAssertEqual(KeyCommands.byID["help.shortcuts"]?.title, "Keyboard Shortcuts")
+    }
+
     /// Every id is unique — `byID` is a dictionary, so a duplicate would
     /// silently lose one of them.
     func testEveryCommandHasItsOwnID() {

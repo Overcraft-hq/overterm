@@ -21,6 +21,9 @@ version is tagged `v<version>`.
 - View ▸ Files, Sessions, Snippets and Simulator, and Help ▸ Keys Here: the keys of wherever the keyboard is; `?` on a review lists its keys
 - Docker's and Activity's `?` group their keys and list the page's window commands; the filter fields say their syntax
 - Tooltips, the Inbox and empty panels say the key bound now, not the default
+- File ▸ Open Folder… (and its ⌘K row) opens a tab in a folder you pick; New Task outside a repository offers it
+- An agent's tab whose CLI isn't on your PATH says so before typing its command, with Open the Tab Anyway; New Task marks such an agent "(not found)" and starts on Shell only
+- Help ▸ Keyboard Shortcuts can be given a key
 
 ## 1.6.8 — 2026-11-26
 

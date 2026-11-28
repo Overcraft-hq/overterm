@@ -38,6 +38,8 @@ package enum MainMenu {
         command(fileMenu, "New pi Tab", #selector(TerminalWindowController.newPiTab(_:)), "tabs.newPi")
         command(fileMenu, "New Gemini Tab", #selector(TerminalWindowController.newGeminiTab(_:)), "tabs.newGemini")
         command(fileMenu, "New Task…", #selector(TerminalWindowController.newTask(_:)), "tasks.new")
+        // A tab in a folder picked in Finder's panel: into a repository without `cd`.
+        command(fileMenu, "Open Folder…", #selector(TerminalWindowController.openFolder(_:)), "file.openFolder")
         fileMenu.addItem(
             withTitle: "Clean Up Merged Worktrees…", action: #selector(TerminalWindowController.cleanUpMergedWorktrees(_:)), keyEquivalent: "")
         fileMenu.addItem(withTitle: "Pin / Unpin Tab", action: #selector(TerminalWindowController.togglePinTab(_:)), keyEquivalent: "")
@@ -206,7 +208,7 @@ package enum MainMenu {
         // every menu found by typing a word of its title.
         let helpItem = NSMenuItem()
         let helpMenu = NSMenu(title: "Help")
-        helpMenu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "")
+        command(helpMenu, "Keyboard Shortcuts", #selector(AppDelegate.showKeyboardShortcuts(_:)), "help.shortcuts")
         // The keys of wherever the keyboard is (DISC-N1).
         command(helpMenu, "Keys Here", #selector(TerminalWindowController.showKeysHere(_:)), "help.keysHere")
         // Mirrored from the app menu, without its identifier: a key the
