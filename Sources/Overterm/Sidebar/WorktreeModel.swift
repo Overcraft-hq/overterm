@@ -74,6 +74,9 @@ package final class WorktreeModel: ObservableObject {
             pullRequestError = nil
             return
         }
+        // The selected tab is in a checkout — the Start card's first step —
+        // said before GitHub is asked about it.
+        if anchor == self.anchor { Start.shared.note(.inRepository) }
         var merged = await MergedWorktrees.find(in: anchor, worktrees: listed)
         let pullRequests = await pullRequests(in: repo, force: fetch)
         let branches = listed.filter { !$0.isMain }.compactMap(\.branch)

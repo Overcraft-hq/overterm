@@ -821,6 +821,116 @@ and `task_name_for_pid` answer under that signing — and `OVERTERM_E2E=
 splits`, whose `E2E INFO` line counts netstat's rows in a pane, 0 under ad
 hoc signing.
 
+### Onboarding
+
+`FirstRunTests` decide a launch from injected facts — the last version,
+session.json, settings.json, the update check — and read them from a
+throwaway folder and defaults suite, never the app's. `AgentFinderTests`
+look an agent up on an injected PATH with an injected `isExecutable`: no
+CLI is run and no real folder is looked at. An isolated run never asks
+the login shell, so `AgentFinder` answers `.unknown` there; the `task`
+scenario puts its own facts in `TerminalWindowController.findAgent` and
+records an agent tab opened anyway (`agentTabRecorder`) rather than type
+whatever `claude` the run's PATH has.
+
+Stage 1's empty states: `EmptyStatesTests` (when Files' home strip shows,
+no key written into the words, the hints rebound through a throwaway
+keybindings.json) and `PaletteCommandsTests` (a row's key is its command's,
+rebound or unbound). `sidebarPanels` reads the rail's tooltips and the
+panels' Open Folder… from the accessibility tree (`sidebar.rail.<id>`,
+`<panel>.openFolder`) in a tab outside a repository, and `palette` checks
+the rows' keys follow a rebinding in the run's own keybindings.json, reset
+after. `sidebarPanels` also reads the pane header's Split Right tooltip
+(`pane.splitRight`) before and after a rebinding. `KeysInTextTests` scans
+`Sources` — the scenarios aside — for a string literal with a modifier and a
+letter, and fails on any not in its small, explained allow-list;
+`KeysReadAsBoundTests` checks the words that used to carry a key (a list's
+`?` foot, the editor header's tips) follow a rebinding and drop an unbound
+key. The `onboarding` scenario's step 2 opens a tab in a scratch home folder
+(`EmptyStates.homeOverride` — never the user's) and checks Files' strip
+shows there, then none over a home folder that is a repository.
+
+Stage 3's Start card: `StartStateTests` (steps from events in any order,
+the first time kept, the card by launch, tips off showing nothing, the
+kept form), `StartTextTests` (each step's line and button for no agent
+found, a shell only, outside a repository and the shell still asked; a
+rebinding changes the line, an unbound command is named, no key glyph a
+line wasn't given), `StartTests` (inert unless the `onboarding` scenario;
+the state in a throwaway defaults suite and settings.json, never the
+app's) and `SetupCheckTests` (the rows, and every path the probe touches —
+existence and executability only, nothing under Documents, Desktop or
+iCloud). The `onboarding` scenario hands `Start` a fresh launch and does
+the five steps through the window's own methods and the card's buttons,
+pressed through the accessibility tree (`start.*` identifiers), with
+`SetupProbe.override`'s facts; after each it checks the terminal still has
+the keyboard. That check is the design's gate (risk 1), and an
+accessibility press is not a click: a real click on the card, and on the
+second step's menu, is a check by hand. `sidebarPanels` checks no other
+scenario shows a card.
+
+Stage 4's tips: `StartStateTests` (each tip once, × for good, a used
+feature getting none, one banner tip a launch with T1 and T2 past it and
+in front of T4, which comes back, waiting while covered or behind, T1 never
+dropped unseen by its tab selected as the app comes back, tips off, T3's three showings, Reset Tips,
+an update's, the kept form, and the registry: at most five tips, each with
+its seen key and brought back by Reset), `StartTextTests` (every tip's
+words from the keys bound now and the Settings pages' own titles, the
+buttons, T1's offer only while not asked), `StartTests` (kept and reset in
+a throwaway suite, inert does nothing) and `AttentionNotifierTests`
+(`asksLazily`'s cases; an isolated run asks macOS nothing). The
+`onboarding` scenario's steps 8–12 send OSC 777 from the task's tab in the
+background, check T1 shows, the keyboard stays in the terminal and the
+strip answers a press as before; inject "not asked"
+(`AttentionNotifier.permissionOverride`) so T1 offers Allow
+Notifications…, whose press is counted (`requestedNow`), never a system
+prompt; check the live decision (`Start.shared.holdsNotificationAsk`) held
+before T1 and released once it shows; hide it under Reset Tips' sheet; close it with the Inbox; check a
+second mark brings none and an agent's tab in the same launch holds T4;
+then ⌘K's hint row and Reset Tips. A real click on a tip, VoiceOver's
+announcement and the system prompt are checks by hand.
+
+Stage 5's Setup page: `SetupCheckTests` (each core row's found, missing
+and off words, gh on the PATH but not where Overterm looks, Gemini CLI's
+system defaults, a row for every `Agent`, the install table listed for
+review, the step times; the probe's paths), `SetupPageModelTests` (read
+only while shown, dropped when hidden, Check Again) and
+`WorkspacePagesTests` (`.setup` among the overlays), and `SetupProbeTests`
+for "Tools the panels use" — each feature's finder called with injected
+closures, a panel off calling none, every path touched a look, none under
+Documents, Desktop or iCloud. The `onboarding`
+scenario's step 5 opens the page from the "isn't on your PATH" warning,
+and step 18 opens it from Help's action with `SetupProbe.override`'s
+facts: its rows those facts word for word, Put in a New Tab recorded
+(`setupTabRecorder`) — typed, never run —, Allow… counted, the usage
+switch, the panels' section read only once opened
+(`SetupProbe.panelsOverride`), and Esc and `hideOverlay` leaving the terminal the first
+responder. Full Keyboard Access over the page, and what each finder says
+on a clean account, are checks by hand. `SetupProbeTests` also cover the
+gcloud and protoc rows (looked for where BigQuery's sign-in, a GKE
+context's proxy and gRPC look) and the credential plugins' row before the
+Kubernetes page has read the contexts, or with the shell silent.
+
+A fresh install's settings: `FreshInstallTests` (the panels to hide from
+the tools found — none with the PATH unknown, never a switch the person
+set —, each tool looked for where its feature looks with injected
+closures and nothing else touched, decided once, an update or the same
+version changing nothing, an isolated run with nothing handed over
+deciding nothing; the theme chosen only where neither a Ghostty config —
+`theme =` read as Ghostty reads it, includes followed, bounded — nor
+settings.json names one; the card's line and the Setup page's row in the
+same words). The `onboarding` scenario's step 1b hands `FreshInstallSetup`
+its own look (`toolsOverride`, `ghosttyThemeOverride`): nothing handed over
+decides nothing; the PATH unknown hides nothing; an update and the same
+version change nothing; no docker, kubectl or terraform hides Docker and
+Kubernetes — Terraform's switch the scenario's "person" set is kept — and
+the card says so in one line whose Show turns them on, the keyboard still
+the terminal's; a Ghostty theme, or one in settings.json, is left alone;
+fresh, the terminal follows macOS with the pair. Step 13 reads the done
+state's theme line and presses Change… (Settings ▸ Themes, no keyboard
+left on the card). The `updates` scenario's What's New checks put an update chip in the strip
+beside a waiting What's New (`UpdateChecker.scenarioRelease`, E2E builds
+only): only the update's shows, and What's New is back when it goes.
+
 ## End-to-end — `Sources/OvertermE2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

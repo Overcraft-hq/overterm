@@ -423,6 +423,8 @@ final class E2ETests: XCTestCase {
     func testDiffStyle() throws { try run("diffStyle") }
     func testLayout() throws { try run("layout") }
     func testTask() throws { try run("task") }
+    /// Onboarding's Start card: its five steps, and the keyboard after each press.
+    func testOnboarding() throws { try run("onboarding") }
     func testSnippets() throws { try run("snippets") }
     func testAttention() throws { try run("attention") }
     func testMarks() throws { try run("marks") }

@@ -37,6 +37,8 @@ package struct SidebarView: View {
     package let openKubernetesPage: () -> Void
     /// The buttons at the foot of the rail: Activity, the gear, Hide.
     package let railAction: (SidebarRailAction) -> Void
+    /// A press on the Start card at the panel column's foot (onboarding 7.3).
+    package let startAction: (StartCardAction) -> Void
     /// The panel's keys while the sidebar has the keyboard (A11Y-U2), and
     /// the view that takes it — handed to the window, which alone gives it.
     package var onKey: (NSEvent) -> Bool = { _ in false }
@@ -45,32 +47,14 @@ package struct SidebarView: View {
     package var body: some View {
         HStack(spacing: 0) {
             SidebarRail(sidebar: sidebar, theme: theme, perform: railAction)
-            VStack(spacing: 0) {
-                switch sidebar.panel {
-                case .files: files
-                case .git:
-                    OvergitView(
-                        model: overgit, diff: diff, worktrees: worktrees, store: store, currentRoot: tree.root, group: group,
-                        theme: theme, actions: overgitActions, worktreeActions: worktreeActions)
-                case .sessions:
-                    SessionListView(
-                        model: sessions, worktrees: worktrees, group: group, theme: theme, actions: sessionActions)
-                case .snippets: SnippetListView(store: snippets, group: group, theme: theme, actions: snippetActions)
-                case .api: APIPanelView(workspace: api, group: group, theme: theme, actions: apiActions)
-                case .notes: NotesPanelView(model: notes, theme: theme, actions: notesActions)
-                case .database: DatabasePanelView(model: database, store: database.store, theme: theme, actions: databaseActions)
-                case .docker:
-                    DockerPanelView(
-                        panel: dockerPanel, docker: .shared, checkoutCompose: dockerPanel.checkoutCompose, updates: .shared, settings: .shared,
-                        theme: theme, group: group,
-                        actions: dockerActions,
-                        openPage: dockerActions.openPage, show: dockerActions.showContainer)
-                case .kubernetes:
-                    KubernetesPanelView(
-                        panel: kubernetesPanel, kubernetes: .shared, forwards: .shared, settings: .shared, theme: theme, group: group,
-                        openPage: openKubernetesPage)
-                case .terraform:
-                    TerraformPanelView(panel: terraformPanel, settings: .shared, theme: theme, group: group, actions: terraformActions)
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    panel.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    // Under whichever panel shows; never a rail icon or a
+                    // panel of its own. Past 40% of the column, it scrolls.
+                    StartCardView(
+                        start: .shared, theme: theme, inRepository: worktrees.main != nil, maxHeight: geometry.size.height * 0.4,
+                        columnOpen: sidebar.columnOpen, anyNeedsYou: sidebar.needsYou, perform: startAction)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -79,11 +63,50 @@ package struct SidebarView: View {
         .background(SidebarKeyCatcher(onKey: onKey, made: keyView))
     }
 
+    /// The panel the rail has chosen.
+    @ViewBuilder private var panel: some View {
+        VStack(spacing: 0) {
+            switch sidebar.panel {
+            case .files: files
+            case .git:
+                OvergitView(
+                    model: overgit, diff: diff, worktrees: worktrees, store: store, currentRoot: tree.root, group: group,
+                    theme: theme, actions: overgitActions, worktreeActions: worktreeActions)
+            case .sessions:
+                SessionListView(
+                    model: sessions, worktrees: worktrees, group: group, theme: theme, actions: sessionActions)
+            case .snippets: SnippetListView(store: snippets, group: group, theme: theme, actions: snippetActions)
+            case .api: APIPanelView(workspace: api, group: group, theme: theme, actions: apiActions)
+            case .notes: NotesPanelView(model: notes, theme: theme, actions: notesActions)
+            case .database: DatabasePanelView(model: database, store: database.store, theme: theme, actions: databaseActions)
+            case .docker:
+                DockerPanelView(
+                    panel: dockerPanel, docker: .shared, checkoutCompose: dockerPanel.checkoutCompose, updates: .shared, settings: .shared,
+                    theme: theme, group: group,
+                    actions: dockerActions,
+                    openPage: dockerActions.openPage, show: dockerActions.showContainer)
+            case .kubernetes:
+                KubernetesPanelView(
+                    panel: kubernetesPanel, kubernetes: .shared, forwards: .shared, settings: .shared, theme: theme, group: group,
+                    openPage: openKubernetesPage, openFolder: worktreeActions.openFolder)
+            case .terraform:
+                TerraformPanelView(panel: terraformPanel, settings: .shared, theme: theme, group: group, actions: terraformActions)
+            }
+        }
+    }
+
     /// The island the selected tab is in: what every panel here is about.
     private var group: TabGroup? { store.selected.flatMap { store.group(of: $0) } }
 
     @ViewBuilder private var files: some View {
         header
+        // The home folder, outside any repository (onboarding 7.5): what
+        // to open instead, from the read the window already made.
+        if EmptyStates.showsHomeStrip(
+            root: tree.root, home: EmptyStates.home, checked: diff.root, notARepository: diff.notARepository)
+        {
+            HomeFolderStrip(theme: theme, openFolder: worktreeActions.openFolder)
+        }
         if tree.root == nil {
             Spacer()
         } else {
@@ -291,7 +314,9 @@ private struct SessionListView: View {
                 Text(model.loading ? "" : "No agent sessions in \(group?.name ?? "this folder") yet")
                     .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(12)
                 if !model.loading {
-                    KeyHint("%@ starts a Claude tab", command: "tabs.newClaude", color: theme.text3).padding(.horizontal, 12)
+                    KeyHint(EmptyStates.sessions, command: Agent.claude.newTabCommand, unbound: EmptyStates.sessionsUnbound, color: theme.text3)
+                        .padding(.horizontal, 12)
+                        .accessibilityIdentifier("sessions.emptyHint")
                 }
                 Spacer()
             } else {

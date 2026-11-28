@@ -243,6 +243,16 @@ package enum KeyCommands {
         .init("app.changelog", "View Latest Changelog", group: "Overterm"),
         // No key by default (DISC-N1): ⌘/ is the editor's Toggle Line Comment.
         .init("help.keysHere", "Keys Here", group: "Overterm"),
+        // Help ▸ Keyboard Shortcuts: Settings, on this page. No key by default.
+        .init("help.shortcuts", "Keyboard Shortcuts", group: "Overterm"),
+        // Help ▸ What's New in …: Settings ▸ About at the changelog. No key by default.
+        .init("help.whatsNew", "What's New", group: "Overterm"),
+        // Help ▸ Getting Started: the sidebar and its Start card. No key by default.
+        .init("help.gettingStarted", "Getting Started", group: "Overterm"),
+        // Help ▸ Reset Tips: every tip once more, asked first. No key by default.
+        .init("help.resetTips", "Reset Tips", group: "Overterm"),
+        // Help ▸ Check Setup…: the Setup page, only when asked. No key by default.
+        .init("help.setup", "Check Setup", group: "Overterm"),
         .init("app.hide", "Hide Overterm", group: "Overterm", key: "cmd+h"),
         .init("app.hideOthers", "Hide Others", group: "Overterm", key: "alt+cmd+h"),
         .init("app.quit", "Quit Overterm", group: "Overterm", key: "cmd+q", ghostty: "quit"),
@@ -255,6 +265,9 @@ package enum KeyCommands {
         .init("tabs.newPi", "New pi Tab", group: "Tabs"),
         .init("tabs.newGemini", "New Gemini Tab", group: "Tabs"),
         .init("tasks.new", "New Task…", group: "Tabs", key: "shift+cmd+n"),
+        // A tab in a folder picked in Finder's panel. No key by default
+        // (onboarding D-10): ⌘O is free, and giving it is the owner's call.
+        .init("file.openFolder", "Open Folder…", group: "Tabs"),
         .init("tabs.close", "Close (the pane, or the tab)", group: "Tabs", key: "cmd+w", ghostty: "close_surface"),
         .init("tabs.next", "Show Next Tab", group: "Tabs", key: "shift+cmd+]", ghostty: "next_tab"),
         .init("tabs.previous", "Show Previous Tab", group: "Tabs", key: "shift+cmd+[", ghostty: "previous_tab"),

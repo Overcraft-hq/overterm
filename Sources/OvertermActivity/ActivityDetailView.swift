@@ -8,6 +8,8 @@ import SwiftUI
 package struct ActivityDetailView: View {
     package let detail: ActivityDetail
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     @ObservedObject package var page: ActivityPageModel
     /// The selection's verbs: buttons here, the same as its menu.
     package let verbs: [ResourceVerb]
@@ -115,7 +117,7 @@ package struct ActivityDetailView: View {
                 Button("Tab Info") { page.actions.tabInfo(tab) }
                 if row.checkout != nil {
                     Button("Show in Overgit") { page.actions.overgit(tab) }
-                        .help("Its tab's checkout in the sidebar's git panel (⌥⌘G)")
+                        .help(KeyHints.help("Its tab's checkout in the sidebar's git panel", command: "overgit.show", keys: keys))
                         .accessibilityIdentifier("activity.detail.overgit")
                 }
             }

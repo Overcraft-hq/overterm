@@ -21,7 +21,23 @@ version is tagged `v<version>`.
 - View ▸ Files, Sessions, Snippets and Simulator, and Help ▸ Keys Here: the keys of wherever the keyboard is; `?` on a review lists its keys
 - Docker's and Activity's `?` group their keys and list the page's window commands; the filter fields say their syntax
 - Tooltips, the Inbox and empty panels say the key bound now, not the default
+- File ▸ Open Folder… (and its ⌘K row) opens a tab in a folder you pick; New Task outside a repository offers it
+- An agent's tab whose CLI Overterm can't find — not on your PATH nor where its installer puts it — says so before typing its command, with Open the Tab Anyway; New Task marks such an agent "(not found)" and starts on Shell only (one reached by an alias, as Claude Code's local install, opens as before)
+- Help ▸ Keyboard Shortcuts can be given a key
+- Outside a repository, Overgit, Kubernetes and Terraform offer Open Folder…, and Files over your home folder says what to open instead
+- The empty Inbox and Sessions say what lands there and how to start; ⌘K's own rows, the group switcher and the plan pane say the key bound now, and ⌘K has a Keyboard Shortcuts row
+- After an update, the strip's "What's new in …" chip — there, launch after launch, until you open it or put it away — opens Settings ▸ About, which lists every version since the one you ran before; Help ▸ What's New (and ⌘K) opens it any time, and Settings ▸ About ▸ Updates can turn the chip off
+- A new install's sidebar has a Getting Started card: what Overterm is, and five steps — open a repository, pick what New Task starts, start a task, answer a tab that needs you, see what it changed — that tick themselves as you do them, in any order
+- Once they are done, the card offers the optional panels to keep; × puts it away, Turn Off Tips (Settings ▸ General) ends it and the tips, and Help ▸ Getting Started (and ⌘K) brings it back
+- Four one-time tips: the first tab that needs you says what the Inbox is, the first production pane what its header means, ⌘K's first showings where Clear the Screen went, the first agent tab what its tools are; Help ▸ Reset Tips shows them again
+- On a new install, macOS asks about notifications when you press Allow Notifications… on the first "needs you" tip, not by itself in the background
+- Help ▸ Check Setup… (and ⌘K, the Getting Started card, the "isn't on your PATH" warning) opens a Setup page: git, the GitHub CLI, each agent, notifications and the agents' tools — found or not, where Overterm looked, a command to copy or put in a new tab; no tool is run
+- Its "Tools the panels use", opened, says what Docker, Kubernetes, Terraform, the language servers and the simulator would use — found by each feature's own finder, never started or pinged
+- The Setup page says what runs by itself — the agents' usage command every ten minutes — with its switch, and your own Getting Started times, kept on this Mac only
 - Tab Peek shows only the tabs the strip shows, filters its cards as you type, picks one with 1–9, and answers a waiting agent from its card
+- On a new install, Docker, Kubernetes and Terraform start hidden when their tool isn't on this Mac — said on the Getting Started card with Show, and on the Setup page — and the terminal follows macOS between Catppuccin Mocha and Latte unless your Ghostty config or settings already name a theme; the done card says the theme, with Change…
+- The Setup page's "Tools the panels use" lists gcloud (GKE and BigQuery) and protoc (gRPC), and says to open Kubernetes once to check its contexts' credential plugins
+- Every tooltip and hint that names a key — the strip's buttons and chips, the panes' close buttons, the pane header, Tab Info, the editor's header — says the key bound now
 
 ## 1.6.8 — 2026-11-26
 

@@ -38,6 +38,8 @@ package struct PaneHeaderView: View {
     /// What this pane has run — the failure it is showing, if any.
     @ObservedObject package var blocks: PaneBlocks
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let actions: PaneHeaderActions
 
     private var isFocused: Bool { tab.terminal === pane }
@@ -101,13 +103,15 @@ package struct PaneHeaderView: View {
                 FreedPortLabel(freeing: freed, theme: theme)
             }
             HStack(spacing: 0) {
-                button("rectangle.split.2x1", "Split Right (⌘D)") { actions.splitRight(pane) }
-                button("rectangle.split.1x2", "Split Down (⇧⌘D)") { actions.splitDown(pane) }
+                button("rectangle.split.2x1", KeyHints.help("Split Right", command: "splits.right", keys: keys), id: "pane.splitRight") {
+                    actions.splitRight(pane)
+                }
+                button("rectangle.split.1x2", KeyHints.help("Split Down", command: "splits.down", keys: keys)) { actions.splitDown(pane) }
                 button(
                     tab.zoomed === pane ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                    "Zoom Pane (⇧⌘↩)"
+                    KeyHints.help("Zoom Pane", command: "splits.zoom", keys: keys)
                 ) { actions.zoom(pane) }
-                button("xmark", "Close (⌘W)") { actions.close(pane) }
+                button("xmark", KeyHints.help("Close", command: "tabs.close", keys: keys)) { actions.close(pane) }
             }
             .foregroundStyle(theme.text2)
         }
@@ -142,7 +146,7 @@ package struct PaneHeaderView: View {
                 .foregroundStyle(theme.text2)
             Text(block.detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed)
             smallButton("Copy output") { actions.copyOutput(pane) }
-            smallButton("Rerun ⌘R") { actions.rerun(pane) }
+            smallButton(KeyHints.text("Rerun %@", command: "terminal.rerun", keys: keys) ?? "Rerun") { actions.rerun(pane) }
         }
         .layoutPriority(1)
     }
@@ -187,7 +191,7 @@ package struct PaneHeaderView: View {
             .background(Capsule().fill(background))
     }
 
-    private func button(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
+    private func button(_ symbol: String, _ help: String, id: String? = nil, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: ChromeMetrics.text(11)))
@@ -196,6 +200,7 @@ package struct PaneHeaderView: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityIdentifier(id ?? "")
     }
 }
 
@@ -226,6 +231,8 @@ private struct PortPill: View {
     /// Freed from here, and watched (`PortFreeing`).
     let freeing: PortFreeing?
     @ObservedObject var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     let actions: PaneHeaderActions
     @State private var hovering = false
     @State private var showing = false
@@ -319,7 +326,7 @@ private struct PortPill: View {
                         Label("Show in Activity", systemImage: "gauge.with.dots.needle.33percent")
                     }
                     .buttonStyle(.link).font(.system(size: ChromeMetrics.text(11.5)))
-                    .help("Listening with this port selected: who holds it, and whose it is (⌥⌘A)")
+                    .help(KeyHints.help("Listening with this port selected: who holds it, and whose it is", command: "activity.page", keys: keys))
                     .accessibilityIdentifier("pill.showInActivity")
                 }
                 if let freeing {
@@ -413,6 +420,11 @@ private struct KubePinLabel: View {
         .background(RoundedRectangle(cornerRadius: 5).fill(pin.isProduction ? KubernetesPageView.production : theme.rowSel))
         .help(pin.help)
         .accessibilityIdentifier("pane.kubeContext")
+        // Onboarding T2: a pane pinned to production says so here, and
+        // `KubeRunWarningLabel` leaves a pin's warning to this label.
+        .onAppear {
+            if pin.isProduction { Start.shared.note(.productionPane(.kubernetes(context: pin.displayName))) }
+        }
     }
 }
 
@@ -468,6 +480,8 @@ package struct KubeRunWarningLabel: View {
             .help(warning.help)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("pane.kubeWarning")
+            // Onboarding T2: the first pane whose header says production.
+            .onAppear { Start.shared.note(.productionPane(.kubernetes(context: warning.displayName))) }
         }
     }
 }
@@ -563,6 +577,12 @@ package struct TerraformRunWarningLabel: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text(verbatim: warning.isProduction ? warning.label + " PRODUCTION" : warning.label))
             .accessibilityIdentifier("pane.terraformWarning")
+            // Onboarding T2: the first pane whose header says production.
+            .background {
+                if warning.isProduction {
+                    Color.clear.onAppear { Start.shared.note(.productionPane(.terraform(root: warning.root))) }
+                }
+            }
         } else if let pinnedRoot {
             Text(verbatim: "⛰ " + pinnedRoot)
                 .font(.system(size: ChromeMetrics.text(11), design: .monospaced))

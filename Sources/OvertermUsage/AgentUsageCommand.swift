@@ -35,11 +35,8 @@ package enum AgentUsageCommand {
         lock.lock()
         defer { lock.unlock() }
         if let found { return found }
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let known = [
-            // ~/.local/bin is the native installer's.
-            "\(home)/.local/bin/claude", "\(home)/.claude/local/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "\(home)/.bun/bin/claude",
-        ]
+        // Shared with New Task's and an agent tab's check (`AgentFinder`).
+        let known = AgentFinder.knownPaths(for: .claude, home: FileManager.default.homeDirectoryForCurrentUser.path)
         if let path = known.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
             found = URL(fileURLWithPath: path)
             return found!

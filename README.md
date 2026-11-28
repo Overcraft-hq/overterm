@@ -249,7 +249,10 @@ The defaults; every one is rebindable in Settings ▸ Keyboard Shortcuts (or
 
 The editor's own keys (go to definition, multi-cursor, Vim…) are in
 Settings ▸ Keyboard Shortcuts, and Help ▸ Keys Here lists the keys of
-wherever the keyboard is.
+wherever the keyboard is. Help ▸ Keyboard Shortcuts opens that page, and
+the Help menu's search finds any menu command by a word of its title.
+File ▸ Open Folder… (no key until you give it one) opens a tab in a folder
+you pick.
 
 ## Settings
 

@@ -8,6 +8,8 @@ package struct GroupBarsView: View {
     @ObservedObject package var focus: GroupFocus
     @ObservedObject package var store: TabStore
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let onSend: () -> Void
     package let onStopBroadcast: () -> Void
     package let onLeaveFocus: () -> Void
@@ -105,7 +107,9 @@ package struct GroupBarsView: View {
                 .buttonStyle(.plain)
                 .font(.system(size: ChromeMetrics.text(11), weight: .medium))
                 .foregroundStyle(theme.dimText)
-            Text(verbatim: "⌃⌘F").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText.opacity(0.7))
+            if let key = KeyHints.key("groups.focus", keys: keys) {
+                Text(verbatim: key).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText.opacity(0.7))
+            }
         }
         .padding(.horizontal, 12)
         .frame(height: ChromeMetrics.row(26))
@@ -152,6 +156,8 @@ package struct StashedGroupsChip: View {
 private struct StashedGroupsList: View {
     @ObservedObject var store: TabStore
     @ObservedObject var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     let restore: (TabGroup) -> Void
 
     var body: some View {
@@ -163,7 +169,7 @@ private struct StashedGroupsList: View {
             ForEach(store.stashedGroups) { group in
                 StashedRow(group: group, tabs: store.tabs(in: group), restore: restore)
             }
-            Text("⌃⌘S stashes the current group").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(.tertiary)
+            KeyHint("%@ stashes the current group", command: "groups.stash", unbound: "Stash Group puts the current group here", color: .secondary, size: 10, keys: keys)
         }
         .padding(14)
         .frame(width: 340)

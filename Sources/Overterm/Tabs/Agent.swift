@@ -115,6 +115,18 @@ package enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
+    /// Its New … Tab command (`KeyCommands`): what a row or a hint that
+    /// says its key reads the key of.
+    package var newTabCommand: String {
+        switch self {
+        case .claude: "tabs.newClaude"
+        case .codex: "tabs.newCodex"
+        case .opencode: "tabs.newOpencode"
+        case .pi: "tabs.newPi"
+        case .gemini: "tabs.newGemini"
+        }
+    }
+
     /// Settings ▸ Agents' extra arguments for it.
     package var argumentsKey: String { "agents.\(rawValue)Arguments" }
 

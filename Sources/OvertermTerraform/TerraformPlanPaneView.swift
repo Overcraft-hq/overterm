@@ -98,9 +98,11 @@ package struct TerraformPlanPaneView: View {
             } else if let run = pane.run {
                 TerraformRunView(run: run, pane: pane, registry: .shared, theme: theme, actions: actions)
             } else {
-                Text("No plan yet: Plan a root from the Terraform panel (⌥⌘E).")
-                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                KeyHint(
+                    "No plan yet: Plan a root from the Terraform panel (%@).", command: "terraform.show",
+                    unbound: "No plan yet: Plan a root from the Terraform panel.", color: theme.text2, size: 12
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .accessibilityElement(children: .contain)

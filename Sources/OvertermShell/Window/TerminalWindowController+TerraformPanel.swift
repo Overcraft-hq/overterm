@@ -120,7 +120,8 @@ extension TerminalWindowController {
             chooseVarFiles: { [weak self] card in self?.chooseTerraformVarFiles(card) },
             typeInTerminal: { [weak self] card, line in self?.openTerraformTerminal(card, typing: line) },
             openFileAt: { [weak self] url, line in self?.openInEditor(url, line: line) },
-            openURL: { [weak self] url in self?.openInBrowser(url, for: self?.store.selected) })
+            openURL: { [weak self] url in self?.openInBrowser(url, for: self?.store.selected) },
+            openFolder: { [weak self] in self?.openFolder(nil) })
     }
 
     /// Terminal in this root (4.9): a shell tab at the root, its icon and
@@ -160,8 +161,8 @@ extension TerminalWindowController {
         guard Settings.shared.terraformEnabled else { return [] }
         var items = [
             PaletteItem(
-                id: "a.terraform", group: .action, title: "Terraform", subtitle: "The checkout's roots, workspaces and backends  ⌥⌘E",
-                symbol: "square.stack.3d.up"
+                id: "a.terraform", group: .action, title: "Terraform", subtitle: "The checkout's roots, workspaces and backends",
+                symbol: "square.stack.3d.up", command: "terraform.show"
             ) { [weak self] _, _ in self?.showTerraformPanel(nil) }
         ]
         for card in terraformPanel.roots {

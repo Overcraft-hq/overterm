@@ -9,6 +9,9 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     package static var e2eStart: (@MainActor (String, TerminalWindowController) -> Void)?
 
     private var windowController: TerminalWindowController?
+    /// This launch, as `FirstRun` decided it before anything was written:
+    /// a fresh install, an update, or the same version again.
+    package private(set) static var launch: FirstRun.Launch = .same
     /// The census's context from the app's windows (`wireActivityCensus`).
     private var activityCensus: AnyCancellable?
 
@@ -24,6 +27,14 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
             exit(1)
         }
         AppEnvironment.carryOverFormerDefaults()
+        // Before anything writes (onboarding 7.2): the session's autosave and
+        // the update check below would make a first launch look like an update.
+        Self.launch = FirstRun.read(
+            defaults: AppEnvironment.defaults, sessionURL: SessionState.defaultURL, settingsURL: Settings.sharedURL,
+            current: FirstRun.currentVersion)
+        // A fresh install's theme, before the window writes Ghostty's
+        // overrides from settings: the first pane already follows macOS.
+        FreshInstallSetup.chooseTheme(Self.launch)
         NSApp.mainMenu = MainMenu.build()
         NSApp.servicesProvider = self
         UNUserNotificationCenter.current().delegate = self
@@ -66,8 +77,20 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         GhosttyRuntime.shared.setColorScheme()
         controller.autosaveSession()
         controller.showWindow(nil)
+        // The Start card (onboarding 7.2): only now, after the window and
+        // whatever the session restored; never by itself in an isolated run
+        // — the `onboarding` scenario hands it a launch.
+        if !AppEnvironment.isIsolated {
+            controller.beginStart(Self.launch)
+            // A fresh install's panels, once the login shell has said its PATH.
+            controller.decideFreshPanels(Self.launch)
+        }
+        // Every launch, once the window shows.
+        FirstRun.remember(FirstRun.currentVersion, in: AppEnvironment.defaults)
         UpdateChecker.shared.checkIfDue()
-        UpdateChecker.shared.noteLaunch()
+        // After an update, the strip's What's New chip (onboarding 7.9):
+        // never by itself in an isolated run — a scenario hands it a launch.
+        if !AppEnvironment.isIsolated { UpdateChecker.shared.noteLaunch(Self.launch) }
         windowController = controller
         controller.dumpLayoutIfRequested()
         if let scenario = AppEnvironment.e2eScenario {
@@ -109,7 +132,8 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         if let controller = windowController, !controller.closeConfirmed, let file = controller.unsavedNames(everyWindow: true).first {
             let alert = NSAlert()
             alert.messageText = "“\(file)” has unsaved changes."
-            alert.informativeText = "Quitting loses them. Save it (⌘S) — or apply a cluster object's YAML — first, or quit anyway."
+            alert.informativeText =
+                "Quitting loses them. " + KeyHints.help("Save it", command: "file.save") + " — or apply a cluster object's YAML — first, or quit anyway."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Quit Anyway")
             alert.alertStyle = .warning
@@ -252,6 +276,12 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     /// Help ▸ Keyboard Shortcuts: Settings, on its shortcuts.
     @objc package func showKeyboardShortcuts(_ sender: Any?) {
         windowController?.openSettings(.shortcuts)
+    }
+
+    /// Help ▸ What's New in …: Settings ▸ About at its changelog — every
+    /// version's entry since the last run — and the chip put away.
+    @objc package func showWhatsNew(_ sender: Any?) {
+        windowController?.showWhatsNew()
     }
 
     /// Help ▸ Overterm on GitHub: the repository, in the default browser

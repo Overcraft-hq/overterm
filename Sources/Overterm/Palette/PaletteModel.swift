@@ -27,6 +27,9 @@ package struct PaletteItem: Identifiable {
     package let title: String
     /// What it is, and the key that does it now (`PaletteCommands.withLiveKeys`).
     package var subtitle: String?
+    /// The command it does (`KeyCommands`): the key its row says is that
+    /// command's as bound now, never one written into `subtitle`.
+    package var command: String?
     package let symbol: String
     /// What the detail pane says about it, if anything: when it last ran,
     /// how it went, where.
@@ -42,12 +45,13 @@ package struct PaletteItem: Identifiable {
 
     package init(
         id: String, group: Group, title: String, subtitle: String?, symbol: String, detail: String? = nil, failed: Bool? = nil, placeholders: [String] = [],
-        perform: @escaping @MainActor (_ run: Bool, _ values: [String: String]) -> Void
+        command: String? = nil, perform: @escaping @MainActor (_ run: Bool, _ values: [String: String]) -> Void
     ) {
         self.id = id
         self.group = group
         self.title = title
         self.subtitle = subtitle
+        self.command = command
         self.symbol = symbol
         self.detail = detail
         self.failed = failed
@@ -72,6 +76,9 @@ package final class PaletteModel: ObservableObject {
     }
     /// What has been typed into the selected snippet's placeholders.
     @Published package var values: [String: String] = [:]
+    /// A tip in the hint row (onboarding T3): set as the palette shows, on
+    /// its first three showings only.
+    @Published package var tip: String?
 
     private var items: [PaletteItem] = []
 

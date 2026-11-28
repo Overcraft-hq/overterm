@@ -385,7 +385,7 @@ extension TerminalWindowController {
     /// its item, the port typed into its field.
     @objc package func showActivityFreePort(_ sender: Any?) {
         guard Settings.shared.activityEnabled else { return openSettings(.activity) }
-        if paletteView?.isHidden != false { showPalette(sender) }
+        if paletteView?.isHidden != false { openPalette(countingTip: false) }
         palette.scope = .action
         palette.query = "Free a Port"
         if let at = palette.results.firstIndex(where: { $0.id == "a.activity.freePort" }) { palette.selectedIndex = at }
@@ -420,7 +420,7 @@ extension TerminalWindowController {
                 ) { [weak self, weak selected] _, _ in if let selected { self?.showInActivity(.tab(selected.id)) } })
         }
         return rows + tab + [
-            PaletteItem(id: "a.activity", group: .action, title: "Activity", subtitle: "Every process and port on this Mac  ⌥⌘A  ·  ⌃⌘A its switcher", symbol: "cpu") {
+            PaletteItem(id: "a.activity", group: .action, title: "Activity", subtitle: "Every process and port on this Mac", symbol: "cpu", command: "activity.page") {
                 [weak self] _, _ in self?.showActivityPage(.processes)
             },
             PaletteItem(

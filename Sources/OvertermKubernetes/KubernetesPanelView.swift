@@ -13,8 +13,16 @@ package struct KubernetesPanelView: View {
     @ObservedObject package var theme: ChromeTheme
     package let group: TabGroup?
     package let openPage: () -> Void
+    /// File ▸ Open Folder…, offered with no checkout here (onboarding 7.5).
+    package let openFolder: () -> Void
+    /// So the header's tooltip follows a rebound key.
+    @ObservedObject private var keys = Keybindings.shared
 
-    package init(panel: KubernetesPanelModel, kubernetes: KubernetesModel, forwards: KubeForwards, settings: Settings, theme: ChromeTheme, group: TabGroup?, openPage: @escaping () -> Void) {
+    package init(
+        panel: KubernetesPanelModel, kubernetes: KubernetesModel, forwards: KubeForwards, settings: Settings, theme: ChromeTheme, group: TabGroup?,
+        openPage: @escaping () -> Void, openFolder: @escaping () -> Void = {}
+    ) {
+        self.openFolder = openFolder
         self._panel = ObservedObject(wrappedValue: panel)
         self._kubernetes = ObservedObject(wrappedValue: kubernetes)
         self._forwards = ObservedObject(wrappedValue: forwards)
@@ -30,18 +38,24 @@ package struct KubernetesPanelView: View {
                 if panel.binding != nil, panel.draft == nil {
                     PanelHeaderButton(symbol: "pencil", help: "Edit what this checkout is bound to", action: { panel.beginEdit() }, theme: theme)
                 }
-                PanelHeaderButton(symbol: "macwindow", help: "The Kubernetes page (⌥⌘J)", action: openPage, theme: theme)
+                PanelHeaderButton(symbol: "macwindow", help: KeyHints.help("The Kubernetes page", command: "kubernetes.page", keys: keys), action: openPage, theme: theme)
             }
             if !settings.bool("kubernetes.enabled") {
                 note("Kubernetes is off in Settings.")
             } else if panel.checkout == nil {
                 note("No checkout here: a tab in a repository shows what it deploys.")
+                OpenFolderButton(theme: theme, identifier: "kubernetes.openFolder", action: openFolder)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.top, 8)
             } else if panel.draft != nil {
                 KubeBindingForm(panel: panel, theme: theme)
             } else if let binding = panel.binding {
                 bound(binding)
             } else if !panel.canBind {
                 note("Not a repository's root: a tab in a git checkout can be bound to what it deploys.")
+                OpenFolderButton(theme: theme, identifier: "kubernetes.openFolder", action: openFolder)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.top, 8)
             } else {
                 unbound
             }
@@ -207,7 +221,8 @@ package struct KubernetesPanelView: View {
                 HStack(spacing: 10) {
                     if let found = headline.answer.found, !found.isHead || found.elsewhere > 0 {
                         Button("Diff Deployed…Current") { panel.reviewDeployed(found) }
-                            .help("A review tab (⇧⌘R): what the checkout has that isn't deployed")
+                            // No key: ⇧⌘R reviews against the base branch, not the deployed commit.
+                            .help("A review tab: what the checkout has that isn't deployed")
                             .accessibilityIdentifier("kubernetes.panel.diffDeployed")
                     }
                     if headline.answer.found == nil || headline.answer.found?.source != .revisionLabel {

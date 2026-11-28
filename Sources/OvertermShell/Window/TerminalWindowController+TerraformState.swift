@@ -80,7 +80,8 @@ extension TerminalWindowController {
             if workspace.root?.standardizedFileURL != read.checkout.standardizedFileURL { workspace.setRoot(read.checkout) }
             await workspace.loadIfNeeded()
             guard let collection = workspace.collection, !collection.isPersonal else {
-                return self.terraformNotice("No API collection in \(read.checkout.lastPathComponent)", "Make one in the API panel (⌥⌘R), then add the output to its environment.")
+                return self.terraformNotice(
+                    "No API collection in \(read.checkout.lastPathComponent)", "Make one in the " + KeyHints.help("API panel", command: "api.show") + ", then add the output to its environment.")
             }
             guard let environment = workspace.environmentName ?? collection.environments.first?.name,
                 let ref = collection.environments.first(where: { $0.name == environment })

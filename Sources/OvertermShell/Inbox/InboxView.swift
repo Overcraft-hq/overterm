@@ -45,8 +45,17 @@ package struct InboxView: View {
                     .font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(theme.text3)
                     .frame(maxWidth: .infinity)
-                KeyHint("%@ jumps to the next tab that needs you", command: "tabs.nextAttention", color: theme.text3)
+                // What lands here, and the way to it (onboarding 7.5).
+                Text(EmptyStates.inbox)
+                    .font(.system(size: ChromeMetrics.text(11)))
+                    .foregroundStyle(theme.text3)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("inbox.emptyText")
+                KeyHint(EmptyStates.inboxNext, command: "tabs.nextAttention", color: theme.text3)
+                    .frame(maxWidth: .infinity)
+                    .accessibilityIdentifier("inbox.emptyHint")
                 Spacer()
             } else {
                 ScrollView {

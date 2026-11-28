@@ -27,6 +27,8 @@ package struct SelectionActions {
 /// make sense.
 package struct SelectionBar: View {
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let actions: SelectionActions
 
     package init(theme: ChromeTheme, actions: SelectionActions) {
@@ -40,7 +42,9 @@ package struct SelectionBar: View {
                 HStack(spacing: 6) {
                     Image(systemName: "sparkles").font(.system(size: ChromeMetrics.text(11)))
                     Text("Ask an Agent").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
-                    Text(verbatim: "⌘L").font(.system(size: ChromeMetrics.text(12))).opacity(0.8)
+                    if let key = KeyHints.key("agents.askSelection", keys: keys) {
+                        Text(verbatim: key).font(.system(size: ChromeMetrics.text(12))).opacity(0.8)
+                    }
                 }
                 .padding(.horizontal, 10)
                 .frame(height: ChromeMetrics.row(28))

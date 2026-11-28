@@ -116,6 +116,34 @@ package enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/ghostty/themes", isDirectory: true)
     }
 
+    /// The user's own Ghostty config file, if there is one: it applies in
+    /// Overterm as it is, which ⌘K's first tip says (onboarding T3). The
+    /// first of `ghosttyConfigFiles` that is there — XDG's, then macOS's
+    /// Application Support ones. Only its existence is looked at. None in
+    /// an isolated run — a scenario must not depend on what the user has.
+    package static var ghosttyConfigFile: URL? {
+        ghosttyConfigFiles.first { file in FileManager.default.fileExists(atPath: file.path) }
+    }
+
+    /// Every file libghostty loads by default (`ghostty_config_load_default_files`),
+    /// whether or not it is there: XDG's `ghostty/config` and `config.ghostty`,
+    /// then macOS's Application Support ones. What a fresh install reads to
+    /// leave a theme the person chose in Ghostty alone (`FreshInstall`). None
+    /// in an isolated run — a scenario must not depend on what the user has.
+    package static var ghosttyConfigFiles: [URL] {
+        guard !isIsolated else { return [] }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let base: URL
+        if let config = env["XDG_CONFIG_HOME"], !config.isEmpty {
+            base = URL(fileURLWithPath: config, isDirectory: true)
+        } else {
+            base = home.appendingPathComponent(".config", isDirectory: true)
+        }
+        let support = home.appendingPathComponent("Library/Application Support/com.mitchellh.ghostty", isDirectory: true)
+        return ["config", "config.ghostty"].map { name in base.appendingPathComponent("ghostty/" + name) }
+            + ["config", "config.ghostty"].map { name in support.appendingPathComponent(name) }
+    }
+
     /// Claude Code's other config folders on this Mac, beside the one above:
     /// `CLAUDE_CONFIG_DIR` points one launch at another folder — an alias
     /// per account, `~/.claude-work` — and a GUI app never sees that

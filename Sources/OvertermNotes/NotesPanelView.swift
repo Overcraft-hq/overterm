@@ -60,6 +60,8 @@ package struct NotesActions {
 package struct NotesPanelView: View {
     @ObservedObject package var model: NotesModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let actions: NotesActions
 
     package init(model: NotesModel, theme: ChromeTheme, actions: NotesActions) {
@@ -189,7 +191,7 @@ package struct NotesPanelView: View {
             TextField(Self.filterPlaceholder, text: $model.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: ChromeMetrics.text(12)))
-                .help(Self.filterHelp)
+                .help(Self.filterHelp(keys: keys))
             if !model.query.isEmpty {
                 Button {
                     model.query = ""
@@ -241,9 +243,13 @@ package struct NotesPanelView: View {
         return rows
     }
 
-    /// The filter names notes; what they say is ⌘F's — said where it is typed.
+    /// The filter names notes; what they say is ⌘F's — said where it is
+    /// typed, with the key bound to Search Terminal & Files now.
     package static let filterPlaceholder = "Filter by name"
-    package static let filterHelp = "Filters the notes by name. To search what notes say, ⌘F's Notes scope."
+    @MainActor package static func filterHelp(keys: Keybindings = .shared) -> String {
+        let search = KeyHints.key("search.terminal", keys: keys) ?? "Search Terminal & Files"
+        return "Filters the notes by name. To search what notes say, \(search)'s Notes scope."
+    }
 
     /// What the list says when the filter names no note, and the button
     /// that searches the notes' text for it instead.
@@ -296,7 +302,7 @@ package struct NotesPanelView: View {
                 Text(verbatim: said.search).lineLimit(1).truncationMode(.middle)
             }
             .controlSize(.small)
-            .help("⌘F, on the Notes scope: lines of notes that say it")
+            .help((KeyHints.key("search.terminal", keys: keys) ?? "Search Terminal & Files") + ", on the Notes scope: lines of notes that say it")
             .accessibilityIdentifier("notesSearchContents")
         }
         .padding(.horizontal, 12)

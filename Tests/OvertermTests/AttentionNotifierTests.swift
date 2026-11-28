@@ -39,4 +39,35 @@ final class AttentionNotifierTests: XCTestCase {
         }
         wait(for: [done], timeout: 2)
     }
+
+    /// Onboarding D-6: the lazy ask is held only on a fresh install's first
+    /// launch, with tips on, T1 not seen and macOS not asked yet — then
+    /// T1's button asks. Every other case asks as it always did.
+    func testTheLazyAskIsHeldOnlyForT1OnAFreshFirstLaunch() {
+        XCTAssertFalse(AttentionNotifier.asksLazily(state: .notAsked, tipsOn: true, t1Seen: false, firstLaunch: true))
+        XCTAssertTrue(AttentionNotifier.asksLazily(state: .notAsked, tipsOn: false, t1Seen: false, firstLaunch: true), "tips off")
+        XCTAssertTrue(AttentionNotifier.asksLazily(state: .notAsked, tipsOn: true, t1Seen: true, firstLaunch: true), "T1 seen")
+        XCTAssertTrue(AttentionNotifier.asksLazily(state: .notAsked, tipsOn: true, t1Seen: false, firstLaunch: false), "the second launch on")
+        for state in [NotificationPermission.allowed, .denied] {
+            XCTAssertTrue(AttentionNotifier.asksLazily(state: state, tipsOn: true, t1Seen: false, firstLaunch: true), "already answered: \(state)")
+        }
+        XCTAssertEqual(NotificationPermission(.notDetermined), .notAsked)
+        XCTAssertEqual(NotificationPermission(.denied), .denied)
+        XCTAssertEqual(NotificationPermission(.authorized), .allowed)
+        XCTAssertEqual(NotificationPermission(.provisional), .allowed)
+    }
+
+    /// A unit test is an isolated run: macOS is never asked, a request is counted.
+    @MainActor
+    func testAnIsolatedRunAsksMacOSNothing() async {
+        AttentionNotifier.permissionOverride = nil
+        let before = AttentionNotifier.requestedNow
+        let state = await AttentionNotifier.authorizationState()
+        XCTAssertEqual(state, .notAsked)
+        AttentionNotifier.permissionOverride = .allowed
+        let after = await AttentionNotifier.requestNow()
+        XCTAssertEqual(after, .allowed)
+        XCTAssertEqual(AttentionNotifier.requestedNow, before + 1)
+        AttentionNotifier.permissionOverride = nil
+    }
 }

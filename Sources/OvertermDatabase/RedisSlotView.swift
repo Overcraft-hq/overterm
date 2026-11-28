@@ -22,6 +22,8 @@ package struct RedisSlotActions {
 package struct RedisSlotView: View {
     @ObservedObject package var model: RedisSlotModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let actions: RedisSlotActions
 
     package init(model: RedisSlotModel, theme: ChromeTheme, actions: RedisSlotActions) {
@@ -38,7 +40,8 @@ package struct RedisSlotView: View {
             case .server: RedisServerView(model: model.server, theme: theme, actions: actions)
             case .none:
                 VStack {
-                    Text("Pick a key in the Database panel (⌥⌘B).").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText)
+                    Text(verbatim: "Pick a key in the " + KeyHints.help("Database panel", command: "database.show", keys: keys) + ".").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(
+                        theme.dimText)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity).padding(16)

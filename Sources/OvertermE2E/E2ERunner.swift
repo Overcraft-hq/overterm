@@ -64,6 +64,7 @@ package final class E2ERunner {
         "layout": { await $0.layout() },
         "session": { await $0.session() },
         "task": { await $0.task() },
+        "onboarding": { await $0.onboardingScenario() },
         "snippets": { await $0.snippetsScenario() },
         "attention": { await $0.attention() },
         "marks": { await $0.marks() },
@@ -1950,11 +1951,29 @@ package final class E2ERunner {
         // And it sits on the window's own chrome: no glass the toolbar lays
         // behind its item (macOS 26's platter hung 8 pt under the bar, a
         // grey band across the window under the tabs).
+        //
+        // With the What's New chip showing (onboarding 7.9): it takes the
+        // update chip's place in the strip, never the drag area's.
+        let updates = UpdateChecker.shared
+        AppEnvironment.defaults.removeObject(forKey: UpdateChecker.whatsNewSeenKey)
+        updates.noteLaunch(.upgraded(from: "1.6.1"), changelog: whatsNewChangelog(updates.currentVersion), enabled: true)
+        defer {
+            // No update remembered: the next launch's note shows no chip
+            // (a `.same` alone reads the update kept above and shows it again).
+            AppEnvironment.defaults.removeObject(forKey: UpdateChecker.whatsNewFromKey)
+            updates.noteLaunch(.same)
+        }
+        check("the What's New chip is in the strip for these", await eventually(3) { WhatsNewChip.drawn != nil }, String(describing: WhatsNewChip.drawn))
+        // Where the chip itself is, a point is the chip's, not empty strip:
+        // its frame is the strip's own, put in the window's x.
+        let stripX = app.tabBarView?.convert(NSPoint.zero, to: nil).x ?? 0
+        let chip = WhatsNewChip.drawn?.frame.offsetBy(dx: stripX, dy: 0)
         let backdrops = Self.stripBackdrops(app.tabBarView)
         check("nothing is drawn behind the strip", backdrops.isEmpty, backdrops.joined(separator: ", "))
         var dragArea: WindowDragView?
         for fraction in [0.35, 0.55, 0.75] {
             let point = NSPoint(x: window.frame.width * fraction, y: lights.midY)
+            if let chip, (chip.minX - 8...chip.maxX + 8).contains(point.x) { continue }
             let onTop = window.contentView?.superview?.hitTest(point)
             dragArea = dragArea ?? onTop as? WindowDragView
             check(
@@ -2763,6 +2782,8 @@ package final class E2ERunner {
 
     /// New Task: a worktree on a new branch next to the repo, a tab in it.
     private func task() async {
+        // Onboarding's stage 0: outside a repository first, then the agent's check.
+        await onboardingTaskChecks()
         let repo = scratch.appendingPathComponent("proj")
         try? FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
         try? await git(["init", "-q", "-b", "main"], in: repo)
@@ -5751,6 +5772,8 @@ package final class E2ERunner {
         check(
             "the Inbox row shows its key", app.palette.results.first { $0.title == "Inbox" }?.subtitle?.hasSuffix(inboxKey) == true,
             app.palette.results.first { $0.title == "Inbox" }?.subtitle ?? "nil")
+        // Onboarding stage 1: the rows' keys from their commands, Help's rows.
+        await onboardingPaletteChecks()
         // Every setting a row; Return opens Settings at it.
         app.palette.query = "font size"
         let fontSize = app.palette.results.first { $0.group == .setting }

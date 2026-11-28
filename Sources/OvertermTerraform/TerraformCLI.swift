@@ -50,11 +50,12 @@ package enum TerraformCLI {
     }
 
     /// The terraform to run now. Blocking the first time (the login shell
-    /// is asked): off the main thread.
-    package static func binary() -> URL? {
+    /// is asked): off the main thread. `isExecutable`: the Setup page's,
+    /// which passes over folders macOS guards (`SetupProbe.isProtected`).
+    package static func binary(isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }) -> URL? {
         resolve(
             AppEnvironment.terraformBinary, wrapper: AppEnvironment.guardsTerraform ? scenarioWrapper : nil,
-            shellEnvironment: { ShellEnvironment.environment() })
+            shellEnvironment: { ShellEnvironment.environment() }, isExecutable: isExecutable)
     }
 
     /// The same without waiting, for terraform-ls's `terraform.path`: the

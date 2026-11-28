@@ -176,7 +176,8 @@ package struct KubePanelGitOpsView: View {
                 if changed.review != nil {
                     Button(changed.text) { gitOps.reviewChanged(match) }
                         .buttonStyle(.link).font(.system(size: ChromeMetrics.text(10.5)))
-                        .help("A review tab (⇧⌘R) of these files, from where this branch left \(changed.against)")
+                        // No key: ⇧⌘R reviews the whole branch, not these files.
+                        .help("A review tab of these files, from where this branch left \(changed.against)")
                         .accessibilityIdentifier("kubernetes.panel.gitops.changed")
                 } else {
                     small(changed.text, failed: false, id: "kubernetes.panel.gitops.changed")
@@ -186,7 +187,8 @@ package struct KubePanelGitOpsView: View {
             if let found = reach.found, !found.isHead || found.elsewhere > 0 {
                 Button("Diff Deployed…Current") { gitOps.reviewDeployed(match) }
                     .buttonStyle(.link).font(.system(size: ChromeMetrics.text(11)))
-                    .help("A review tab (⇧⌘R): what the checkout has that isn't in the manifests' commit")
+                    // No key: ⇧⌘R reviews against the base branch, not the deployed commit.
+                    .help("A review tab: what the checkout has that isn't in the manifests' commit")
                     .accessibilityIdentifier("kubernetes.panel.gitops.diffDeployed")
             }
             if !reach.pathspecs.isEmpty || reach.found != nil {

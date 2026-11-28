@@ -492,7 +492,11 @@ About: `UpdateChecker` asks `gh api repos/Overcraft-hq/overterm/releases/latest`
 downloads the DMG with `gh release download`; once a day at launch when
 allowed, a title-bar chip when newer (it opens Settings ▸ About).
 `make-app.sh` bundles `CHANGELOG.md` for "What's new" and View Latest
-Changelog.
+Changelog. After an update the strip's "What's new in …" chip stays —
+launch after launch — until it is opened or put away
+(`onboarding.whatsNewSeen`): the version the update came from is kept
+(`onboarding.whatsNewFrom`, `UpdateChecker.pendingFrom`), and About and
+Help ▸ What's New list every version since it.
 
 ## Agent overview (⇧⌘A)
 
@@ -1678,6 +1682,245 @@ makes it on by default). `AppDelegate.application(_:open:)` and
 call `TerminalWindowController.open(_:)`. `make install` runs `lsregister -f`
 and `pbs -update` so Finder sees a change at once. `public.data` alone did not
 get files listed; the explicit text types did.
+
+## Onboarding
+
+Learn as you go (docs/design/onboarding/analysis.md, D-1): nothing is shown
+on a first launch only; the dead ends get a next step instead.
+`Sources/Overterm/Onboarding/`:
+
+- `FirstRun` decides a launch — `.fresh`, `.upgraded(from:)`, `.same` —
+  from the last version run (`onboarding.lastRunVersion`), session.json,
+  settings.json and `updates.lastCheck`. `AppDelegate` reads it right
+  after `carryOverFormerDefaults()`, before the session's autosave and the
+  update check write anything, and writes this version once the window
+  shows. The key is in `AppEnvironment.defaults`, never settings.json (any
+  agent writes that file; it is synced; Settings' search would list it).
+  Nothing reads the decision yet: later stages do.
+- `AgentFinder` says whether an agent's CLI is where a new tab's shell
+  looks: the login shell's PATH as `ShellEnvironment.known()` has it
+  (never asked, never waited for — `.unknown` until it answers, and in an
+  isolated run), then Claude Code's installers' places, shared with
+  `AgentUsageCommand` — a folder under Desktop, Documents, Downloads or
+  iCloud Drive never looked in (`SetupProbe.isProtected`). `newAgentTab` asks before typing: missing — found
+  neither on the PATH nor in a known place — is a sheet with Open the Tab
+  Anyway, never a refusal, since an alias or a shell function is invisible
+  to the lookup; New Task's picker marks it and starts on Shell only. Found
+  only off the PATH (Claude Code's local install, reached by an alias) is
+  neither warned about nor fallen back from: the picker notes "not on
+  PATH", the Setup page says where. Check Again asks the login shell again
+  even when it answered (`ShellEnvironment.login(askingAgain:)`), so an
+  agent installed since is seen without a relaunch. No CLI is run.
+
+File ▸ Open Folder… (`file.openFolder`, no key by default — D-10) and its
+⌘K row pick a folder in `NSOpenPanel` and hand it to `open(_:)`
+(`TerminalWindowController+Start`); New Task's alert outside a repository
+offers it. Overterm never runs `git init`. Help holds Keyboard Shortcuts
+(`help.shortcuts`), Keys Here and a plain, id-less mirror of View Latest
+Changelog, so no id or key is on two menus; `NSApp.helpMenu` brings
+macOS's menu search.
+
+The empty states teach (7.5, `EmptyStates`): a sentence, one action, the
+key bound now. Overgit outside a repository, and Kubernetes' and
+Terraform's panels with no checkout or outside a repository's top folder
+(`canBind` false, `.notGit`), offer `OpenFolderButton` (through
+`WorktreeActions.openFolder`, `KubernetesPanelView`'s `openFolder`,
+`TerraformPanelActions.openFolder`); Files rooted at the home folder shows
+`HomeFolderStrip` when the window's `DiffModel` — already read for the
+badge — said that folder is no repository (`EmptyStates.showsHomeStrip`,
+pure; `EmptyStates.home`, a scenario's scratch home in `homeOverride`). No
+empty state runs a tool to decide what it says. Every key such a state,
+the Inbox's header, a rail tooltip or a ⌘K row shows is read from
+`Keybindings` (`KeyHint`, `KeyHints`): a ⌘K row names its command
+(`PaletteItem.command`) and `PaletteCommands.withLiveKeys` appends that
+command's key as bound now, so no row writes one into its words. So does
+every tooltip and line that names a rebindable command's key — the strip's
+New Tab, close ×s, browser and simulator switches, ± badge, "need you" chip
+and usage chip; the Changes, Pull Request and commit panes' close; the pane
+header's buttons and Rerun; Tab Info, the agent cards, the port pill; the
+selection bar; the group bars; the panels' and pages' "Pick … in the …
+panel" lines; the lists' `?` foot (`ResourceKeys.listNote`, Edit ▸ Copy's
+key) —, each view observing `Keybindings.shared` so a rebinding shows at
+once. The editor's AppKit header (`EditorHeaderView`, below Overterm) asks
+`EditorHeaderView.boundKey`, set by `EditorViewController`, and redraws its
+tooltips on `Keybindings.changes`. Settings' help texts name a command, never
+its key. `KeysInTextTests` scans `Sources` (not the scenarios) for a string
+literal with a modifier and a letter: only keys that are no command's — ⌃C
+and ⌃Z typed into a terminal, Activity's ⌥o and ⌥r, the plan pane's ⇧A, the
+browser column's Safari keys, the Kubernetes page's own ⌘R on GitOps — are
+allowed, each with why.
+
+The Start card (7.3, 7.10) is the one thing a fresh install shows by
+itself (D-2): at the foot of the sidebar's panel column — the last child of
+`SidebarView`'s column, under whichever panel shows, never a rail icon or a
+`SidebarPanel` — what the app is in one sentence and five steps that tick
+themselves. Hidden with the sidebar — its second step asks the login
+shell only while the column is open (`SidebarModel.columnOpen`), and a
+shell that didn't answer is said, with Check Again, A shell only and Check
+Setup —; past 40% of the column's height it scrolls inside itself; nothing
+is added to the window or a split. Its foot is Check Setup · Turn Off Tips.
+
+- `StartState` (pure) holds every rule: the steps done and when
+  (`onboarding.steps`, D-12), the card open, collapsed or closed
+  (`onboarding.card`), `general.tips` (D-11, a `SettingsSchema` entry: off,
+  neither the card nor a tip shows). `applying(event, now:)` marks a step
+  the first time its event comes, in any order; `launched(_:)` opens the
+  card on `.fresh`, collapses an open one on later launches, and offers
+  none after an update.
+- `Start` is the app's one learner: the state kept in
+  `AppEnvironment.defaults` — never settings.json — and `note(_:)`, a
+  one-line call where the work is done (`WorktreeModel.refresh` for a
+  checkout, `createTask`, an agent's tab made, the Inbox opened while a tab
+  needs you, a waiting tab selected — `markSelectedSeen` —, the changes pane
+  on screen — `updateRightPaneVisibility`). A step already done publishes
+  nothing. Inert in an isolated run unless the scenario is `onboarding`
+  (`Start.isActive`), so no other scenario or picture looks like a first
+  launch.
+- `StartText` (pure) makes every sentence and button from the state, the
+  window's facts and the keys bound now, passed in as a map; an unbound
+  command is said by its name. `StartCardView` draws it, observing `Start`,
+  the window's theme and `Keybindings` — never all of `Settings.shared`.
+- `SetupCheck` (pure: `SetupFacts` → `SetupRow`s) has the Setup page's
+  core rows — the shell, git, the GitHub CLI, one per agent
+  (`Agent.allCases`), notifications, the bridge —, each with what was
+  found, where Overterm looked and its action: a command to copy or type
+  into a new tab, an agent's own install page (one table, `installPage`,
+  never a fixed command), a Settings page, Allow…. The second step shows
+  git's and gh's when they are wrong (`StartText.problems`). `SetupProbe`
+  fills the facts off the main thread with the features' own finders:
+  `ShellEnvironment.login()`'s PATH, `AgentFinder`, the existence of
+  `~/.claude/projects` and `~/.codex/sessions` ("used here before"), of
+  Command Line Tools or Xcode, of Gemini CLI's system defaults (as the
+  launch tests it), and `GitHub.executable`; for the page also
+  notifications as macOS says now and the bridge as Settings has it. It
+  runs no tool — no agent's CLI, no `git`, no `gh` — but may start the
+  login shell once for its PATH (`ShellEnvironment.login()`, which runs
+  the person's rc files); it skips PATH folders under Desktop, Documents,
+  Downloads and iCloud Drive (`SetupProbe.isProtected`), and writes
+  nothing; a scenario sets `SetupProbe.override`.
+- The Setup page (7.7) is a `WorkspacePage` (`WorkspaceOverlay.setup`)
+  opened only by the person: Help ▸ Check Setup… (`help.setup`, no key),
+  its ⌘K row, the card's Check Setup and the "isn't on your PATH"
+  warning's. `SetupPageModel` reads while it shows (`visibilityChanged`)
+  and on Check Again, and drops what it read when it goes. `SetupView`
+  says what runs by itself (`general.usageAsk`, its switch, D-7) and the
+  person's step times from `onboarding.steps` and
+  `onboarding.firstLaunch`, kept on this Mac only (D-12). Its presses go
+  through `performSetupAction`: Put in a New Tab types the command with
+  `newTab(in:typing:)` and presses no Return. Its host
+  (`SetupHostingView`) takes the keyboard when shown; Esc hides the page
+  and gives it back to the selected terminal.
+- "Tools the panels use" is folded until opened, and read then only for
+  the panels that are on (`SetupPanelProbe`, in the shell, above the
+  features whose finders it calls): `DockerCLI.locate` and `hasPlugin`,
+  the engine `DockerEndpoint.current()` names and its socket's existence
+  (never a ping), `KubectlLocator` and `KubeHelmLocator`, the contexts
+  the Kubernetes page read this launch — else the kubeconfig files'
+  existence; `reloadContexts()` is never called —, their credential
+  plugins by `KubeProxyPlanner.isInstalled`, `terraform.path` or
+  `TerraformCLI.binary()` (never `binary(forRoot:)`'s `mise which`),
+  `ServerDiscovery` without xcrun, Xcode's and CoreSimulator's existence,
+  the Ghostty config's; gcloud for Kubernetes or Database
+  (`BigQueryDriver.gcloudCandidates`, and `gke-gcloud-auth-plugin` on the
+  login shell's PATH as a GKE context's proxy looks) and protoc for the
+  API client (`GRPCProtoc.locate(environment:)`, as gRPC looks). Every
+  finder's `isExecutable` passes over Desktop, Documents, Downloads and
+  iCloud Drive (`SetupProbe.isProtected`), as `AgentFinder` and
+  `SetupProbe` do, but for a path the person set in a setting —
+  `kubernetes.kubectlPath`, `kubernetes.helmPath`, `terraform.path`
+  (`SetupPanelProbe.chosenPaths`) —, looked at wherever it is. The
+  credential plugins' row is never silent: before the Kubernetes page has
+  read the contexts it says "Open Kubernetes once to check its contexts'
+  plugins". A panel a fresh install hid is a row of its own, in the card's
+  words (`SetupCheck.hiddenAtInstallDetail`). Its words are
+  `SetupCheck.panelRows`' (pure), the features' own where they have them.
+  An isolated run looks at none of them (`SetupProbe.panelsOverride`
+  stands in).
+
+`AppDelegate` hands the launch to the window after `showWindow`
+(`beginStart`), never in an isolated run. Every press on the card goes
+through `TerminalWindowController.performStartAction`: a step's button
+runs its menu item's action — the opening half where the item toggles —
+and a click that left the keyboard on a control in the card hands it back
+to the selected terminal (a key press, Full Keyboard Access, leaves it).
+Help ▸ Getting Started (`help.gettingStarted`, no key) and its ⌘K row show
+the sidebar, open the card whatever the flags say, and give the sidebar
+the keyboard — the one way in that moves it, and the person asked. Done's
+ticks are the optional panels' own switches (`SidebarPanel.toggleKey`,
+DISC-N4), every optional panel listed; a tick never changes for the person.
+
+A fresh install sets two things once (`FreshInstall`, pure — the owner
+reversed D-8 —; `FreshInstallSetup`, in the shell for the features'
+finders), only on `.fresh`, each never over a setting the person has in
+settings.json and remembered as made in `AppEnvironment.defaults`
+(`onboarding.panelsDecided`, `onboarding.themeDecided`):
+
+- The panels whose tool isn't on this Mac start hidden: Docker with no
+  `docker` in its folders (`DockerCLI.folders`) and no Docker Desktop or
+  OrbStack app, Kubernetes with no `kubectl` where `KubectlLocator` looks,
+  Terraform with neither `terraform` nor `tofu` on the PATH or in Homebrew's
+  folders. API, Database, Notes, Sessions and Snippets are left alone.
+  Existence and executability only — no socket, no kubeconfig, no tool run.
+  `decidePanels` runs once the window shows (`decideFreshPanels`), on a
+  queue of its own, with `ShellEnvironment.login()`'s PATH — the answer it
+  keeps, so the card's second step and the Setup page read the same one
+  and the shell is asked once; unanswered, nothing is hidden. What it hid
+  is kept (`onboarding.panelsHidden`): the card's open and done states say
+  those still off in one line with Show (`Start.stillHidden`,
+  `showHidden`), the Setup page agrees.
+- The terminal follows macOS between `FreshInstall.darkTheme` and
+  `lightTheme` (Catppuccin Mocha and Latte: one palette drawn as a pair),
+  set by `chooseTheme` in `applicationDidFinishLaunching` before the window
+  writes Ghostty's overrides — unless the Ghostty config libghostty loads
+  names a theme (`AppEnvironment.ghosttyConfigFiles` and what they include,
+  read as Ghostty reads `theme =`, bounded) or settings.json has an
+  appearance theme key. The done state says the theme in force
+  (`StartText.themeLine`) with Change… to Settings ▸ Themes, through
+  `performStartAction`.
+
+An isolated run decides neither unless a scenario hands over what it would
+have found (`FreshInstallSetup.toolsOverride`, `ghosttyThemeOverride`).
+
+The tips (7.6, D-9) are four — T1 needs you, T2 production, T3 Clear
+moved, T4 agents' tools —, each shown once, never more than five
+(`StartState.Tip`, the cap a test's). Their rules are `StartState.apply`'s
+(pure): a tip comes from its event — `markRaised(kind)` at the three places
+a mark goes up (`TabActivity.handle`, `agentAsked`, `terraformAsked`, all
+through `noteMarkRaised`) and with every notice told
+(`notifyUnlessHeld`: a container's, a cluster's, Left Behind, CI…), `productionPane` when a pane header's production
+label appears (`KubeRunWarningLabel`, `TerraformRunWarningLabel`),
+`paletteOpened` as ⌘K shows (`showPalette`; never a switcher's opening,
+`openPalette(countingTip: false)`), `agentTabStarted`; it waits while a sheet,
+⌘K, Tab Peek or the held-settings banner covers its place, or the app is
+behind another, and is seen once placed (`onboarding.tipsSeen`); an Inbox
+opened first makes T1 needless; one banner tip a launch, T1 and T2 past
+that limit — and in front of a placed T4, which waits to come back
+(`displaced`, not counted again); `general.tips` off, none; an update
+counts every tip seen. No timer: T1 goes with the Inbox, or its tab
+selected once it has been on screen a moment (`StartState.seenAfter`) —
+one still waiting, or placed in the same turn as the app came back and
+selected its tab, stays —, T2 and T4 with ×. T3 is
+⌘K's own hint row (`PaletteModel.tip`) on its first three showings
+(`onboarding.paletteOpens`); the others are `TipBannerView`, hosted as the
+held banner is — one view under the title bar, over the body, resizing
+nothing — by `TipBannerHostingView`, shown only in the window that holds
+the tips (`holdsTips`: the key window, else the main one) and moving with
+key status; that window alone says the room. The host refuses first responder; its
+buttons take no focus and it binds no key. Its presses go through
+`performTipAction`; a placed tip is announced to VoiceOver
+(`announcementRequested`) without moving the focus. Help ▸ Reset Tips
+(`help.resetTips`, no key) and its ⌘K row clear what was seen, asked first.
+
+The notification permission is asked by a click on a fresh install (D-6):
+on its first launch, while T1 is unseen and tips are on
+(`Start.holdsNotificationAsk`), `AttentionNotifier.notify` and `summarize`
+read macOS's answer first and ask nothing while it is "not asked"
+(`asksLazily`, pure) — the Dock bounce and the badge still say it; T1's
+Allow Notifications… asks then (`requestNow`). From the second launch on,
+or with T1 seen, the lazy ask is as before. The state is read live each
+time (`authorizationState`), every UserNotifications completion built in a
+`nonisolated` function; an isolated run asks macOS nothing
+(`permissionOverride`, `requestedNow`).
 
 ## Microphone and other privacy prompts
 

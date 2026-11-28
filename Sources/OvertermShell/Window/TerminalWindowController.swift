@@ -54,6 +54,18 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// settings.json's security settings changed outside the page, waiting
     /// for Keep or Revert (`Settings.held`); hidden while none is.
     package private(set) var settingsHeldBanner: NSHostingView<SettingsHeldBanner>?
+    /// The tip under the title bar (onboarding 7.6, D-3): hidden while no
+    /// tip shows (TerminalWindowController+Start).
+    package var tipBanner: TipBannerHostingView?
+    /// Notifications as macOS said when T1 took its place.
+    package let tipModel = TipBannerModel()
+    /// What the tip banner hears from NotificationCenter — the app in
+    /// front, a sheet, the window key —, removed when the window closes.
+    package var tipObservers: [any NSObjectProtocol] = []
+    /// What covers the tip's place as `updateTipRoom` worked it out, while
+    /// it tells `Start`: a tip placed then is shown or hidden by that, not
+    /// by `Settings.held`, which a `$held` sink reads before it changes.
+    var tipRoomBlocked: Bool?
     private var searchSubscription: AnyCancellable?
     /// The ⌘F overlay over the terminal (terminal + files + contents).
     package let spotlight = SpotlightModel()
@@ -144,6 +156,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var kubernetesPageHeld = false
     /// The Activity page's own state; its view is made the first time it opens.
     package let activityPage = ActivityPageModel()
+    /// The Setup page's facts, read only while it shows (onboarding 7.7).
+    package let setupPage = SetupPageModel()
+    /// A scenario's: what Put in a New Tab on the Setup page would type, recorded instead.
+    package var setupTabRecorder: ((String) -> Void)?
     /// The ⌃⌘A switcher's hold and rows, while the palette shows it.
     package let activitySwitcher = ActivitySwitcher()
     /// What an isolated run would have opened in the default browser (an Ingress).
@@ -250,6 +266,12 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var taskTextRecorder: ((TaskTextOutcome) -> Void)?
     /// A scenario's: what New Task's setup didn't copy, said here.
     package var taskSetupRecorder: ((TaskSetupCopy.Report) -> Void)?
+    /// Where an agent's CLI is, as a new tab's shell would find it
+    /// (`AgentFinder`); a scenario's facts in its place.
+    package var findAgent: (Agent) -> AgentFinder.Result = { AgentFinder.find($0) }
+    /// A scenario's: an agent tab opened anyway is said here, not opened —
+    /// its command would reach whatever `claude` the run's PATH has.
+    package var agentTabRecorder: ((Agent, URL) -> Void)?
     /// A scenario's: a link `openLink` would open — a pane pill's, Tab
     /// Info's — handed here with whether Settings ▸ Browser opens it in
     /// the browser column, instead of either browser.
@@ -518,13 +540,14 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 worktreeActions: WorktreeActions(
                     open: { [weak self] in self?.openWorktree($0) },
                     newTab: { [weak self] in self?.newTab(in: $0.path) },
-                    newAgentTab: { [weak self] worktree, agent in self?.newTab(in: worktree.path, agent: agent) },
+                    newAgentTab: { [weak self] worktree, agent in self?.newAgentTab(agent, in: worktree.path) },
                     remove: { [weak self] in self?.removeWorktree($0) },
                     attach: { [weak self] in self?.attach($0) },
                     detach: { [weak self] in self?.detach() },
                     newTask: { [weak self] in self?.newTask(nil) },
                     cleanUp: { [weak self] in self?.cleanUpMergedWorktrees(nil) },
-                    showPullRequest: { [weak self] in self?.showPullRequest(nil) }
+                    showPullRequest: { [weak self] in self?.showPullRequest(nil) },
+                    openFolder: { [weak self] in self?.openFolder(nil) }
                 ),
                 overgitActions: OvergitActions(
                     showCommit: { [weak self] in self?.showCommit($0) },
@@ -571,6 +594,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 terraformActions: terraformPanelActions,
                 openKubernetesPage: { [weak self] in self?.toggleKubernetesPage(nil) },
                 railAction: { [weak self] in self?.performRailAction($0) },
+                startAction: { [weak self] in self?.performStartAction($0) },
                 onKey: { [weak self] in self?.sidebarKey($0) ?? false },
                 keyView: { [weak self] view in self?.sidebarKeyTarget = { [weak view] in view } }
             ))
@@ -584,6 +608,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         sidebarItem.holdingPriority = .defaultLow + 10
         // Shown on first launch; after that, as the user left it.
         sidebarItem.isCollapsed = !(AppEnvironment.defaults.object(forKey: Self.sidebarVisibleKey) as? Bool ?? true)
+        sidebarPanel.columnOpen = !sidebarItem.isCollapsed
         let terminalPane = NSViewController()
         terminalPane.view = CardColumn(content: container, fill: .terminal, theme: theme)
 
@@ -784,7 +809,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         // (it renders nothing while hidden). Only ever on — dragged shut, it
         // just keeps rendering, as it always did.
         split.onResize = { [weak self] in
-            guard let self, let item = self.diffItem, !item.isCollapsed, !self.diff.panelVisible else { return }
+            guard let self else { return }
+            // The sidebar dragged open or shut: Overgit's reads and the
+            // Start card's probe follow it, as they do the toggle.
+            self.updateOvergitVisibility()
+            guard let item = self.diffItem, !item.isCollapsed, !self.diff.panelVisible else { return }
             self.diff.panelVisible = true
             // Dragged open on the usage or the pull request: that model has
             // to be told it is showing, or the pane stays blank.
@@ -854,6 +883,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         wireDockerPage()
         wireKubernetesPage()
         wireActivityPage()
+        declarePage(setupWorkspacePage())
         wireDockerPanel()
         wireKubernetesPanel()
         wireTerraformPanel()
@@ -964,6 +994,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             .sink { [weak heldBanner] empty in heldBanner?.isHidden = empty }
             .store(in: &cancellables)
         settingsHeldBanner = heldBanner
+        // A tip: in the held banner's place, under it — a tip waits while
+        // the held banner shows, which stands alone.
+        installTipBanner(in: content, top: titleBottom, under: heldBanner, theme: theme)
 
         // The palette floats over everything, hidden until ⌘P.
         let paletteView = NSHostingView(
@@ -1206,7 +1239,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             if tab.activity.handle(event, visible: self.isVisible(tab)) {
                 // While focusing on one island, another group's notice waits
                 // — unless its agent is blocked on you.
-                self.notifyUnlessHeld(tab)
+                self.notifyUnlessHeld(tab)  // T1 too, by any mark
             }
             if event == .bell, self.isVisible(tab) { NSSound.beep() }
             self.updateAttentionBadge()
@@ -1417,12 +1450,19 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// `setup`: New Task's setup command, typed first — the agent only once
     /// it succeeded (`TaskSetup.firstLine`).
     package func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true, command: String? = nil, setup: String = "") {
+        _ = openTab(in: directory, agent: agent, startAgent: startAgent, command: command, setup: setup)
+    }
+
+    /// `newTab(in:agent:…)`, saying which tab it opened.
+    private func openTab(in directory: URL, agent: Agent?, startAgent: Bool = true, command: String? = nil, setup: String = "") -> Tab? {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let start = agent.map { agentCommand($0, base: command, in: directory) }
         let input = TaskSetup.firstLine(setup: setup, agent: startAgent ? start?.command : nil).map { $0 + "\n" }
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
         terminal.terraformAgentGuard = start?.launch ?? .none
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+        if agent != nil, startAgent { Start.shared.note(.agentTabStarted) }
+        return tab(containing: terminal)
     }
 
     /// What starts `agent` in `directory`: its command (`base`, else its
@@ -1446,6 +1486,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             environment: environment, kubePin: kubePin)
         terminal.terraformAgentGuard = start?.launch ?? .none
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+        if agent != nil { Start.shared.note(.agentTabStarted) }
         followKubernetesPins()
     }
 
@@ -1494,6 +1535,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     private func markSelectedSeen() {
         showSelectedApproval()
         guard let tab = store.selected, isVisible(tab), tab.activity.needsAttention else { return }
+        Start.shared.note(.waitingTabSelected(tab.id))
         tab.activity.seen()
         AttentionNotifier.withdraw(tab: tab)
         updateAttentionBadge()
@@ -1543,6 +1585,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         if let ask {
             let raised = tab.activity.terraformAsked(ask.summary, visible: isVisible(tab))
             if raised, tab.agent != nil || ask.prompt.isAgents { notifyUnlessHeld(tab) }
+            if raised { noteMarkRaised(on: tab) }
         } else if before != nil, tab.activity.terraformAnswered() {
             AttentionNotifier.withdraw(tab: tab)
         }
@@ -1555,6 +1598,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package func updateAttentionBadge() {
         AttentionNotifier.updateBadge(count: store.tabs.filter { $0.activity.needsAttention }.count)
         updateMenuBarItem(count: store.tabs.count { $0.activity.needsAttention })
+        // This window's own: its card's Open Inbox opens this window's Inbox.
+        let needsYou = store.tabs.contains { tab in tab.activity.needsAttention }
+        if sidebarPanel.needsYou != needsYou { sidebarPanel.needsYou = needsYou }
         if inboxItem?.isCollapsed == false { refreshInbox() }
     }
 
@@ -1920,10 +1966,49 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         }
     }
 
-    /// An agent tab in the selected tab's directory.
-    package func newAgentTab(_ agent: Agent) {
+    /// An agent tab in the selected tab's directory. A CLI found nowhere —
+    /// not on the PATH, not in a known place — is said first, before
+    /// anything is typed (onboarding 7.4) — never refused: an alias or a
+    /// shell function of that name is invisible to the lookup, so the tab
+    /// can open anyway. One found only off the PATH (Claude Code's local
+    /// install, reached by an alias) opens with nothing said.
+    /// `then`: what to do with the tab once it is open — never called when
+    /// the warning's Cancel (or Check Setup) opened none.
+    package func newAgentTab(_ agent: Agent, then opened: ((Tab) -> Void)? = nil) {
         let cwd = store.selected?.terminal.inheritedSettings().workingDirectory
-        newTab(in: URL(fileURLWithPath: cwd ?? FileManager.default.homeDirectoryForCurrentUser.path), agent: agent)
+        let folder = URL(fileURLWithPath: cwd ?? FileManager.default.homeDirectoryForCurrentUser.path)
+        newAgentTab(agent, in: folder, then: opened)
+    }
+
+    /// The same in `folder`: the sidebar's New ‹agent› Tab Here, Ask
+    /// Agent's tab in a folder — the PATH said first here too.
+    package func newAgentTab(_ agent: Agent, in folder: URL, then opened: ((Tab) -> Void)? = nil) {
+        guard let window, let warning = AgentFinder.warning(agent, findAgent(agent)) else {
+            return openAgentTab(agent, in: folder, then: opened)
+        }
+        let alert = NSAlert()
+        alert.messageText = warning.title
+        alert.informativeText = warning.detail
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Open the Tab Anyway")
+        alert.addButton(withTitle: "Cancel")
+        // The Setup page: every agent, and where Overterm looked (7.4).
+        alert.addButton(withTitle: "Check Setup")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            MainActor.assumeIsolated {
+                switch response {
+                case .alertFirstButtonReturn: self?.openAgentTab(agent, in: folder, then: opened)
+                case .alertThirdButtonReturn: self?.showSetup(nil)
+                default: break
+                }
+            }
+        }
+    }
+
+    private func openAgentTab(_ agent: Agent, in folder: URL, then opened: ((Tab) -> Void)?) {
+        if let agentTabRecorder { return agentTabRecorder(agent, folder) }
+        guard let tab = openTab(in: folder, agent: agent) else { return }
+        opened?(tab)
     }
 
     // MARK: Find in terminal
@@ -2256,7 +2341,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// the menu item passes nothing and the setting decides.
     package func newTask(base: String?) {
         guard let repo = worktrees.main?.path else {
-            showAlert("Not in a git repository", "Open a tab inside a repository first; the task’s worktree is created from it.")
+            // The next step offered: a folder picked, a tab opened there (onboarding 7.4).
+            showAlert(
+                "Not in a git repository", "Open a tab inside a repository first; the task’s worktree is created from it.",
+                action: (title: "Open Folder…", run: { [weak self] in self?.openFolder(nil) }))
             return
         }
         presentSheet { close in
@@ -2268,6 +2356,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 composeFile: Settings.shared.dockerEnabled ? ComposeProjects.composeFile(in: repo)?.lastPathComponent : nil,
                 kubernetes: Settings.shared.kubernetesEnabled ? { await Self.kubernetesTaskOffer(for: repo) } : nil,
                 setup: TaskSetupStore.setup(for: repo),
+                agents: Dictionary(uniqueKeysWithValues: Agent.allCases.map { candidate in (candidate, findAgent(candidate)) }),
                 onCreate: { [weak self] branch, base, agent, startStack, pin, task, setup in
                     guard let self else { return nil }
                     do {
@@ -2889,7 +2978,17 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
 
     // MARK: Palette
 
+    /// ⌘K (View ▸ Command Palette, Ghostty's ⇧⌘P): the palette, or
+    /// closed when it shows — a real opening, which T3 counts.
     @objc package func showPalette(_ sender: Any?) {
+        openPalette(countingTip: true)
+    }
+
+    /// The palette shown, or hidden when it shows. `countingTip`: a real
+    /// ⌘K opening — T3 (onboarding 7.6) is counted and shown only then,
+    /// never when a switcher (Kubernetes', Activity's, Terraform's,
+    /// Docker's) or a command opens the palette on its own group.
+    package func openPalette(countingTip: Bool) {
         guard let paletteView else { return }
         if !paletteView.isHidden {
             hidePalette()
@@ -2898,7 +2997,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         paletteOpener = window?.firstResponder
         paletteFixedRows = nil
         palette.reset(with: paletteItems())
+        palette.tip = countingTip ? paletteTip() : nil
         paletteView.isHidden = false
+        updateTipRoom()
         // The hosting view is reused, so its field has to be focused on
         // every show, after SwiftUI has laid it out.
         DispatchQueue.main.async { [weak self] in
@@ -2932,6 +3033,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// Esc and the arrows wherever the keyboard is, as the overview's: a
     /// click, or the terminal behind, takes first responder back.
     package func installPeekKeys() {
+        updateTipRoom()
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
         peekKeys = nil
         guard peek.isOpen else { return }
@@ -3141,7 +3243,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         else {
             // Never silent (AGT-U8): there is nothing selected to ask about.
             NSSound.beep()
-            return askAgentHint("Select some text first", "⌘L asks an agent about what is selected — in a terminal, a log, a review's lines.")
+            return askAgentHint(
+                "Select some text first",
+                (KeyHints.key("agents.askSelection") ?? "Ask an Agent About the Selection")
+                    + " asks an agent about what is selected — in a terminal, a log, a review's lines.")
         }
         hideSelectionBar()
         let folder = pane.workingDirectory ?? tab.workingDirectory
@@ -3270,19 +3375,17 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         // A page over the tabs (Docker's) steps aside: the agent's tab is
         // selected under it otherwise, and the prompt typed out of sight.
         if store.showingOverlay != nil { hideOverlay(focus: false) }
-        let target: Tab?
+        // A new tab is typed into only once it is open, and only that one:
+        // the PATH's warning may stand first, and its Cancel opens none.
+        let typeInto: (Tab) -> Void = { [weak self] tab in _ = self?.type(prompt, intoAgent: tab) }
         if let chosen {
-            target = store.tabs.first { $0.id == chosen }
+            guard let target = store.tabs.first(where: { $0.id == chosen }) else { return }
+            typeInto(target)
+        } else if let folder {
+            newAgentTab(Self.newTabAgent, in: URL(fileURLWithPath: folder), then: typeInto)
         } else {
-            if let folder {
-                newTab(in: URL(fileURLWithPath: folder), agent: Self.newTabAgent)
-            } else {
-                newAgentTab(Self.newTabAgent)
-            }
-            target = store.selected
+            newAgentTab(Self.newTabAgent, then: typeInto)
         }
-        guard let target else { return }
-        type(prompt, intoAgent: target)
     }
 
     /// Types `prompt` into `target`'s agent, not sent: what it should do
@@ -3310,6 +3413,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         let show = item.isCollapsed
         item.animator().isCollapsed = !show
         if show {
+            Start.shared.note(.inboxOpened(waiting: store.tabs.contains { $0.activity.needsAttention }))
             refreshInbox()
             inboxPoll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshInbox() }
@@ -3468,6 +3572,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
 
     package func hidePalette() {
         paletteView?.isHidden = true
+        updateTipRoom()
         focusSelectedTerminal()
         releaseKubernetesSwitcher()
         releaseActivitySwitcher()
@@ -3477,50 +3582,78 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// before typing.
     private func paletteItems(matching query: String = "") -> [PaletteItem] {
         var items: [PaletteItem] = [
-            PaletteItem(id: "a.newTab", group: .action, title: "New Tab", subtitle: "⌘T", symbol: "plus") { [weak self] _, _ in
+            PaletteItem(id: "a.newTab", group: .action, title: "New Tab", subtitle: nil, symbol: "plus", command: "tabs.new") { [weak self] _, _ in
                 self?.newTab(from: self?.store.selected?.terminal)
             },
-            PaletteItem(id: "a.splitRight", group: .action, title: "Split Right", subtitle: "⌘D", symbol: "rectangle.split.2x1") {
+            PaletteItem(id: "a.splitRight", group: .action, title: "Split Right", subtitle: nil, symbol: "rectangle.split.2x1", command: "splits.right") {
                 [weak self] _, _ in self?.split(nil, .right)
             },
-            PaletteItem(id: "a.splitDown", group: .action, title: "Split Down", subtitle: "⇧⌘D", symbol: "rectangle.split.1x2") {
+            PaletteItem(id: "a.splitDown", group: .action, title: "Split Down", subtitle: nil, symbol: "rectangle.split.1x2", command: "splits.down") {
                 [weak self] _, _ in self?.split(nil, .down)
             },
-            PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent  ⇧⌘N", symbol: "arrow.triangle.branch") {
+            PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent", symbol: "arrow.triangle.branch", command: "tasks.new") {
                 [weak self] _, _ in self?.newTask(nil)
             },
-            PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance  ⇧⌘A", symbol: "square.grid.2x2") {
+            PaletteItem(id: "a.openFolder", group: .action, title: "Open Folder…", subtitle: "A tab in a folder you pick", symbol: "folder", command: "file.openFolder") {
+                [weak self] _, _ in self?.openFolder(nil)
+            },
+            // Help's rows (onboarding 7.8): Open Folder… above.
+            PaletteItem(
+                id: "a.checkSetup", group: .action, title: "Check Setup…", subtitle: "What Overterm found on this Mac, and where it looked",
+                symbol: "wrench.and.screwdriver", command: "help.setup"
+            ) { [weak self] _, _ in self?.showSetup(nil) },
+            PaletteItem(
+                id: "a.gettingStarted", group: .action, title: "Getting Started", subtitle: "Five steps, in the sidebar", symbol: "checklist",
+                command: "help.gettingStarted"
+            ) { [weak self] _, _ in self?.showGettingStarted(nil) },
+            PaletteItem(
+                id: "a.resetTips", group: .action, title: "Reset Tips", subtitle: "Every tip shows once more", symbol: "lightbulb",
+                command: "help.resetTips"
+            ) { [weak self] _, _ in self?.resetTips(nil) },
+            PaletteItem(
+                id: "a.shortcuts", group: .action, title: "Keyboard Shortcuts", subtitle: "Every key, and yours to change", symbol: "keyboard",
+                command: "help.shortcuts"
+            ) { [weak self] _, _ in self?.openSettings(.shortcuts) },
+            // The Help menu's title, so its own row isn't offered twice.
+            PaletteItem(
+                id: "a.whatsNew", group: .action, title: MainMenu.whatsNewTitle(UpdateChecker.shared.currentVersion),
+                subtitle: "What changed since the version you ran before", symbol: "sparkles", command: "help.whatsNew"
+            ) { [weak self] _, _ in self?.showWhatsNew() },
+            PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance", symbol: "square.grid.2x2", command: "agents.overview") {
                 [weak self] _, _ in self?.showAgentOverview(nil)
             },
             PaletteItem(
-                id: "a.clearHistory", group: .action, title: "Clear Command History…", subtitle: "What ⌘K remembers you ran; the shell's own is left alone",
+                id: "a.clearHistory", group: .action, title: "Clear Command History…", subtitle: "What the palette remembers you ran; the shell's own is left alone",
                 symbol: "clock.badge.xmark"
             ) { [weak self] _, _ in self?.clearCommandHistory() },
-            PaletteItem(id: "a.focusSidebar", group: .action, title: "Focus the Sidebar", subtitle: "The keyboard to the sidebar's panel  ⌃⌥⌘1", symbol: "sidebar.left") {
+            PaletteItem(id: "a.focusSidebar", group: .action, title: "Focus the Sidebar", subtitle: "The keyboard to the sidebar's panel", symbol: "sidebar.left", command: "columns.sidebar") {
                 [weak self] _, _ in self?.focusColumn(.sidebar)
             },
-            PaletteItem(id: "a.focusTerminal", group: .action, title: "Focus the Terminal", subtitle: "⌃⌥⌘2", symbol: "terminal") {
+            PaletteItem(id: "a.focusTerminal", group: .action, title: "Focus the Terminal", subtitle: nil, symbol: "terminal", command: "columns.terminal") {
                 [weak self] _, _ in self?.focusColumn(.terminal)
             },
-            PaletteItem(id: "a.focusEditor", group: .action, title: "Focus the Editor", subtitle: "⌃⌥⌘3", symbol: "doc.text") {
+            PaletteItem(id: "a.focusEditor", group: .action, title: "Focus the Editor", subtitle: nil, symbol: "doc.text", command: "columns.editor") {
                 [weak self] _, _ in self?.focusColumn(.editor)
             },
-            PaletteItem(id: "a.goToFile", group: .action, title: "Go to File…", subtitle: "A file of this checkout by name, name:line  ⌘P in the editor", symbol: "doc.text.magnifyingglass") {
+            PaletteItem(
+                id: "a.goToFile", group: .action, title: "Go to File…", subtitle: "A file of this checkout by name, name:line; the key in the editor", symbol: "doc.text.magnifyingglass",
+                command: "editor.goToFile"
+            ) {
                 [weak self] _, _ in self?.goToFile()
             },
-            PaletteItem(id: "a.focusRight", group: .action, title: "Focus the Right Pane", subtitle: "Changes, pull request, browser…  ⌃⌥⌘4", symbol: "sidebar.right") {
+            PaletteItem(id: "a.focusRight", group: .action, title: "Focus the Right Pane", subtitle: "Changes, pull request, browser…", symbol: "sidebar.right", command: "columns.right") {
                 [weak self] _, _ in self?.focusColumn(.right)
             },
-            PaletteItem(id: "a.focusInbox", group: .action, title: "Focus the Inbox", subtitle: "J and K to move  ⌃⌥⌘5", symbol: "tray") {
+            PaletteItem(id: "a.focusInbox", group: .action, title: "Focus the Inbox", subtitle: "J and K to move", symbol: "tray", command: "columns.inbox") {
                 [weak self] _, _ in self?.focusColumn(.inbox)
             },
-            PaletteItem(id: "a.nextColumn", group: .action, title: "Next Column", subtitle: "The keyboard to the next open column  F6", symbol: "arrow.right.to.line") {
+            PaletteItem(id: "a.nextColumn", group: .action, title: "Next Column", subtitle: "The keyboard to the next open column", symbol: "arrow.right.to.line", command: "columns.next") {
                 [weak self] _, _ in self?.focusColumn(by: 1)
             },
-            PaletteItem(id: "a.previousColumn", group: .action, title: "Previous Column", subtitle: "⇧F6", symbol: "arrow.left.to.line") {
+            PaletteItem(id: "a.previousColumn", group: .action, title: "Previous Column", subtitle: nil, symbol: "arrow.left.to.line", command: "columns.previous") {
                 [weak self] _, _ in self?.focusColumn(by: -1)
             },
-            PaletteItem(id: "a.peek", group: .action, title: "Tab Peek", subtitle: "Every tab's terminal, live  ⇧⌘E", symbol: "rectangle.on.rectangle") {
+            PaletteItem(id: "a.peek", group: .action, title: "Tab Peek", subtitle: "Every tab's terminal, live", symbol: "rectangle.on.rectangle", command: "tabs.peek") {
                 [weak self] _, _ in self?.toggleTabPeek(nil)
             },
             PaletteItem(id: "a.pullRequest", group: .action, title: "Show Pull Request", subtitle: "Checks, comments, review threads", symbol: "arrow.triangle.pull") {
@@ -3528,11 +3661,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             },
             PaletteItem(
                 id: "a.createPullRequest", group: .action, title: "Create Pull Request…", subtitle: "This branch's commits, opened on GitHub — asked first",
-                symbol: "arrow.triangle.pull"
+                symbol: "arrow.triangle.pull", command: "pullRequest.create"
             ) { [weak self] _, _ in self?.createPullRequest(nil) },
             PaletteItem(
-                id: "a.reviewBranch", group: .action, title: "Review Branch", subtitle: "This branch's changes in a tab, side by side  ⇧⌘R",
-                symbol: "rectangle.split.2x1"
+                id: "a.reviewBranch", group: .action, title: "Review Branch", subtitle: "This branch's changes in a tab, side by side",
+                symbol: "rectangle.split.2x1", command: "review.branch"
             ) { [weak self] _, _ in self?.reviewBranch(nil) },
             PaletteItem(
                 id: "a.reviewUncommitted", group: .action, title: "Review Uncommitted Changes",
@@ -3549,16 +3682,16 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         ]
         if store.selected?.isSplit == true {
             items += [
-                PaletteItem(id: "a.nextPane", group: .action, title: "Next Pane", subtitle: "⌘]", symbol: "arrow.right.square") {
+                PaletteItem(id: "a.nextPane", group: .action, title: "Next Pane", subtitle: nil, symbol: "arrow.right.square", command: "splits.next") {
                     [weak self] _, _ in self?.focusSplit(from: nil, .next)
                 },
-                PaletteItem(id: "a.zoomPane", group: .action, title: "Zoom Pane", subtitle: "⇧⌘↩ — alone, full size, and back", symbol: "arrow.up.left.and.arrow.down.right") {
+                PaletteItem(id: "a.zoomPane", group: .action, title: "Zoom Pane", subtitle: "Alone, full size, and back", symbol: "arrow.up.left.and.arrow.down.right", command: "splits.zoom") {
                     [weak self] _, _ in self?.toggleSplitZoom(nil)
                 },
-                PaletteItem(id: "a.equalizePanes", group: .action, title: "Equalize Panes", subtitle: "⌃⌘=", symbol: "equal.square") {
+                PaletteItem(id: "a.equalizePanes", group: .action, title: "Equalize Panes", subtitle: nil, symbol: "equal.square", command: "splits.equalize") {
                     [weak self] _, _ in self?.equalizeSplits(nil)
                 },
-                PaletteItem(id: "a.closePane", group: .action, title: "Close Pane", subtitle: "⌘W", symbol: "xmark.square") {
+                PaletteItem(id: "a.closePane", group: .action, title: "Close Pane", subtitle: nil, symbol: "xmark.square", command: "tabs.close") {
                     [weak self] _, _ in
                     guard let self, let tab = self.store.selected else { return }
                     self.closePane(tab.terminal, in: tab)
@@ -3566,33 +3699,33 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             ]
         }
         items += Agent.allCases.map { agent in
-            PaletteItem(id: "a.agent.\(agent.rawValue)", group: .action, title: "New \(agent.name) Tab", subtitle: nil, symbol: agent.symbol) {
+            PaletteItem(id: "a.agent.\(agent.rawValue)", group: .action, title: "New \(agent.name) Tab", subtitle: nil, symbol: agent.symbol, command: agent.newTabCommand) {
                 [weak self] _, _ in self?.newAgentTab(agent)
             }
         }
         items += [
-            PaletteItem(id: "a.sidebar", group: .action, title: "Toggle Sidebar", subtitle: "⌘B", symbol: "sidebar.left") { [weak self] _, _ in
+            PaletteItem(id: "a.sidebar", group: .action, title: "Toggle Sidebar", subtitle: nil, symbol: "sidebar.left", command: "sidebar.toggle") { [weak self] _, _ in
                 self?.toggleFileTree(nil)
             },
             PaletteItem(
                 id: "a.overgit", group: .action, title: "Overgit",
-                subtitle: "The checkout’s history, branches and worktrees  ⌥⌘G", symbol: "arrow.triangle.branch"
+                subtitle: "The checkout’s history, branches and worktrees", symbol: "arrow.triangle.branch", command: "overgit.show"
             ) { [weak self] _, _ in self?.showOvergit(nil) },
             PaletteItem(
                 id: "a.api", group: .action, title: "API Client",
-                subtitle: "The checkout’s Bruno collection: send requests, run their tests  ⌥⌘R", symbol: "arrow.left.arrow.right"
+                subtitle: "The checkout’s Bruno collection: send requests, run their tests", symbol: "arrow.left.arrow.right", command: "api.show"
             ) { [weak self] _, _ in self?.showAPIClient(nil) },
             PaletteItem(
                 id: "a.notes", group: .action, title: "Notes",
-                subtitle: "The vault: Markdown notes, Obsidian’s and iCloud’s  ⌥⌘N", symbol: "note.text"
+                subtitle: "The vault: Markdown notes, Obsidian’s and iCloud’s", symbol: "note.text", command: "notes.show"
             ) { [weak self] _, _ in self?.showNotes(nil) },
-            PaletteItem(id: "a.dailyNote", group: .action, title: "Today’s Note", subtitle: nil, symbol: "calendar") {
+            PaletteItem(id: "a.dailyNote", group: .action, title: "Today’s Note", subtitle: nil, symbol: "calendar", command: "notes.daily") {
                 [weak self] _, _ in self?.openDailyNote(nil)
             },
             PaletteItem(id: "a.newNote", group: .action, title: "New Note", subtitle: nil, symbol: "square.and.pencil") {
                 [weak self] _, _ in self?.newNote(nil)
             },
-            PaletteItem(id: "a.graph", group: .action, title: "Graph View", subtitle: "The notes and their links", symbol: "point.3.connected.trianglepath.dotted") {
+            PaletteItem(id: "a.graph", group: .action, title: "Graph View", subtitle: "The notes and their links", symbol: "point.3.connected.trianglepath.dotted", command: "notes.graph") {
                 [weak self] _, _ in self?.showNotesGraph(nil)
             },
             PaletteItem(
@@ -3638,7 +3771,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             }
         }
         items += [
-            PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: "Changed files and their diffs  ⌥⌘D", symbol: "plusminus") {
+            PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: "Changed files and their diffs", symbol: "plusminus", command: "changes.toggle") {
                 [weak self] _, _ in self?.toggleDiff(nil)
             },
             PaletteItem(id: "a.snippet", group: .action, title: "New Snippet…", subtitle: nil, symbol: "text.badge.plus") { [weak self] _, _ in
@@ -3758,7 +3891,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         guard let window, !history.entries.isEmpty else { return }
         let alert = NSAlert()
         alert.messageText = "Clear the command history?"
-        alert.informativeText = "The \(history.entries.count) commands ⌘K remembers are forgotten. Your shell's own history is left alone."
+        let palette = KeyHints.key("palette.show") ?? "the Command Palette"
+        alert.informativeText = "The \(history.entries.count) commands \(palette) remembers are forgotten. Your shell's own history is left alone."
         alert.addButton(withTitle: "Clear")
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { [weak self] response in
@@ -3823,6 +3957,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             let timeout = setup.command.isEmpty ? TaskPromptWait.timeout : TaskPromptWait.timeoutAfterSetup
             Task { @MainActor [weak self] in await self?.sendTaskText(text, to: tab, branch: branch, timeout: timeout) }
         }
+        Start.shared.note(.taskCreated)
         await worktrees.refresh()
         await prepareTerraformWorktree(path)
         // Its own stack, in a tab beside it — the page's Up, which looks at
@@ -3889,12 +4024,24 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         }
     }
 
-    private func showAlert(_ title: String, _ message: String) {
+    /// `action`, when given, is a second button beside OK, run once the
+    /// alert is gone.
+    private func showAlert(_ title: String, _ message: String, action: (title: String, run: @MainActor () -> Void)? = nil) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        alert.beginSheetModal(for: window)
+        guard let action else {
+            alert.beginSheetModal(for: window)
+            return
+        }
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: action.title)
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertSecondButtonReturn else { return }
+            // After the sheet has gone: the action may begin one of its own.
+            Task { @MainActor in action.run() }
+        }
     }
 
     // MARK: Paths
@@ -4303,15 +4450,16 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         pages[overlay]?.closed?()
     }
 
-    /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
-    /// The strip's "What's new in …" chip (SET-G2): the bundled changelog
-    /// at this version's entry, and the chip put away for it.
+    /// The strip's "What's new in …" chip (SET-G2, onboarding 7.9), Help ▸
+    /// What's New and its ⌘K row: Settings ▸ About at its changelog — every
+    /// version's entry since the last run — and the chip put away for this
+    /// version. The keyboard moves only now, on the press.
     package func showWhatsNew() {
-        guard let version = UpdateChecker.shared.whatsNew else { return }
         UpdateChecker.shared.dismissWhatsNew()
-        ChangelogWindowController.shared.show(version: version)
+        openSettings(.about, focus: Changelog.whatsNewAnchor)
     }
 
+    /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
     package func openSettings(_ section: SettingsSection? = nil, focus key: String? = nil) {
         if let section { settingsPage.show(section, focus: key) }
         showOverlay(.settings)
@@ -4599,6 +4747,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// agents' logs.
     package func updateRightPaneVisibility() {
         let shown = diffItem?.isCollapsed == false
+        if shown, rightPane.mode == .changes { Start.shared.note(.changesShown) }
         pullRequest.visible = shown && rightPane.mode == .pullRequest
         usage.visible = shown && rightPane.mode == .usage
         commitDetail.visible = shown && rightPane.mode == .commit
@@ -4747,7 +4896,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             let alert = NSAlert()
             let others = unsaved.count - 1
             alert.messageText = others > 0 ? "“\(name)” and \(others) more have unsaved changes." : "“\(name)” has unsaved changes."
-            alert.informativeText = "Save it (⌘S) — or apply a cluster object's YAML — first, or close the window and lose them."
+            alert.informativeText = KeyHints.help("Save it", command: "file.save") + " — or apply a cluster object's YAML — first, or close the window and lose them."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Close Anyway")
             alert.beginSheetModal(for: sender) { [weak self] response in
@@ -4815,6 +4964,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         if let pageKeys { NSEvent.removeMonitor(pageKeys) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
+        for observer in tipObservers { NotificationCenter.default.removeObserver(observer) }
+        tipObservers = []
         peek.close()
         saveFinalSession()
         endLightTick()

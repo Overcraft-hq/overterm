@@ -55,6 +55,8 @@ package struct CloseTabButton: NSViewRepresentable {
     package let color: Color
     package let visible: Bool
     package let action: () -> Void
+    /// Its tooltip names Close's key as bound now.
+    @ObservedObject var keys = Keybindings.shared
 
     package final class Coordinator: NSObject {
         package var action: () -> Void
@@ -71,13 +73,14 @@ package struct CloseTabButton: NSViewRepresentable {
         button.isBordered = false
         button.bezelStyle = .regularSquare
         button.imagePosition = .imageOnly
-        button.toolTip = "Close Tab (⌘W)"
+        button.toolTip = KeyHints.help("Close Tab", command: "tabs.close", keys: keys)
         button.setAccessibilityIdentifier("tabClose")
         return button
     }
 
     package func updateNSView(_ button: NSButton, context: Context) {
         context.coordinator.action = action
+        button.toolTip = KeyHints.help("Close Tab", command: "tabs.close", keys: keys)
         button.contentTintColor = NSColor(color)
         button.alphaValue = visible ? 1 : 0
     }

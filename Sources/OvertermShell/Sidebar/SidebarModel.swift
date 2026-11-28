@@ -18,6 +18,15 @@ package final class SidebarModel: ObservableObject {
         }
     }
 
+    /// The sidebar's column is open — what may read only while on screen
+    /// and has no panel of its own (the Start card's probe) asks this.
+    /// Set by the window wherever it opens or collapses the column.
+    @Published package var columnOpen = false
+
+    /// Some tab of this window needs you — the badge's own test, set by the
+    /// window: its Start card offers Open Inbox, for this window's Inbox.
+    @Published package var needsYou = false
+
     package init() {
         let last = SidebarPanel(stored: AppEnvironment.defaults.string(forKey: Self.panelKey))
         // Settings' "A new window opens on": a panel, or the last one open.

@@ -147,6 +147,9 @@ package final class DiffModel: ObservableObject {
     /// Cards whose why the user opened: every reason, in full.
     @Published package private(set) var openWhy: Set<String> = []
     @Published package private(set) var error: String?
+    /// The last read failed because the folder is in no repository — git's
+    /// own "not a git repository", not any failure (Files' home strip).
+    @Published package private(set) var notARepository = false
     /// Why each file changed, by path: what Claude said making its edits,
     /// newest first (ClaudeEdits.byFile) — from the checkout's session
     /// transcripts, read only while the panel is open.
@@ -286,6 +289,7 @@ package final class DiffModel: ObservableObject {
         branch = nil
         head = nil
         error = nil
+        notARepository = false
         restoreDraft()
         watcher?.stop()
         watcher = nil
@@ -445,6 +449,7 @@ package final class DiffModel: ObservableObject {
             branch = branchName
             if self.head != headCommit { self.head = headCommit }
             error = nil
+            notARepository = false
             if panelVisible {
                 settleFolds()
                 readReasons()
@@ -461,7 +466,17 @@ package final class DiffModel: ObservableObject {
             diffs = [:]
             reasons = [:]
             self.error = error is GitError ? "Not a git repository" : error.localizedDescription
+            notARepository = Self.isNotARepository(error)
         }
+    }
+
+    /// Whether `error` is git saying the folder is in no repository — not
+    /// a timeout, a lock, a missing git or a folder it may not read. Pure.
+    package nonisolated static func isNotARepository(_ error: Error) -> Bool {
+        guard let failure = error as? GitError else { return false }
+        let said = failure.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Its words, or — in a translated git — the ".git" it ends with.
+        return said.lowercased().contains("not a git repository") || (failure.status == 128 && said.hasSuffix(": .git"))
     }
 
     /// Fills in each file's counts from numstat; an untracked file's lines

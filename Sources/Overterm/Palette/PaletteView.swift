@@ -120,6 +120,25 @@ package struct PaletteView: View {
     }
 
     private var footer: some View {
+        VStack(spacing: 0) {
+            if let tip = model.tip {
+                // Onboarding T3: where ⌘K's old meaning went. No button; it
+                // goes after the third showing.
+                HStack(spacing: 6) {
+                    Image(systemName: "lightbulb").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
+                    Text(verbatim: tip).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2).lineLimit(2)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("palette.tip")
+            }
+            hints
+        }
+    }
+
+    private var hints: some View {
         HStack(spacing: 16) {
             hint("↩", model.selected.map(Self.verb) ?? "open")
             if let group = model.selected?.group, group == .history || group == .snippet { hint("⌥↩", "type without running") }

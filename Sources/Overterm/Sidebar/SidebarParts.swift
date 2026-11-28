@@ -55,11 +55,15 @@ package struct WorktreeActions {
     package var cleanUp: () -> Void
     /// The right pane on the current checkout's pull request.
     package var showPullRequest: () -> Void
+    /// File ▸ Open Folder…: what a panel outside a repository offers (onboarding 7.5).
+    package var openFolder: () -> Void
 
     package init(
         open: @escaping (Worktree) -> Void, newTab: @escaping (Worktree) -> Void, newAgentTab: @escaping (Worktree, Agent) -> Void, remove: @escaping (Worktree) -> Void,
-        attach: @escaping (Worktree) -> Void, detach: @escaping () -> Void, newTask: @escaping () -> Void, cleanUp: @escaping () -> Void, showPullRequest: @escaping () -> Void
+        attach: @escaping (Worktree) -> Void, detach: @escaping () -> Void, newTask: @escaping () -> Void, cleanUp: @escaping () -> Void, showPullRequest: @escaping () -> Void,
+        openFolder: @escaping () -> Void = {}
     ) {
+        self.openFolder = openFolder
         self.open = open
         self.newTab = newTab
         self.newAgentTab = newAgentTab
@@ -103,7 +107,7 @@ package struct SessionActions {
 
 /// What the sidebar can show, one at a time — the rail down its left
 /// edge picks between them (`SidebarRail`).
-package enum SidebarPanel: String, CaseIterable, Identifiable {
+package enum SidebarPanel: String, CaseIterable, Identifiable, Sendable {
     case files, git, sessions, snippets, api, notes, database, docker, kubernetes, terraform
 
     package var id: String { rawValue }
@@ -162,6 +166,9 @@ package enum SidebarPanel: String, CaseIterable, Identifiable {
     }
 
     @MainActor package var isEnabled: Bool { toggleKey.map { Settings.shared.bool($0) } ?? true }
+
+    /// The Settings page its switch is on, as the schema files it; nil for Files and Overgit.
+    package var settingsSection: SettingsSection? { toggleKey.flatMap { key in SettingsSchema.byKey[key]?.section } }
 
     /// What the stored choice means. `worktrees` had an icon of its own
     /// until Overgit took it in; somebody who left the sidebar there finds

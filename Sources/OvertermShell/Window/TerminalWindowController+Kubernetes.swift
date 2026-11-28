@@ -659,7 +659,8 @@ extension TerminalWindowController {
         let model = KubernetesModel.shared
         var items = [
             PaletteItem(
-                id: "a.kubernetes", group: .action, title: "Kubernetes", subtitle: "Contexts, namespaces, every kind  ⌥⌘J", symbol: "steeringwheel"
+                id: "a.kubernetes", group: .action, title: "Kubernetes", subtitle: "Contexts, namespaces, every kind", symbol: "steeringwheel",
+                command: "kubernetes.page"
             ) { [weak self] _, _ in self?.toggleKubernetesPage(nil) },
             PaletteItem(
                 id: "a.kubernetes.overview", group: .action, title: "Kubernetes Overview",

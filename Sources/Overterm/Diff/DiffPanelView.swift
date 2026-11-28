@@ -10,6 +10,8 @@ import SwiftUI
 package struct DiffPanelView: View {
     @ObservedObject package var model: DiffModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let onClose: () -> Void
     /// Undo an attachment: back to following the agent / shell.
     package let onDetach: () -> Void
@@ -188,7 +190,7 @@ package struct DiffPanelView: View {
                 }
             }
             iconButton("arrow.clockwise", help: "Refresh") { Task { await model.refresh() } }
-            iconButton("xmark", help: "Close (⌥⌘D)", action: onClose)
+            iconButton("xmark", help: KeyHints.help("Close", command: "changes.toggle", keys: keys), action: onClose)
         }
         .font(.system(size: ChromeMetrics.text(12)))
         .padding(.horizontal, 12)
@@ -240,7 +242,7 @@ package struct DiffPanelView: View {
                     Label("Review", systemImage: "rectangle.split.2x1")
                 }
                 .controlSize(.small)
-                .help("Review it in a tab of its own, side by side — ⇧⌘R")
+                .help(KeyHints.text("Review it in a tab of its own, side by side — %@", command: "review.branch", keys: keys) ?? "Review it in a tab of its own, side by side")
                 .accessibilityIdentifier("changes.review")
             }
             if editable, !model.files.isEmpty {

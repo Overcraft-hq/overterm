@@ -119,6 +119,8 @@ package struct DockerPanelView: View {
     @ObservedObject package var updates: DockerImageUpdates
     @ObservedObject package var settings: Settings
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let group: TabGroup?
     package let actions: DockerActions
     package let openPage: () -> Void
@@ -144,7 +146,7 @@ package struct DockerPanelView: View {
     package var body: some View {
         VStack(spacing: 0) {
             PanelHeader(title: "Docker", group: group, theme: theme, help: panel.checkout?.path) {
-                PanelHeaderButton(symbol: "macwindow", help: "The Docker page (⌥⌘P)", action: openPage, theme: theme)
+                PanelHeaderButton(symbol: "macwindow", help: KeyHints.help("The Docker page", command: "docker.page", keys: keys), action: openPage, theme: theme)
             }
             if let error = panel.error {
                 Text(verbatim: error).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed).lineLimit(3)

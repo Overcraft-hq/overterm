@@ -38,6 +38,8 @@ package enum MainMenu {
         command(fileMenu, "New pi Tab", #selector(TerminalWindowController.newPiTab(_:)), "tabs.newPi")
         command(fileMenu, "New Gemini Tab", #selector(TerminalWindowController.newGeminiTab(_:)), "tabs.newGemini")
         command(fileMenu, "New Task…", #selector(TerminalWindowController.newTask(_:)), "tasks.new")
+        // A tab in a folder picked in Finder's panel: into a repository without `cd`.
+        command(fileMenu, "Open Folder…", #selector(TerminalWindowController.openFolder(_:)), "file.openFolder")
         fileMenu.addItem(
             withTitle: "Clean Up Merged Worktrees…", action: #selector(TerminalWindowController.cleanUpMergedWorktrees(_:)), keyEquivalent: "")
         fileMenu.addItem(withTitle: "Pin / Unpin Tab", action: #selector(TerminalWindowController.togglePinTab(_:)), keyEquivalent: "")
@@ -206,12 +208,20 @@ package enum MainMenu {
         // every menu found by typing a word of its title.
         let helpItem = NSMenuItem()
         let helpMenu = NSMenu(title: "Help")
-        helpMenu.addItem(withTitle: "Keyboard Shortcuts", action: #selector(AppDelegate.showKeyboardShortcuts(_:)), keyEquivalent: "")
+        // Onboarding 7.10: the sidebar shown, its Start card open.
+        command(helpMenu, "Getting Started", #selector(TerminalWindowController.showGettingStarted(_:)), "help.gettingStarted")
+        // Onboarding 7.7: what Overterm found on this Mac, and where it looked.
+        command(helpMenu, "Check Setup…", #selector(TerminalWindowController.showSetup(_:)), "help.setup")
+        command(helpMenu, "Keyboard Shortcuts", #selector(AppDelegate.showKeyboardShortcuts(_:)), "help.shortcuts")
         // The keys of wherever the keyboard is (DISC-N1).
         command(helpMenu, "Keys Here", #selector(TerminalWindowController.showKeysHere(_:)), "help.keysHere")
+        // Onboarding 7.8: Settings ▸ About at the changelog, the versions skipped too.
+        command(helpMenu, whatsNewTitle(FirstRun.currentVersion), #selector(AppDelegate.showWhatsNew(_:)), "help.whatsNew")
         // Mirrored from the app menu, without its identifier: a key the
         // person gives it belongs on one item.
         helpMenu.addItem(withTitle: "View Latest Changelog", action: #selector(AppDelegate.showChangelog(_:)), keyEquivalent: "")
+        // Onboarding 7.6: every tip shows again, asked first.
+        command(helpMenu, "Reset Tips", #selector(TerminalWindowController.resetTips(_:)), "help.resetTips")
         helpMenu.addItem(.separator())
         helpMenu.addItem(withTitle: "Overterm on GitHub", action: #selector(AppDelegate.openGitHub(_:)), keyEquivalent: "")
         helpItem.submenu = helpMenu
@@ -228,6 +238,9 @@ package enum MainMenu {
         item.submenu = sub
         return sub
     }
+
+    /// Help ▸ What's New's title, this build's version in it; ⌘K's row says the same.
+    package static func whatsNewTitle(_ version: String) -> String { "What's New in \(version)" }
 
     /// An item for a KeyCommand, with the command's default key.
     @discardableResult

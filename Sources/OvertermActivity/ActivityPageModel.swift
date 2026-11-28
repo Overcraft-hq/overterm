@@ -1182,7 +1182,7 @@ package final class ActivityPageModel: ObservableObject {
     /// greyed with why; several: Copy. `copy` puts lines on the pasteboard.
     package func verbs(for ids: Set<String>, copy: @escaping ([String]) -> Void) -> [ResourceVerb] {
         let copyVerb = ResourceVerb(
-            title: ids.count > 1 ? "Copy \(ids.count) Rows" : "Copy", symbol: "doc.on.doc", key: "⌘C", group: 1,
+            title: ids.count > 1 ? "Copy \(ids.count) Rows" : "Copy", symbol: "doc.on.doc", key: KeyHints.key("edit.copy"), group: 1,
             perform: { [weak self] in
                 guard let self else { return }
                 copy(self.lines(for: ids))

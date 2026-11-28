@@ -42,12 +42,15 @@ package struct AttentionChip: View {
     @ObservedObject package var store: TabStore
     @StateObject private var attention: AttentionWatch
     @ObservedObject package var theme: ChromeTheme
+    /// The next-one key as bound now, in the tooltip and the list's foot.
+    @ObservedObject private var keys: Keybindings
     package let select: (Tab) -> Void
     @State private var showing = false
 
-    package init(store: TabStore, theme: ChromeTheme, select: @escaping (Tab) -> Void) {
+    package init(store: TabStore, theme: ChromeTheme, keys: Keybindings = .shared, select: @escaping (Tab) -> Void) {
         self.store = store
         self.theme = theme
+        self._keys = ObservedObject(wrappedValue: keys)
         self.select = select
         _attention = StateObject(wrappedValue: AttentionWatch(store: store))
     }
@@ -71,10 +74,10 @@ package struct AttentionChip: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .help("Tabs that need you — ⌥⌘↓ for the next one")
+            .help(KeyHints.text("Tabs that need you — %@ for the next one", command: "tabs.nextAttention", keys: keys) ?? "Tabs that need you")
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 AttentionList(
-                    tabs: waiting, store: store, theme: theme,
+                    tabs: waiting, store: store, theme: theme, next: KeyHints.key("tabs.nextAttention", keys: keys),
                     select: { tab in
                         showing = false
                         select(tab)
@@ -88,6 +91,8 @@ private struct AttentionList: View {
     let tabs: [Tab]
     @ObservedObject var store: TabStore
     @ObservedObject var theme: ChromeTheme
+    /// Next Failure or Tab That Needs You's key now; nil while unbound.
+    let next: String?
     let select: (Tab) -> Void
 
     var body: some View {
@@ -100,14 +105,16 @@ private struct AttentionList: View {
             ForEach(tabs) { tab in
                 AttentionRow(tab: tab, group: store.group(of: tab), theme: theme, select: { select(tab) })
             }
-            Divider().padding(.horizontal, 10).padding(.vertical, 5)
-            HStack {
-                Text("Jump to next").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
-                Spacer()
-                Text(verbatim: "⌥⌘↓").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
+            if let next {
+                Divider().padding(.horizontal, 10).padding(.vertical, 5)
+                HStack {
+                    Text("Jump to next").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
+                    Spacer()
+                    Text(verbatim: next).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 6)
             }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 6)
         }
         .padding(5)
         .frame(width: 340)

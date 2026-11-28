@@ -38,6 +38,14 @@ package enum ResourceKeys {
         let syntax = title.hasPrefix(prefix) ? String(title.dropFirst(prefix.count)) : title
         return syntax + " — ? lists the keys"
     }
+
+    /// The foot of a list's keys: how to move and pick, and Edit ▸ Copy's
+    /// key as bound now — said only while it has one.
+    @MainActor package static func listNote(keys: Keybindings = .shared) -> String {
+        let move = "↑↓ to move, ⇧ and ⌘ to pick several"
+        guard let copy = KeyHints.key("edit.copy", keys: keys) else { return move + "." }
+        return move + ", \(copy) copies their names."
+    }
 }
 
 /// What a key down means on a page's list.
@@ -132,7 +140,7 @@ package struct ResourceKeySheet<Key: ResourceKey>: View {
 
     package var body: some View {
         let window = KeySheet.commands(KeySheet.commands(prefixed: windowCommands), title: KeySheet.windowGroup) { keybindings.key(for: $0)?.display }
-        let notes = [footnote, "↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names."].compactMap { $0 }.joined(separator: "\n")
+        let notes = [footnote, ResourceKeys.listNote(keys: keybindings)].compactMap { $0 }.joined(separator: "\n")
         KeySheetView(
             theme: theme, title: title, groups: KeySheet.groups(of: Key.self) + [window].compactMap { $0 }, footnote: notes, identifier: identifier,
             close: close)

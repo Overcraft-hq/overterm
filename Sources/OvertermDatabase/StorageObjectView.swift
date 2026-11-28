@@ -98,6 +98,8 @@ package struct StorageObjectActions {
 package struct StorageObjectView: View {
     @ObservedObject package var model: StorageObjectModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let actions: StorageObjectActions
 
     package init(model: StorageObjectModel, theme: ChromeTheme, actions: StorageObjectActions) {
@@ -115,7 +117,7 @@ package struct StorageObjectView: View {
                 Divider().opacity(0.3)
                 content(object)
             } else {
-                note("Pick a file in the Database panel (⌥⌘B).")
+                note("Pick a file in the " + KeyHints.help("Database panel", command: "database.show", keys: keys) + ".")
             }
         }
         .background(theme.panelGround)

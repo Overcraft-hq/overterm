@@ -18,6 +18,8 @@ package struct DatabaseSlotActions {
 package struct DatabaseSlotView: View {
     @ObservedObject package var model: DatabaseSlotModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let actions: DatabaseSlotActions
 
     package init(model: DatabaseSlotModel, theme: ChromeTheme, actions: DatabaseSlotActions) {
@@ -32,7 +34,10 @@ package struct DatabaseSlotView: View {
             case .server: DatabaseServerView(model: model.server, theme: theme, actions: actions)
             case .users: DatabaseUsersView(model: model.users, theme: theme, actions: actions)
             case .none:
-                RedisChrome(theme: theme).note("A connection's Server or Users page — from its menu in the Database panel (⌥⌘B), or ⌘K.")
+                RedisChrome(theme: theme).note(
+                    "A connection's Server or Users page — from its menu in the "
+                        + KeyHints.help("Database panel", command: "database.show", keys: keys) + ", or "
+                        + (KeyHints.key("palette.show", keys: keys) ?? "the Command Palette") + ".")
             }
         }
         .background(theme.panelGround)

@@ -37,7 +37,7 @@ package struct TabBarActions {
     package var resumeAll: () -> Void = {}
     /// A press, drag or release on a tab (`StripPressView`).
     package var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
-    /// The "What's new" chip: this version's changelog entry; its ×, put away.
+    /// The "What's new" chip: Settings ▸ About at the changelog; its ×, put away.
     package var showWhatsNew: () -> Void = {}
     package var dismissWhatsNew: () -> Void = {}
 
@@ -107,6 +107,8 @@ package struct TabBarView: View {
     @ObservedObject package var theme: ChromeTheme
     /// The globe beside the ± badge.
     @ObservedObject package var browser: BrowserButtonState
+    /// The keys its tooltips name, as bound now.
+    @ObservedObject private var keys = Keybindings.shared
     package let actions: TabBarActions
     package let groupActions: TabGroupActions
 
@@ -247,7 +249,7 @@ package struct TabBarView: View {
             .menuIndicator(.visible)
             .fixedSize()
             .foregroundStyle(theme.dimText)
-            .help("New Tab (⌘T) — arrow for an agent: " + Agent.allCases.map(\.name).joined(separator: ", "))
+            .help(KeyHints.help("New Tab", command: "tabs.new", keys: keys) + " — arrow for an agent: " + Agent.allCases.map(\.name).joined(separator: ", "))
             .padding(.leading, 6)
             if let release = updates.available {
                 Button(action: actions.showUpdate) {
@@ -265,9 +267,13 @@ package struct TabBarView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(TabStatusStyle.signal)
                 .help("Overterm \(release.version) is out — Settings ▸ About")
+                .accessibilityIdentifier("strip.update")
+                .onAppear { WhatsNewChip.updateDrawn = release.version }
+                .onDisappear { WhatsNewChip.updateDrawn = nil }
                 .padding(.trailing, 6)
-            }
-            if let version = updates.whatsNew, updates.available == nil {
+            } else if let version = updates.whatsNew {
+                // The update chip's place (onboarding 7.9): never two chips
+                // there; the update wins, and What's New is back once it goes.
                 WhatsNewChip(version: version, theme: theme, open: actions.showWhatsNew, dismiss: actions.dismissWhatsNew)
                     .padding(.trailing, 6)
             }
@@ -599,6 +605,7 @@ package struct TabItemView: View {
 /// A review's tab: what it is of and its name, closable as any tab.
 private struct ReviewTabItem: View {
     @ObservedObject var review: ReviewModel
+    @ObservedObject var keys = Keybindings.shared
     let selected: Bool
     @ObservedObject var theme: ChromeTheme
     let select: () -> Void
@@ -620,7 +627,7 @@ private struct ReviewTabItem: View {
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
             .opacity(selected || hovering ? 1 : 0)
-            .help("Close Review (⌘W)")
+            .help(KeyHints.help("Close Review", command: "tabs.close", keys: keys))
         }
         .padding(.horizontal, 10)
         .frame(minWidth: 60, idealWidth: 180, maxWidth: 220, minHeight: TabCard.height, maxHeight: TabCard.height)
@@ -640,6 +647,7 @@ private struct OverlayTabItem: View {
     let overlay: WorkspaceOverlay
     let selected: Bool
     @ObservedObject var theme: ChromeTheme
+    @ObservedObject var keys = Keybindings.shared
     let select: () -> Void
     let close: () -> Void
     @State private var hovering = false
@@ -658,7 +666,7 @@ private struct OverlayTabItem: View {
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
             .opacity(selected || hovering ? 1 : 0)
-            .help("Close \(overlay.title) (⌘W)")
+            .help(KeyHints.help("Close \(overlay.title)", command: "tabs.close", keys: keys))
         }
         .padding(.horizontal, 10)
         .frame(
@@ -758,6 +766,7 @@ private struct WindowDragArea: NSViewRepresentable {
 private struct DiffBadge: View {
     let badge: DiffModel.Badge
     @ObservedObject var theme: ChromeTheme
+    @ObservedObject var keys = Keybindings.shared
     let action: () -> Void
     @State private var hovering = false
 
@@ -770,11 +779,13 @@ private struct DiffBadge: View {
     }
 
     private var help: String {
-        switch badge {
-        case .uncommitted: "Uncommitted changes (⌥⌘D)"
-        case .branch: "Changes on this branch, all committed (⌥⌘D)"
-        case .plain: "Changes (⌥⌘D)"
-        }
+        let title =
+            switch badge {
+            case .uncommitted: "Uncommitted changes"
+            case .branch: "Changes on this branch, all committed"
+            case .plain: "Changes"
+            }
+        return KeyHints.help(title, command: "changes.toggle", keys: keys)
     }
 
     var body: some View {
@@ -803,6 +814,7 @@ private struct DiffBadge: View {
 package struct BrowserButton: View {
     package let isOpen: Bool
     @ObservedObject package var theme: ChromeTheme
+    @ObservedObject var keys = Keybindings.shared
     package let action: () -> Void
     @State private var hovering = false
 
@@ -819,7 +831,7 @@ package struct BrowserButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(isOpen ? "Hide the browser (⇧⌘B)" : "Browser (⇧⌘B)")
+        .help(KeyHints.help(isOpen ? "Hide the browser" : "Browser", command: "browser.toggle", keys: keys))
         .accessibilityIdentifier("browserButton")
     }
 }
@@ -829,6 +841,7 @@ package struct BrowserButton: View {
 package struct SimulatorButton: View {
     package let isOpen: Bool
     @ObservedObject package var theme: ChromeTheme
+    @ObservedObject var keys = Keybindings.shared
     package let action: () -> Void
     @State private var hovering = false
 
@@ -843,7 +856,7 @@ package struct SimulatorButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(isOpen ? "Hide the simulator" : "Simulator")
+        .help(KeyHints.help(isOpen ? "Hide the simulator" : "Simulator", command: "simulator.toggle", keys: keys))
         .accessibilityIdentifier("simulatorButton")
     }
 }
@@ -999,8 +1012,9 @@ package final class WindowDragView: NSView {
     }
 }
 
-/// After an update (SET-G2): what this version changed, one press away —
-/// quiet, beside the strip's other chips, never a sheet. Its × puts it away.
+/// After an update (SET-G2, onboarding 7.9): what changed, one press away —
+/// quiet, in the update chip's place, never a sheet, the keyboard left where
+/// it is. Its × puts it away.
 package struct WhatsNewChip: View {
     package let version: String
     @ObservedObject package var theme: ChromeTheme
@@ -1021,14 +1035,14 @@ package struct WhatsNewChip: View {
             }
             .accessibilityLabel(Text(verbatim: "What’s new in \(version)"))
             .buttonStyle(.plain)
-            .help("What Overterm \(version) changed — its changelog entry")
+            .help("What changed in Overterm \(version), and in any version skipped — Settings ▸ About")
             .accessibilityIdentifier("strip.whatsNew")
             Button(action: dismiss) {
                 Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(8), weight: .semibold))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Put it away — the changelog stays in Help ▸ View Latest Changelog")
+            .help("Put it away — Help ▸ What's New opens it again")
             .accessibilityIdentifier("strip.whatsNew.dismiss")
         }
         .foregroundStyle(theme.dimText)
@@ -1050,4 +1064,7 @@ package struct WhatsNewChip: View {
 
     /// The version the chip on screen names, and its frame in the strip's window.
     @MainActor package static var drawn: (version: String, frame: CGRect)?
+    /// The update chip's version while it is drawn in the same place: the
+    /// scenarios' check that only one of the two shows.
+    @MainActor package static var updateDrawn: String?
 }

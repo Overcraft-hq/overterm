@@ -185,6 +185,8 @@ package struct MCPAddServerSheet: View {
 package struct MCPPageView: View {
     @ObservedObject package var inspector: MCPInspector
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let close: () -> Void
 
     package init(inspector: MCPInspector, theme: ChromeTheme, close: @escaping () -> Void) {
@@ -231,7 +233,7 @@ package struct MCPPageView: View {
                     .frame(maxWidth: .infinity).padding(16)
                 }
             } else {
-                note("Pick an MCP server in the API panel (⌥⌘R).")
+                note("Pick an MCP server in the " + KeyHints.help("API panel", command: "api.show", keys: keys) + ".")
             }
         }
         .background(theme.panelGround)

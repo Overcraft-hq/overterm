@@ -316,8 +316,17 @@ package enum GRPCProtoc {
     /// On the user's PATH — or, where their shell isn't asked (a test, a
     /// scenario), the one this process has, then Homebrew's places.
     package static func locate() -> URL? {
-        if let found = ShellEnvironment.executable("protoc", in: ShellEnvironment.environment()) { return found }
-        return ["/opt/homebrew/bin/protoc", "/usr/local/bin/protoc"].first(where: FileManager.default.isExecutableFile).map(URL.init(fileURLWithPath:))
+        locate(environment: ShellEnvironment.environment())
+    }
+
+    /// Where Homebrew puts it, after the PATH.
+    package static let fallbackPaths = ["/opt/homebrew/bin/protoc", "/usr/local/bin/protoc"]
+
+    /// `protoc` on `environment`'s PATH, else in `fallbackPaths`: pure but
+    /// for `isExecutable` — the Setup page looks the same way, never running it.
+    package static func locate(environment: [String: String], isExecutable: (String) -> Bool = FileManager.default.isExecutableFile) -> URL? {
+        if let found = ShellEnvironment.executable("protoc", in: environment, isExecutable: isExecutable) { return found }
+        return fallbackPaths.first(where: isExecutable).map(URL.init(fileURLWithPath:))
     }
 
     package static func registry(files: [URL], importPaths: [URL]) throws -> Protobuf.Registry {

@@ -38,6 +38,19 @@ package final class EditorHeaderView: NSView {
     private let close = NSButton()
     private var items: [Item] = []
     private var active = -1
+    private var zoomed = false
+    private var previewShown: (available: Bool, showing: Bool, request: Bool) = (false, false, false)
+
+    /// A command's key as bound now ("editor.toggleZoom" → "⇧⎋"); nil
+    /// while unbound. The keybindings are the app's, above this module:
+    /// the editor sets it (`EditorViewController`), and a key written into
+    /// a tooltip would go wrong the moment its command was rebound.
+    package static var boundKey: @MainActor (String) -> String? = { _ in nil }
+
+    /// "Zoom Editor — ⇧⎋", or the title alone while the command has no key.
+    package static func tip(_ title: String, command: String) -> String {
+        boundKey(command).map { key in "\(title) — \(key)" } ?? title
+    }
 
     package override func draw(_ dirtyRect: NSRect) {
         background.setFill()
@@ -70,10 +83,13 @@ package final class EditorHeaderView: NSView {
         scroll.horizontalScrollElasticity = .allowed
         scroll.verticalScrollElasticity = .none
 
-        Self.style(preview, "eye", tip: "Preview Markdown — ⇧⌘V", color: text, target: self, action: #selector(togglePreview))
+        Self.style(
+            preview, "eye", tip: Self.tip("Preview Markdown", command: "editor.markdownPreview"), color: text, target: self, action: #selector(togglePreview))
         preview.identifier = NSUserInterfaceItemIdentifier("markdownPreviewButton")
         preview.isHidden = true
-        Self.style(zoom, "arrow.up.left.and.arrow.down.right", tip: "Zoom Editor — ⇧⎋", color: text, target: self, action: #selector(zoomEditor))
+        Self.style(
+            zoom, "arrow.up.left.and.arrow.down.right", tip: Self.tip("Zoom Editor", command: "editor.toggleZoom"), color: text, target: self,
+            action: #selector(zoomEditor))
         zoom.identifier = NSUserInterfaceItemIdentifier("zoomEditor")
         Self.style(reveal, "arrow.up.forward.app", tip: OpenWith.openTitle(nil), color: text, target: self, action: #selector(revealFile))
         reveal.identifier = NSUserInterfaceItemIdentifier("openExternally")
@@ -154,10 +170,21 @@ package final class EditorHeaderView: NSView {
         }
     }
 
+    /// The keybindings changed: every tooltip that names a key, again.
+    package func keysChanged() {
+        setZoomed(zoomed)
+        setPreview(available: previewShown.available, showing: previewShown.showing, request: previewShown.request)
+        // The tabs' unsaved dots name Save's key.
+        let (items, active) = (self.items, self.active)
+        self.items = []
+        update(items, active: active)
+    }
+
     package func setZoomed(_ zoomed: Bool) {
+        self.zoomed = zoomed
         let symbol = zoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
         zoom.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
-        zoom.toolTip = zoomed ? "Give the Terminal Back — ⇧⎋" : "Zoom Editor — ⇧⎋"
+        zoom.toolTip = Self.tip(zoomed ? "Give the Terminal Back" : "Zoom Editor", command: "editor.toggleZoom")
         zoom.setAccessibilityLabel(zoom.toolTip)
     }
 
@@ -189,14 +216,12 @@ package final class EditorHeaderView: NSView {
     /// The eye: Markdown rendered, or a Bruno request shown as one — and
     /// the way back to the text.
     package func setPreview(available: Bool, showing: Bool, request: Bool = false) {
+        previewShown = (available, showing, request)
         preview.isHidden = !available
         let symbol = showing ? "chevron.left.forwardslash.chevron.right" : (request ? "arrow.left.arrow.right" : "eye")
         preview.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 11, weight: .medium))
-        if request {
-            preview.toolTip = showing ? "The .bru file's text — ⇧⌘V" : "Back to the request — ⇧⌘V"
-        } else {
-            preview.toolTip = showing ? "Back to the Markdown — ⇧⌘V" : "Preview Markdown — ⇧⌘V"
-        }
+        let title = request ? (showing ? "The .bru file's text" : "Back to the request") : (showing ? "Back to the Markdown" : "Preview Markdown")
+        preview.toolTip = Self.tip(title, command: "editor.markdownPreview")
         preview.setAccessibilityLabel(preview.toolTip)
     }
 
@@ -257,7 +282,7 @@ private final class EditorTabView: NSView {
         dot.wantsLayer = true
         dot.layer?.backgroundColor = text.withAlphaComponent(0.7).cgColor
         dot.layer?.cornerRadius = 3.5
-        dot.toolTip = "Unsaved — ⌘S"
+        dot.toolTip = EditorHeaderView.tip("Unsaved", command: "file.save")
         for view in [stack, closeButton, dot] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)

@@ -12,6 +12,8 @@ import SwiftUI
 package struct UsageChip: View {
     @ObservedObject package var model: UsageModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     /// Settings ▸ General can put the gauge away.
     @ObservedObject package var settings: Settings = .shared
     package let action: () -> Void
@@ -23,6 +25,9 @@ package struct UsageChip: View {
         self._settings = ObservedObject(wrappedValue: settings)
         self.action = action
     }
+
+    /// "Usage (⌥⌘U)", with the key bound now.
+    private var usage: String { KeyHints.help("Usage", command: "usage.show", keys: keys) }
 
     package var body: some View {
         if settings.usageChip, model.isAvailable {
@@ -44,8 +49,9 @@ package struct UsageChip: View {
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .help(
-                shown.map { "\($0.snapshot.provider.name) · \($0.meter.name) \($0.meter.reading()), \($0.meter.resets()) — Usage (⌥⌘U)" }
-                    ?? "Usage (⌥⌘U) — every window the agents reported has started again since")
+                shown.map { shown in
+                    "\(shown.snapshot.provider.name) · \(shown.meter.name) \(shown.meter.reading()), \(shown.meter.resets()) — " + usage
+                } ?? usage + " — every window the agents reported has started again since")
         }
     }
 

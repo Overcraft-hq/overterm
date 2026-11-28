@@ -779,6 +779,8 @@ package struct KubeOverviewCount: View {
 package struct KubeSavedFilterMenu: View {
     @ObservedObject package var page: KubernetesPageModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     @ObservedObject package var store: KubeSavedFilters = .shared
 
     package var body: some View {
@@ -802,7 +804,7 @@ package struct KubeSavedFilterMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Saved filters for this context — also in the palette (⌘K)")
+        .help(KeyHints.help("Saved filters for this context — also in the palette", command: "palette.show", keys: keys))
         .accessibilityIdentifier("kubernetes.savedFilters")
     }
 }
