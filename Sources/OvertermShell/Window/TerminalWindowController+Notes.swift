@@ -420,7 +420,8 @@ extension TerminalWindowController {
     /// without the question: a note may come from anywhere (a shared vault,
     /// an agent), and Return on the sheet is Cancel.
     package func runNoteCommand(_ command: String) {
-        guard let window, let tab = store.selected, let pane = tab.terminal else { return NSSound.beep() }
+        guard let window, let tab = store.selected else { return NSSound.beep() }
+        let pane = tab.terminal
         if let refusal = NoteRunbook.refusal(kind: tab.kind, terraformAsking: terraformAsking(tab)) {
             let alert = NSAlert()
             alert.messageText = "Not run in “\(tab.title)”"
@@ -430,7 +431,7 @@ extension TerminalWindowController {
         }
         let alert = NSAlert()
         // The tab named with what it is (a remote shell, a pod's, a context's) — where the command lands.
-        alert.messageText = tab.kind == .shell ? "Run this in “\(tab.title)”?" : "Run this in “\(tab.title)” — \(tab.kind.title)?"
+        alert.messageText = tab.kind == .shell ? "Run this in “\(tab.title)”?" : "Run this in “\(tab.title)” — \(tab.kind.name)?"
         alert.informativeText = VisibleText.displayed(command)
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Run")
