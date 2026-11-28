@@ -265,11 +265,16 @@ package struct StartCardView: View {
         }
         if start.setup?.shellAnswered == true {
             line(StartText.probeNote, color: theme.text3, size: 10)
-            Button(StartText.checkAgain) { perform(.checkAgain) }
-                .buttonStyle(.plain)
-                .font(.system(size: ChromeMetrics.text(10.5)))
-                .foregroundStyle(theme.accentText)
-                .accessibilityIdentifier("start.checkAgain")
+            HStack(spacing: 10) {
+                Button(StartText.checkAgain) { perform(.checkAgain) }
+                    .accessibilityIdentifier("start.checkAgain")
+                // The whole page: every tool, where Overterm looked.
+                Button(StartText.checkSetup) { perform(.command("help.setup")) }
+                    .accessibilityIdentifier("start.checkSetup")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: ChromeMetrics.text(10.5)))
+            .foregroundStyle(theme.accentText)
         }
         // Asked only while this step shows: the login shell's first
         // question may be this one, and it runs the person's rc files.

@@ -149,6 +149,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var kubernetesPageHeld = false
     /// The Activity page's own state; its view is made the first time it opens.
     package let activityPage = ActivityPageModel()
+    /// The Setup page's facts, read only while it shows (onboarding 7.7).
+    package let setupPage = SetupPageModel()
+    /// A scenario's: what Put in a New Tab on the Setup page would type, recorded instead.
+    package var setupTabRecorder: ((String) -> Void)?
     /// The ⌃⌘A switcher's hold and rows, while the palette shows it.
     package let activitySwitcher = ActivitySwitcher()
     /// What an isolated run would have opened in the default browser (an Ingress).
@@ -867,6 +871,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         wireDockerPage()
         wireKubernetesPage()
         wireActivityPage()
+        declarePage(setupWorkspacePage())
         wireDockerPanel()
         wireKubernetesPanel()
         wireTerraformPanel()
@@ -1958,9 +1963,16 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Open the Tab Anyway")
         alert.addButton(withTitle: "Cancel")
+        // The Setup page: every agent, and where Overterm looked (7.4).
+        alert.addButton(withTitle: "Check Setup")
         alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
-            MainActor.assumeIsolated { self?.openAgentTab(agent, in: folder) }
+            MainActor.assumeIsolated {
+                switch response {
+                case .alertFirstButtonReturn: self?.openAgentTab(agent, in: folder)
+                case .alertThirdButtonReturn: self?.showSetup(nil)
+                default: break
+                }
+            }
         }
     }
 
@@ -3544,8 +3556,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             PaletteItem(id: "a.openFolder", group: .action, title: "Open Folder…", subtitle: "A tab in a folder you pick", symbol: "folder", command: "file.openFolder") {
                 [weak self] _, _ in self?.openFolder(nil)
             },
-            // Help's rows (onboarding 7.8): Open Folder… above; Check Setup
-            // comes with its stage.
+            // Help's rows (onboarding 7.8): Open Folder… above.
+            PaletteItem(
+                id: "a.checkSetup", group: .action, title: "Check Setup…", subtitle: "What Overterm found on this Mac, and where it looked",
+                symbol: "wrench.and.screwdriver", command: "help.setup"
+            ) { [weak self] _, _ in self?.showSetup(nil) },
             PaletteItem(
                 id: "a.gettingStarted", group: .action, title: "Getting Started", subtitle: "Five steps, in the sidebar", symbol: "checklist",
                 command: "help.gettingStarted"

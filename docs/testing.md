@@ -879,6 +879,20 @@ second mark brings none and an agent's tab in the same launch holds T4;
 then ⌘K's hint row and Reset Tips. A real click on a tip, VoiceOver's
 announcement and the system prompt are checks by hand.
 
+Stage 5's Setup page: `SetupCheckTests` (each core row's found, missing
+and off words, gh on the PATH but not where Overterm looks, Gemini CLI's
+system defaults, a row for every `Agent`, the install table listed for
+review, the step times; the probe's paths), `SetupPageModelTests` (read
+only while shown, dropped when hidden, Check Again) and
+`WorkspacePagesTests` (`.setup` among the overlays). The `onboarding`
+scenario's step 5 opens the page from the "isn't on your PATH" warning,
+and step 18 opens it from Help's action with `SetupProbe.override`'s
+facts: its rows those facts word for word, Put in a New Tab recorded
+(`setupTabRecorder`) — typed, never run —, Allow… counted, the usage
+switch, and Esc and `hideOverlay` leaving the terminal the first
+responder. Full Keyboard Access over the page, and what each finder says
+on a clean account, are checks by hand.
+
 ## End-to-end — `Sources/OvertermE2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

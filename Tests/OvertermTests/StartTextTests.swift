@@ -113,7 +113,7 @@ final class StartTextTests: XCTestCase {
         broken.gh = nil
         XCTAssertEqual(
             StartText.problems(broken).map { "\($0.title) — \($0.detail)" },
-            ["git — Command Line Tools not found", "GitHub CLI — not found · pull requests and CI need it"])
+            ["git — Command Line Tools not found", "GitHub CLI — not found · pull requests, CI and update checks need it"])
         XCTAssertEqual(StartText.probeNote, "Asked your login shell for its PATH and looked at files. No tool was run.")
     }
 

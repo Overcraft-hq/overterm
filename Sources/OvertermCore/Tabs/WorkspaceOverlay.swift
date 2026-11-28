@@ -5,7 +5,7 @@ import Foundation
 /// (`TabStore.openOverlays`). Not a `Tab`: no terminal, no group, no ⌘1–9.
 /// The window wires each from its declaration (`WorkspacePage`).
 package enum WorkspaceOverlay: String, Equatable, CaseIterable {
-    case settings, docker, kubernetes, activity
+    case settings, docker, kubernetes, activity, setup
 
     package var title: String {
         switch self {
@@ -13,6 +13,7 @@ package enum WorkspaceOverlay: String, Equatable, CaseIterable {
         case .docker: "Docker"
         case .kubernetes: "Kubernetes"
         case .activity: "Activity"
+        case .setup: "Setup"
         }
     }
 
@@ -23,6 +24,7 @@ package enum WorkspaceOverlay: String, Equatable, CaseIterable {
         case .docker: "shippingbox"
         case .kubernetes: "steeringwheel"
         case .activity: "cpu"
+        case .setup: "wrench.and.screwdriver"
         }
     }
 }

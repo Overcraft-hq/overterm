@@ -1751,14 +1751,32 @@ scrolls inside itself; nothing is added to the window or a split.
   window's facts and the keys bound now, passed in as a map; an unbound
   command is said by its name. `StartCardView` draws it, observing `Start`,
   the window's theme and `Keybindings` — never all of `Settings.shared`.
-- `SetupCheck` (pure: `SetupFacts` → `SetupRow`s) has the three rows the
-  second step needs — the agents, git, the GitHub CLI; the Setup page
-  (stage 5) adds the rest. `SetupProbe` fills the facts off the main
-  thread with the features' own finders: `ShellEnvironment.login()`'s PATH,
-  `AgentFinder`, the existence of `~/.claude/projects` and `~/.codex/
-  sessions` ("used here before"), of Command Line Tools or Xcode, and
-  `GitHub.executable`. It runs nothing and writes nothing; it is asked only
-  while the second step shows; a scenario sets `SetupProbe.override`.
+- `SetupCheck` (pure: `SetupFacts` → `SetupRow`s) has the Setup page's
+  core rows — the shell, git, the GitHub CLI, one per agent
+  (`Agent.allCases`), notifications, the bridge —, each with what was
+  found, where Overterm looked and its action: a command to copy or type
+  into a new tab, an agent's own install page (one table, `installPage`,
+  never a fixed command), a Settings page, Allow…. The second step shows
+  git's and gh's when they are wrong (`StartText.problems`). `SetupProbe`
+  fills the facts off the main thread with the features' own finders:
+  `ShellEnvironment.login()`'s PATH, `AgentFinder`, the existence of
+  `~/.claude/projects` and `~/.codex/sessions` ("used here before"), of
+  Command Line Tools or Xcode, of Gemini CLI's system defaults (as the
+  launch tests it), and `GitHub.executable`; for the page also
+  notifications as macOS says now and the bridge as Settings has it. It
+  runs nothing and writes nothing; a scenario sets `SetupProbe.override`.
+- The Setup page (7.7) is a `WorkspacePage` (`WorkspaceOverlay.setup`)
+  opened only by the person: Help ▸ Check Setup… (`help.setup`, no key),
+  its ⌘K row, the card's Check Setup and the "isn't on your PATH"
+  warning's. `SetupPageModel` reads while it shows (`visibilityChanged`)
+  and on Check Again, and drops what it read when it goes. `SetupView`
+  says what runs by itself (`general.usageAsk`, its switch, D-7) and the
+  person's step times from `onboarding.steps` and
+  `onboarding.firstLaunch`, kept on this Mac only (D-12). Its presses go
+  through `performSetupAction`: Put in a New Tab types the command with
+  `newTab(in:typing:)` and presses no Return. Its host
+  (`SetupHostingView`) takes the keyboard when shown; Esc hides the page
+  and gives it back to the selected terminal.
 
 `AppDelegate` hands the launch to the window after `showWindow`
 (`beginStart`), never in an isolated run. Every press on the card goes

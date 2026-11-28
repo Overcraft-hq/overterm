@@ -32,31 +32,50 @@ package enum SetupProbe {
     package static let developerToolsPaths = ["/Library/Developer/CommandLineTools", "/Applications/Xcode.app"]
 
     /// The facts now. The shell is asked off the main thread; `gh`'s place
-    /// is read on it, as everything that runs gh reads it.
-    @MainActor package static func read() async -> SetupFacts {
+    /// is read on it, as everything that runs gh reads it. `full`: the
+    /// Setup page's too — notifications as macOS says now (never its
+    /// question), the bridge as Settings has it.
+    @MainActor package static func read(full: Bool = false) async -> SetupFacts {
         if let override { return override }
         let gh = GitHub.executable
         let places = Places(
             home: FileManager.default.homeDirectoryForCurrentUser.path, claudeProjects: AppEnvironment.claudeProjectsDirectory.path,
             codexSessions: AppEnvironment.codexSessionsDirectory.path)
-        return await withCheckedContinuation { continuation in
+        let geminiVariable = ProcessInfo.processInfo.environment["GEMINI_CLI_SYSTEM_DEFAULTS_PATH"] != nil
+        var facts = await withCheckedContinuation { (continuation: CheckedContinuation<SetupFacts, Never>) in
             // Spelled `@Sendable`: left to inference, a block for a queue
             // written here could be typed main-actor and trap off it.
             let work: @Sendable () -> Void = {
                 let facts = Self.facts(
                     environment: ShellEnvironment.login(), gh: gh, places: places, exists: { FileManager.default.fileExists(atPath: $0) },
-                    isExecutable: { FileManager.default.isExecutableFile(atPath: $0) })
+                    isExecutable: { FileManager.default.isExecutableFile(atPath: $0) }, geminiVariable: geminiVariable)
                 continuation.resume(returning: facts)
             }
             DispatchQueue.global(qos: .utility).async(execute: work)
         }
+        guard full else { return facts }
+        facts.notifications = await AttentionNotifier.authorizationState()
+        facts.toolGroups = toolGroups(in: .shared)
+        facts.bridgeServing = BrowserBridge.shared.isServing
+        return facts
     }
 
-    /// The facts from the shell's answer (nil: not answered) and the two
-    /// file checks. Pure but for `exists` and `isExecutable`, the only
-    /// ways it touches the disk — `SetupCheckTests` records every path.
+    /// How many of the agents' tool groups Settings turns on — the eight
+    /// `BrowserBridge.wanted` asks about.
+    @MainActor package static func toolGroups(in settings: Settings) -> Int {
+        [
+            settings.browserAgentControl, settings.apiAgentControl, settings.notesAgentAccess, settings.databaseAgentAccess, settings.dockerAgentAccess,
+            settings.kubernetesAgentAccess, settings.terraformAgentAccess, settings.activityAgentAccess,
+        ].count { on in on }
+    }
+
+    /// The facts from the shell's answer (nil: not answered) and the file
+    /// checks — Gemini CLI's system defaults by the launch's own two tests
+    /// (`geminiVariable`: its variable in the app's environment). Pure but
+    /// for `exists` and `isExecutable`, the only ways it touches the disk —
+    /// `SetupCheckTests` records every path.
     package nonisolated static func facts(
-        environment: [String: String]?, gh: URL?, places: Places, exists: (String) -> Bool, isExecutable: (String) -> Bool
+        environment: [String: String]?, gh: URL?, places: Places, exists: (String) -> Bool, isExecutable: (String) -> Bool, geminiVariable: Bool = false
     ) -> SetupFacts {
         var agents: [Agent: AgentFinder.Result] = [:]
         for agent in Agent.allCases {
@@ -68,6 +87,7 @@ package enum SetupProbe {
         if exists(places.codexSessions) { usedBefore.insert(.codex) }
         return SetupFacts(
             shellAnswered: environment != nil, agents: agents, usedBefore: usedBefore, developerTools: developerToolsPaths.contains(where: exists),
-            gh: gh, ghOnPath: environment.flatMap { ShellEnvironment.executable("gh", in: $0, isExecutable: isExecutable) })
+            gh: gh, ghOnPath: environment.flatMap { ShellEnvironment.executable("gh", in: $0, isExecutable: isExecutable) },
+            geminiSystemDefaults: geminiVariable || exists(AgentLaunchFiles.geminiSystemDefaults))
     }
 }

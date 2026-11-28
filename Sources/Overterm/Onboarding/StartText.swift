@@ -92,6 +92,8 @@ package struct StartText: Sendable {
     package static let noAgent = "No agent found on your PATH."
     package static let probeNote = "Asked your login shell for its PATH and looked at files. No tool was run."
     package static let checkAgain = "Check Again"
+    /// The second step's link to the Setup page (Help ▸ Check Setup…).
+    package static let checkSetup = "Check Setup"
     package static let needsRepository = "Open a repository first"
 
     /// The collapsed row: "Getting started · 2 of 5".
@@ -178,7 +180,7 @@ package struct StartText: Sendable {
     /// or the GitHub CLI — the agents are its menu.
     package static func problems(_ setup: SetupFacts?, home: String = NSHomeDirectory()) -> [SetupRow] {
         guard let setup else { return [] }
-        return SetupCheck.rows(facts: setup, home: home).filter { $0.id != .agents && $0.isProblem }
+        return SetupCheck.rows(facts: setup, home: home).filter { row in (row.id == .git || row.id == .gh) && row.isProblem }
     }
 
     /// VoiceOver's value for a step.

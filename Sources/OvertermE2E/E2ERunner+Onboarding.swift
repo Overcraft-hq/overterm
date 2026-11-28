@@ -100,7 +100,7 @@ extension E2ERunner {
         // The rows the window writes: each names its command, and its
         // words hold no key of their own.
         let named = [
-            "a.newTab", "a.splitRight", "a.splitDown", "a.newTask", "a.openFolder", "a.shortcuts", "a.whatsNew", "a.gettingStarted", "a.resetTips", "a.overview",
+            "a.newTab", "a.splitRight", "a.splitDown", "a.newTask", "a.openFolder", "a.shortcuts", "a.whatsNew", "a.gettingStarted", "a.resetTips", "a.checkSetup", "a.overview",
             "a.focusSidebar",
             "a.focusTerminal", "a.focusEditor", "a.goToFile", "a.focusRight", "a.focusInbox", "a.nextColumn", "a.previousColumn", "a.peek",
             "a.reviewBranch", "a.sidebar", "a.overgit", "a.api", "a.notes", "a.diff",
@@ -123,6 +123,7 @@ extension E2ERunner {
         check("Help's What's New is a row of its own", row("a.whatsNew") != nil && row("menu.help.whatsNew") == nil)
         check("Help's Getting Started is a row of its own", row("a.gettingStarted") != nil && row("menu.help.gettingStarted") == nil)
         check("Help's Reset Tips is a row of its own", row("a.resetTips") != nil && row("menu.help.resetTips") == nil)
+        check("Help's Check Setup is a row of its own", row("a.checkSetup") != nil && row("menu.help.setup") == nil)
     }
 
     /// Stages 3 and 4, the `onboarding` scenario (onboarding 7.3, 7.6,
@@ -209,8 +210,13 @@ extension E2ERunner {
         app.findAgent = { _ in .missing }
         app.newAgentTab(.claude)
         check("an agent not on the PATH is said before anything is typed", await eventually(3) { self.window.attachedSheet != nil } && opened.isEmpty)
-        clickSheetButton("Cancel")
+        // Stage 5 (7.4): the warning offers the Setup page.
+        check("the warning offers Check Setup", sheetHasButton("Check Setup"))
+        clickSheetButton("Check Setup")
         _ = await eventually(2) { self.window.attachedSheet == nil }
+        check("Check Setup shows the Setup page, and nothing is typed", await eventually(3) { self.app.store.showingOverlay == .setup } && opened.isEmpty)
+        app.hideOverlay()
+        app.closeOverlay(.setup)
         app.findAgent = { AgentFinder.find($0) }
         app.agentTabRecorder = nil
         check("nothing opened", opened.isEmpty)
@@ -378,6 +384,9 @@ extension E2ERunner {
         check("later events show nothing", !start.state.isShown)
         Settings.shared.set("general.tips", nil)
 
+        // 18. Check Setup (stage 5, 7.7): asked for, never by itself.
+        await setupPageChecks(root: root)
+
         // 20. An update's defaults: no card.
         let suite = scratch.appendingPathComponent("updated-defaults").path
         if let updated = UserDefaults(suiteName: suite) {
@@ -387,6 +396,84 @@ extension E2ERunner {
             check("an update gets no card", !upgraded.state.isShown && updated.object(forKey: Start.cardKey) == nil)
             updated.removePersistentDomain(forName: suite)
         }
+    }
+
+    /// Step 18: the Setup page from Help's action with the probe's facts
+    /// injected — its rows those facts word for word, read while it shows
+    /// and dropped when it goes; Put in a New Tab types and presses no
+    /// Return; Allow… asks by the click; Esc gives the keyboard back.
+    private func setupPageChecks(root: NSView) async {
+        func present(_ id: String) -> Bool { Self.accessibilityPress(id, in: root, press: false) }
+        let claude = URL(fileURLWithPath: "/opt/homebrew/bin/claude")
+        var agents = Dictionary(uniqueKeysWithValues: Agent.allCases.map { agent in (agent, AgentFinder.Result.missing) })
+        agents[.claude] = .found(claude, onPath: true)
+        let facts = SetupFacts(
+            shellAnswered: true, agents: agents, usedBefore: [.claude], developerTools: true, gh: nil, notifications: .notAsked, toolGroups: 8,
+            bridgeServing: true)
+        let before = SetupProbe.override
+        defer { SetupProbe.override = before }
+        SetupProbe.override = facts
+        check("the Setup page isn't open by itself", app.store.showingOverlay != .setup && !app.setupPage.visible)
+
+        app.showSetup(nil)
+        check("Check Setup shows the page", await eventually(3) { self.app.store.showingOverlay == .setup && present("setup.page") })
+        let page = app.pages.view(.setup)
+        check(
+            "and gives it the keyboard: the person asked",
+            page.flatMap { page in (window.firstResponder as? NSView)?.isDescendant(of: page) } ?? false, "\(String(describing: window.firstResponder))")
+        let rows = SetupCheck.rows(facts: facts)
+        check("its rows are the injected facts'", await eventually(5) { self.app.setupPage.rows == rows }, "\(String(describing: self.app.setupPage.rows))")
+        for row in rows {
+            let shown = Self.accessibilityElement("setup.detail.\(row.id.key)", in: root)?.text ?? ""
+            check("\(row.title) says “\(row.detail)”", shown.contains(row.detail), shown)
+        }
+        check(
+            "Claude Code: where it is, used here before",
+            rows.first { $0.id == .agent(.claude) }?.detail == "/opt/homebrew/bin/claude · used here before")
+        check(
+            "the GitHub CLI: what needs it, and its command",
+            rows.first { $0.id == .gh }.map { row in row.detail == "not found · pull requests, CI and update checks need it" && row.action == .command("brew install gh") }
+                ?? false)
+        check("Notifications not asked: Allow… is offered", present("setup.allow.notifications"))
+        check("the page says no tool was run", Self.accessibilityElement("setup.note", in: root)?.text.contains("No tool was run.") == true)
+        let steps = Self.accessibilityElement("setup.steps", in: root)?.text ?? ""
+        check("Getting started has the person's own step times", steps.contains("pened a repository"), steps)
+        check("kept on this Mac only", present("setup.usageAsk") && (Self.accessibilityElementTexts(root).contains { $0.contains(SetupCheck.keptHere) }))
+
+        // Put in a New Tab: the command typed, never run.
+        var typed: [String] = []
+        app.setupTabRecorder = { command in typed.append(command) }
+        check("Put in a New Tab pressed", Self.accessibilityPress("setup.newTab.gh", in: root))
+        check("it types the row's command, and nothing presses Return", await eventually(2) { typed == ["brew install gh"] }, "\(typed)")
+        app.setupTabRecorder = nil
+
+        // Allow…: the system's question, by this click (an isolated run counts it).
+        let asked = AttentionNotifier.requestedNow
+        check("Allow… pressed", Self.accessibilityPress("setup.allow.notifications", in: root))
+        check("it asks then", await eventually(2) { AttentionNotifier.requestedNow == asked + 1 })
+
+        // What runs by itself: general.usageAsk, its switch.
+        app.performSetupAction(.usageAsk(false))
+        check("the usage switch turns general.usageAsk off", !Settings.shared.usageAsk && !app.setupPage.usageAsk)
+        Settings.shared.set("general.usageAsk", nil)
+        check("and on again from Settings, the page follows", await eventually(2) { self.app.setupPage.usageAsk })
+
+        // Esc: the page put away, the keyboard back to the terminal; what it read dropped.
+        check("the page's host answers Esc", page is SetupHostingView)
+        (page as? SetupHostingView)?.cancelOperation(nil)
+        check("Esc closes the page", await eventually(2) { self.app.store.showingOverlay == nil })
+        check(
+            "the keyboard is the terminal's again", await eventually(2) { self.window.firstResponder === self.app.store.selected?.terminal },
+            "\(String(describing: self.window.firstResponder))")
+        check("what it read is dropped", app.setupPage.facts == nil && !app.setupPage.visible)
+
+        // hideOverlay leaves the terminal the first responder too.
+        app.showSetup(nil)
+        _ = await eventually(3) { self.app.store.showingOverlay == .setup }
+        app.hideOverlay()
+        check(
+            "hideOverlay gives the keyboard to the terminal", await eventually(2) { self.window.firstResponder === self.app.store.selected?.terminal })
+        app.closeOverlay(.setup)
     }
 
     private func sheetHasButton(_ title: String) -> Bool {
@@ -436,7 +523,9 @@ extension E2ERunner {
         check(
             "as Claude Code isn't on your PATH",
             texts.contains("Claude Code isn’t on your PATH.") && texts.contains("Overterm looked where a new tab’s shell looks."), "\(texts)")
-        check("with Open the Tab Anyway and Cancel", sheetHasButton("Open the Tab Anyway") && sheetHasButton("Cancel"))
+        check(
+            "with Open the Tab Anyway, Cancel and Check Setup",
+            sheetHasButton("Open the Tab Anyway") && sheetHasButton("Cancel") && sheetHasButton("Check Setup"))
         check("and nothing typed: no tab yet", app.store.tabs.count == tabs && opened.isEmpty)
         clickSheetButton("Cancel")
         _ = await eventually(2) { self.window.attachedSheet == nil }

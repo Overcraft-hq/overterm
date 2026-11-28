@@ -70,6 +70,7 @@ extension TerminalWindowController {
         case "tasks.new": newTask(nil)
         case "inbox.show": if inboxItem?.isCollapsed == true { toggleInbox(nil) }
         case "changes.toggle": showChanges(nil)
+        case "help.setup": showSetup(nil)
         default: break
         }
     }
@@ -253,6 +254,63 @@ extension TerminalWindowController {
         alert.beginSheetModal(for: window) { response in
             guard response == .alertFirstButtonReturn else { return }
             MainActor.assumeIsolated { Start.shared.resetTips() }
+        }
+    }
+}
+
+/// The Setup page (onboarding 7.7): a page over the body like Activity's,
+/// opened only by the person — Help ▸ Check Setup…, its ⌘K row, the Start
+/// card's link, the "isn't on your PATH" warning — never by itself. Read
+/// while it shows; dropped when it goes.
+extension TerminalWindowController {
+    package func setupWorkspacePage() -> WorkspacePage {
+        var page = WorkspacePage(.setup)
+        page.makeView = { [weak self] in
+            guard let self, let theme = self.theme else { return nil }
+            let view = SetupHostingView(
+                rootView: SetupView(model: self.setupPage, theme: theme) { [weak self] action in self?.performSetupAction(action) })
+            // Esc: the page put away, the keyboard back to the terminal.
+            view.escape = { [weak self] in self?.hideOverlay() }
+            return view
+        }
+        // The emitted value: `showingOverlay` isn't set yet.
+        page.visibilityChanged = { [weak self] visible in self?.setupPage.visible = visible }
+        page.closed = { [weak self] in self?.setupPage.visible = false }
+        page.windowClosing = { [weak self] in self?.setupPage.visible = false }
+        return page
+    }
+
+    /// Help ▸ Check Setup… and every link to it: the page shown, with the
+    /// keyboard — the person asked for it (`showOverlay`).
+    @objc package func showSetup(_ sender: Any?) {
+        showOverlay(.setup)
+    }
+
+    /// A press on the page. Nothing is fixed for the person: a command is
+    /// copied, or typed into a new tab without Return (3.2).
+    package func performSetupAction(_ action: SetupPageAction) {
+        switch action {
+        case .checkAgain:
+            setupPage.checkAgain()
+        case .copy(let command):
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(command, forType: .string)
+        case .newTab(let command):
+            if let setupTabRecorder { return setupTabRecorder(command) }
+            hideOverlay(focus: false)
+            newTab(in: FileManager.default.homeDirectoryForCurrentUser, typing: command)
+        case .open(let url):
+            // An isolated run opens nothing in the default browser.
+            guard !AppEnvironment.isIsolated else { return }
+            NSWorkspace.shared.open(url)
+        case .settings(let section, let key):
+            openSettings(section, focus: key)
+        case .allowNotifications:
+            setupPage.allowNotifications()
+        case .usageAsk(let on):
+            setupPage.setUsageAsk(on)
+        case .resetTips:
+            resetTips(nil)
         }
     }
 }

@@ -210,6 +210,8 @@ package enum MainMenu {
         let helpMenu = NSMenu(title: "Help")
         // Onboarding 7.10: the sidebar shown, its Start card open.
         command(helpMenu, "Getting Started", #selector(TerminalWindowController.showGettingStarted(_:)), "help.gettingStarted")
+        // Onboarding 7.7: what Overterm found on this Mac, and where it looked.
+        command(helpMenu, "Check Setup…", #selector(TerminalWindowController.showSetup(_:)), "help.setup")
         command(helpMenu, "Keyboard Shortcuts", #selector(AppDelegate.showKeyboardShortcuts(_:)), "help.shortcuts")
         // The keys of wherever the keyboard is (DISC-N1).
         command(helpMenu, "Keys Here", #selector(TerminalWindowController.showKeysHere(_:)), "help.keysHere")

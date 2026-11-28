@@ -31,6 +31,8 @@ version is tagged `v<version>`.
 - Once they are done, the card offers the optional panels to keep; × puts it away, Turn Off Tips (Settings ▸ General) ends it and the tips, and Help ▸ Getting Started (and ⌘K) brings it back
 - Four one-time tips: the first tab that needs you says what the Inbox is, the first production pane what its header means, ⌘K's first showings where Clear the Screen went, the first agent tab what its tools are; Help ▸ Reset Tips shows them again
 - On a new install, macOS asks about notifications when you press Allow Notifications… on the first "needs you" tip, not by itself in the background
+- Help ▸ Check Setup… (and ⌘K, the Getting Started card, the "isn't on your PATH" warning) opens a Setup page: git, the GitHub CLI, each agent, notifications and the agents' tools — found or not, where Overterm looked, a command to copy or put in a new tab; no tool is run
+- The Setup page says what runs by itself — the agents' usage command every ten minutes — with its switch, and your own Getting Started times, kept on this Mac only
 - Tab Peek shows only the tabs the strip shows, filters its cards as you type, picks one with 1–9, and answers a waiting agent from its card
 
 ## 1.6.8 — 2026-11-26

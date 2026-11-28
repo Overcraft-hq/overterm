@@ -29,6 +29,9 @@ package final class Start: ObservableObject {
     package nonisolated static let stepsKey = "onboarding.steps"
     package nonisolated static let tipsSeenKey = "onboarding.tipsSeen"
     package nonisolated static let paletteOpensKey = "onboarding.paletteOpens"
+    /// When a fresh install first launched: what the Setup page's step
+    /// times count from (D-12). Kept on this Mac only.
+    package nonisolated static let firstLaunchKey = "onboarding.firstLaunch"
     /// The scenario that drives it in an isolated run.
     package nonisolated static let scenario = "onboarding"
 
@@ -109,8 +112,12 @@ package final class Start: ObservableObject {
     /// open, an open one collapsed after the first launch, none after an update.
     package func begin(_ launch: FirstRun.Launch) {
         guard active else { return }
+        if launch == .fresh, defaults.object(forKey: Self.firstLaunchKey) == nil { defaults.set(now(), forKey: Self.firstLaunchKey) }
         update(state.launched(launch))
     }
+
+    /// When a fresh install first launched; nil for an update's.
+    package var firstLaunch: Date? { defaults.object(forKey: Self.firstLaunchKey) as? Date }
 
     /// Help ▸ Getting Started.
     package func gettingStarted() {

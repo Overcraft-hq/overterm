@@ -107,6 +107,11 @@ final class MainMenuTests: XCTestCase {
         XCTAssertEqual(resetTips.title, "Reset Tips")
         XCTAssertEqual(resetTips.action, #selector(TerminalWindowController.resetTips(_:)))
         XCTAssertEqual(resetTips.keyEquivalent, "")
+        // Onboarding 7.7: Check Setup…, a command with no key — the page only when asked.
+        let setup = try XCTUnwrap(help.items.first { $0.identifier?.rawValue == "help.setup" })
+        XCTAssertEqual(setup.title, "Check Setup…")
+        XCTAssertEqual(setup.action, #selector(TerminalWindowController.showSetup(_:)))
+        XCTAssertEqual(setup.keyEquivalent, "")
         let ours = items(of: main).compactMap(\.identifier?.rawValue).filter { $0.contains(".") && !$0.hasSuffix(":") }
         XCTAssertEqual(ours.count, Set(ours).count, "no command id on two items")
     }
