@@ -1022,6 +1022,18 @@ extension E2ERunner {
             "and forwards on the new local port", await eventually(15) { forwards.forward(id)?.isForwarding == true && forwards.forward(id)?.spec.localPort == moved },
             forwards.forward(id)?.state.text ?? "gone")
         check("which answers", await answer(moved) == "web-8k2")
+        // K8S-G2: kept for the next run, in this run's own support folder.
+        let kept = KubeForwardStore.load()
+        check(
+            "the forward is kept for the next run, with its new port",
+            kept.contains { $0.id == id && $0.localPort == moved && $0.tab == nil }, "\(kept.map(\.summary))")
+        let nextRun = KubeForwards(client: { _ in nil }, canI: { _, _ in .yes }, launch: { _, _, _ in throw KubeForwardFailure.stops("not here") })
+        nextRun.kept = { KubeForwardStore.load() }
+        nextRun.restore(model.contexts)
+        check(
+            "the next run lists it stopped, from the last session, never started",
+            nextRun.forward(id)?.state == .stopped(KubeForwards.keptNote) && nextRun.canStartAgain(id) && nextRun.startableAgain.map(\.id) == [id],
+            nextRun.forward(id)?.state.text ?? "not listed")
         // Watched with the census's socket walk, never by binding it (6.8).
         check("the old one no longer listens", await eventuallyAsync(8) { await ListeningPorts.holder(of: local) == nil })
 
@@ -1043,6 +1055,7 @@ extension E2ERunner {
         check("its pill goes", await eventually(5) { tab?.forwardPorts.isEmpty == true })
         page.stopForward(id)
         check("Remove takes it off the list", forwards.forward(id) == nil)
+        check("and off what is kept", !KubeForwardStore.load().contains { $0.id == id })
 
         // Quick Forward on a pod: a random port, opened once it forwards.
         model.setKind(.pods)

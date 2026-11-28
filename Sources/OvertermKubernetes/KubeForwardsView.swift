@@ -21,6 +21,16 @@ package struct KubeForwardsSection: View {
                 .padding(.horizontal, 20).padding(.top, 34)
                 .accessibilityIdentifier("kubernetes.forwards.empty")
             } else {
+                if forwards.startableAgain.count > 1 {
+                    HStack {
+                        Spacer(minLength: 0)
+                        // Kept from the last run, or stopped by themselves:
+                        // started again only by a press, production's each asked.
+                        button("Start All Again (\(forwards.startableAgain.count))") { page.startAllForwards() }
+                    }
+                    .padding(.horizontal, 22).padding(.top, 10)
+                    .accessibilityIdentifier("kubernetes.forwards.startAll")
+                }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(forwards.forwards) { forward in row(forward) }
@@ -74,7 +84,7 @@ package struct KubeForwardsSection: View {
             }
             Spacer(minLength: 8)
             if forward.state.isStopped {
-                button("Start Again") { page.forwards.startAgain(forward.id) }
+                button("Start Again") { page.startForwardAgain(forward.id) }.disabled(!forwards.canStartAgain(forward.id))
                 button("Remove") { page.stopForward(forward.id) }
             } else {
                 button("Open") { page.openForward(forward.id) }.disabled(!forward.isForwarding)
@@ -201,9 +211,12 @@ package struct KubeForwardSheetView: View {
             HStack {
                 Spacer()
                 Button("Cancel") { page.closeForwardSheet() }.keyboardShortcut(.cancelAction)
-                Button(draft.editing == nil ? "Forward" : "Save") { page.confirmForward() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(draft.unavailable != nil)
+                // A stopped forward's sheet starts it again: Forward, not Save.
+                Button(draft.editing.flatMap { page.forwards.forward($0) }.map { $0.state.isStopped } ?? true ? "Forward" : "Save") {
+                    page.confirmForward()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(draft.unavailable != nil)
             }
         }
         .padding(16)
