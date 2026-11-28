@@ -107,6 +107,7 @@ package final class E2ERunner {
         "overgitGit": { await $0.overgitGitScenario() },
         "appearance": { await $0.appearanceScenario() },
         "overgitWork": { await $0.overgitWorkScenario() },
+        "gitFailures": { await $0.gitFailuresScenario() },
         "simulator": { await $0.simulatorScenario() },
         "docker": { await $0.dockerScenario() },
         "kubernetes": { await $0.kubernetesScenario() },

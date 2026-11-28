@@ -172,14 +172,97 @@ extension TerminalWindowController {
         await overgit.refresh()
         if command.isNetwork || problem == nil { await worktrees.refresh() }
         guard let problem else { return true }
+        // Done before it is said: a next step picked from the failure runs a command of its own.
+        overgit.running = nil
         if let failure {
             if let state = overgit.inProgress {
                 alert(failure, "\(state.title) stopped on conflicts. Resolve them in Changes, stage them, then Continue — or Abort.")
             } else {
-                alert(failure, problem.errorDescription ?? "")
+                await sayGitFailure(failure, problem, command: command, root: root)
             }
         }
         return false
+    }
+
+    /// A failure said plainly, git's own words under it, and the next steps
+    /// that fit it as buttons (GIT-U6) — a push the remote refused, a pull
+    /// that can't fast-forward, no upstream, a sign-in, a hook.
+    private func sayGitFailure(_ title: String, _ problem: GitError, command: OvergitCommand, root: URL) async {
+        let kind = GitFailure.read(problem.stderr)
+        let branch = diff.branch
+        let pushing = command == .push
+        let pulling: Bool
+        if case .pull = command { pulling = true } else { pulling = false }
+        var steps: [GitFailure.Next] = []
+        if pushing || pulling {
+            let isDefault = GitFailure.isDefault(branch, defaultBranch: await MergedWorktrees.base(in: root))
+            steps = kind.next(pushing: pushing, branch: branch, isDefault: isDefault)
+        }
+        let said = GitFailure.excerpt(problem.errorDescription ?? "")
+        let message = kind == .other ? (said.isEmpty ? "git said nothing more." : said) : kind.sentence(branch: branch) + (said.isEmpty ? "" : "\n\ngit said:\n" + said)
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        for step in steps { alert.addButton(withTitle: step.title) }
+        alert.addButton(withTitle: steps.isEmpty ? "OK" : "Cancel")
+        let response = await alert.beginSheetModal(for: window)
+        let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+        guard steps.indices.contains(index) else { return }
+        await gitNextStep(steps[index], branch: branch, root: root)
+    }
+
+    /// One of a failure's next steps, by the panel's own commands.
+    package func gitNextStep(_ step: GitFailure.Next, branch: String?, root: URL, confirmed: Bool = false) async {
+        switch step {
+        case .pullThenPush:
+            // A merge said outright: a plain pull refuses divergent branches where pull.rebase isn't set.
+            if await runGit(["pull", "--no-rebase"], in: root, command: .pull(rebase: false), failure: "Couldn’t pull \(branch ?? "")") {
+                await overgit(.push, confirmed: confirmed)
+            }
+        case .pullRebaseThenPush:
+            if await overgit(.pull(rebase: true), confirmed: confirmed) { await overgit(.push, confirmed: confirmed) }
+        case .pullRebase:
+            await overgit(.pull(rebase: true), confirmed: confirmed)
+        case .pullMerge:
+            // A plain pull refuses again where pull.rebase isn't set: a merge said outright.
+            await runGit(["pull", "--no-rebase"], in: root, command: .pull(rebase: false), failure: "Couldn’t pull \(branch ?? "")")
+        case .publish:
+            await overgit(.push, confirmed: confirmed)
+        case .stash:
+            await overgit(.stash, confirmed: confirmed)
+        case .forcePushWithLease:
+            await forcePushWithLease(branch: branch, root: root, confirmed: confirmed)
+        }
+    }
+
+    /// `git push --force-with-lease`: the remote's branch replaced by this
+    /// one only if nobody pushed there since this checkout last fetched it.
+    /// Always asked, the branch and the remote named; never the default branch.
+    private func forcePushWithLease(branch: String?, root: URL, confirmed: Bool) async {
+        guard let branch else { return }
+        guard !GitFailure.isDefault(branch, defaultBranch: await MergedWorktrees.base(in: root)) else {
+            return alert("Not on the default branch", "\(branch) is the default branch: it is never force-pushed from here.")
+        }
+        let remotes = PushRemote.parse(remotes: (try? await Git.run(PushRemote.remotesArguments, in: root)) ?? "")
+        var remote: String?
+        var target = branch
+        if let upstream = overgit.tracking.upstream, let (name, onRemote) = OvergitCommand.split(remoteBranch: upstream, remotes: remotes) {
+            remote = name
+            target = onRemote
+        } else if case .remote(let name) = await PushRemote.read(branch: branch, in: root) {
+            remote = name
+        }
+        guard let remote else { return alert("No remote to push to", "Add one first: git remote add <name> <url>.") }
+        if !confirmed {
+            let asked = WriteConfirmation(
+                title: "Force push \(branch) to \(remote)/\(target)?", scope: Self.gitScope(root: root, branch: branch),
+                detail:
+                    "\(remote)/\(target)'s commits that aren't in \(branch) are replaced by this branch's — with a lease: if someone pushed there since this checkout last fetched, nothing is replaced and it says so.\n\nEquals: git \(GitFailure.forcePushArguments(remote: remote, branch: branch, target: target).joined(separator: " "))",
+                button: "Force Push", destroys: true)
+            guard let window, await asked.ask(on: window) != nil else { return }
+        }
+        await runGit(GitFailure.forcePushArguments(remote: remote, branch: branch, target: target), in: root, command: .push, failure: "Couldn’t force push \(branch)")
     }
 
     /// What a rebase or a soft/mixed reset asks before it rewrites commits

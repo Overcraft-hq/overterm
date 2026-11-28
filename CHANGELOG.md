@@ -24,6 +24,7 @@ version is tagged `v<version>`.
 - Tab Peek shows only the tabs the strip shows, filters its cards as you type, picks one with 1–9, and answers a waiting agent from its card
 - Kubernetes port-forwards are kept for the next launch: listed stopped, started again with Start Again or Start All — never by themselves, production's each asked
 - Kubernetes: several pods or Jobs picked are deleted together, several workloads restarted together — one question naming each, the count typed on production
+- A git push or pull that fails is said plainly with its next step — Pull then Push, Pull with Rebase, Force Push with Lease… (asked, never on the default branch), Publish, Stash
 
 ## 1.6.8 — 2026-11-26
 

@@ -483,6 +483,7 @@ final class E2ETests: XCTestCase {
     func testDropSplit() throws { try run("dropSplit") }
     func testOvergit() throws { try run("overgit") }
     func testOvergitWork() throws { try run("overgitWork") }
+    func testGitFailures() throws { try run("gitFailures") }
     func testOvergitGit() throws { try run("overgitGit") }
     func testAppearance() throws { try run("appearance") }
     func testSimulator() throws { try run("simulator") }
