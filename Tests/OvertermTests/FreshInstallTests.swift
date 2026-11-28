@@ -116,6 +116,21 @@ final class FreshInstallTests: XCTestCase {
         XCTAssertTrue(settings.bool("kubernetes.enabled"))
     }
 
+    /// A switch turned off and on again while the shell answers ends at its
+    /// default, which settings.json doesn't hold — still the person's.
+    func testASwitchTouchedWhileTheShellAnswersIsKept() async {
+        let settings = settings!
+        let hidden = await FreshInstallSetup.decidePanels(.fresh, settings: settings, defaults: defaults) {
+            settings.set("kubernetes.enabled", .bool(false))
+            settings.set("kubernetes.enabled", .bool(true))
+            return FreshInstall.Tools(pathKnown: true)
+        }
+        XCTAssertFalse(settings.isSet("kubernetes.enabled"), "back at its default")
+        XCTAssertEqual(hidden, [.docker, .terraform])
+        XCTAssertTrue(settings.bool("kubernetes.enabled"))
+        XCTAssertEqual(defaults.stringArray(forKey: FreshInstall.panelsHiddenKey), ["docker", "terraform"])
+    }
+
     func testAnUpdateOrTheSameVersionChangesNothing() async {
         FreshInstallSetup.toolsOverride = FreshInstall.Tools(pathKnown: true)
         FreshInstallSetup.ghosttyThemeOverride = false
@@ -159,17 +174,17 @@ final class FreshInstallTests: XCTestCase {
 
     /// A Ghostty config read as Ghostty reads its lines.
     func testAGhosttyConfigsTheme() {
-        XCTAssertTrue(FreshInstall.ghosttyConfig("font-size = 13\ntheme = Dracula\n").setsTheme)
-        XCTAssertTrue(FreshInstall.ghosttyConfig("theme=light:Rose Pine Dawn,dark:Rose Pine").setsTheme)
-        XCTAssertTrue(FreshInstall.ghosttyConfig("  theme = \"Nord\"  ").setsTheme)
-        XCTAssertFalse(FreshInstall.ghosttyConfig("# theme = Dracula\nfont-size = 13").setsTheme, "a comment")
-        XCTAssertFalse(FreshInstall.ghosttyConfig("theme =").setsTheme, "an empty value is Ghostty's default")
-        XCTAssertFalse(FreshInstall.ghosttyConfig("window-theme = dark").setsTheme, "another key")
+        XCTAssertEqual(FreshInstall.ghosttyConfig("font-size = 13\ntheme = Dracula\n").theme, "Dracula")
+        XCTAssertEqual(FreshInstall.ghosttyConfig("theme=light:Rose Pine Dawn,dark:Rose Pine").theme, "light:Rose Pine Dawn,dark:Rose Pine")
+        XCTAssertEqual(FreshInstall.ghosttyConfig("  theme = \"Nord\"  ").theme, "Nord")
+        XCTAssertNil(FreshInstall.ghosttyConfig("# theme = Dracula\nfont-size = 13").theme, "a comment")
+        XCTAssertEqual(FreshInstall.ghosttyConfig("theme = Nord\ntheme =").theme, "", "an empty value is Ghostty's default, the last line wins")
+        XCTAssertNil(FreshInstall.ghosttyConfig("window-theme = dark").theme, "another key")
         XCTAssertEqual(FreshInstall.ghosttyConfig("config-file = ?themes.conf\nconfig-file = /etc/x").includes, ["themes.conf", "/etc/x"])
     }
 
     /// The default files, then what they include — relative to the including
-    /// file — read until a theme is found, bounded.
+    /// file — followed, bounded.
     func testTheConfigsIncludesAreFollowedBounded() {
         let base = URL(fileURLWithPath: "/Users/someone/.config/ghostty")
         var read: [String] = []
@@ -193,6 +208,53 @@ final class FreshInstallTests: XCTestCase {
         }
         XCTAssertFalse(looped)
         XCTAssertLessThanOrEqual(count, FreshInstall.ghosttyFilesLimit)
+    }
+
+    /// Only files that are there count against the limit: the four default
+    /// paths, mostly missing, leave room for more than four includes.
+    func testMoreThanFourIncludesAreRead() {
+        let base = URL(fileURLWithPath: "/Users/someone/.config/ghostty")
+        let paths = ["config", "config.ghostty", "support/config", "support/config.ghostty"].map { name in base.appendingPathComponent(name) }
+        var files: [String: String] = [
+            paths[0].path: (1...6).map { index in "config-file = part\(index).conf" }.joined(separator: "\n")
+        ]
+        for index in 1...5 { files[base.appendingPathComponent("part\(index).conf").path] = "font-size = \(index)" }
+        files[base.appendingPathComponent("part6.conf").path] = "theme = Dracula"
+        XCTAssertTrue(FreshInstall.ghosttySetsTheme(files: paths) { url in files[url.path] })
+    }
+
+    /// Ghostty's order decides: every default file, then the includes, each
+    /// after the files before it — the last `theme` line read wins, a later
+    /// file's `theme =` putting the default back.
+    func testTheLastThemeInGhosttysOrderWins() {
+        let base = URL(fileURLWithPath: "/Users/someone/.config/ghostty")
+        let first = base.appendingPathComponent("config")
+        let second = base.appendingPathComponent("config.ghostty")
+        func sets(_ files: [String: String]) -> Bool {
+            FreshInstall.ghosttySetsTheme(files: [first, second]) { url in files[url.path] }
+        }
+        XCTAssertFalse(sets([first.path: "theme = Dracula", second.path: "theme ="]), "a later default file resets it")
+        XCTAssertTrue(sets([first.path: "theme =", second.path: "theme = Nord"]))
+        let include = base.appendingPathComponent("colors.conf").path
+        XCTAssertFalse(
+            sets([first.path: "config-file = colors.conf", second.path: "theme = Nord", include: "theme ="]),
+            "an include loads after every default file, so its reset is the last word")
+        XCTAssertTrue(
+            sets([first.path: "config-file = colors.conf\ntheme =", second.path: "font-size = 13", include: "theme = Nord"]),
+            "an include loads after the file that names it, whatever that file says after the line")
+        XCTAssertFalse(sets([first.path: "font-size = 13"]), "no theme line: Ghostty's default")
+    }
+
+    /// The done card's line names the Ghostty config only where it names a
+    /// theme — read by the same scan, off the main thread.
+    func testTheDoneCardsThemeFollowsTheScan() async {
+        let named = Start(defaults: defaults, active: true, settings: settings, ghosttyTheme: { true })
+        await named.ghosttyThemeReadDone()
+        XCTAssertEqual(StartText.themeLine(named.theme), "Theme: your Ghostty config's")
+        let none = Start(defaults: defaults, active: true, settings: settings, ghosttyTheme: { false })
+        await none.ghosttyThemeReadDone()
+        XCTAssertEqual(StartText.themeLine(none.theme), "Theme: Ghostty's default")
+        XCTAssertFalse(Start.readGhosttyTheme(), "an isolated run reads none of the user's files")
     }
 
     func testAnIsolatedRunHasNoGhosttyFiles() {

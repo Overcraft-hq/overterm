@@ -110,11 +110,12 @@ package enum FreshInstall {
     }
 
     /// What a Ghostty config file says of the theme, read the way Ghostty
-    /// reads its lines: `theme = …` (any value, a `light:…,dark:…` pair too),
-    /// and the files it includes (`config-file = …`, `?` for an optional one).
-    /// Comments and blank lines are passed over. Pure.
-    package static func ghosttyConfig(_ text: String) -> (setsTheme: Bool, includes: [String]) {
-        var setsTheme = false
+    /// reads its lines: its last `theme = …` (any value, a `light:…,dark:…`
+    /// pair too; empty — `theme =` — puts Ghostty's default back), nil when
+    /// it has none, and the files it includes (`config-file = …`, `?` for an
+    /// optional one). Comments and blank lines are passed over. Pure.
+    package static func ghosttyConfig(_ text: String) -> (theme: String?, includes: [String]) {
+        var theme: String?
         var includes: [String] = []
         for raw in text.components(separatedBy: .newlines) {
             let line = raw.trimmingCharacters(in: .whitespaces)
@@ -124,8 +125,7 @@ package enum FreshInstall {
             if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") { value = String(value.dropFirst().dropLast()) }
             switch key {
             case "theme":
-                // `theme =` with nothing after it puts Ghostty's default back.
-                setsTheme = !value.isEmpty
+                theme = value
             case "config-file":
                 if value.hasPrefix("?") { value = String(value.dropFirst()) }
                 if !value.isEmpty { includes.append(value) }
@@ -133,31 +133,43 @@ package enum FreshInstall {
                 break
             }
         }
-        return (setsTheme, includes)
+        return (theme, includes)
     }
 
-    /// Whether the Ghostty config Overterm loads names a theme: `files` —
-    /// the ones libghostty loads by default (`AppEnvironment.ghosttyConfigFiles`)
-    /// — and those they include, relative to the including file's folder,
-    /// at most `ghosttyFilesLimit` read. `read`: a file's text, nil when it
-    /// isn't there. Pure but for `read`.
+    /// Whether the Ghostty config Overterm loads names a theme, in the order
+    /// libghostty loads it: every one of `files` — the default ones
+    /// (`AppEnvironment.ghosttyConfigFiles`), `ghostty_config_load_default_files`
+    /// — then the files they include (`ghostty_config_load_recursive_files`),
+    /// each after all the files before it, an include's own includes at the
+    /// end of the list, relative to the including file's folder. The last
+    /// `theme` line read decides: a later file's `theme =` puts the default
+    /// back. At most `ghosttyFilesLimit` files read (only those there count),
+    /// a file once, `ghosttyLookupsLimit` looked for. `read`: a file's text,
+    /// nil when it isn't there. Pure but for `read`.
     package static func ghosttySetsTheme(files: [URL], read: (URL) -> String?) -> Bool {
-        var queue = files
+        var list = files
+        var next = 0
         var seen = Set<String>()
-        while !queue.isEmpty, seen.count < ghosttyFilesLimit {
-            let file = queue.removeFirst()
+        var readCount = 0
+        var theme: String?
+        while next < list.count, next < ghosttyLookupsLimit, readCount < ghosttyFilesLimit {
+            let file = list[next]
+            next += 1
             guard seen.insert(file.standardizedFileURL.path).inserted, let text = read(file) else { continue }
+            readCount += 1
             let said = ghosttyConfig(text)
-            if said.setsTheme { return true }
+            if let value = said.theme { theme = value }
             let folder = file.deletingLastPathComponent()
             for include in said.includes {
                 let path = (include as NSString).expandingTildeInPath
-                queue.append(path.hasPrefix("/") ? URL(fileURLWithPath: path) : folder.appendingPathComponent(path))
+                list.append(path.hasPrefix("/") ? URL(fileURLWithPath: path) : folder.appendingPathComponent(path))
             }
         }
-        return false
+        return theme.map { value in !value.isEmpty } ?? false
     }
 
     /// The most config files `ghosttySetsTheme` reads: the default ones and what they include.
-    package static let ghosttyFilesLimit = 8
+    package static let ghosttyFilesLimit = 16
+    /// The most paths it looks for, there or not: a loop of missing includes ends.
+    package static let ghosttyLookupsLimit = 64
 }

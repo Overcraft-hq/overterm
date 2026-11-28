@@ -112,8 +112,9 @@ package struct StartText: Sendable {
         package var light: String
         /// `appearance.followSystemAppearance`.
         package var follows: Bool
-        /// The person's own Ghostty config is there: with no theme in
-        /// Settings, it decides.
+        /// The person's own Ghostty config names a theme (its last `theme`
+        /// line, as `FreshInstall.ghosttySetsTheme` reads it, any of the
+        /// files libghostty loads): with no theme in Settings, it decides.
         package var ghosttyConfig: Bool
 
         package init(dark: String, light: String, follows: Bool, ghosttyConfig: Bool) {

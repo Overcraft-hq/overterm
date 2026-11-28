@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// A fresh install's two settings, made once (onboarding; the rules are
@@ -61,15 +62,25 @@ package enum FreshInstallSetup {
     /// fresh install only, once. The PATH is the login shell's, asked
     /// through `ShellEnvironment.login()`, which keeps its answer: the Start
     /// card's second step and the Setup page read that same answer, so the
-    /// shell is asked once. Unanswered, nothing is turned off. Returns the
-    /// panels it hid.
+    /// shell is asked once. Unanswered, nothing is turned off. A switch the
+    /// person set while the shell answered is theirs, even set back to its
+    /// default — which settings.json then doesn't hold, so `isSet` alone
+    /// can't tell: every key settings says changed meanwhile is left alone.
+    /// `looking`: a test's own look, awaited in place of the shell's.
+    /// Returns the panels it hid.
     @MainActor @discardableResult
-    package static func decidePanels(_ launch: FirstRun.Launch, settings: Settings = .shared, defaults: UserDefaults = AppEnvironment.defaults) async
-        -> [SidebarPanel]
-    {
+    package static func decidePanels(
+        _ launch: FirstRun.Launch, settings: Settings = .shared, defaults: UserDefaults = AppEnvironment.defaults,
+        looking: (@MainActor () async -> FreshInstall.Tools)? = nil
+    ) async -> [SidebarPanel] {
         guard launch == .fresh, defaults.object(forKey: FreshInstall.panelsDecidedKey) == nil else { return [] }
+        let touched = TouchedKeys()
+        let watching = settings.changes.sink { keys in touched.keys.formUnion(keys) }
+        defer { watching.cancel() }
         let tools: FreshInstall.Tools
-        if let toolsOverride {
+        if let looking {
+            tools = await looking()
+        } else if let toolsOverride {
             tools = toolsOverride
         } else {
             guard !AppEnvironment.isIsolated else { return [] }
@@ -89,13 +100,19 @@ package enum FreshInstallSetup {
         }
         // Asked again on the main thread: decided meanwhile, or a switch the person set.
         guard defaults.object(forKey: FreshInstall.panelsDecidedKey) == nil else { return [] }
-        let hidden = FreshInstall.panelsToHide(tools) { key in settings.isSet(key) }
+        let hidden = FreshInstall.panelsToHide(tools) { key in settings.isSet(key) || touched.keys.contains(key) }
         defaults.set(true, forKey: FreshInstall.panelsDecidedKey)
         defaults.set(hidden.map(\.rawValue), forKey: FreshInstall.panelsHiddenKey)
         for panel in hidden {
             if let key = panel.toggleKey { settings.set(key, .bool(false)) }
         }
         return hidden
+    }
+
+    /// The settings changed while `decidePanels` waited.
+    @MainActor
+    private final class TouchedKeys {
+        var keys = Set<String>()
     }
 
     /// What this Mac has of the three panels' tools, each where its feature

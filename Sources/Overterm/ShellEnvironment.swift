@@ -20,8 +20,7 @@ import Foundation
 /// An isolated run (E2E, the layout dump) never asks the user's shell: it
 /// gets the environment it was started with.
 package enum ShellEnvironment {
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var asked: (answer: [String: String]?, at: Date)?
+    private static let kept = ShellAnswer(retryAfter: retryAfter)
 
     /// How long the shell may take to answer before it is stopped.
     package static let timeout: TimeInterval = 10
@@ -34,19 +33,14 @@ package enum ShellEnvironment {
     /// time: call off the main thread.
     package static func login() -> [String: String]? {
         if AppEnvironment.isIsolated { return nil }
-        lock.lock()
-        defer { lock.unlock() }
-        if let asked, asked.answer != nil || Date().timeIntervalSince(asked.at) < retryAfter { return asked.answer }
-        let answer = askTheShell()
-        asked = (answer, Date())
-        return answer
+        return kept.answer(asking: askTheShell)
     }
 
     /// What the login shell said, if it has been asked already: never asks,
-    /// never waits (the main thread may call it).
+    /// never waits for a shell being asked (the main thread may call it).
     package static func known() -> [String: String]? {
         if AppEnvironment.isIsolated { return nil }
-        return lock.withLock { asked?.answer }
+        return kept.known()
     }
 
     /// The environment to hand a command: the login shell's, else the one
@@ -151,5 +145,49 @@ package enum ShellEnvironment {
             environment[String(field[..<equals])] = String(field[field.index(after: equals)...])
         }
         return environment["PATH"] == nil ? nil : environment
+    }
+}
+
+/// `ShellEnvironment`'s kept answer and its one run at a time. Two locks:
+/// `running` is held for a whole run — a second caller of `answer` waits
+/// for the first's run and takes its answer instead of starting another —
+/// and `state` only to read or write the answer, so `known()` on the main
+/// thread never waits for a shell (up to `ShellEnvironment.timeout`). Its
+/// own type so a test can hand it the run.
+package final class ShellAnswer: @unchecked Sendable {
+    private let running = NSLock()
+    private let state = NSLock()
+    private var asked: (answer: [String: String]?, at: Date)?
+    private let retryAfter: TimeInterval
+
+    package init(retryAfter: TimeInterval) {
+        self.retryAfter = retryAfter
+    }
+
+    /// The kept answer, else `ask`'s — one run at a time, its answer kept;
+    /// a failed run asked again only after `retryAfter`.
+    package func answer(asking ask: () -> [String: String]?) -> [String: String]? {
+        if let kept = current() { return kept }
+        running.lock()
+        defer { running.unlock() }
+        // Answered while this caller waited for the run before it.
+        if let kept = current() { return kept }
+        let answer = ask()
+        state.withLock { asked = (answer, Date()) }
+        return answer
+    }
+
+    /// The answer, if a run gave one; never waits for a run.
+    package func known() -> [String: String]? {
+        state.withLock { asked?.answer }
+    }
+
+    /// The answer to hand back without a run: `.some` while one is kept —
+    /// an answer, or a failure younger than `retryAfter` (`.some(nil)`).
+    private func current() -> [String: String]?? {
+        state.withLock { () -> [String: String]?? in
+            guard let asked, asked.answer != nil || Date().timeIntervalSince(asked.at) < retryAfter else { return .none }
+            return .some(asked.answer)
+        }
     }
 }

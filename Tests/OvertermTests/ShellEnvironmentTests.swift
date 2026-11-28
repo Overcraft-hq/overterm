@@ -115,4 +115,76 @@ final class ShellEnvironmentTests: XCTestCase {
         XCTAssertNil(data)
         XCTAssertLessThan(Date().timeIntervalSince(started), 5)
     }
+
+    // MARK: The kept answer
+
+    /// A shell being asked holds no one who only reads the answer — the
+    /// main thread's `known()` — and a second caller waits for that run and
+    /// takes its answer: one run, the answer kept.
+    func testKnownNeverWaitsForARunAndTheShellIsAskedOnce() {
+        let kept = ShellAnswer(retryAfter: 60)
+        let runs = LockedBox<Int>(0)
+        let second = LockedBox<[String: String]?>(nil)
+        let started = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let done = DispatchSemaphore(value: 0)
+        let first: @Sendable () -> Void = {
+            _ = kept.answer {
+                runs.update { count in count += 1 }
+                started.signal()
+                release.wait()
+                return ["PATH": "/bin"]
+            }
+            done.signal()
+        }
+        DispatchQueue.global().async(execute: first)
+        started.wait()
+
+        let before = Date()
+        XCTAssertNil(kept.known(), "nothing kept yet")
+        XCTAssertLessThan(Date().timeIntervalSince(before), 1, "known() never waits for the run")
+
+        let other: @Sendable () -> Void = {
+            let answer = kept.answer {
+                runs.update { count in count += 1 }
+                return ["PATH": "/other"]
+            }
+            second.update { value in value = answer }
+            done.signal()
+        }
+        DispatchQueue.global().async(execute: other)
+        release.signal()
+        done.wait()
+        done.wait()
+
+        XCTAssertEqual(runs.value, 1, "one run")
+        XCTAssertEqual(second.value?["PATH"], "/bin", "the second caller takes the first run's answer")
+        XCTAssertEqual(kept.known()?["PATH"], "/bin")
+        XCTAssertEqual(kept.answer { ["PATH": "/again"] }?["PATH"], "/bin", "an answer is kept for good")
+    }
+
+    /// A shell that couldn't be asked is asked again only after `retryAfter`.
+    func testAFailedRunIsAskedAgainOnlyLater() {
+        let soon = ShellAnswer(retryAfter: 60)
+        XCTAssertNil(soon.answer { nil })
+        XCTAssertNil(soon.answer { ["PATH": "/bin"] }, "within retryAfter: the failure is kept")
+
+        let later = ShellAnswer(retryAfter: 0)
+        XCTAssertNil(later.answer { nil })
+        XCTAssertEqual(later.answer { ["PATH": "/bin"] }?["PATH"], "/bin")
+    }
+}
+
+/// A value shared with a queue's block, behind a lock.
+private final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+
+    init(_ value: Value) { stored = value }
+
+    var value: Value { lock.withLock { stored } }
+
+    func update(_ change: (inout Value) -> Void) {
+        lock.withLock { change(&stored) }
+    }
 }

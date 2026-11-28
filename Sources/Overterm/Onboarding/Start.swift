@@ -63,8 +63,17 @@ package final class Start: ObservableObject {
     private let settings: Settings
     private var probing: Task<Void, Never>?
     private var settingsChanges: AnyCancellable?
+    /// Whether the person's Ghostty config names a theme, by the scan a
+    /// fresh install decides with (`FreshInstall.ghosttySetsTheme`): read
+    /// once, off the main thread, as `Start` is made; false until then.
+    private var ghosttySetsTheme = false
+    private var ghosttyRead: Task<Void, Never>?
 
-    package init(defaults: UserDefaults, active: Bool, settings: Settings = .shared) {
+    /// `ghosttyTheme`: the read of the Ghostty config, a test's own.
+    package init(
+        defaults: UserDefaults, active: Bool, settings: Settings = .shared,
+        ghosttyTheme: @escaping @Sendable () -> Bool = { Start.readGhosttyTheme() }
+    ) {
         self.defaults = defaults
         self.active = active
         self.settings = settings
@@ -74,8 +83,28 @@ package final class Start: ObservableObject {
         taskAgent = settings.taskAgent
         panels = Self.panels(of: settings)
         hiddenAtInstall = FreshInstall.hidden(stored: defaults.stringArray(forKey: FreshInstall.panelsHiddenKey))
-        theme = Self.theme(of: settings)
+        theme = Self.theme(of: settings, ghosttySetsTheme: false)
         settingsChanges = settings.changes.sink { [weak self] keys in self?.settingsChanged(keys) }
+        if active {
+            ghosttyRead = Task { [weak self] in
+                let sets = await Task.detached(priority: .utility) { ghosttyTheme() }.value
+                self?.ghosttyThemeRead(sets)
+            }
+        }
+    }
+
+    /// Waits for the Ghostty config's read: a test's.
+    package func ghosttyThemeReadDone() async {
+        await ghosttyRead?.value
+    }
+
+    /// The Ghostty config Overterm loads, scanned as a fresh install scans
+    /// it: whether its last `theme` line names one. Reads files: never on
+    /// the main thread.
+    package nonisolated static func readGhosttyTheme() -> Bool {
+        FreshInstall.ghosttySetsTheme(files: AppEnvironment.ghosttyConfigFiles) { url in
+            try? String(contentsOf: url, encoding: .utf8)
+        }
     }
 
     /// What happened. Cheap, main-thread, and nothing at all while inert:
@@ -232,15 +261,21 @@ package final class Start: ObservableObject {
         let toggles = Set(SidebarPanel.allCases.compactMap(\.toggleKey))
         if !keys.isDisjoint(with: toggles) { panels = Self.panels(of: settings) }
         if !keys.isDisjoint(with: FreshInstall.themeKeys) {
-            let now = Self.theme(of: settings)
+            let now = Self.theme(of: settings, ghosttySetsTheme: ghosttySetsTheme)
             if now != theme { theme = now }
         }
     }
 
-    private static func theme(of settings: Settings) -> StartText.Theme {
+    private func ghosttyThemeRead(_ sets: Bool) {
+        ghosttySetsTheme = sets
+        let now = Self.theme(of: settings, ghosttySetsTheme: sets)
+        if now != theme { theme = now }
+    }
+
+    private static func theme(of settings: Settings, ghosttySetsTheme: Bool) -> StartText.Theme {
         StartText.Theme(
             dark: settings.string("appearance.theme"), light: settings.string("appearance.themeLight"), follows: settings.followsSystemAppearance,
-            ghosttyConfig: AppEnvironment.ghosttyConfigFile != nil)
+            ghosttyConfig: ghosttySetsTheme)
     }
 
     private static func panels(of settings: Settings) -> [SidebarPanel: Bool] {
