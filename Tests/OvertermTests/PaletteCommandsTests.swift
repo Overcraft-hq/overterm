@@ -80,6 +80,14 @@ final class PaletteCommandsTests: XCTestCase {
         XCTAssertEqual(palette.results.map(\.id), ["a.diff", "setting.gutter"])
     }
 
+    /// An item that is no command shows its own key equivalent.
+    func testAnItemsOwnKey() {
+        let item = NSMenuItem(title: "Something of AppKit's", action: nil, keyEquivalent: "j")
+        item.keyEquivalentModifierMask = [.command, .option]
+        XCTAssertEqual(PaletteCommands.key(of: item), "⌥⌘J")
+        XCTAssertEqual(PaletteCommands.equivalent(of: NSMenuItem(title: "x", action: nil, keyEquivalent: "")), nil)
+    }
+
     func testASettingsRowSaysItsValue() {
         XCTAssertEqual(PaletteCommands.describe(.bool(true)), "On")
         XCTAssertEqual(PaletteCommands.describe(.double(13)), "13")

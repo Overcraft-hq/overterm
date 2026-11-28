@@ -47,6 +47,10 @@ package struct ThemesSettings: View {
     /// What an import or a save said went wrong.
     @State private var problem: String?
 
+    /// Where ⌘K's Themes settings land: the block that holds them, marked.
+    package static let currentID = "themes.current"
+    private var isFocused: Bool { model.focus.map { SettingsSchema.all.first(where: { s in s.key == $0 })?.section == .themes } ?? false }
+
     private var shown: [ThemeCatalog.Entry] {
         ThemeCatalog.filter(catalog.entries, search: model.themeSearch, showing: model.themeShowing)
     }
@@ -54,6 +58,10 @@ package struct ThemesSettings: View {
     package var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             current
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(isFocused ? theme.selected : .clear))
+                .padding(-8)
+                .id(Self.currentID)
             controls
             if let problem {
                 Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.orangeText)

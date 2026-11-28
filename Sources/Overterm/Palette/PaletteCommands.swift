@@ -47,11 +47,22 @@ package enum PaletteCommands {
     }
 
     /// The key a menu item has now: its command's, as bound in
-    /// keybindings.json or by default; nil for an item that is no command.
+    /// keybindings.json or by default; else the item's own key equivalent.
     package static func key(of item: NSMenuItem, keys: Keybindings = .shared) -> String? {
         if let id = item.identifier?.rawValue, let command = KeyCommands.byID[id] { return keys.key(for: command)?.display }
         if let command = command(named: item.title) { return keys.key(for: command)?.display }
-        return nil
+        return equivalent(of: item)
+    }
+
+    /// An item's own key equivalent as menus show it: ⌃⌥⇧⌘ and the key.
+    package static func equivalent(of item: NSMenuItem) -> String? {
+        guard !item.keyEquivalent.isEmpty else { return nil }
+        let mask = item.keyEquivalentModifierMask
+        let key = item.keyEquivalent
+        // An upper-case letter carries its ⇧ in the letter.
+        let shift = mask.contains(.shift) || (key.uppercased() == key && key.lowercased() != key)
+        return (mask.contains(.control) ? "⌃" : "") + (mask.contains(.option) ? "⌥" : "") + (shift ? "⇧" : "") + (mask.contains(.command) ? "⌘" : "")
+            + key.uppercased()
     }
 
     private nonisolated static let keyAtEnd = #"\s*(?:[⌃⌥⇧⌘]+\S+|[⌃⌥⇧⌘]*F\d{1,2})$"#

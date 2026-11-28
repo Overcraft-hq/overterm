@@ -202,7 +202,9 @@ package struct SettingsPageView: View {
 
     private func scroll(_ proxy: ScrollViewProxy) {
         guard let key = model.focus else { return }
-        DispatchQueue.main.async { withAnimation { proxy.scrollTo(key, anchor: .center) } }
+        // Themes draws its settings as one block, not a row each.
+        let anchor = model.section == .themes ? ThemesSettings.currentID : key
+        DispatchQueue.main.async { withAnimation { proxy.scrollTo(anchor, anchor: .center) } }
     }
 
     @ViewBuilder private var problems: some View {

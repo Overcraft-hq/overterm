@@ -5740,6 +5740,31 @@ package final class E2ERunner {
         check("snippets are searchable", app.palette.results.first?.group == .snippet, "\(app.palette.results.map(\.title))")
         app.palette.query = "changes"
         check("the changes pane is Changes", app.palette.results.first?.title == "Changes", app.palette.results.first?.title ?? "nil")
+        // Every menu command a row (issue-tracker#22), its key the one bound now.
+        for title in ["Inbox", "Tab Info", "Usage", "Presentation Mode", "Keys Here"] {
+            app.palette.query = title
+            check("⌘K finds \(title)", app.palette.results.contains { $0.title == title }, "\(app.palette.results.prefix(5).map(\.title))")
+        }
+        app.palette.query = "Inbox"
+        let inboxKey = KeyCommands.byID["inbox.show"].flatMap { Keybindings.shared.key(for: $0)?.display } ?? "?"
+        check(
+            "the Inbox row shows its key", app.palette.results.first { $0.title == "Inbox" }?.subtitle?.hasSuffix(inboxKey) == true,
+            app.palette.results.first { $0.title == "Inbox" }?.subtitle ?? "nil")
+        // Every setting a row; Return opens Settings at it.
+        app.palette.query = "font size"
+        let fontSize = app.palette.results.first { $0.group == .setting }
+        check("\"font size\" finds a setting", fontSize != nil, "\(app.palette.results.prefix(5).map(\.title))")
+        if let fontSize {
+            let key = String(fontSize.id.dropFirst("setting.".count))
+            app.hidePalette()
+            fontSize.perform(false, [:])
+            check(
+                "Return opens Settings at its row",
+                await eventually(2) { self.app.store.showingOverlay == .settings && self.app.settingsPage.focus == key },
+                "\(String(describing: app.store.showingOverlay)) \(app.settingsPage.focus ?? "nil")")
+            app.closeOverlay(.settings)
+            app.showPalette(nil)
+        }
         // History: what this pane has run, nearest folder first.
         app.palette.query = ""
         app.history.record(
