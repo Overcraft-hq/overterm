@@ -10,6 +10,7 @@ version is tagged `v<version>`.
 
 - An agent's browser tab whose redirect was stopped no longer shows the address it never loaded
 - Every text handed to an agent — a tool's answer, an Ask Agent prompt, a brief — has its tokens and passwords masked on the way out, and a query's password or token columns are masked
+- Ask Agent's sheet shows what is sent for a selection too, says how many values it masked, and can send them unmasked when asked
 
 ## 1.6.8 — 2026-11-26
 

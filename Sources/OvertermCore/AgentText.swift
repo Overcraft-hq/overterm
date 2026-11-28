@@ -13,6 +13,18 @@ package struct AgentText: Sendable, Equatable {
 
     package init(scrubbing text: String) { self.text = Self.scrub(text) }
 
+    /// As it is, at the person's word: Ask Agent's "Send unmasked", ticked
+    /// in the sheet after it said what the gate masked (AGT-G4). Nothing
+    /// else makes one — a feature's own masking came before and stays.
+    package init(unmaskedAtThePersonsWord text: String) { self.text = text }
+
+    /// How many values the gate masked in `text`: its masks, less those
+    /// the text had already.
+    package static func maskedCount(in text: String) -> Int {
+        let mask = Secrets.credentialMask
+        return max(0, scrub(text).components(separatedBy: mask).count - text.components(separatedBy: mask).count)
+    }
+
     package var isEmpty: Bool { text.isEmpty }
 
     /// `Secrets`' rules for what an agent reads, in Terraform's order.

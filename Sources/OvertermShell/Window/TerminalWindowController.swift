@@ -3217,7 +3217,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     private func sendToAgent() {
         Task { [weak self] in
             guard let self else { return }
-            self.deliverToAgent(AgentText(scrubbing: await self.askAgentPrompt()))
+            self.deliverToAgent(await self.askAgentText())
         }
     }
 
@@ -3225,9 +3225,12 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// for. One function, so what the Send button does can be read in a
     /// test: the chip reached the sheet but nothing ever handed `prompt`
     /// a diff to put in.
-    package func askAgentPrompt() async -> String {
-        guard askAgent.extras.diff, let root = diff.root else { return askAgent.prompt(diff: nil) }
-        return askAgent.prompt(diff: await Self.uncommittedDiff(in: root))
+    package func askAgentPrompt() async -> String { await askAgentText().text }
+
+    /// The same, as it is typed: scrubbed, or unmasked at the person's word.
+    package func askAgentText() async -> AgentText {
+        guard askAgent.extras.diff, let root = diff.root else { return askAgent.agentText(diff: nil) }
+        return askAgent.agentText(diff: await Self.uncommittedDiff(in: root))
     }
 
     /// What the checkout has changed, staged and unstaged together —

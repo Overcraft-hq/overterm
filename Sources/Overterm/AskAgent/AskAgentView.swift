@@ -147,17 +147,27 @@ package struct AskAgentView: View {
             if model.showsBrief {
                 // What will be sent, whole: the chips switch parts in and out.
                 label("What is sent")
-                ScrollView {
-                    Text(verbatim: model.prompt(diff: nil))
-                        .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
-                        .foregroundStyle(theme.text)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                sent(height: 240)
+            } else {
+                // A selection's too, a click away (AGT-G4): it is what the
+                // agent's transcript will hold.
+                DisclosureGroup(isExpanded: $showsSent) {
+                    sent(height: 160).padding(.top, 4)
+                } label: {
+                    label("What is sent")
                 }
-                .frame(height: 240)
-                .background(RoundedRectangle(cornerRadius: 7).fill(theme.term))
-                .accessibilityIdentifier("askAgent.brief")
+                .accessibilityIdentifier("askAgent.whatIsSent")
+            }
+            if let note = maskedNote {
+                HStack(spacing: 8) {
+                    Image(systemName: "eye.slash").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+                    Text(verbatim: note)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2)
+                    Spacer(minLength: 8)
+                    chip("Send unmasked", $model.sendsUnmasked)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("askAgent.masked")
             }
             TextField("What should it do with this?", text: $model.message)
                 .textFieldStyle(.plain)
@@ -175,6 +185,35 @@ package struct AskAgentView: View {
         .padding(14)
         .frame(width: model.showsBrief ? 620 : 380)
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
+    }
+
+    @State private var showsSent = false
+
+    /// The line under the prompt while the gate masks something; nil when it masks nothing.
+    package static func maskedNote(_ count: Int, unmasked: Bool) -> String? {
+        guard count > 0 else { return nil }
+        return unmasked ? "\(values(count)) go unmasked" : "\(values(count)) masked as \(Secrets.credentialMask)"
+    }
+
+    /// The line the sheet shows now.
+    package var maskedNote: String? { Self.maskedNote(model.maskedCount(diff: nil), unmasked: model.sendsUnmasked) }
+
+    /// "1 value", "3 values".
+    package static func values(_ count: Int) -> String { count == 1 ? "1 value" : "\(count) values" }
+
+    /// The prompt as it will be typed.
+    private func sent(height: CGFloat) -> some View {
+        ScrollView {
+            Text(verbatim: model.prompt(diff: nil))
+                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                .foregroundStyle(theme.text)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+        }
+        .frame(height: height)
+        .background(RoundedRectangle(cornerRadius: 7).fill(theme.term))
+        .accessibilityIdentifier("askAgent.brief")
     }
 
     private func label(_ text: String) -> some View {

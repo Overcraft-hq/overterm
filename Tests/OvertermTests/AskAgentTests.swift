@@ -226,4 +226,30 @@ final class AskAgentDiffReadingTests: XCTestCase {
         XCTAssertTrue(text.hasSuffix("… diff truncated."), String(text.suffix(40)))
         XCTAssertLessThan(text.utf8.count, AskAgentModel.maxDiffBytes + 200)
     }
+
+    /// AGT-G4: what the gate masks is counted, and goes as it was only at
+    /// the person's word — for this sheet alone.
+    func testMaskedValuesAreCountedAndSentUnmaskedOnlyWhenAsked() {
+        let token = "ghp_" + "Q7uokkaR9tVw2XyZ4bC6dE8fG0hJ"
+        let model = AskAgentModel()
+        model.begin(selection: "GITHUB_TOKEN=\(token)\npassword: hunter2-Quokka\nplain line", command: nil, folder: nil, targets: [], diff: false)
+        XCTAssertEqual(model.maskedCount(diff: nil), 2)
+        XCTAssertFalse(model.prompt(diff: nil).contains("hunter2-Quokka"))
+        XCTAssertTrue(model.prompt(diff: nil).contains("plain line"))
+        model.sendsUnmasked = true
+        XCTAssertTrue(model.agentText(diff: nil).text.contains(token) && model.prompt(diff: nil).contains("hunter2-Quokka"))
+        XCTAssertEqual(model.maskedCount(diff: nil), 2, "the count says what would be masked either way")
+        model.begin(selection: "password: hunter2-Quokka", command: nil, folder: nil, targets: [], diff: false)
+        XCTAssertFalse(model.sendsUnmasked, "every sheet starts masked")
+        XCTAssertFalse(model.prompt(diff: nil).contains("hunter2-Quokka"))
+        model.begin(selection: "nothing secret here", command: nil, folder: nil, targets: [], diff: false)
+        XCTAssertEqual(model.maskedCount(diff: nil), 0)
+        // Already masked text counts nothing again.
+        XCTAssertEqual(AgentText.maskedCount(in: "password: ••••••"), 0)
+        XCTAssertEqual(AskAgentView.values(1), "1 value")
+        XCTAssertEqual(AskAgentView.values(3), "3 values")
+        XCTAssertNil(AskAgentView.maskedNote(0, unmasked: false))
+        XCTAssertEqual(AskAgentView.maskedNote(1, unmasked: false), "1 value masked as ••••••")
+        XCTAssertEqual(AskAgentView.maskedNote(2, unmasked: true), "2 values go unmasked")
+    }
 }

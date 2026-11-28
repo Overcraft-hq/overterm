@@ -1,6 +1,7 @@
 #if E2E
 import AppKit
 import Carbon.HIToolbox
+import SwiftUI
 import CryptoKit
 import GhosttyKit
 import UniformTypeIdentifiers
@@ -2208,6 +2209,28 @@ package final class E2ERunner {
         check("switching it on puts the diff in the prompt", with.contains("git diff:"), String(with.prefix(120)).debugDescription)
         check("the real diff, read from the checkout", with.contains("+two is the change"), String(with.suffix(200)).debugDescription)
         check("the selection is still there", with.contains("AssertionError 401"))
+        clickSheetButton("Cancel")
+        _ = await eventually(3) { self.window.attachedSheet == nil }
+
+        // AGT-G4: a plain tab's selection with a token and a password in it —
+        // masked in what is shown and typed, said, and sent as it was only
+        // when the person ticks Send unmasked.
+        let token = "ghp_" + "Q7uokkaR9tVw2XyZ4bC6dE8fG0hJ"
+        app.presentAskAgent(text: "export GITHUB_TOKEN=\(token)\npassword=hunter2-Quokka", command: nil, folder: nil, targets: [])
+        check("the sheet opens over a selection with secrets in it", await eventually(3) { self.window.attachedSheet != nil })
+        let masked = await app.askAgentPrompt()
+        check("its token and password are masked in what is typed", !masked.contains(token.dropFirst(4)) && !masked.contains("hunter2-Quokka"), masked)
+        check("the sheet counts them", app.askAgent.maskedCount(diff: nil) == 2, "\(app.askAgent.maskedCount(diff: nil))")
+        func sheet() -> AskAgentView? { (window.attachedSheet?.contentViewController as? NSHostingController<AskAgentView>)?.rootView }
+        check("and says so on the sheet", sheet()?.maskedNote == "2 values masked as ••••••", sheet()?.maskedNote ?? "no sheet")
+        app.askAgent.sendsUnmasked = true
+        check("then that they go unmasked", sheet()?.maskedNote == "2 values go unmasked", sheet()?.maskedNote ?? "no sheet")
+        let unmasked = await app.askAgentPrompt()
+        check("Send unmasked types it as it was", unmasked.contains(token) && unmasked.contains("hunter2-Quokka"), unmasked)
+        clickSheetButton("Cancel")
+        _ = await eventually(3) { self.window.attachedSheet == nil }
+        app.presentAskAgent(text: "password=hunter2-Quokka", command: nil, folder: nil, targets: [])
+        check("the next sheet masks again", !app.askAgent.sendsUnmasked && !app.askAgent.prompt(diff: nil).contains("hunter2-Quokka"))
         clickSheetButton("Cancel")
         _ = await eventually(3) { self.window.attachedSheet == nil }
     }
