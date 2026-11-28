@@ -163,6 +163,15 @@ package final class KubeForwards: ObservableObject {
     package var probe: (@Sendable (URL) async -> APIDiscovery.Source?)?
     /// Whether a forward is probed now: the app's asks Settings.
     package var probes: () -> Bool = { true }
+    /// Where the forwards' specs are kept for the next run (K8S-G2); nil
+    /// keeps nothing — a test's. The app's writes `KubeForwardStore`.
+    package var keep: (([KubeForwardSpec]) -> Void)?
+    /// What the last run kept, listed once its contexts are read.
+    package var kept: () -> [KubeForwardSpec] = { [] }
+    private var restored = false
+
+    /// What a forward kept from the last run says until it is started again.
+    package static let keptNote = "From your last session — Start Again forwards it again"
 
     private var tasks: [UUID: Task<Void, Never>] = [:]
     private var processes: [UUID: any KubeForwardProcess] = [:]
@@ -203,7 +212,13 @@ package final class KubeForwards: ObservableObject {
             model.visibility.sink { [weak self] shown in
                 if !shown { self?.cancelPodChecks() }
             })
-        watches.append(model.$contexts.dropFirst().sink { [weak self] list in self?.contextsChanged(list) })
+        keep = { KubeForwardStore.save($0) }
+        kept = { KubeForwardStore.load() }
+        watches.append(
+            model.$contexts.dropFirst().sink { [weak self] list in
+                self?.contextsChanged(list)
+                self?.restore(list)
+            })
         watches.append(
             model.$enabled.dropFirst().removeDuplicates().sink { [weak self] enabled in
                 if !enabled { self?.stopAll() }
@@ -234,6 +249,7 @@ package final class KubeForwards: ObservableObject {
         }
         contexts[spec.id] = context
         if !forward.state.isStopped { begin(spec.id) }
+        persist()
         return spec.id
     }
 
@@ -247,6 +263,7 @@ package final class KubeForwards: ObservableObject {
         edited.spec.https = spec.https
         forwards[index] = edited
         resume(spec.id, in: context)
+        persist()
     }
 
     /// One stopped by itself (its target gone, too many tries) started
@@ -268,14 +285,56 @@ package final class KubeForwards: ObservableObject {
         if refused == nil { begin(id) }
     }
 
-    /// Stop: its kubectl closed by its pid, the forward gone from the list.
+    /// Stop: its kubectl closed by its pid, the forward gone from the list —
+    /// and from what is kept for the next run.
     package func stop(_ id: UUID) {
         end(id)
         forwards.removeAll { $0.id == id }
         contexts[id] = nil
+        persist()
     }
 
-    /// Every one, at quit and when Kubernetes is turned off.
+    /// The forwards stopped that Start All starts again: kept or stopped by
+    /// themselves, their context still here, not production's — each of
+    /// those asked on its own, as a new one is (`KubernetesPageModel.startForwardAgain`).
+    package var startableAgain: [KubeForward] {
+        forwards.filter { $0.state.isStopped && contexts[$0.id] != nil && !$0.production }
+    }
+
+    /// Start All: every one `startableAgain` lists.
+    package func startAllAgain() {
+        for forward in startableAgain { startAgain(forward.id) }
+    }
+
+    /// Whether Start Again can take it: its context is still known.
+    package func canStartAgain(_ id: UUID) -> Bool { contexts[id] != nil && forward(id)?.state.isStopped == true }
+
+    /// What the last run kept, listed stopped once the kubeconfig is read —
+    /// once a run. Never started by this: a forward reaches a cluster, and
+    /// that is the person's to ask for (Start Again, Start All). One whose
+    /// context is gone, or no longer reaches the same place by name, says so
+    /// and can only be removed.
+    package func restore(_ list: KubeContextList) {
+        guard !restored, !list.contexts.isEmpty else { return }
+        restored = true
+        for spec in kept() where !forwards.contains(where: { $0.id == spec.id }) {
+            var forward = KubeForward(spec: spec)
+            if let context = list.context(named: spec.context) {
+                contexts[spec.id] = context
+                forward.production = context.isProduction
+                forward.state = .stopped(Self.keptNote)
+            } else {
+                forward.state = .stopped("\(spec.context) is no longer in the kubeconfig")
+            }
+            forwards.append(forward)
+        }
+    }
+
+    /// The forwards' specs kept for the next run, in their order.
+    private func persist() { keep?(forwards.map(\.spec)) }
+
+    /// Every one, at quit and when Kubernetes is turned off — kept for the
+    /// next run as they are: quitting isn't stopping them.
     package func stopAll() {
         for id in Array(tasks.keys) + Array(processes.keys) + Array(probing.keys) { end(id) }
         forwards = []
