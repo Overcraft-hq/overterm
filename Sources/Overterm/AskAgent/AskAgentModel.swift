@@ -80,6 +80,9 @@ package final class AskAgentModel: ObservableObject {
     /// The whole prompt is shown in the sheet before it is sent: a brief
     /// assembled for the user (Kubernetes' Ask Why), not text they picked.
     @Published package private(set) var showsBrief = false
+    /// "Send unmasked": what the gate masked goes as it was (AGT-G4). Off
+    /// at every sheet; only what the gate masked, never a feature's own.
+    @Published package var sendsUnmasked = false
 
     package var lines: Int { selection.isEmpty ? 0 : selection.components(separatedBy: "\n").count }
 
@@ -101,6 +104,7 @@ package final class AskAgentModel: ObservableObject {
         self.subject = subject
         self.parts = parts
         self.showsBrief = showsBrief
+        sendsUnmasked = false
         isOpen = !selection.isEmpty
     }
 
@@ -110,6 +114,7 @@ package final class AskAgentModel: ObservableObject {
         parts = []
         subject = nil
         showsBrief = false
+        sendsUnmasked = false
     }
 
     /// What will actually be typed. Built here rather than in the view so
@@ -121,8 +126,19 @@ package final class AskAgentModel: ObservableObject {
     /// (`AgentText`): what the sheet shows is what is typed.
     package func prompt(diff: String?) -> String { agentText(diff: diff).text }
 
-    /// The prompt as it is handed to the agent.
+    /// The prompt as it is handed to the agent: scrubbed, unless the
+    /// person said to send it unmasked.
     package func agentText(diff: String?) -> AgentText {
+        let text = assembled(diff: diff)
+        return sendsUnmasked ? AgentText(unmaskedAtThePersonsWord: text) : AgentText(scrubbing: text)
+    }
+
+    /// How many values the gate masks in what would be sent ("N values
+    /// masked" in the sheet), whether or not they go unmasked.
+    package func maskedCount(diff: String?) -> Int { AgentText.maskedCount(in: assembled(diff: diff)) }
+
+    /// The prompt's sections, before the gate.
+    private func assembled(diff: String?) -> String {
         var sections: [String] = []
         if !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { sections.append(message) }
         if extras.command, let command {
@@ -133,7 +149,7 @@ package final class AskAgentModel: ObservableObject {
         sections.append(selection)
         sections += parts.filter(\.on).map(\.text)
         if extras.diff, let diff, !diff.isEmpty { sections.append("git diff:\n\(diff)") }
-        return AgentText(scrubbing: sections.joined(separator: "\n\n"))
+        return sections.joined(separator: "\n\n")
     }
 }
 
