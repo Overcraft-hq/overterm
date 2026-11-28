@@ -86,14 +86,14 @@ package final class Start: ObservableObject {
     /// The banner's ×.
     package func dismissTip() {
         guard active else { return }
-        place(state.dismissingTip())
+        place(state.dismissingTip(now: now()))
     }
 
     /// What covers a tip's place — a sheet, ⌘K, Tab Peek, the held
     /// banner — and whether the app is in front, as the window sees them.
     package func room(blocked: Bool, inFront: Bool) {
         guard active else { return }
-        place(state.withRoom(blocked: blocked, inFront: inFront))
+        place(state.withRoom(blocked: blocked, inFront: inFront, now: now()))
     }
 
     /// Help ▸ Reset Tips: every tip again, ⌘K's count from nought.
@@ -161,9 +161,11 @@ package final class Start: ObservableObject {
         panels = Self.panels(of: settings)
     }
 
-    /// Asks the probe, once, while the second step shows; `force`: Check Again.
+    /// Asks the probe while the second step shows: once, and again while
+    /// the shell hasn't answered (it is asked again after a minute,
+    /// `ShellEnvironment.retryAfter`); `force`: Check Again.
     package func probe(force: Bool = false) {
-        guard active, probing == nil, force || setup == nil else { return }
+        guard active, probing == nil, force || setup?.shellAnswered != true else { return }
         probing = Task { [weak self] in
             let facts = await SetupProbe.read()
             guard let self else { return }

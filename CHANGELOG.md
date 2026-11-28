@@ -26,7 +26,7 @@ version is tagged `v<version>`.
 - Help ▸ Keyboard Shortcuts can be given a key
 - Outside a repository, Overgit, Kubernetes and Terraform offer Open Folder…, and Files over your home folder says what to open instead
 - The empty Inbox and Sessions say what lands there and how to start; ⌘K's own rows, the group switcher and the plan pane say the key bound now, and ⌘K has a Keyboard Shortcuts row
-- After an update, the strip's "What's new in …" chip opens Settings ▸ About, which lists every version since the one you ran before; Help ▸ What's New (and ⌘K) opens it any time, and Settings ▸ About ▸ Updates can turn the chip off
+- After an update, the strip's "What's new in …" chip — there, launch after launch, until you open it or put it away — opens Settings ▸ About, which lists every version since the one you ran before; Help ▸ What's New (and ⌘K) opens it any time, and Settings ▸ About ▸ Updates can turn the chip off
 - A new install's sidebar has a Getting Started card: what Overterm is, and five steps — open a repository, pick what New Task starts, start a task, answer a tab that needs you, see what it changed — that tick themselves as you do them, in any order
 - Once they are done, the card offers the optional panels to keep; × puts it away, Turn Off Tips (Settings ▸ General) ends it and the tips, and Help ▸ Getting Started (and ⌘K) brings it back
 - Four one-time tips: the first tab that needs you says what the Inbox is, the first production pane what its header means, ⌘K's first showings where Clear the Screen went, the first agent tab what its tools are; Help ▸ Reset Tips shows them again

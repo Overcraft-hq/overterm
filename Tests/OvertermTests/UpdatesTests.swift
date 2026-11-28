@@ -146,9 +146,58 @@ final class UpdatesTests: XCTestCase {
         XCTAssertEqual(checker.changes.map(\.version), [current], "none remembered: this version's alone")
     }
 
+    /// Quit with the chip neither opened nor put away: it is there at the
+    /// next launch (`.same`), About still listing the versions skipped.
+    @MainActor
+    func testTheChipWaitsThroughTheNextLaunch() throws {
+        let suite = "overterm.tests.whatsNewFrom.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let checker = UpdateChecker()
+        let current = checker.currentVersion
+        try XCTSkipUnless(UpdateChecker.isNewer(current, than: "1.6.2"), "the test bundle's version \(current) is not past 1.6.2")
+        let text = "## \(current) — today\n\n- this one\n\n## 1.6.2 — then\n\n- skipped\n\n## 1.6.1 — before\n\n- ran before\n"
+
+        checker.noteLaunch(.upgraded(from: "1.6.1"), changelog: text, enabled: true, defaults: defaults)
+        XCTAssertEqual(checker.whatsNew, current)
+        XCTAssertEqual(defaults.string(forKey: UpdateChecker.whatsNewFromKey), "1.6.1", "the version it came from, kept")
+        // Quit and launched again: the same version.
+        let next = UpdateChecker()
+        next.noteLaunch(.same, changelog: text, enabled: true, defaults: defaults)
+        XCTAssertEqual(next.whatsNew, current, "still there")
+        XCTAssertEqual(next.changes.map(\.version), [current, "1.6.2"], "About and Help ▸ What's New list the skipped versions")
+        next.dismissWhatsNew(defaults: defaults)
+        let after = UpdateChecker()
+        after.noteLaunch(.same, changelog: text, enabled: true, defaults: defaults)
+        XCTAssertNil(after.whatsNew, "put away: gone for this version")
+        XCTAssertEqual(after.changes.map(\.version), [current, "1.6.2"])
+        after.noteLaunch(.fresh, changelog: text, enabled: true, defaults: defaults)
+        XCTAssertNil(defaults.string(forKey: UpdateChecker.whatsNewFromKey), "a fresh install keeps none")
+    }
+
+    func testTheVersionAnUpdateCameFrom() {
+        func from(_ launch: FirstRun.Launch, remembered: String? = nil, seen: String? = nil) -> String? {
+            UpdateChecker.pendingFrom(launch: launch, remembered: remembered, seen: seen)
+        }
+        XCTAssertNil(from(.fresh, remembered: "1.6.1"))
+        XCTAssertNil(from(.same), "no update known")
+        XCTAssertEqual(from(.same, remembered: "1.6.1"), "1.6.1", "a later launch keeps it")
+        XCTAssertEqual(from(.upgraded(from: "1.6.5")), "1.6.5")
+        XCTAssertEqual(from(.upgraded(from: nil), remembered: "1.6.1"), "", "from before the keys: none known")
+        XCTAssertEqual(
+            from(.upgraded(from: "1.6.8"), remembered: "1.6.5", seen: "1.6.5"), "1.6.5",
+            "1.6.8's chip never opened: the versions since 1.6.5 still unsaid")
+        XCTAssertEqual(from(.upgraded(from: "1.6.8"), remembered: "1.6.5", seen: "1.6.8"), "1.6.8", "1.6.8's seen: from there")
+        XCTAssertEqual(from(.upgraded(from: "1.6.5"), remembered: "1.6.8", seen: nil), "1.6.5", "a newer one remembered: the update's own")
+        XCTAssertEqual(
+            UpdateChecker.whatsNew(from: "", seen: nil, changelog: changelog, current: "1.6.9", enabled: true), "1.6.9", "none known: this version's lines")
+        XCTAssertNil(UpdateChecker.whatsNew(from: nil, seen: nil, changelog: changelog, current: "1.6.9", enabled: true))
+    }
+
     @MainActor
     func testTheKeysOnboardingWrites() {
         XCTAssertEqual(UpdateChecker.whatsNewSeenKey, "onboarding.whatsNewSeen")
+        XCTAssertEqual(UpdateChecker.whatsNewFromKey, "onboarding.whatsNewFrom")
         XCTAssertEqual(FirstRun.formerLastRunVersionKey, "app.lastVersionRun")
     }
 }

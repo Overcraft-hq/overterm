@@ -59,6 +59,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package var tipBanner: TipBannerHostingView?
     /// Notifications as macOS said when T1 took its place.
     package let tipModel = TipBannerModel()
+    /// What the tip banner hears from NotificationCenter — the app in
+    /// front, a sheet, the window key —, removed when the window closes.
+    package var tipObservers: [any NSObjectProtocol] = []
     private var searchSubscription: AnyCancellable?
     /// The ⌘F overlay over the terminal (terminal + files + contents).
     package let spotlight = SpotlightModel()
@@ -533,7 +536,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 worktreeActions: WorktreeActions(
                     open: { [weak self] in self?.openWorktree($0) },
                     newTab: { [weak self] in self?.newTab(in: $0.path) },
-                    newAgentTab: { [weak self] worktree, agent in self?.newTab(in: worktree.path, agent: agent) },
+                    newAgentTab: { [weak self] worktree, agent in self?.newAgentTab(agent, in: worktree.path) },
                     remove: { [weak self] in self?.removeWorktree($0) },
                     attach: { [weak self] in self?.attach($0) },
                     detach: { [weak self] in self?.detach() },
@@ -601,6 +604,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         sidebarItem.holdingPriority = .defaultLow + 10
         // Shown on first launch; after that, as the user left it.
         sidebarItem.isCollapsed = !(AppEnvironment.defaults.object(forKey: Self.sidebarVisibleKey) as? Bool ?? true)
+        sidebarPanel.columnOpen = !sidebarItem.isCollapsed
         let terminalPane = NSViewController()
         terminalPane.view = CardColumn(content: container, fill: .terminal, theme: theme)
 
@@ -1227,8 +1231,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             if tab.activity.handle(event, visible: self.isVisible(tab)) {
                 // While focusing on one island, another group's notice waits
                 // — unless its agent is blocked on you.
-                self.notifyUnlessHeld(tab)
-                self.noteMarkRaised(on: tab)
+                self.notifyUnlessHeld(tab)  // T1 too, by any mark
             }
             if event == .bell, self.isVisible(tab) { NSSound.beep() }
             self.updateAttentionBadge()
@@ -1439,6 +1442,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// `setup`: New Task's setup command, typed first — the agent only once
     /// it succeeded (`TaskSetup.firstLine`).
     package func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true, command: String? = nil, setup: String = "") {
+        _ = openTab(in: directory, agent: agent, startAgent: startAgent, command: command, setup: setup)
+    }
+
+    /// `newTab(in:agent:…)`, saying which tab it opened.
+    private func openTab(in directory: URL, agent: Agent?, startAgent: Bool = true, command: String? = nil, setup: String = "") -> Tab? {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let start = agent.map { agentCommand($0, base: command, in: directory) }
         let input = TaskSetup.firstLine(setup: setup, agent: startAgent ? start?.command : nil).map { $0 + "\n" }
@@ -1446,6 +1454,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         terminal.terraformAgentGuard = start?.launch ?? .none
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
         if agent != nil, startAgent { Start.shared.note(.agentTabStarted) }
+        return tab(containing: terminal)
     }
 
     /// What starts `agent` in `directory`: its command (`base`, else its
@@ -1951,11 +1960,19 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// shell wouldn't find is said first, before anything is typed
     /// (onboarding 7.4) — never refused: an alias or a shell function of
     /// that name is invisible to the lookup, so the tab can open anyway.
-    package func newAgentTab(_ agent: Agent) {
+    /// `then`: what to do with the tab once it is open — never called when
+    /// the warning's Cancel (or Check Setup) opened none.
+    package func newAgentTab(_ agent: Agent, then opened: ((Tab) -> Void)? = nil) {
         let cwd = store.selected?.terminal.inheritedSettings().workingDirectory
         let folder = URL(fileURLWithPath: cwd ?? FileManager.default.homeDirectoryForCurrentUser.path)
+        newAgentTab(agent, in: folder, then: opened)
+    }
+
+    /// The same in `folder`: the sidebar's New ‹agent› Tab Here, Ask
+    /// Agent's tab in a folder — the PATH said first here too.
+    package func newAgentTab(_ agent: Agent, in folder: URL, then opened: ((Tab) -> Void)? = nil) {
         guard let window, let warning = AgentFinder.warning(agent, findAgent(agent)) else {
-            return openAgentTab(agent, in: folder)
+            return openAgentTab(agent, in: folder, then: opened)
         }
         let alert = NSAlert()
         alert.messageText = warning.title
@@ -1968,7 +1985,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         alert.beginSheetModal(for: window) { [weak self] response in
             MainActor.assumeIsolated {
                 switch response {
-                case .alertFirstButtonReturn: self?.openAgentTab(agent, in: folder)
+                case .alertFirstButtonReturn: self?.openAgentTab(agent, in: folder, then: opened)
                 case .alertThirdButtonReturn: self?.showSetup(nil)
                 default: break
                 }
@@ -1976,9 +1993,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         }
     }
 
-    private func openAgentTab(_ agent: Agent, in folder: URL) {
+    private func openAgentTab(_ agent: Agent, in folder: URL, then opened: ((Tab) -> Void)?) {
         if let agentTabRecorder { return agentTabRecorder(agent, folder) }
-        newTab(in: folder, agent: agent)
+        guard let tab = openTab(in: folder, agent: agent) else { return }
+        opened?(tab)
     }
 
     // MARK: Find in terminal
@@ -3332,19 +3350,17 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         // A page over the tabs (Docker's) steps aside: the agent's tab is
         // selected under it otherwise, and the prompt typed out of sight.
         if store.showingOverlay != nil { hideOverlay(focus: false) }
-        let target: Tab?
+        // A new tab is typed into only once it is open, and only that one:
+        // the PATH's warning may stand first, and its Cancel opens none.
+        let typeInto: (Tab) -> Void = { [weak self] tab in _ = self?.type(prompt, intoAgent: tab) }
         if let chosen {
-            target = store.tabs.first { $0.id == chosen }
+            guard let target = store.tabs.first(where: { $0.id == chosen }) else { return }
+            typeInto(target)
+        } else if let folder {
+            newAgentTab(Self.newTabAgent, in: URL(fileURLWithPath: folder), then: typeInto)
         } else {
-            if let folder {
-                newTab(in: URL(fileURLWithPath: folder), agent: Self.newTabAgent)
-            } else {
-                newAgentTab(Self.newTabAgent)
-            }
-            target = store.selected
+            newAgentTab(Self.newTabAgent, then: typeInto)
         }
-        guard let target else { return }
-        type(prompt, intoAgent: target)
     }
 
     /// Types `prompt` into `target`'s agent, not sent: what it should do
@@ -4922,6 +4938,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         if let pageKeys { NSEvent.removeMonitor(pageKeys) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
+        for observer in tipObservers { NotificationCenter.default.removeObserver(observer) }
+        tipObservers = []
         peek.close()
         saveFinalSession()
         endLightTick()

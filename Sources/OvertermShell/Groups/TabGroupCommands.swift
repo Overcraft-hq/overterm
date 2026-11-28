@@ -372,7 +372,11 @@ extension TerminalWindowController {
     /// island, another group's tab waits — unless its agent is blocked.
     /// `note` and `mark`: a notice that isn't the tab's own mark (a cluster
     /// failure under an agent's waiting mark).
+    /// Every kind of mark told here raises T1 too (onboarding D-6(1)):
+    /// the notice the first launch holds its question for is never one
+    /// with no T1 to ask it.
     package func notifyUnlessHeld(_ tab: Tab, note: String? = nil, mark: TabActivity.Mark? = nil) {
+        noteMarkRaised(on: tab)
         let name = store.group(of: tab)?.name ?? "Ungrouped"
         guard focus.shouldNotify(tab: tab, groupName: name, note: note, mark: mark) else { return }
         AttentionNotifier.notify(tab: tab, note: note, mark: mark)

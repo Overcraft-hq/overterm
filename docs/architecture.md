@@ -492,7 +492,11 @@ About: `UpdateChecker` asks `gh api repos/Overcraft-hq/overterm/releases/latest`
 downloads the DMG with `gh release download`; once a day at launch when
 allowed, a title-bar chip when newer (it opens Settings ▸ About).
 `make-app.sh` bundles `CHANGELOG.md` for "What's new" and View Latest
-Changelog.
+Changelog. After an update the strip's "What's new in …" chip stays —
+launch after launch — until it is opened or put away
+(`onboarding.whatsNewSeen`): the version the update came from is kept
+(`onboarding.whatsNewFrom`, `UpdateChecker.pendingFrom`), and About and
+Help ▸ What's New list every version since it.
 
 ## Agent overview (⇧⌘A)
 
@@ -1728,8 +1732,11 @@ The Start card (7.3, 7.10) is the one thing a fresh install shows by
 itself (D-2): at the foot of the sidebar's panel column — the last child of
 `SidebarView`'s column, under whichever panel shows, never a rail icon or a
 `SidebarPanel` — what the app is in one sentence and five steps that tick
-themselves. Hidden with the sidebar; past 40% of the column's height it
-scrolls inside itself; nothing is added to the window or a split.
+themselves. Hidden with the sidebar — its second step asks the login
+shell only while the column is open (`SidebarModel.columnOpen`), and a
+shell that didn't answer is said, with Check Again, A shell only and Check
+Setup —; past 40% of the column's height it scrolls inside itself; nothing
+is added to the window or a split. Its foot is Check Setup · Turn Off Tips.
 
 - `StartState` (pure) holds every rule: the steps done and when
   (`onboarding.steps`, D-12), the card open, collapsed or closed
@@ -1808,14 +1815,19 @@ moved, T4 agents' tools —, each shown once, never more than five
 (`StartState.Tip`, the cap a test's). Their rules are `StartState.apply`'s
 (pure): a tip comes from its event — `markRaised(kind)` at the three places
 a mark goes up (`TabActivity.handle`, `agentAsked`, `terraformAsked`, all
-through `noteMarkRaised`), `productionPane` when a pane header's production
+through `noteMarkRaised`) and with every notice told
+(`notifyUnlessHeld`: a container's, a cluster's, Left Behind, CI…), `productionPane` when a pane header's production
 label appears (`KubeRunWarningLabel`, `TerraformRunWarningLabel`),
 `paletteOpened` as ⌘K shows, `agentTabStarted`; it waits while a sheet,
 ⌘K, Tab Peek or the held-settings banner covers its place, or the app is
 behind another, and is seen once placed (`onboarding.tipsSeen`); an Inbox
 opened first makes T1 needless; one banner tip a launch, T1 and T2 past
-that limit; `general.tips` off, none; an update counts every tip seen. No
-timer: T1 goes with the Inbox or its tab selected, T2 and T4 with ×. T3 is
+that limit — and in front of a placed T4, which waits to come back
+(`displaced`, not counted again); `general.tips` off, none; an update
+counts every tip seen. No timer: T1 goes with the Inbox, or its tab
+selected once it has been on screen a moment (`StartState.seenAfter`) —
+one still waiting, or placed in the same turn as the app came back and
+selected its tab, stays —, T2 and T4 with ×. T3 is
 ⌘K's own hint row (`PaletteModel.tip`) on its first three showings
 (`onboarding.paletteOpens`); the others are `TipBannerView`, hosted as the
 held banner is — one view under the title bar, over the body, resizing

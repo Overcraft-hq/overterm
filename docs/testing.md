@@ -861,8 +861,9 @@ second step's menu, is a check by hand. `sidebarPanels` checks no other
 scenario shows a card.
 
 Stage 4's tips: `StartStateTests` (each tip once, × for good, a used
-feature getting none, one banner tip a launch with T1 and T2 past it,
-waiting while covered or behind, tips off, T3's three showings, Reset Tips,
+feature getting none, one banner tip a launch with T1 and T2 past it and
+in front of T4, which comes back, waiting while covered or behind, T1 never
+dropped unseen by its tab selected as the app comes back, tips off, T3's three showings, Reset Tips,
 an update's, the kept form, and the registry: at most five tips, each with
 its seen key and brought back by Reset), `StartTextTests` (every tip's
 words from the keys bound now and the Settings pages' own titles, the
@@ -874,7 +875,8 @@ background, check T1 shows, the keyboard stays in the terminal and the
 strip answers a press as before; inject "not asked"
 (`AttentionNotifier.permissionOverride`) so T1 offers Allow
 Notifications…, whose press is counted (`requestedNow`), never a system
-prompt; hide it under Reset Tips' sheet; close it with the Inbox; check a
+prompt; check the live decision (`Start.shared.holdsNotificationAsk`) held
+before T1 and released once it shows; hide it under Reset Tips' sheet; close it with the Inbox; check a
 second mark brings none and an agent's tab in the same launch holds T4;
 then ⌘K's hint row and Reset Tips. A real click on a tip, VoiceOver's
 announcement and the system prompt are checks by hand.

@@ -58,6 +58,9 @@ package struct StartText: Sendable {
     package enum AgentStep: Equatable, Sendable {
         /// The login shell hasn't said its PATH yet.
         case asking
+        /// Asked, and the login shell didn't answer: Check Again, A shell
+        /// only and Check Setup offered, never "Asking…" for good.
+        case noAnswer
         /// The agents found, then A shell only.
         case choose([Choice])
         /// None found: A shell only, alone.
@@ -90,6 +93,9 @@ package struct StartText: Sendable {
     package static let newTaskStarts = "New Task starts:"
     package static let asking = "Asking your shell…"
     package static let noAgent = "No agent found on your PATH."
+    /// The login shell asked and silent (an error in its rc files, or
+    /// slower than `ShellEnvironment.timeout`).
+    package static let noAnswer = "Your login shell didn't answer, so its PATH is unknown."
     package static let probeNote = "Asked your login shell for its PATH and looked at files. No tool was run."
     package static let checkAgain = "Check Again"
     /// The second step's link to the Setup page (Help ▸ Check Setup…).
@@ -162,7 +168,8 @@ package struct StartText: Sendable {
 
     /// The second step: what New Task can start, as the probe found it.
     package static func agentStep(_ setup: SetupFacts?) -> AgentStep {
-        guard let setup, setup.shellAnswered else { return .asking }
+        guard let setup else { return .asking }
+        guard setup.shellAnswered else { return .noAnswer }
         let found = setup.agentsFound
         guard !found.isEmpty else { return .noneFound }
         let agents = found.map { agent in

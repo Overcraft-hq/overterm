@@ -162,6 +162,7 @@ extension E2ERunner {
         check("the card shows in the sidebar", await eventually(3) { present("start.card") && present("start.title") })
         check("with nothing done yet", StartText.collapsed(start.state) == "Getting started · 0 of 5", StartText.collapsed(start.state))
         check("its first step open, with Open Folder…", present("start.button.file.openFolder") && present("start.step.repository"))
+        check("its foot: Check Setup · Turn Off Tips", present("start.foot.checkSetup") && present("start.turnOffTips"))
         await keyboardStays("the card appeared")
 
         // The chevron and the collapsed row: open, collapsed, open.
@@ -199,6 +200,23 @@ extension E2ERunner {
         app.open([repo])
         check("a repository opened does the first step", await eventually(10) { start.state.isDone(.repository) })
         await keyboardStays("a repository opened")
+
+        // 5a. The login shell silent: said, with what can be done — never "Asking…" for good.
+        // The card's own probe first (Check Again waits for one in flight).
+        _ = await eventually(5) { start.setup != nil }
+        let facts = SetupProbe.override
+        SetupProbe.override = SetupFacts(shellAnswered: false)
+        start.probe(force: true)
+        check(
+            "a shell that didn't answer is said, with Check Again, A shell only and Check Setup",
+            await eventually(5) {
+                StartText.agentStep(start.setup) == .noAnswer && present("start.checkAgain") && present("start.shellOnly") && present("start.checkSetup")
+            },
+            "\(String(describing: start.setup))")
+        await keyboardStays("the shell's silence")
+        SetupProbe.override = facts
+        check("Check Again asks again", press("start.checkAgain"))
+        _ = await eventually(5) { start.setup?.shellAnswered == true }
 
         // 5. No agent found: said on the second step; an agent's tab types nothing.
         check(
@@ -253,6 +271,9 @@ extension E2ERunner {
             tab.terminal.insertText("printf '\\033]777;notify;Claude;needs your permission\\a'")
             tab.terminal.pressReturn()
         }
+        // The live decision `AttentionNotifier.notify` asks: a fresh first
+        // launch, tips on, T1 not seen — the question waits for T1.
+        check("before the first mark, the notification ask is held for T1", Start.shared.holdsNotificationAsk)
         notify(worked)
         check("the task's tab is marked waiting", await eventually(10) { worked.activity.mark == .waiting }, "\(worked.activity.mark)")
         func showsT1() -> Bool {
@@ -276,12 +297,9 @@ extension E2ERunner {
         check("Allow Notifications… pressed", press("tip.allowNotifications"))
         check("it asks then — an isolated run counts it and puts no question", await eventually(2) { AttentionNotifier.requestedNow == asked + 1 })
         await keyboardStays("Allow Notifications…")
-        check(
-            "the lazy ask is held only for an unseen T1 on a fresh first launch",
-            !AttentionNotifier.asksLazily(state: .notAsked, tipsOn: true, t1Seen: false, firstLaunch: true)
-                && AttentionNotifier.asksLazily(state: .notAsked, tipsOn: true, t1Seen: true, firstLaunch: true)
-                && AttentionNotifier.asksLazily(state: .notAsked, tipsOn: true, t1Seen: false, firstLaunch: false)
-                && AttentionNotifier.asksLazily(state: .allowed, tipsOn: true, t1Seen: false, firstLaunch: true))
+        // What `notify` and `summarize` decide by, along the real path: T1
+        // shown, a later notice asks as it always did.
+        check("T1 shown: the live decision asks lazily again", !Start.shared.holdsNotificationAsk && start.state.tipsSeen.contains(.needsYou))
         // A sheet covers its place: hidden while it shows, back after.
         app.resetTips(nil)
         check("Reset Tips asks first", await eventually(3) { self.window.attachedSheet != nil })
@@ -547,6 +565,16 @@ extension E2ERunner {
         clickSheetButton("Cancel")
         _ = await eventually(2) { self.window.attachedSheet == nil }
         check("Cancel opens nothing", app.store.tabs.count == tabs && opened.isEmpty)
+
+        // A tab in a folder (the sidebar's New ‹agent› Tab Here, Ask
+        // Agent's) is said first too, and what waits for the tab — Ask
+        // Agent's prompt — goes nowhere at Cancel.
+        var handed = 0
+        app.newAgentTab(.claude, in: scratch) { _ in handed += 1 }
+        check("a tab in a folder is said first too", await eventually(3) { self.window.attachedSheet != nil })
+        clickSheetButton("Cancel")
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+        check("its Cancel hands no tab on: nothing typed anywhere", handed == 0 && app.store.tabs.count == tabs && opened.isEmpty)
 
         app.newAgentTab(.claude)
         _ = await eventually(3) { self.window.attachedSheet != nil }

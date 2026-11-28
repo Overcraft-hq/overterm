@@ -35,19 +35,23 @@ package struct StartCardView: View {
     @ObservedObject private var theme: ChromeTheme
     @ObservedObject private var keys: Keybindings
     private let inRepository: Bool
+    /// The sidebar's column is open: the second step asks the login shell
+    /// only then — a collapsed column's card is never seen.
+    private let columnOpen: Bool
     /// 40% of the sidebar's height: past it, the card scrolls inside itself.
     private let maxHeight: CGFloat
     private let perform: (StartCardAction) -> Void
     @State private var contentHeight: CGFloat = 0
 
     package init(
-        start: Start, theme: ChromeTheme, keys: Keybindings = .shared, inRepository: Bool, maxHeight: CGFloat,
+        start: Start, theme: ChromeTheme, keys: Keybindings = .shared, inRepository: Bool, maxHeight: CGFloat, columnOpen: Bool = true,
         perform: @escaping (StartCardAction) -> Void
     ) {
         self._start = ObservedObject(wrappedValue: start)
         self._theme = ObservedObject(wrappedValue: theme)
         self._keys = ObservedObject(wrappedValue: keys)
         self.inRepository = inRepository
+        self.columnOpen = columnOpen
         self.maxHeight = maxHeight
         self.perform = perform
     }
@@ -133,11 +137,17 @@ package struct StartCardView: View {
                 }
             }
             .padding(.top, 2)
-            Button(StartText.turnOffTips) { perform(.turnOffTips) }
-                .buttonStyle(.plain)
-                .font(.system(size: ChromeMetrics.text(11)))
-                .foregroundStyle(theme.text3)
-                .accessibilityIdentifier("start.turnOffTips")
+            // The foot: "Check Setup · Turn Off Tips" (7.3).
+            HStack(spacing: 6) {
+                Button(StartText.checkSetup) { perform(.command("help.setup")) }
+                    .accessibilityIdentifier("start.foot.checkSetup")
+                Text(verbatim: "·").foregroundStyle(theme.text3).accessibilityHidden(true)
+                Button(StartText.turnOffTips) { perform(.turnOffTips) }
+                    .accessibilityIdentifier("start.turnOffTips")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: ChromeMetrics.text(11)))
+            .foregroundStyle(theme.text3)
         }
     }
 
@@ -238,6 +248,12 @@ package struct StartCardView: View {
             Button(StartText.shellOnly) { perform(.chooseAgent(StartText.shellChoice)) }
                 .controlSize(.small)
                 .accessibilityIdentifier("start.shellOnly")
+        case .noAnswer:
+            // Never "Asking…" for good: said, and what can be done now.
+            line(StartText.noAnswer, color: theme.orangeText)
+            Button(StartText.shellOnly) { perform(.chooseAgent(StartText.shellChoice)) }
+                .controlSize(.small)
+                .accessibilityIdentifier("start.shellOnly")
         case .choose(let choices):
             line(StartText.newTaskStarts, color: theme.text2)
             Menu {
@@ -263,8 +279,8 @@ package struct StartCardView: View {
         ForEach(StartText.problems(start.setup), id: \.id) { row in
             line("\(row.title) — \(row.detail)", color: theme.orangeText, size: 10.5)
         }
-        if start.setup?.shellAnswered == true {
-            line(StartText.probeNote, color: theme.text3, size: 10)
+        if let setup = start.setup {
+            if setup.shellAnswered { line(StartText.probeNote, color: theme.text3, size: 10) }
             HStack(spacing: 10) {
                 Button(StartText.checkAgain) { perform(.checkAgain) }
                     .accessibilityIdentifier("start.checkAgain")
@@ -276,9 +292,13 @@ package struct StartCardView: View {
             .font(.system(size: ChromeMetrics.text(10.5)))
             .foregroundStyle(theme.accentText)
         }
-        // Asked only while this step shows: the login shell's first
-        // question may be this one, and it runs the person's rc files.
-        Color.clear.frame(height: 0).onAppear { start.probe() }
+        // Asked only while this step shows in an open sidebar column: the
+        // login shell's first question may be this one, and it runs the
+        // person's rc files. Opening the column asks then.
+        Color.clear.frame(height: 0)
+            .task(id: columnOpen) {
+                if columnOpen { start.probe() }
+            }
     }
 
     // MARK: Done

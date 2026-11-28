@@ -118,22 +118,27 @@ extension TerminalWindowController {
             .removeDuplicates()
             .sink { [weak self] empty in self?.updateTipRoom(heldShown: !empty) }
             .store(in: &cancellables)
+        // Each token kept, removed at the window's close (`windowWillClose`).
         let center = NotificationCenter.default
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
-            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.tipFrontChanged() }
-            }
+            tipObservers.append(
+                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.tipFrontChanged() }
+                })
         }
         // A sheet: begun, it covers the place before `attachedSheet` says so.
-        center.addObserver(forName: NSWindow.willBeginSheetNotification, object: window, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateTipRoom(sheet: true) }
-        }
-        center.addObserver(forName: NSWindow.didEndSheetNotification, object: window, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateTipRoom(sheet: false) }
-        }
-        center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateTipRoom() }
-        }
+        tipObservers.append(
+            center.addObserver(forName: NSWindow.willBeginSheetNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateTipRoom(sheet: true) }
+            })
+        tipObservers.append(
+            center.addObserver(forName: NSWindow.didEndSheetNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateTipRoom(sheet: false) }
+            })
+        tipObservers.append(
+            center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateTipRoom() }
+            })
         updateTipRoom()
     }
 

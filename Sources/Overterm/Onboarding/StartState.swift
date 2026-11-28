@@ -126,6 +126,13 @@ package struct StartState: Equatable, Sendable {
     package var fresh = false
     /// The banner tip placed, shown while nothing covers its place.
     package var banner: Banner?
+    /// When `banner` was placed: T1's tab selected only goes with a T1
+    /// that has been on screen a moment (`seenAfter`).
+    package var bannerPlacedAt: Date?
+    /// The launch's one tip that isn't exempt, put back by T1 or T2 taking
+    /// its place: it comes back when their place is free, not counted
+    /// again against the limit, seen already.
+    package var displaced: Banner?
     /// Banner tips raised, waiting for their place (`placing`).
     package var waiting: [Banner] = []
     /// A banner tip has been placed this launch: the one-a-launch limit.
@@ -138,6 +145,11 @@ package struct StartState: Equatable, Sendable {
     package var blocked = false
     /// The app is in front: a tip is placed only then, where it is seen.
     package var inFront = true
+
+    /// How long T1 has been on screen before its tab selected takes it:
+    /// coming back to the app places it and selects its tab in one turn,
+    /// and it must not go unseen then.
+    package static let seenAfter: TimeInterval = 1
 
     package init(
         steps: [Step: Date] = [:], card: Card? = nil, tips: Bool = true, asked: Bool = false, tipsSeen: Set<Tip> = [], paletteOpens: Int = 0
@@ -233,30 +245,38 @@ package struct StartState: Equatable, Sendable {
             next.tipsSeen.insert(.needsYou)
             next.drop(.needsYou)
         case .waitingTabSelected:
-            // T1's tab looked at: placed, it was seen and goes; waiting, it
-            // goes unseen, for the next mark to raise.
-            next.drop(.needsYou)
+            // T1's tab looked at: once T1 has been on screen, it was seen
+            // and goes. One still waiting — the app behind another, a sheet
+            // over its place — or placed this very moment (the app coming
+            // back places it and selects its tab in one turn) stays, until
+            // ×, the Inbox or its own button: the first launch's
+            // notification question is in it (D-6).
+            if next.banner?.tip == .needsYou, let placed = next.bannerPlacedAt, now.timeIntervalSince(placed) >= Self.seenAfter {
+                next.banner = nil
+                next.bannerPlacedAt = nil
+            }
         case .inRepository, .agentChosen, .taskCreated, .changesShown:
             break
         }
-        return next.placing()
+        return next.placing(now: now)
     }
 
     /// × on the banner: gone for good (it was seen when placed); the next
     /// waiting one may take its place.
-    package func dismissingTip() -> (state: StartState, tip: Banner?) {
+    package func dismissingTip(now: Date = Date()) -> (state: StartState, tip: Banner?) {
         var next = self
         if let banner { next.tipsSeen.insert(banner.tip) }
         next.banner = nil
-        return next.placing()
+        next.bannerPlacedAt = nil
+        return next.placing(now: now)
     }
 
     /// What covers a tip's place, and whether the app is in front.
-    package func withRoom(blocked: Bool, inFront: Bool) -> (state: StartState, tip: Banner?) {
+    package func withRoom(blocked: Bool, inFront: Bool, now: Date = Date()) -> (state: StartState, tip: Banner?) {
         var next = self
         next.blocked = blocked
         next.inFront = inFront
-        return next.placing()
+        return next.placing(now: now)
     }
 
     /// Help ▸ Reset Tips: every tip shows again, the next time its moment
@@ -271,14 +291,20 @@ package struct StartState: Equatable, Sendable {
 
     private mutating func raise(_ banner: Banner) {
         let tip = banner.tip
-        guard tips, !tipsSeen.contains(tip), self.banner?.tip != tip, !waiting.contains(where: { $0.tip == tip }) else { return }
+        guard tips, !tipsSeen.contains(tip), self.banner?.tip != tip, displaced?.tip != tip, !waiting.contains(where: { $0.tip == tip }) else {
+            return
+        }
         // Past the limit it isn't kept: it comes again at a later launch.
         guard tip.exempt || !bannerThisLaunch else { return }
         waiting.append(banner)
     }
 
     private mutating func drop(_ tip: Tip) {
-        if banner?.tip == tip { banner = nil }
+        if banner?.tip == tip {
+            banner = nil
+            bannerPlacedAt = nil
+        }
+        if displaced?.tip == tip { displaced = nil }
         waiting.removeAll { $0.tip == tip }
     }
 
@@ -289,28 +315,53 @@ package struct StartState: Equatable, Sendable {
         if paletteOpens >= 3 { tipsSeen.insert(.clearMoved) }
     }
 
-    /// The first waiting tip into the banner's place, when it is empty,
-    /// uncovered and the app in front. T1 and T2 go first; one past the
-    /// limit is dropped unseen.
-    private func placing() -> (state: StartState, tip: Banner?) {
+    /// The first waiting tip into the banner's place, when it is
+    /// uncovered and the app in front. T1 and T2 go first — taking the
+    /// place of a tip that isn't exempt (T4 has no timer), which waits to
+    /// come back (`displaced`) —; one past the limit is dropped unseen.
+    private func placing(now: Date) -> (state: StartState, tip: Banner?) {
         var next = self
         guard next.tips else {
             next.banner = nil
+            next.bannerPlacedAt = nil
+            next.displaced = nil
             next.waiting = []
             return (next, nil)
         }
-        guard next.banner == nil, !next.blocked, next.inFront else { return (next, nil) }
-        let order = next.waiting.filter { $0.tip.exempt } + next.waiting.filter { !$0.tip.exempt }
-        next.waiting = []
-        for (index, candidate) in order.enumerated() {
-            if !candidate.tip.exempt && next.bannerThisLaunch { continue }
-            next.banner = candidate
-            next.tipsSeen.insert(candidate.tip)
-            next.bannerThisLaunch = true
-            next.waiting = order.suffix(from: index + 1).filter { $0.tip.exempt }
-            return (next, candidate)
+        guard !next.blocked, next.inFront else { return (next, nil) }
+        let exempt = next.waiting.filter { $0.tip.exempt }
+        if let shown = next.banner, !shown.tip.exempt, !exempt.isEmpty {
+            next.displaced = shown
+            next.banner = nil
+            next.bannerPlacedAt = nil
         }
-        return (next, nil)
+        guard next.banner == nil else { return (next, nil) }
+        if let first = exempt.first {
+            // Placing counts against the limit: those not exempt still waiting are past it.
+            next.waiting = Array(exempt.dropFirst())
+            next.show(first, now: now)
+            return (next, first)
+        }
+        if let back = next.displaced {
+            // Already the launch's one, already seen: back without counting again.
+            next.displaced = nil
+            next.waiting = []
+            next.banner = back
+            next.bannerPlacedAt = now
+            return (next, back)
+        }
+        let candidate = next.bannerThisLaunch ? nil : next.waiting.first
+        next.waiting = []
+        guard let candidate else { return (next, nil) }
+        next.show(candidate, now: now)
+        return (next, candidate)
+    }
+
+    private mutating func show(_ candidate: Banner, now: Date) {
+        banner = candidate
+        bannerPlacedAt = now
+        tipsSeen.insert(candidate.tip)
+        bannerThisLaunch = true
     }
 
     /// Help ▸ Getting Started: open, whatever the flags say.
@@ -347,6 +398,8 @@ package struct StartState: Equatable, Sendable {
         if !on {
             next.asked = false
             next.banner = nil
+            next.bannerPlacedAt = nil
+            next.displaced = nil
             next.waiting = []
             next.paletteTip = false
         }

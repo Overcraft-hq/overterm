@@ -27,6 +27,7 @@ extension TerminalWindowController {
     package func updateOvergitVisibility(panel: SidebarPanel? = nil) {
         let shown = sidebarItem?.isCollapsed == false
         overgit.visible = shown && (panel ?? sidebarPanel.panel) == .git
+        if sidebarPanel.columnOpen != shown { sidebarPanel.columnOpen = shown }
     }
 
     /// View ▸ Overgit (⌥⌘G): the sidebar, on the git panel.

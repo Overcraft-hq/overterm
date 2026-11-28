@@ -66,12 +66,13 @@ final class StartTextTests: XCTestCase {
         XCTAssertEqual(StartText(keys: bound).button(of: .repository, facts: facts(inRepository: false))?.disabledReason, nil)
     }
 
-    /// The shell not answered yet: "Asking your shell…", and the fourth
-    /// step goes by the setting.
+    /// The shell not asked yet: "Asking your shell…"; asked and silent:
+    /// said so, never "Asking…" for good. The fourth step goes by the setting.
     func testTheShellStillAsked() {
         XCTAssertEqual(StartText.agentStep(nil), .asking)
-        XCTAssertEqual(StartText.agentStep(SetupFacts(shellAnswered: false)), .asking)
+        XCTAssertEqual(StartText.agentStep(SetupFacts(shellAnswered: false)), .noAnswer, "the probe came back with no answer")
         XCTAssertEqual(StartText.asking, "Asking your shell…")
+        XCTAssertEqual(StartText.noAnswer, "Your login shell didn't answer, so its PATH is unknown.")
         XCTAssertFalse(facts(setup: SetupFacts(shellAnswered: false)).shellOnly)
         XCTAssertTrue(facts(setup: SetupFacts(shellAnswered: false), taskAgent: "shell").shellOnly)
     }

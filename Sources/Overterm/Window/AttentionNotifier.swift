@@ -153,6 +153,8 @@ package enum AttentionNotifier {
         content.body = held.map { "\($0.groupName) · \($0.title) — \($0.note)" }.joined(separator: "\n")
         let request = UNNotificationRequest(identifier: "focus-summary", content: content, trigger: nil)
         if Start.shared.holdsNotificationAsk {
+            // The question waits for T1's button: the Dock says it meanwhile (D-6).
+            NSApp.requestUserAttention(.informationalRequest)
             postUnlessNotAsked(request, options: [.alert, .sound])
         } else {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound], completionHandler: authorized(then: request))

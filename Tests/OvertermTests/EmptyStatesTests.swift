@@ -22,6 +22,23 @@ final class EmptyStatesTests: XCTestCase {
         XCTAssertFalse(EmptyStates.showsHomeStrip(root: nil, home: home, checked: nil, notARepository: true))
     }
 
+    /// Only git's "not a git repository" counts for the strip — not any
+    /// failure of the changes' read (a timeout, a lock, a folder unread).
+    func testOnlyNotARepositoryCountsForTheStrip() {
+        let outside = GitError(
+            arguments: ["status"], status: 128, stderr: "fatal: not a git repository (or any of the parent directories): .git\n")
+        XCTAssertTrue(DiffModel.isNotARepository(outside))
+        XCTAssertTrue(
+            DiffModel.isNotARepository(GitError(arguments: ["status"], status: 128, stderr: "fatal: kein Git-Repository (oder irgendeines der Elternverzeichnisse): .git\n")),
+            "a translated git")
+        XCTAssertFalse(
+            DiffModel.isNotARepository(GitError(arguments: ["status"], status: 128, stderr: "fatal: Unable to create '.git/index.lock': File exists.\n")),
+            "a lock")
+        XCTAssertFalse(
+            DiffModel.isNotARepository(GitError(arguments: ["status"], status: 128, stderr: "fatal: detected dubious ownership in repository at '/x'\n")))
+        XCTAssertFalse(DiffModel.isNotARepository(CocoaError(.fileReadNoPermission)), "not git's at all")
+    }
+
     /// No key is written into an empty state's words: each is read from
     /// keybindings.json (`KeyHint`), so a rebinding is what they say.
     func testTheWordsHoldNoKey() {

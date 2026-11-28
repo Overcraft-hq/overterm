@@ -63,6 +63,11 @@ package final class UpdateChecker: ObservableObject {
     /// The version whose chip was opened or put away, in the app's own
     /// defaults (onboarding 7.10): never offered again for it.
     package static let whatsNewSeenKey = "onboarding.whatsNewSeen"
+    /// The version an update came from, written on the update's launch and
+    /// kept: the chip waits through later launches of the same version
+    /// until it is opened or put away, and About lists every version since
+    /// it. "" for an update from a version before the keys (none known).
+    package static let whatsNewFromKey = "onboarding.whatsNewFrom"
 
     /// This version, on the first launch after an update: the strip's
     /// "What's new in …" chip, until it is opened or put away.
@@ -75,19 +80,26 @@ package final class UpdateChecker: ObservableObject {
     /// scenario's. nil until `noteLaunch` — About then reads the bundled one.
     private var changelog: String?
 
-    /// After the window shows, with what `FirstRun` decided: the chip only
-    /// on an update, with `updates.whatsNew` on, for a version not seen yet
-    /// whose changelog has lines since the last run. Writes nothing — a chip
-    /// not opened is simply not there at the next launch, which is `.same`.
+    /// After the window shows, with what `FirstRun` decided: the chip after
+    /// an update, with `updates.whatsNew` on, for a version not seen yet
+    /// whose changelog has lines since the version it came from. That
+    /// version is kept (`whatsNewFromKey`), so a chip neither opened nor
+    /// put away is there again at the next launch, which is `.same`.
     package func noteLaunch(
         _ launch: FirstRun.Launch, changelog: String? = nil, enabled: Bool? = nil, defaults: UserDefaults = AppEnvironment.defaults
     ) {
         let text = changelog ?? Changelog.bundled
         self.changelog = text
-        if case .upgraded(let from) = launch { updatedFrom = from } else { updatedFrom = nil }
+        let seen = defaults.string(forKey: Self.whatsNewSeenKey)
+        let from = Self.pendingFrom(launch: launch, remembered: defaults.string(forKey: Self.whatsNewFromKey), seen: seen)
+        if let from {
+            defaults.set(from, forKey: Self.whatsNewFromKey)
+        } else {
+            defaults.removeObject(forKey: Self.whatsNewFromKey)
+        }
+        updatedFrom = from.flatMap { $0.isEmpty ? nil : $0 }
         whatsNew = Self.whatsNew(
-            launch: launch, seen: defaults.string(forKey: Self.whatsNewSeenKey), changelog: text, current: currentVersion,
-            enabled: enabled ?? Settings.shared.whatsNewAfterUpdate)
+            from: from, seen: seen, changelog: text, current: currentVersion, enabled: enabled ?? Settings.shared.whatsNewAfterUpdate)
     }
 
     /// The chip opened or put away: not offered again for this version.
@@ -111,8 +123,31 @@ package final class UpdateChecker: ObservableObject {
     /// nil on a fresh install, the same version again, or an older one run
     /// after a newer. Pure.
     package nonisolated static func whatsNew(launch: FirstRun.Launch, seen: String?, changelog: String?, current: String, enabled: Bool) -> String? {
-        guard enabled, case .upgraded(let from) = launch, seen != current, let changelog else { return nil }
-        return Changelog.entries(after: from, through: current, in: changelog).isEmpty ? nil : current
+        whatsNew(from: pendingFrom(launch: launch, remembered: nil, seen: seen), seen: seen, changelog: changelog, current: current, enabled: enabled)
+    }
+
+    /// The same from the version the update came from, as `pendingFrom`
+    /// keeps it: nil, no update known; "", one from before the keys. Pure.
+    package nonisolated static func whatsNew(from: String?, seen: String?, changelog: String?, current: String, enabled: Bool) -> String? {
+        guard enabled, let from, seen != current, let changelog else { return nil }
+        return Changelog.entries(after: from.isEmpty ? nil : from, through: current, in: changelog).isEmpty ? nil : current
+    }
+
+    /// The version this launch's update came from, as it is kept
+    /// (`whatsNewFromKey`): an update's own (`""` when none is known); the
+    /// one `remembered` on a later launch of the same version; nothing on a
+    /// fresh install. An update over one whose chip was never opened nor
+    /// put away (`seen` isn't the version it came from) keeps the older
+    /// version, so the versions skipped since are listed too. Pure.
+    package nonisolated static func pendingFrom(launch: FirstRun.Launch, remembered: String?, seen: String?) -> String? {
+        switch launch {
+        case .fresh: return nil
+        case .same: return remembered
+        case .upgraded(let from):
+            guard let from else { return "" }
+            if let remembered, !remembered.isEmpty, seen != from, isNewer(from, than: remembered) { return remembered }
+            return from
+        }
     }
 
     /// The release's DMG into ~/Downloads (through gh: the repository is

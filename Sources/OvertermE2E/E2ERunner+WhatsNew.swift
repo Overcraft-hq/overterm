@@ -86,6 +86,13 @@ extension E2ERunner {
                 && ChangelogWindowController.shared.window?.isVisible != true,
             String(describing: window.firstResponder))
         check("nothing written before it is pressed", defaults.string(forKey: UpdateChecker.whatsNewSeenKey) == nil)
+        // Quit without pressing it: the next launch, the same version, shows it again.
+        updates.noteLaunch(.same, changelog: changelog, enabled: true)
+        check(
+            "quit with the chip unpressed: the next launch shows it again",
+            updates.whatsNew == current && defaults.string(forKey: UpdateChecker.whatsNewFromKey) == "1.6.1",
+            "\(updates.whatsNew ?? "none") from \(defaults.string(forKey: UpdateChecker.whatsNewFromKey) ?? "none")")
+        check("still drawn in the strip", await eventually(3) { WhatsNewChip.drawn?.version == current })
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
             await pause(0.4)
             app.captureWindow(to: (png as NSString).deletingPathExtension + "-whatsnew.png")
