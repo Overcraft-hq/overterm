@@ -257,6 +257,8 @@ private struct ReviewFilePane: View {
 private struct ReviewNotesBar: View {
     @ObservedObject var model: ReviewModel
     @ObservedObject var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     let actions: ReviewActions
     @FocusState private var writing: Bool
 
@@ -303,10 +305,10 @@ private struct ReviewNotesBar: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
             }
-            .help("Copy the picked lines — ⌘C")
+            .help(KeyHints.text("Copy the picked lines — %@", command: "edit.copy", keys: keys) ?? "Copy the picked lines")
             .accessibilityIdentifier("review.notes.copy")
             Button("Ask an Agent…") { actions.askAboutLines(model) }
-                .help("Ask an agent about these lines — ⌘L")
+                .help(KeyHints.text("Ask an agent about these lines — %@", command: "agents.askSelection", keys: keys) ?? "Ask an agent about these lines")
             Button {
                 model.clearLineSelection()
             } label: {

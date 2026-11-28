@@ -107,6 +107,8 @@ package struct TabBarView: View {
     @ObservedObject package var theme: ChromeTheme
     /// The globe beside the ± badge.
     @ObservedObject package var browser: BrowserButtonState
+    /// The keys its tooltips name, as bound now.
+    @ObservedObject private var keys = Keybindings.shared
     package let actions: TabBarActions
     package let groupActions: TabGroupActions
 
@@ -247,7 +249,7 @@ package struct TabBarView: View {
             .menuIndicator(.visible)
             .fixedSize()
             .foregroundStyle(theme.dimText)
-            .help("New Tab (⌘T) — arrow for an agent: " + Agent.allCases.map(\.name).joined(separator: ", "))
+            .help(KeyHints.help("New Tab", command: "tabs.new", keys: keys) + " — arrow for an agent: " + Agent.allCases.map(\.name).joined(separator: ", "))
             .padding(.leading, 6)
             if let release = updates.available {
                 Button(action: actions.showUpdate) {
@@ -603,6 +605,7 @@ private struct ReviewTabItem: View {
     let selected: Bool
     @ObservedObject var theme: ChromeTheme
     let select: () -> Void
+    @ObservedObject var keys = Keybindings.shared
     let close: () -> Void
     @State private var hovering = false
 
@@ -621,7 +624,7 @@ private struct ReviewTabItem: View {
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
             .opacity(selected || hovering ? 1 : 0)
-            .help("Close Review (⌘W)")
+            .help(KeyHints.help("Close Review", command: "tabs.close", keys: keys))
         }
         .padding(.horizontal, 10)
         .frame(minWidth: 60, idealWidth: 180, maxWidth: 220, minHeight: TabCard.height, maxHeight: TabCard.height)
@@ -644,6 +647,7 @@ private struct OverlayTabItem: View {
     let select: () -> Void
     let close: () -> Void
     @State private var hovering = false
+    @ObservedObject var keys = Keybindings.shared
 
     var body: some View {
         HStack(spacing: 6) {
@@ -659,7 +663,7 @@ private struct OverlayTabItem: View {
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
             .opacity(selected || hovering ? 1 : 0)
-            .help("Close \(overlay.title) (⌘W)")
+            .help(KeyHints.help("Close \(overlay.title)", command: "tabs.close", keys: keys))
         }
         .padding(.horizontal, 10)
         .frame(
@@ -762,6 +766,7 @@ private struct DiffBadge: View {
     let action: () -> Void
     @State private var hovering = false
 
+    @ObservedObject var keys = Keybindings.shared
     /// None for the plain ±.
     private var totals: (added: Int, removed: Int)? {
         switch badge {
@@ -771,11 +776,13 @@ private struct DiffBadge: View {
     }
 
     private var help: String {
-        switch badge {
-        case .uncommitted: "Uncommitted changes (⌥⌘D)"
-        case .branch: "Changes on this branch, all committed (⌥⌘D)"
-        case .plain: "Changes (⌥⌘D)"
-        }
+        let title =
+            switch badge {
+            case .uncommitted: "Uncommitted changes"
+            case .branch: "Changes on this branch, all committed"
+            case .plain: "Changes"
+            }
+        return KeyHints.help(title, command: "changes.toggle", keys: keys)
     }
 
     var body: some View {
@@ -807,6 +814,7 @@ package struct BrowserButton: View {
     package let action: () -> Void
     @State private var hovering = false
 
+    @ObservedObject var keys = Keybindings.shared
     package var body: some View {
         Button(action: action) {
             // The icon alone, as the phone beside it: the word took room
@@ -820,7 +828,7 @@ package struct BrowserButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(isOpen ? "Hide the browser (⇧⌘B)" : "Browser (⇧⌘B)")
+        .help(KeyHints.help(isOpen ? "Hide the browser" : "Browser", command: "browser.toggle", keys: keys))
         .accessibilityIdentifier("browserButton")
     }
 }
@@ -833,6 +841,7 @@ package struct SimulatorButton: View {
     package let action: () -> Void
     @State private var hovering = false
 
+    @ObservedObject var keys = Keybindings.shared
     package var body: some View {
         Button(action: action) {
             Image(systemName: "iphone").font(.system(size: ChromeMetrics.text(12), weight: .medium))
@@ -844,7 +853,7 @@ package struct SimulatorButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help(isOpen ? "Hide the simulator" : "Simulator")
+        .help(KeyHints.help(isOpen ? "Hide the simulator" : "Simulator", command: "simulator.toggle", keys: keys))
         .accessibilityIdentifier("simulatorButton")
     }
 }

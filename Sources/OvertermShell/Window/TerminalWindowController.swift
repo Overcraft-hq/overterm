@@ -3221,7 +3221,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         else {
             // Never silent (AGT-U8): there is nothing selected to ask about.
             NSSound.beep()
-            return askAgentHint("Select some text first", "⌘L asks an agent about what is selected — in a terminal, a log, a review's lines.")
+            return askAgentHint(
+                "Select some text first",
+                (KeyHints.key("agents.askSelection") ?? "Ask an Agent About the Selection")
+                    + " asks an agent about what is selected — in a terminal, a log, a review's lines.")
         }
         hideSelectionBar()
         let folder = pane.workingDirectory ?? tab.workingDirectory
@@ -3866,7 +3869,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         guard let window, !history.entries.isEmpty else { return }
         let alert = NSAlert()
         alert.messageText = "Clear the command history?"
-        alert.informativeText = "The \(history.entries.count) commands ⌘K remembers are forgotten. Your shell's own history is left alone."
+        let palette = KeyHints.key("palette.show") ?? "the Command Palette"
+        alert.informativeText = "The \(history.entries.count) commands \(palette) remembers are forgotten. Your shell's own history is left alone."
         alert.addButton(withTitle: "Clear")
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { [weak self] response in
@@ -4870,7 +4874,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             let alert = NSAlert()
             let others = unsaved.count - 1
             alert.messageText = others > 0 ? "“\(name)” and \(others) more have unsaved changes." : "“\(name)” has unsaved changes."
-            alert.informativeText = "Save it (⌘S) — or apply a cluster object's YAML — first, or close the window and lose them."
+            alert.informativeText = KeyHints.help("Save it", command: "file.save") + " — or apply a cluster object's YAML — first, or close the window and lose them."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Close Anyway")
             alert.beginSheetModal(for: sender) { [weak self] response in

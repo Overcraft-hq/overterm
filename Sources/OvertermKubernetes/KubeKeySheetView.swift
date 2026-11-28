@@ -41,7 +41,7 @@ package struct KubeKeySheetView: View {
                                 }
                             }
                         }
-                        Text("↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+                        Text(verbatim: ResourceKeys.listNote(keys: keybindings)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                     }
                     .padding(18)
                 }

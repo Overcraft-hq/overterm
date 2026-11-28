@@ -7,6 +7,8 @@ import SwiftUI
 package struct CommitDetailView: View {
     @ObservedObject package var model: CommitDetailModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let onClose: () -> Void
     package let onOpen: (String) -> Void
     /// The commit in a review tab.
@@ -28,7 +30,7 @@ package struct CommitDetailView: View {
             Divider().opacity(0.3)
             switch model.phase {
             case .idle:
-                note("Pick a commit in Overgit (⌥⌘G).")
+                note(KeyHints.help("Pick a commit in Overgit", command: "overgit.show", keys: keys) + ".")
             case .loading where model.detail == nil:
                 note("Loading…")
             case .failed(let message):
@@ -101,7 +103,7 @@ package struct CommitDetailView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
-            .help("Close (⌥⌘D)")
+            .help(KeyHints.help("Close", command: "changes.toggle", keys: keys))
         }
         .padding(.horizontal, 12)
         .frame(height: ChromeMetrics.row(34))

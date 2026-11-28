@@ -125,7 +125,8 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         if let controller = windowController, !controller.closeConfirmed, let file = controller.unsavedNames(everyWindow: true).first {
             let alert = NSAlert()
             alert.messageText = "“\(file)” has unsaved changes."
-            alert.informativeText = "Quitting loses them. Save it (⌘S) — or apply a cluster object's YAML — first, or quit anyway."
+            alert.informativeText =
+                "Quitting loses them. " + KeyHints.help("Save it", command: "file.save") + " — or apply a cluster object's YAML — first, or quit anyway."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Quit Anyway")
             alert.alertStyle = .warning

@@ -396,7 +396,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "general.tabPeekGesture", section: .general, group: "Tab Peek", title: "Peek at every tab with",
             help:
-                "Swipe down to see every tab's terminal, keep going for the full grid, and swipe down again to close it. Esc and ⇧⌘E work whatever this says.",
+                "Swipe down to see every tab's terminal, keep going for the full grid, and swipe down again to close it. Esc and Tab Peek's key work whatever this says.",
             kind: .choice(TabPeekGesture.Fingers.allCases.map { .init(value: $0.rawValue, label: $0.name) }), defaultValue: .string("three")),
         SettingSpec(
             key: "general.sidebarOrder", section: .general, group: "Sidebar", title: "Panels in the rail",
@@ -419,7 +419,7 @@ package enum SettingsSchema {
             kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "general.snippets", section: .general, group: "Sidebar", title: "Snippets",
-            help: "Commands you keep, in the sidebar and ⌘K. Off: neither shows them; snippets.json is kept as it is.",
+            help: "Commands you keep, in the sidebar and the Command Palette. Off: neither shows them; snippets.json is kept as it is.",
             kind: .toggle, defaultValue: .bool(true)),
         // Onboarding D-11: the Start card and the tips, one switch; What's
         // New is updates.whatsNew's. Not held: a tip is no security setting.
@@ -591,7 +591,7 @@ package enum SettingsSchema {
     package static func argumentsHelp(_ agent: Agent) -> String {
         switch agent {
         case .claude:
-            "Added wherever the agent starts or picks up again: ⌥⌘C / ⌥⌘X, New Task, tabs reopened at launch, and Sessions' resume. Overterm's tools (the browser, API client, notes…) come with --mcp-config."
+            "Added wherever the agent starts or picks up again: New Claude Tab, New Codex Tab, New Task, tabs reopened at launch, and Sessions' resume. Overterm's tools (the browser, API client, notes…) come with --mcp-config."
         case .codex:
             "Overterm's tools come as -c mcp_servers overrides for that launch; the token stays in the pane's environment. Codex has no per-command deny: Terraform's guard can't hold it back."
         case .opencode:
@@ -671,7 +671,7 @@ package enum SettingsSchema {
             kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "editor.completions", section: .editor, group: "Code intelligence", title: "Show completions as you type",
-            help: "⌃Space shows them either way.", kind: .toggle, defaultValue: .bool(true)),
+            help: "Show Completions shows them either way.", kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "editor.formatOnSave", section: .editor, group: "Code intelligence", title: "Format on save",
             help: "With the language server's formatter. Terraform files have their own setting.", kind: .toggle, defaultValue: .bool(false),
@@ -805,7 +805,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "docker.enabled", section: .docker, group: "Docker", title: "Docker in Overterm",
             help:
-                "Containers and compose projects of the engine your terminal's docker reaches — Docker Desktop, OrbStack, Colima — on a page of their own (⌥⌘P). Nothing is read while it is off.",
+                "Containers and compose projects of the engine your terminal's docker reaches — Docker Desktop, OrbStack, Colima — on a page of their own. Nothing is read while it is off.",
             kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "docker.endpoint", section: .docker, group: "Docker", title: "Engine",
@@ -928,7 +928,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "activity.enabled", section: .activity, group: "Activity", title: "Activity in Overterm",
             help:
-                "Every process and port on this Mac, on a page of its own (⌥⌘A), read only while it shows. Off: no page, no switcher, no ⌘K items, no agents' reads. What keeps reading: Tab Info, the pane pills and the left-behind notes read your tabs' own processes while a window is visible, and briefly when a tab closes or an agent finishes; the Terraform header walks a pane where terraform runs; and a port's Free…, Docker's port check and a port's holder read the Mac once when you use them.",
+                "Every process and port on this Mac, on a page of its own, read only while it shows. Off: no page, no switcher, no Command Palette items, no agents' reads. What keeps reading: Tab Info, the pane pills and the left-behind notes read your tabs' own processes while a window is visible, and briefly when a tab closes or an agent finishes; the Terraform header walks a pane where terraform runs; and a port's Free…, Docker's port check and a port's holder read the Mac once when you use them.",
             kind: .toggle, defaultValue: .bool(true), heldWhenEditedOutside: true),
         SettingSpec(
             key: "activity.interval", section: .activity, group: "Activity", title: "Read every",
@@ -971,7 +971,7 @@ package enum SettingsSchema {
         SettingSpec(
             key: "terraform.enabled", section: .terraform, group: "Terraform", title: "Terraform in Overterm",
             help:
-                "The checkout's roots in the sidebar (⌥⌘E), their workspaces and backends, which are production, and a header over any pane where terraform runs. Nothing is read until the panel opens, and no terraform runs but `terraform version`.",
+                "The checkout's roots in the sidebar, their workspaces and backends, which are production, and a header over any pane where terraform runs. Nothing is read until the panel opens, and no terraform runs but `terraform version`.",
             kind: .toggle, defaultValue: .bool(true), heldWhenEditedOutside: true),
         SettingSpec(
             key: "terraform.path", section: .terraform, group: "Terraform", title: "terraform",

@@ -16,6 +16,8 @@ import SwiftUI
 package struct KubePanelGitOpsView: View {
     @ObservedObject package var gitOps: KubePanelGitOps
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
 
     package var body: some View {
         if gitOps.shows {
@@ -176,7 +178,7 @@ package struct KubePanelGitOpsView: View {
                 if changed.review != nil {
                     Button(changed.text) { gitOps.reviewChanged(match) }
                         .buttonStyle(.link).font(.system(size: ChromeMetrics.text(10.5)))
-                        .help("A review tab (⇧⌘R) of these files, from where this branch left \(changed.against)")
+                        .help(KeyHints.help("A review tab", command: "review.branch", keys: keys) + " of these files, from where this branch left \(changed.against)")
                         .accessibilityIdentifier("kubernetes.panel.gitops.changed")
                 } else {
                     small(changed.text, failed: false, id: "kubernetes.panel.gitops.changed")
@@ -186,7 +188,7 @@ package struct KubePanelGitOpsView: View {
             if let found = reach.found, !found.isHead || found.elsewhere > 0 {
                 Button("Diff Deployed…Current") { gitOps.reviewDeployed(match) }
                     .buttonStyle(.link).font(.system(size: ChromeMetrics.text(11)))
-                    .help("A review tab (⇧⌘R): what the checkout has that isn't in the manifests' commit")
+                    .help(KeyHints.help("A review tab", command: "review.branch", keys: keys) + ": what the checkout has that isn't in the manifests' commit")
                     .accessibilityIdentifier("kubernetes.panel.gitops.diffDeployed")
             }
             if !reach.pathspecs.isEmpty || reach.found != nil {

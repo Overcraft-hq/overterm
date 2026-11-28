@@ -7,6 +7,8 @@ import SwiftUI
 package struct PullRequestView: View {
     @ObservedObject package var model: PullRequestModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let onClose: () -> Void
     /// A thread's file, at its line, in the editor.
     package let onOpenFile: (String, Int?) -> Void
@@ -113,7 +115,7 @@ package struct PullRequestView: View {
                 iconButton("safari", help: "Open on GitHub") { NSWorkspace.shared.open(url) }
             }
             iconButton("arrow.clockwise", help: "Refresh") { Task { await model.refresh() } }
-            iconButton("xmark", help: "Close (⌥⌘D)", action: onClose)
+            iconButton("xmark", help: KeyHints.help("Close", command: "changes.toggle", keys: keys), action: onClose)
         }
         .padding(.horizontal, 12)
         .frame(height: ChromeMetrics.row(36))

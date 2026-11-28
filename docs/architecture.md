@@ -1726,7 +1726,22 @@ pure). No empty state runs a tool to decide what it says. Every key such a
 state, the Inbox's header, a rail tooltip or a ⌘K row shows is read from
 `Keybindings` (`KeyHint`, `KeyHints`): a ⌘K row names its command
 (`PaletteItem.command`) and `PaletteCommands.withLiveKeys` appends that
-command's key as bound now, so no row writes one into its words.
+command's key as bound now, so no row writes one into its words. So does
+every tooltip and line that names a rebindable command's key — the strip's
+New Tab, close ×s, browser and simulator switches, ± badge, "need you" chip
+and usage chip; the Changes, Pull Request and commit panes' close; the pane
+header's buttons and Rerun; Tab Info, the agent cards, the port pill; the
+selection bar; the group bars; the panels' and pages' "Pick … in the …
+panel" lines; the lists' `?` foot (`ResourceKeys.listNote`, Edit ▸ Copy's
+key) —, each view observing `Keybindings.shared` so a rebinding shows at
+once. The editor's AppKit header (`EditorHeaderView`, below Overterm) asks
+`EditorHeaderView.boundKey`, set by `EditorViewController`, and redraws its
+tooltips on `Keybindings.changes`. Settings' help texts name a command, never
+its key. `KeysInTextTests` scans `Sources` (not the scenarios) for a string
+literal with a modifier and a letter: only keys that are no command's — ⌃C
+and ⌃Z typed into a terminal, Activity's ⌥o and ⌥r, the plan pane's ⇧A, the
+browser column's Safari keys, the Kubernetes page's own ⌘R on GitOps — are
+allowed, each with why.
 
 The Start card (7.3, 7.10) is the one thing a fresh install shows by
 itself (D-2): at the foot of the sidebar's panel column — the last child of

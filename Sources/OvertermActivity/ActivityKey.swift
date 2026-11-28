@@ -110,7 +110,8 @@ package enum ActivityKey: String, ResourceKey {
         case .suspend: "Suspend it — a pane's job with its pane, else with its tree — or Resume what Activity stopped"
         case .background: "Run in Background, or Normally again — only what Activity put there"
         case .lower: "Lower Priority: nice +5, +10 or 20 — asked, since only an administrator raises it back"
-        case .ask: "Ask an agent about it — where it runs, its usage, its ports and children, its command masked (⌘L too)"
+        // The window's Ask an Agent by name, not its key: that is the person's to rebind.
+        case .ask: "Ask an agent about it — where it runs, its usage, its ports and children, its command masked (Ask an Agent About the Selection too)"
         case .sortCPU: "Sort by CPU"
         case .sortMemory: "Sort by memory"
         case .sortTime: "Sort by CPU time"

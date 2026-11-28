@@ -35,6 +35,7 @@ version is tagged `v<version>`.
 - Its "Tools the panels use", opened, says what Docker, Kubernetes, Terraform, the language servers and the simulator would use — found by each feature's own finder, never started or pinged
 - The Setup page says what runs by itself — the agents' usage command every ten minutes — with its switch, and your own Getting Started times, kept on this Mac only
 - Tab Peek shows only the tabs the strip shows, filters its cards as you type, picks one with 1–9, and answers a waiting agent from its card
+- Every tooltip and hint that names a key — the strip's buttons and chips, the panes' close buttons, the pane header, Tab Info, the editor's header — says the key bound now
 
 ## 1.6.8 — 2026-11-26
 

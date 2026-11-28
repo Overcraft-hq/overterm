@@ -16,6 +16,8 @@ package struct OvergitOverview: View {
     /// A command running ("Pulling…").
     package var running: String?
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let onChanges: () -> Void
     package let onPullRequest: () -> Void
     package var onCommand: (OvergitCommand) -> Void = { _ in }
@@ -51,7 +53,7 @@ package struct OvergitOverview: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Changes (⌥⌘D)")
+                .help(KeyHints.help("Changes", command: "changes.toggle", keys: keys))
                 if let pullRequest {
                     Button(action: onPullRequest) {
                         HStack(spacing: 4) {

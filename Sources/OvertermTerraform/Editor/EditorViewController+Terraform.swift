@@ -215,6 +215,8 @@ package struct TerraformEditorBar: View {
     @ObservedObject package var folder: TerraformFolder
     @ObservedObject package var model: TerraformEditorModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     package let title: String
     package let validate: () -> Void
     package let format: () -> Void
@@ -271,7 +273,7 @@ package struct TerraformEditorBar: View {
                     .accessibilityIdentifier("terraform.editor.test")
             }
             Button("Format") { format() }
-                .help("terraform fmt over this file, as one edit you can undo  ⇧⌥F")
+                .help(KeyHints.help("terraform fmt over this file, as one edit you can undo", command: "editor.format", keys: keys))
                 .fixedSize()
                 .accessibilityIdentifier("terraform.editor.format")
             if !folder.state.text.isEmpty {

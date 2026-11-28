@@ -568,7 +568,7 @@ package enum ActivityMCPAnswer {
                 answer["elsewhere"] = others.prefix(listCap).map { process($0) }
                 if others.count > listCap { answer["more"] = others.count - listCap }
             }
-            answer["note"] = "Nothing here is stopped on its own; the person stops what was left, from Activity's Left Behind (⌥⌘A, 3)."
+            answer["note"] = "Nothing here is stopped on its own; the person stops what was left, from Activity's Left Behind (its section 3)."
             return answer
         }
 

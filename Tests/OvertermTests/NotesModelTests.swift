@@ -135,7 +135,11 @@ final class NotesModelTests: XCTestCase {
         let said = NotesPanelView.noMatch("ship it")
         XCTAssertEqual(said.text, "No note is named “ship it”")
         XCTAssertEqual(said.search, "Search Contents for “ship it”")
-        XCTAssertTrue(NotesPanelView.filterHelp.contains("⌘F"))
+        // The key bound to Search Terminal & Files now — Ghostty's ⌘F here, a rebinding's after.
+        let keys = Keybindings(
+            url: FileManager.default.temporaryDirectory.appendingPathComponent("keys-\(UUID().uuidString).json"),
+            ghosttyDefault: { action in action == "start_search" ? KeyCombo("cmd+f") : nil }, watch: false)
+        XCTAssertTrue(NotesPanelView.filterHelp(keys: keys).contains("⌘F"), NotesPanelView.filterHelp(keys: keys))
     }
 
     func testTheTreesRowsFollowWhatIsOpenAndTheFilter() throws {

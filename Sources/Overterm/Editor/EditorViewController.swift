@@ -140,7 +140,12 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     package override func loadView() {
         let root = NSView()
+        // The header's tooltips name keys as bound now, and again at a rebinding.
+        EditorHeaderView.boundKey = { id in KeyHints.key(id) }
         let header = EditorHeaderView(background: chrome.stripNS, text: theme.text, accent: theme.info)
+        Keybindings.shared.changes
+            .sink { [weak header] in header?.keysChanged() }
+            .store(in: &cancellables)
         header.onSelect = { [weak self] in self?.activate($0) }
         header.onCloseTab = { [weak self] in self?.closeBuffer(at: $0) }
         header.onZoom = { [weak self] in self?.onToggleZoom?() }

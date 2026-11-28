@@ -5,6 +5,8 @@ import SwiftUI
 package struct TabInfoView: View {
     @ObservedObject package var model: TabInfoModel
     @ObservedObject package var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     /// A port's Open: the window's browser when Settings ▸ Browser says so.
     package var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
     /// Show in Activity (6.12): the page at the tab, a process or a port;
@@ -61,7 +63,7 @@ package struct TabInfoView: View {
                     Image(systemName: "gauge.with.dots.needle.33percent").font(.system(size: ChromeMetrics.text(13)))
                 }
                 .buttonStyle(.borderless)
-                .help("Show in Activity (⌥⌘A): this tab's processes and ports, with every verb")
+                .help(KeyHints.help("Show in Activity", command: "activity.page", keys: keys) + ": this tab's processes and ports, with every verb")
                 .accessibilityIdentifier("tabInfo.showInActivity")
             }
         }

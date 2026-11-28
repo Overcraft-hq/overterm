@@ -87,6 +87,8 @@ private struct AgentCard: View {
     let card: AgentOverviewModel.Card
     let pullRequest: PullRequestSummary?
     @ObservedObject var theme: ChromeTheme
+    /// The keys it names, as bound now.
+    @ObservedObject var keys = Keybindings.shared
     var onActivity: (() -> Void)?
     var onOpen: ((URL) -> Void)?
     @State private var hovering = false
@@ -112,7 +114,11 @@ private struct AgentCard: View {
                         Image(systemName: "gauge.with.dots.needle.33percent").font(.system(size: ChromeMetrics.text(11)))
                     }
                     .buttonStyle(.borderless).foregroundStyle(theme.dimText)
-                    .help(card.agentProcess == nil ? "Show the tab in Activity (⌥⌘A)" : "Show its agent in Activity (⌥⌘A): its processes, CPU and ports")
+                    .help(
+                        card.agentProcess == nil
+                            ? KeyHints.help("Show the tab in Activity", command: "activity.page", keys: keys)
+                            : KeyHints.help("Show its agent in Activity", command: "activity.page", keys: keys) + ": its processes, CPU and ports"
+                    )
                     .accessibilityIdentifier("overview.showInActivity")
                 }
             }

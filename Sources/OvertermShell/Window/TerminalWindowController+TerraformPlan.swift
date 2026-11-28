@@ -414,7 +414,8 @@ extension TerminalWindowController {
         if let run = apply.planRun { return planTerraformRoot(run.card, checkout: run.checkout, mode: .normal) }
         let checkout = URL(fileURLWithPath: apply.marker.checkout).standardizedFileURL
         guard terraformPanel.checkout?.standardizedFileURL == checkout, let card = terraformPanel.roots.first(where: { $0.path == apply.marker.root }) else {
-            return presentTerraformRefusal("Plan \(apply.marker.name) from the Terraform panel of \(apply.worktree) (⌥⌘E).")
+            return presentTerraformRefusal(
+                "Plan \(apply.marker.name) from the " + KeyHints.help("Terraform panel of \(apply.worktree)", command: "terraform.show") + ".")
         }
         planTerraformRoot(card, checkout: checkout)
     }

@@ -192,7 +192,8 @@ package enum DatabaseMCP {
 
     package static func describe(_ connections: [DatabaseConnection], storage: Bool) -> String {
         guard !connections.isEmpty else {
-            return storage ? "No storage connections — the user adds them in the Database panel (⌥⌘B)." : "No database connections — the user adds them in the Database panel (⌥⌘B)."
+            // The panel by name: its key is the person's, and may be rebound.
+            return storage ? "No storage connections — the user adds them in the Database panel." : "No database connections — the user adds them in the Database panel."
         }
         return connections.map { connection in
             var line = "- \(connection.name): \(connection.kind.title)"

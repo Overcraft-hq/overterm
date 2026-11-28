@@ -35,6 +35,16 @@ extension E2ERunner {
             keys.reset(command)
             check("and back", await eventually(3) { help("git").contains(overgit) }, "\(help("git"))")
         }
+        // Stage 1's rule past the rail: the pane header's tooltips read the key bound now.
+        func paneHelp() -> [String] { Self.accessibilityHelps("pane.splitRight", in: root) }
+        let split = KeyHints.help("Split Right", command: "splits.right")
+        check("the pane header's Split Right says its key", await eventually(3) { paneHelp().contains(split) }, "\(paneHelp()) vs \(split)")
+        if let command = KeyCommands.byID["splits.right"] {
+            keys.set(command, to: KeyCombo("ctrl+alt+cmd+d"))
+            check("rebound, the pane header follows", await eventually(3) { paneHelp().contains("Split Right (⌃⌥⌘D)") }, "\(paneHelp())")
+            keys.reset(command)
+            check("and back", await eventually(3) { paneHelp().contains(split) }, "\(paneHelp())")
+        }
 
         // Outside a repository: a tab in a folder git doesn't know.
         let outside = scratch.appendingPathComponent("onboarding-outside", isDirectory: true)
