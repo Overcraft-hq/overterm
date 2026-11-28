@@ -64,6 +64,14 @@ extension TabStore {
     /// Tabs the strip shows: everything but a stashed group's.
     package var visibleTabs: [Tab] { tabs.filter { group(of: $0)?.isStashed != true } }
 
+    /// The tabs the strip offers, which Tab Peek shows (PEEK-U2): none of a
+    /// stashed island's, and while focusing, the focused island's alone.
+    package var stripTabs: [Tab] {
+        let visible = visibleTabs
+        guard let focused = focusedGroupID, group(focused) != nil else { return visible }
+        return visible.filter { $0.groupID == focused }
+    }
+
     /// Where a new tab opened from `anchor`, in `directory`, belongs
     /// (`NewTabGroup` holds the rule; this reads the strip for it).
     package func placementForNewTab(
