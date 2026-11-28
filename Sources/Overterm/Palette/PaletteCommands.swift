@@ -54,7 +54,7 @@ package enum PaletteCommands {
         return nil
     }
 
-    private static let keyAtEnd = #"\s*(?:[⌃⌥⇧⌘]+\S+|[⌃⌥⇧⌘]*F\d{1,2})$"#
+    private nonisolated static let keyAtEnd = #"\s*(?:[⌃⌥⇧⌘]+\S+|[⌃⌥⇧⌘]*F\d{1,2})$"#
 
     /// `subtitle` without a key written at its end — "Worktree + branch +
     /// agent  ⇧⌘N" is "Worktree + branch + agent". Pure.
