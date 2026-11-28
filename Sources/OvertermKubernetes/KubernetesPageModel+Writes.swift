@@ -73,8 +73,9 @@ extension KubernetesPageModel {
         return ref(for: id)
     }
 
-    /// One row picked: its writes.
+    /// One row picked: its writes; several, those they take together (K8S-G1).
     package func writeVerbs(for picked: [KubeRow]) -> [ResourceVerb] {
+        if picked.count > 1 { return bulkWriteVerbs(for: picked) }
         guard picked.count == 1, let row = picked.first, let ref = ref(for: row.id.description) else { return [] }
         return writeVerbs(for: ref)
     }
@@ -148,6 +149,7 @@ extension KubernetesPageModel {
 
     /// ⌫: delete the object.
     package func deleteKey() -> Bool {
+        if writeTarget == nil, bulkKey(.delete) { return true }
         guard let ref = writeTarget, KubeWriteCheck.offered(.delete, on: ref.kind) else { return false }
         write(.delete, on: ref)
         return true
@@ -156,6 +158,7 @@ extension KubernetesPageModel {
     /// `r`: a rollout restarted; a pod deleted so its controller makes it
     /// again; a Flux object reconciled, an Argo CD Application refreshed.
     package func restartKey() -> Bool {
+        if writeTarget == nil, bulkKey(.restart) { return true }
         guard let ref = writeTarget else { return false }
         if let verb = [KubeWriteVerb.recreate, .restart, .reconcile, .refresh].first(where: { KubeWriteCheck.offered($0, on: ref.kind) }) {
             write(verb, on: ref)

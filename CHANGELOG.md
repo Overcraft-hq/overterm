@@ -22,6 +22,7 @@ version is tagged `v<version>`.
 - Docker's and Activity's `?` group their keys and list the page's window commands; the filter fields say their syntax
 - Tooltips, the Inbox and empty panels say the key bound now, not the default
 - Tab Peek shows only the tabs the strip shows, filters its cards as you type, picks one with 1–9, and answers a waiting agent from its card
+- Kubernetes: several pods or Jobs picked are deleted together, several workloads restarted together — one question naming each, the count typed on production
 
 ## 1.6.8 — 2026-11-26
 
