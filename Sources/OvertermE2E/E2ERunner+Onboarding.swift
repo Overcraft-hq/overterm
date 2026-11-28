@@ -458,6 +458,23 @@ extension E2ERunner {
         Settings.shared.set("general.usageAsk", nil)
         check("and on again from Settings, the page follows", await eventually(2) { self.app.setupPage.usageAsk })
 
+        // Tools the panels use: folded, nothing read; opened, a scenario's facts.
+        let panels = SetupPanelFacts(
+            kubernetes: SetupPanelFacts.Kubernetes(kubectl: nil, contexts: 3, production: 1),
+            simulator: SetupPanelFacts.Simulator(xcode: false, coreSimulator: false))
+        let panelsBefore = SetupProbe.panelsOverride
+        defer { SetupProbe.panelsOverride = panelsBefore }
+        SetupProbe.panelsOverride = panels
+        check("the panels' tools are folded, and not read", app.setupPage.panels == .closed && !present("setup.row.kubectl"))
+        check("opened", Self.accessibilityPress("setup.panels", in: root))
+        check("their rows are the injected facts'", await eventually(3) { self.app.setupPage.panelRows == SetupCheck.panelRows(panels) })
+        let kube = Self.accessibilityElement("setup.detail.kubeconfig", in: root)?.text ?? ""
+        check("Kubernetes says its contexts, and how many are production", kube.contains("3 contexts, 1 production"), kube)
+        let kubectl = Self.accessibilityElement("setup.detail.kubectl", in: root)?.text ?? ""
+        check("kubectl not found, in the feature's own words", kubectl.contains("No kubectl found. Install it, or set Settings ▸ Kubernetes ▸ kubectl."), kubectl)
+        app.performSetupAction(.panels(false))
+        check("folded again", app.setupPage.panels == .closed)
+
         // Esc: the page put away, the keyboard back to the terminal; what it read dropped.
         check("the page's host answers Esc", page is SetupHostingView)
         (page as? SetupHostingView)?.cancelOperation(nil)

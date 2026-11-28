@@ -1777,6 +1777,19 @@ scrolls inside itself; nothing is added to the window or a split.
   `newTab(in:typing:)` and presses no Return. Its host
   (`SetupHostingView`) takes the keyboard when shown; Esc hides the page
   and gives it back to the selected terminal.
+- "Tools the panels use" is folded until opened, and read then only for
+  the panels that are on (`SetupPanelProbe`, in the shell, above the
+  features whose finders it calls): `DockerCLI.locate` and `hasPlugin`,
+  the engine `DockerEndpoint.current()` names and its socket's existence
+  (never a ping), `KubectlLocator` and `KubeHelmLocator`, the contexts
+  the Kubernetes page read this launch — else the kubeconfig files'
+  existence; `reloadContexts()` is never called —, their credential
+  plugins by `KubeProxyPlanner.isInstalled`, `terraform.path` or
+  `TerraformCLI.binary()` (never `binary(forRoot:)`'s `mise which`),
+  `ServerDiscovery` without xcrun, Xcode's and CoreSimulator's existence,
+  the Ghostty config's. Its words are `SetupCheck.panelRows`' (pure), the
+  features' own where they have them. An isolated run looks at none of
+  them (`SetupProbe.panelsOverride` stands in).
 
 `AppDelegate` hands the launch to the window after `showWindow`
 (`beginStart`), never in an isolated run. Every press on the card goes

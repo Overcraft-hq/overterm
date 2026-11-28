@@ -66,6 +66,9 @@ package struct SetupRow: Equatable, Sendable {
         case shell, git, gh
         case agent(Agent)
         case notifications, bridge
+        case docker, dockerEngine
+        case dockerPlugin(String)
+        case kubectl, kubeconfig, kubePlugins, helm, terraform, tofu, languageServers, simulator, ghosttyConfig
 
         /// Its accessibility identifier's last part.
         package var key: String {
@@ -76,6 +79,18 @@ package struct SetupRow: Equatable, Sendable {
             case .agent(let agent): "agent.\(agent.rawValue)"
             case .notifications: "notifications"
             case .bridge: "bridge"
+            case .docker: "docker"
+            case .dockerEngine: "dockerEngine"
+            case .dockerPlugin(let name): "dockerPlugin.\(name)"
+            case .kubectl: "kubectl"
+            case .kubeconfig: "kubeconfig"
+            case .kubePlugins: "kubePlugins"
+            case .helm: "helm"
+            case .terraform: "terraform"
+            case .tofu: "tofu"
+            case .languageServers: "languageServers"
+            case .simulator: "simulator"
+            case .ghosttyConfig: "ghosttyConfig"
             }
         }
     }

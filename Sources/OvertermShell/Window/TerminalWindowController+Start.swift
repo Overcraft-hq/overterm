@@ -273,6 +273,8 @@ extension TerminalWindowController {
             view.escape = { [weak self] in self?.hideOverlay() }
             return view
         }
+        // The panels' tools by the features' own finders, which live above Overterm.
+        setupPage.readPanels = { await SetupPanelProbe.read() }
         // The emitted value: `showingOverlay` isn't set yet.
         page.visibilityChanged = { [weak self] visible in self?.setupPage.visible = visible }
         page.closed = { [weak self] in self?.setupPage.visible = false }
@@ -311,6 +313,8 @@ extension TerminalWindowController {
             setupPage.setUsageAsk(on)
         case .resetTips:
             resetTips(nil)
+        case .panels(let open):
+            setupPage.setPanelsOpen(open)
         }
     }
 }

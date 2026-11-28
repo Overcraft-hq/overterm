@@ -19,6 +19,8 @@ package enum SetupPageAction: Equatable, Sendable {
     case usageAsk(Bool)
     /// Help ▸ Reset Tips, asked first.
     case resetTips
+    /// "Tools the panels use" opened or folded.
+    case panels(Bool)
 }
 
 /// The Setup page (docs/design/onboarding/analysis.md, 7.7): what the
@@ -31,6 +33,22 @@ package final class SetupPageModel: ObservableObject {
     @Published package private(set) var facts: SetupFacts?
     /// `general.usageAsk` as Settings has it now.
     @Published package private(set) var usageAsk: Bool
+    /// "Tools the panels use": read only once opened, and only for the panels that are on.
+    @Published package private(set) var panels: Panels = .closed
+
+    package enum Panels: Equatable, Sendable {
+        case closed
+        case reading
+        case read(SetupPanelFacts)
+        /// An isolated run without a scenario's facts: the user's tools aren't looked at.
+        case notLooked
+
+        package var isOpen: Bool { self != .closed }
+    }
+
+    /// The panels' facts, from the features' own finders — the window's,
+    /// which can reach them; nil where nothing may be looked at.
+    package var readPanels: (@MainActor () async -> SetupPanelFacts?)?
 
     /// On screen: read when it begins to be, dropped when it stops.
     package var visible = false {
@@ -56,6 +74,23 @@ package final class SetupPageModel: ObservableObject {
 
     /// The core rows as the facts say; nil while asking.
     package var rows: [SetupRow]? { facts.map { facts in SetupCheck.rows(facts: facts) } }
+
+    /// The panels' rows once read; nil while closed or reading.
+    package var panelRows: [SetupRow]? {
+        if case .read(let facts) = panels { return SetupCheck.panelRows(facts) }
+        return nil
+    }
+
+    /// The section opened — read now — or folded — dropped.
+    package func setPanelsOpen(_ open: Bool) {
+        guard open != panels.isOpen else { return }
+        if open {
+            panels = .reading
+            if visible { readPanelFacts() }
+        } else {
+            panels = .closed
+        }
+    }
 
     /// Check Again: everything read anew.
     package func checkAgain() {
@@ -88,10 +123,29 @@ package final class SetupPageModel: ObservableObject {
             guard let self, self.generation == generation, self.visible else { return }
             self.facts = facts
         }
+        if panels.isOpen {
+            panels = .reading
+            readPanelFacts()
+        }
+    }
+
+    private func readPanelFacts() {
+        let generation = generation
+        Task { [weak self] in
+            let found: SetupPanelFacts?
+            if let override = SetupProbe.panelsOverride {
+                found = override
+            } else {
+                found = await self?.readPanels?()
+            }
+            guard let self, self.generation == generation, self.visible, self.panels == .reading else { return }
+            self.panels = found.map { facts in Panels.read(facts) } ?? .notLooked
+        }
     }
 
     private func drop() {
         generation += 1
         facts = nil
+        if panels.isOpen { panels = .reading }
     }
 }

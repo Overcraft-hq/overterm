@@ -29,6 +29,7 @@ package struct SetupView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 core
+                panels
                 runsByItself
                 gettingStarted
             }
@@ -74,6 +75,44 @@ package struct SetupView: View {
                 .font(.system(size: ChromeMetrics.text(12)))
                 .foregroundStyle(theme.text2)
                 .accessibilityIdentifier("setup.asking")
+        }
+    }
+
+    /// "Tools the panels use": folded until opened — only then read, and
+    /// only for the panels that are on.
+    private var panels: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                perform(.panels(!model.panels.isOpen))
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: model.panels.isOpen ? "chevron.down" : "chevron.right")
+                        .font(.system(size: ChromeMetrics.text(10), weight: .semibold))
+                        .foregroundStyle(theme.text3)
+                        .accessibilityHidden(true)
+                    Text(verbatim: SetupCheck.panelsTitle + (model.panelRows.map { rows in " (\(rows.count))" } ?? ""))
+                        .font(.system(size: ChromeMetrics.text(13), weight: .semibold))
+                        .foregroundStyle(theme.text)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(model.panels.isOpen ? "open" : "folded")
+            .accessibilityIdentifier("setup.panels")
+            switch model.panels {
+            case .closed:
+                EmptyView()
+            case .reading:
+                Text(verbatim: SetupCheck.asking).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
+            case .notLooked:
+                Text(verbatim: SetupCheck.isolatedPanels).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
+            case .read:
+                Text(verbatim: SetupCheck.panelsNote)
+                    .font(.system(size: ChromeMetrics.text(11)))
+                    .foregroundStyle(theme.text3)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(model.panelRows ?? [], id: \.id) { row in SetupRowView(row: row, theme: theme, perform: perform) }
+            }
         }
     }
 

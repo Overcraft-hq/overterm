@@ -32,6 +32,7 @@ version is tagged `v<version>`.
 - Four one-time tips: the first tab that needs you says what the Inbox is, the first production pane what its header means, ⌘K's first showings where Clear the Screen went, the first agent tab what its tools are; Help ▸ Reset Tips shows them again
 - On a new install, macOS asks about notifications when you press Allow Notifications… on the first "needs you" tip, not by itself in the background
 - Help ▸ Check Setup… (and ⌘K, the Getting Started card, the "isn't on your PATH" warning) opens a Setup page: git, the GitHub CLI, each agent, notifications and the agents' tools — found or not, where Overterm looked, a command to copy or put in a new tab; no tool is run
+- Its "Tools the panels use", opened, says what Docker, Kubernetes, Terraform, the language servers and the simulator would use — found by each feature's own finder, never started or pinged
 - The Setup page says what runs by itself — the agents' usage command every ten minutes — with its switch, and your own Getting Started times, kept on this Mac only
 - Tab Peek shows only the tabs the strip shows, filters its cards as you type, picks one with 1–9, and answers a waiting agent from its card
 

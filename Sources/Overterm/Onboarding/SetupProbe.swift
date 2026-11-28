@@ -14,6 +14,8 @@ package enum SetupProbe {
     /// A scenario's facts, handed back instead of looking (as
     /// `GitHub.executableOverride` stands in for gh).
     @MainActor package static var override: SetupFacts?
+    /// A scenario's "Tools the panels use", handed back instead of looking.
+    @MainActor package static var panelsOverride: SetupPanelFacts?
 
     /// Where the two agents that keep a folder of their sessions keep it.
     package struct Places: Sendable {

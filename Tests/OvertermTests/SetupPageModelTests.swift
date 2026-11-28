@@ -8,6 +8,7 @@ import XCTest
 final class SetupPageModelTests: XCTestCase {
     override func tearDown() async throws {
         SetupProbe.override = nil
+        SetupProbe.panelsOverride = nil
         try await super.tearDown()
     }
 
@@ -50,6 +51,33 @@ final class SetupPageModelTests: XCTestCase {
         XCTAssertNil(model.facts, "asking again")
         try await settle(model)
         XCTAssertEqual(model.facts?.gh, gh)
+        model.visible = false
+    }
+
+    /// "Tools the panels use": nothing read until opened, then the panels' facts; folded, dropped.
+    func testThePanelsAreReadOnlyOnceOpened() async throws {
+        SetupProbe.override = SetupFacts(shellAnswered: true)
+        let panels = SetupPanelFacts(simulator: SetupPanelFacts.Simulator(xcode: true, coreSimulator: true), ghosttyConfig: false)
+        SetupProbe.panelsOverride = panels
+        let model = SetupPageModel()
+        model.readPanels = {
+            XCTFail("a scenario's facts stand in for the finders")
+            return nil
+        }
+        model.visible = true
+        try await settle(model)
+        XCTAssertEqual(model.panels, .closed, "folded: not read")
+        XCTAssertNil(model.panelRows)
+
+        model.setPanelsOpen(true)
+        for _ in 0..<200 where model.panels == .reading {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(model.panels, .read(panels))
+        XCTAssertEqual(model.panelRows, SetupCheck.panelRows(panels))
+
+        model.setPanelsOpen(false)
+        XCTAssertEqual(model.panels, .closed)
         model.visible = false
     }
 }
