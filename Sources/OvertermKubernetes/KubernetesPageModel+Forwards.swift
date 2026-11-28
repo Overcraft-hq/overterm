@@ -240,6 +240,25 @@ extension KubernetesPageModel {
         actions?.openURL(url)
     }
 
+    /// Start Again: at once — but on production asked as a new forward is,
+    /// its sheet with its own values (K8S-G2: a forward kept from the last
+    /// run is started only by the person's word, production's by its sheet).
+    package func startForwardAgain(_ id: UUID) {
+        guard let forward = forwards.forward(id), forwards.canStartAgain(id) else { return }
+        if forward.production { return editForward(id) }
+        forwards.startAgain(id)
+    }
+
+    /// Start All: every stopped forward that isn't production's; those are
+    /// each asked on their own, and said so.
+    package func startAllForwards() {
+        let production = forwards.forwards.filter { $0.state.isStopped && $0.production && forwards.canStartAgain($0.id) }.count
+        forwards.startAllAgain()
+        commandProblem =
+            production == 0
+            ? nil : "\(production == 1 ? "A production forward is" : "\(production) production forwards are") left stopped: Start Again on each asks first."
+    }
+
     package func stopForward(_ id: UUID) {
         forwards.stop(id)
         if forwardSelection == id { forwardSelection = nil }
