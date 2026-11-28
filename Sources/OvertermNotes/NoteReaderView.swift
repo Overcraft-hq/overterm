@@ -20,6 +20,13 @@ package final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessag
     package var onOpenURL: ((URL) -> Void)?
     package var onToggleTask: ((_ line: Int) -> Void)?
     package var onTag: ((String) -> Void)?
+    /// The note's own undo, for ⌘Z and ⇧⌘Z here: a task ticked in the
+    /// reading view is an edit of the note's text, its undo held by the
+    /// editor behind — and with the page focused, the Edit menu's Undo found
+    /// no responder that had it (WKWebView answers no `undo:`).
+    package var noteUndo: (() -> UndoManager?)?
+    /// After an undo or redo: the page drawn again from the text.
+    package var onUndone: (() -> Void)?
     /// Drawn (mermaid's diagrams count when they are) — for the E2E run.
     package private(set) var renderCount = 0
     package private(set) var mermaidDrawn = 0
@@ -63,6 +70,18 @@ package final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessag
 
     @available(*, unavailable)
     package required init?(coder: NSCoder) { fatalError() }
+
+    @objc package func undo(_ sender: Any?) {
+        guard let undo = noteUndo?(), undo.canUndo else { return NSSound.beep() }
+        undo.undo()
+        onUndone?()
+    }
+
+    @objc package func redo(_ sender: Any?) {
+        guard let undo = noteUndo?(), undo.canRedo else { return NSSound.beep() }
+        undo.redo()
+        onUndone?()
+    }
 
     /// The vault whose files the page may load.
     package var vaultRoot: URL? {
@@ -341,5 +360,16 @@ package struct NoteRemoteImage: Sendable, Equatable {
         request.setValue("image/*", forHTTPHeaderField: "Accept")
         guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else { return nil }
         return accept(data, mimeType: http.mimeType, status: http.statusCode)
+    }
+}
+
+extension NoteReaderView: NSMenuItemValidation {
+    /// Undo and Redo as the note can: the only actions answered here.
+    package func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        switch item.action {
+        case Selector(("undo:")): noteUndo?()?.canUndo == true
+        case Selector(("redo:")): noteUndo?()?.canRedo == true
+        default: true
+        }
     }
 }

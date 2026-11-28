@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import Overterm
@@ -139,4 +140,30 @@ final class NoteRenderingTests: XCTestCase {
         XCTAssertEqual((text as NSString).replacingCharacters(in: edit.range, with: edit.replacement), "new line\n- [ ] other\n- [x] mine")
         XCTAssertNil(NoteEdits.toggleTask(in: text, line: 1, text: "gone"))
     }
+
+    /// ⌘Z in the reading view undoes what was done there (a task ticked):
+    /// the note's own undo, which no responder above the page had.
+    @MainActor func testTheReadingViewUndoesTheNotesEdits() {
+        let reader = NoteReaderView()
+        let undo = UndoManager()
+        let note = TickedTask()
+        undo.registerUndo(withTarget: note, selector: #selector(TickedTask.untick), object: nil)
+        var drawn = 0
+        reader.noteUndo = { undo }
+        reader.onUndone = { drawn += 1 }
+        let item = NSMenuItem(title: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        XCTAssertTrue(reader.validateMenuItem(item), "Undo is offered while the note can")
+        reader.undo(nil)
+        XCTAssertEqual(note.text, "- [ ] ship")
+        XCTAssertEqual(drawn, 1, "the page drawn again")
+        XCTAssertFalse(reader.validateMenuItem(item), "and not once there is nothing to undo")
+        reader.noteUndo = nil
+        XCTAssertFalse(reader.validateMenuItem(NSMenuItem(title: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")))
+    }
+}
+
+/// A task's text, ticked; the undo unticks it.
+private final class TickedTask: NSObject {
+    var text = "- [x] ship"
+    @objc func untick() { text = "- [ ] ship" }
 }
