@@ -100,7 +100,7 @@ extension E2ERunner {
         // The rows the window writes: each names its command, and its
         // words hold no key of their own.
         let named = [
-            "a.newTab", "a.splitRight", "a.splitDown", "a.newTask", "a.openFolder", "a.shortcuts", "a.whatsNew", "a.gettingStarted", "a.overview",
+            "a.newTab", "a.splitRight", "a.splitDown", "a.newTask", "a.openFolder", "a.shortcuts", "a.whatsNew", "a.gettingStarted", "a.resetTips", "a.overview",
             "a.focusSidebar",
             "a.focusTerminal", "a.focusEditor", "a.goToFile", "a.focusRight", "a.focusInbox", "a.nextColumn", "a.previousColumn", "a.peek",
             "a.reviewBranch", "a.sidebar", "a.overgit", "a.api", "a.notes", "a.diff",
@@ -122,15 +122,18 @@ extension E2ERunner {
         check("Help's Keyboard Shortcuts is a row of its own", row("a.shortcuts") != nil && row("menu.help.shortcuts") == nil)
         check("Help's What's New is a row of its own", row("a.whatsNew") != nil && row("menu.help.whatsNew") == nil)
         check("Help's Getting Started is a row of its own", row("a.gettingStarted") != nil && row("menu.help.gettingStarted") == nil)
+        check("Help's Reset Tips is a row of its own", row("a.resetTips") != nil && row("menu.help.resetTips") == nil)
     }
 
-    /// Stage 3, the `onboarding` scenario (onboarding 7.3, 7.10): the
-    /// Start card's five steps done through the window's own methods and
-    /// the card's own buttons — pressed through the accessibility tree,
-    /// never with synthetic input — and after every one the keyboard still
-    /// in the terminal (7.14): a press on the card must not take it. That
-    /// last check is the design's gate (risk 1); a real click is the
-    /// person's to try (issue-tracker#132).
+    /// Stages 3 and 4, the `onboarding` scenario (onboarding 7.3, 7.6,
+    /// 7.10): the Start card's five steps done through the window's own
+    /// methods and the card's own buttons, and the tips raised by the real
+    /// paths — a mark sent by the shell, ⌘K shown, an agent's tab — all
+    /// pressed through the accessibility tree, never with synthetic input;
+    /// after every one the keyboard still in the terminal (7.14): a press
+    /// on the card or a tip must not take it. That last check is the
+    /// design's gate (risk 1); a real click is the person's to try
+    /// (issue-tracker#132).
     func onboardingScenario() async {
         guard let root = window.contentView else { return check("the window's content", false) }
         let start = Start.shared
@@ -228,19 +231,107 @@ extension E2ERunner {
         check("a task made does the third step", start.state.isDone(.task))
         app.focusSelectedTerminal()
 
-        // 8. A tab that needs you, answered from the Inbox the card offers.
+        // 8. A tab that needs you (stage 4, T1): the task's tab, in the
+        // background, sends the agent's notification as `attention` does.
+        // A fresh Mac's notifications: not asked yet — injected, never asked of macOS.
+        AttentionNotifier.permissionOverride = .notAsked
+        defer { AttentionNotifier.permissionOverride = nil }
         guard let worked = app.store.selected, let other = app.store.tabs.first(where: { $0 !== worked }) else {
             return check("two tabs to switch between", false)
         }
         app.store.select(other)
         _ = await eventually(2) { self.window.firstResponder === other.terminal }
-        _ = worked.activity.handle(.notification(title: "zsh", body: "finished"), visible: false)
+        let strip = app.tabBarView.map { bar in bar.convert(NSPoint(x: bar.bounds.maxX - 24, y: bar.bounds.midY), to: nil) }
+        let stripBefore = strip.map { Self.answering(window, at: $0) }
+        func notify(_ tab: Tab) {
+            tab.terminal.insertText("printf '\\033]777;notify;Claude;needs your permission\\a'")
+            tab.terminal.pressReturn()
+        }
+        notify(worked)
+        check("the task's tab is marked waiting", await eventually(10) { worked.activity.mark == .waiting }, "\(worked.activity.mark)")
+        func showsT1() -> Bool {
+            if case .needsYou(_, .waiting)? = start.state.banner { return true }
+            return false
+        }
+        check(
+            "T1: the first mark brings the tip, under the title bar", await eventually(3) { showsT1() && present("tip.banner") },
+            "\(String(describing: start.state.banner))")
+        check("its words show", present("tip.text"))
+        check("seen once shown: the notification ask is no longer held for it", !start.holdsNotificationAsk)
+        await keyboardStays("T1 appeared")
+        if let strip, let stripBefore {
+            check("the strip answers a press as it did", Self.answering(window, at: strip) == stripBefore, "\(Self.answering(window, at: strip)) vs \(stripBefore)")
+        }
+        check("its host refuses the keyboard", app.tipBanner.map { host in !host.acceptsFirstResponder } ?? false)
+
+        // 9. Notifications not asked: T1 offers to ask, by this click (D-6).
+        check("not asked yet: T1 offers Allow Notifications…", await eventually(3) { present("tip.allowNotifications") && present("tip.offer") })
+        let asked = AttentionNotifier.requestedNow
+        check("Allow Notifications… pressed", press("tip.allowNotifications"))
+        check("it asks then — an isolated run counts it and puts no question", await eventually(2) { AttentionNotifier.requestedNow == asked + 1 })
+        await keyboardStays("Allow Notifications…")
+        check(
+            "the lazy ask is held only for an unseen T1 on a fresh first launch",
+            !AttentionNotifier.asksLazily(state: .notAsked, tipsOn: true, t1Seen: false, firstLaunch: true)
+                && AttentionNotifier.asksLazily(state: .notAsked, tipsOn: true, t1Seen: true, firstLaunch: true)
+                && AttentionNotifier.asksLazily(state: .notAsked, tipsOn: true, t1Seen: false, firstLaunch: false)
+                && AttentionNotifier.asksLazily(state: .allowed, tipsOn: true, t1Seen: false, firstLaunch: true))
+        // A sheet covers its place: hidden while it shows, back after.
+        app.resetTips(nil)
+        check("Reset Tips asks first", await eventually(3) { self.window.attachedSheet != nil })
+        check("the tip waits under a sheet", await eventually(2) { self.app.tipBanner?.isHidden == true })
+        clickSheetButton("Cancel")
+        _ = await eventually(2) { self.window.attachedSheet == nil }
+        check("and is back after", await eventually(2) { present("tip.banner") })
+        check("Cancel resets nothing", start.state.tipsSeen.contains(.needsYou))
+
+        // 10. The Inbox, from the card's Open Inbox: T1 goes, the fourth step is done.
         app.updateAttentionBadge()
         check("while a tab needs you, the card offers Open Inbox", await eventually(3) { start.anyNeedsYou && present("start.button.inbox.show") })
         check("Open Inbox pressed", press("start.button.inbox.show"))
         check("the Inbox opens, and the fourth step is done", await eventually(3) { self.app.inboxItem?.isCollapsed == false && start.state.isDone(.answered) })
+        check("T1 goes with it", await eventually(2) { start.state.banner == nil && !present("tip.banner") })
         await keyboardStays("Open Inbox")
         app.toggleInbox(nil)
+
+        // 11. Another mark: no tip — each shows once.
+        worked.activity.seen()
+        app.updateAttentionBadge()
+        notify(worked)
+        check("the tab is marked again", await eventually(10) { worked.activity.mark == .waiting })
+        await pause(0.3)
+        check("and no tip comes", start.state.banner == nil && start.state.waiting.isEmpty && !present("tip.banner"))
+        await keyboardStays("a second mark")
+        worked.activity.seen()
+        app.updateAttentionBadge()
+
+        // 12. A second, agent-shaped tab in the same launch: T4 waits for
+        // a later launch — one banner tip a launch, T1 was this one's.
+        let tabs = Set(app.store.tabs.map(\.id))
+        app.newTab(in: repo, agent: .claude, command: "true")
+        guard let agentTab = app.store.tabs.first(where: { !tabs.contains($0.id) }) else { return check("an agent's tab", false) }
+        await pause(0.3)
+        check(
+            "T4 is held: one banner tip a launch", start.state.banner == nil && !start.state.tipsSeen.contains(.agentTools) && !present("tip.banner"),
+            "\(String(describing: start.state.banner))")
+        app.closeTabsWithoutAsking([agentTab])
+        app.store.select(worked)
+        app.focusSelectedTerminal()
+        await keyboardStays("an agent's tab")
+
+        // T3: ⌘K's hint row, from the first showing; Reset Tips counts again.
+        app.showPalette(nil)
+        let clear = KeyHints.key("terminal.clear") ?? "?"
+        check(
+            "⌘K's hint row says where Clear the Screen went", app.palette.tip == "Clear the screen is \(clear) here.",
+            app.palette.tip ?? "nil")
+        check("in the palette's own row, not the banner", await eventually(2) { present("palette.tip") } && !present("tip.banner"))
+        app.hidePalette()
+        app.resetTips(nil)
+        _ = await eventually(3) { self.window.attachedSheet != nil }
+        clickSheetButton("Reset Tips")
+        check("Reset Tips: every tip again, ⌘K counted from nought", await eventually(2) { start.state.tipsSeen.isEmpty && start.state.paletteOpens == 0 })
+        await keyboardStays("Reset Tips")
 
         // 13. The changes shown: all five done, the loop said, the panels offered.
         check("Show Changes pressed", await eventually(3) { present("start.button.changes.toggle") } && press("start.button.changes.toggle"))

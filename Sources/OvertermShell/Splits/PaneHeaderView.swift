@@ -468,6 +468,8 @@ package struct KubeRunWarningLabel: View {
             .help(warning.help)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("pane.kubeWarning")
+            // Onboarding T2: the first pane whose header says production.
+            .onAppear { Start.shared.note(.productionPane(.kubernetes(context: warning.displayName))) }
         }
     }
 }
@@ -563,6 +565,12 @@ package struct TerraformRunWarningLabel: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text(verbatim: warning.isProduction ? warning.label + " PRODUCTION" : warning.label))
             .accessibilityIdentifier("pane.terraformWarning")
+            // Onboarding T2: the first pane whose header says production.
+            .background {
+                if warning.isProduction {
+                    Color.clear.onAppear { Start.shared.note(.productionPane(.terraform(root: warning.root))) }
+                }
+            }
         } else if let pinnedRoot {
             Text(verbatim: "⛰ " + pinnedRoot)
                 .font(.system(size: ChromeMetrics.text(11), design: .monospaced))

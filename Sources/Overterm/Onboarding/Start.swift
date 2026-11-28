@@ -13,6 +13,10 @@ import Foundation
 /// Settings' search. Nothing about the person's files, folders or
 /// commands is kept, nor what the probe found.
 ///
+/// The tips (7.6) are its too: what was seen (`onboarding.tipsSeen`),
+/// ⌘K's count for T3 (`onboarding.paletteOpens`), and — this launch only —
+/// the banner tip placed and those waiting for its place.
+///
 /// Inert in an isolated run — every scenario and picture would otherwise
 /// look like a first launch — unless the run is the `onboarding` scenario,
 /// which hands it a launch itself.
@@ -23,6 +27,8 @@ package final class Start: ObservableObject {
 
     package nonisolated static let cardKey = "onboarding.card"
     package nonisolated static let stepsKey = "onboarding.steps"
+    package nonisolated static let tipsSeenKey = "onboarding.tipsSeen"
+    package nonisolated static let paletteOpensKey = "onboarding.paletteOpens"
     /// The scenario that drives it in an isolated run.
     package nonisolated static let scenario = "onboarding"
 
@@ -54,17 +60,43 @@ package final class Start: ObservableObject {
         self.defaults = defaults
         self.active = active
         self.settings = settings
-        state = StartState(storedCard: defaults.string(forKey: Self.cardKey), storedSteps: defaults.dictionary(forKey: Self.stepsKey), tips: settings.tips)
+        state = StartState(
+            storedCard: defaults.string(forKey: Self.cardKey), storedSteps: defaults.dictionary(forKey: Self.stepsKey), tips: settings.tips,
+            storedTips: defaults.stringArray(forKey: Self.tipsSeenKey), paletteOpens: defaults.integer(forKey: Self.paletteOpensKey))
         taskAgent = settings.taskAgent
         panels = Self.panels(of: settings)
         settingsChanges = settings.changes.sink { [weak self] keys in self?.settingsChanged(keys) }
     }
 
     /// What happened. Cheap, main-thread, and nothing at all while inert:
-    /// a step already done changes nothing and publishes nothing.
+    /// a step already done changes nothing and publishes nothing; a tip it
+    /// places shows in `state.banner`, which the windows follow.
     package func note(_ event: StartState.Event) {
         guard active else { return }
-        update(state.applying(event, now: now()))
+        place(state.apply(event, now: now()))
+    }
+
+    /// Whether the notification ask waits for T1's button (D-6): a fresh
+    /// install's first launch, tips on, T1 not seen. Never while inert.
+    package var holdsNotificationAsk: Bool { active && state.holdsNotificationAsk }
+
+    /// The banner's ×.
+    package func dismissTip() {
+        guard active else { return }
+        place(state.dismissingTip())
+    }
+
+    /// What covers a tip's place — a sheet, ⌘K, Tab Peek, the held
+    /// banner — and whether the app is in front, as the window sees them.
+    package func room(blocked: Bool, inFront: Bool) {
+        guard active else { return }
+        place(state.withRoom(blocked: blocked, inFront: inFront))
+    }
+
+    /// Help ▸ Reset Tips: every tip again, ⌘K's count from nought.
+    package func resetTips() {
+        guard active else { return }
+        update(state.resettingTips())
     }
 
     /// Whether some tab needs you now — the badge's own count, from the window.
@@ -135,10 +167,19 @@ package final class Start: ObservableObject {
 
     // MARK: Private
 
+    private func place(_ applied: (state: StartState, tip: StartState.Banner?)) {
+        update(applied.state)
+    }
+
     private func update(_ next: StartState) {
         guard next != state else { return }
         let kept = next.card != state.card || next.steps != state.steps
+        let tipsKept = next.tipsSeen != state.tipsSeen || next.paletteOpens != state.paletteOpens
         state = next
+        if tipsKept {
+            defaults.set(next.storedTips, forKey: Self.tipsSeenKey)
+            defaults.set(next.paletteOpens, forKey: Self.paletteOpensKey)
+        }
         guard kept else { return }
         if let card = next.card {
             defaults.set(card.rawValue, forKey: Self.cardKey)

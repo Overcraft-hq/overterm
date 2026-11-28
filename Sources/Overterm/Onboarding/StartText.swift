@@ -183,4 +183,81 @@ package struct StartText: Sendable {
 
     /// VoiceOver's value for a step.
     package static func accessibilityValue(done: Bool) -> String { done ? "done" : "not done" }
+
+    // MARK: Tips (7.6)
+
+    /// The commands the tips name; `keys` holds theirs for a tip's words.
+    package static let tipCommands = ["inbox.show", "tabs.nextAttention", "terminal.clear"]
+
+    /// A banner tip's button: what it does is the menu item's of the same
+    /// name, or the setting's page.
+    package struct TipButton: Equatable, Sendable {
+        package let title: String
+        package let action: TipAction
+        /// Its accessibility identifier.
+        package let id: String
+    }
+
+    /// T1's second line, while macOS hasn't asked yet (D-6).
+    package static let notificationOffer = "Want a notification when this happens while you're in another app?"
+    package static let allowNotifications = "Allow Notifications…"
+    package static let openInbox = "Open Inbox"
+    package static let closeTip = "Close Tip"
+
+    /// "Settings ▸ Kubernetes": the page's own title, as Settings shows it.
+    package static func settingsName(_ section: SettingsSection) -> String { "Settings ▸ \(section.title)" }
+
+    /// A banner tip's words: its keys as bound now, a setting by its page's title.
+    package func tip(_ banner: StartState.Banner) -> String {
+        switch banner {
+        case .needsYou(let tab, let mark):
+            let inbox = keys["inbox.show"].map { "\($0) opens the Inbox" } ?? "View ▸ Inbox opens the Inbox"
+            let next = keys["tabs.nextAttention"].map { " \($0) goes to the tab." } ?? ""
+            switch mark {
+            case .waiting: return "“\(tab)” needs you. \(inbox): answer from there.\(next)"
+            case .done: return "“\(tab)” has finished. \(inbox): every tab with something to say.\(next)"
+            case .failed: return "“\(tab)” failed. \(inbox): every tab with something to say.\(next)"
+            }
+        case .production(.kubernetes(let context)):
+            return "This pane's kubectl points at production (\(context)). Its header says so while it does. "
+                + "\(Self.settingsName(.kubernetes)) decides what counts as production."
+        case .production(.terraform(let root)):
+            return "This pane's terraform runs in a production root (\(root)). Its header says so while it does. "
+                + "\(Self.settingsName(.terraform)) decides what counts as production."
+        case .agentTools:
+            return "Agents started from Overterm get its tools: the browser, databases, Docker… \(Self.settingsName(.agents)) chooses which. "
+                + "One typed by hand gets none."
+        }
+    }
+
+    /// The second line, if any: T1's offer while notifications are not asked.
+    package static func tipOffer(_ banner: StartState.Banner, permission: NotificationPermission?) -> String? {
+        guard case .needsYou = banner, permission == .notAsked else { return nil }
+        return notificationOffer
+    }
+
+    /// A banner tip's buttons before its ×; Turn Off Tips is on every one.
+    package static func tipButtons(_ banner: StartState.Banner, permission: NotificationPermission?) -> [TipButton] {
+        switch banner {
+        case .needsYou:
+            var buttons = [TipButton(title: openInbox, action: .openInbox, id: "tip.openInbox")]
+            if permission == .notAsked {
+                buttons.append(TipButton(title: allowNotifications, action: .allowNotifications, id: "tip.allowNotifications"))
+            }
+            return buttons
+        case .production(.kubernetes):
+            return [TipButton(title: settingsName(.kubernetes), action: .settings(.kubernetes), id: "tip.settings")]
+        case .production(.terraform):
+            return [TipButton(title: settingsName(.terraform), action: .settings(.terraform), id: "tip.settings")]
+        case .agentTools:
+            return [TipButton(title: settingsName(.agents), action: .settings(.agents), id: "tip.settings")]
+        }
+    }
+
+    /// T3, ⌘K's hint row on its first three showings: Ghostty's ⌘K is the
+    /// palette here. `ghosttyConfig`: the person has one, and it applies.
+    package func paletteTip(ghosttyConfig: Bool) -> String {
+        let clear = keys["terminal.clear"].map { "Clear the screen is \($0) here." } ?? "Clear the screen is a row here: type “clear”."
+        return ghosttyConfig ? "Your Ghostty config applies as it is. " + clear : clear
+    }
 }

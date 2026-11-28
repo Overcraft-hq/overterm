@@ -112,4 +112,193 @@ final class StartStateTests: XCTestCase {
         XCTAssertEqual(odd.steps, [.task: t0])
         XCTAssertEqual(StartState.Step.allCases.map(\.rawValue), ["repository", "agent", "task", "answered", "changes"])
     }
+
+    // MARK: Tips (7.6, D-9)
+
+    private func raised(_ state: StartState, _ event: StartState.Event) -> (state: StartState, tip: StartState.Banner?) {
+        state.apply(event, now: t0)
+    }
+
+    /// The registry: four tips, never more than five (risk 6) — a sixth
+    /// fails here —, each with its own seen key, each brought back by Reset Tips.
+    func testTheTipRegistryIsSmallAndEveryTipCanBeReset() {
+        XCTAssertLessThanOrEqual(StartState.Tip.allCases.count, StartState.Tip.cap, "a sixth tip is the owner's call")
+        XCTAssertEqual(StartState.Tip.cap, 5)
+        XCTAssertEqual(StartState.Tip.allCases.map(\.seenKey), ["needsYou", "production", "clearMoved", "agentTools"])
+        XCTAssertEqual(Set(StartState.Tip.allCases.map(\.seenKey)).count, StartState.Tip.allCases.count, "no two share a seen key")
+        let all = StartState(tipsSeen: Set(StartState.Tip.allCases), paletteOpens: 3)
+        let reset = all.resettingTips()
+        for tip in StartState.Tip.allCases {
+            XCTAssertFalse(tip.seenKey.isEmpty, "\(tip)")
+            XCTAssertTrue(all.storedTips.contains(tip.seenKey), "\(tip) is kept")
+            XCTAssertFalse(reset.tipsSeen.contains(tip), "Reset Tips brings \(tip) back")
+            if tip.resetsCount { XCTAssertEqual(reset.paletteOpens, 0, "and its count") }
+        }
+        XCTAssertEqual(StartState.Tip.allCases.filter { !$0.inBanner }, [.clearMoved], "T3 is ⌘K's own row, not the banner's")
+        XCTAssertEqual(StartState.Tip.allCases.filter(\.exempt), [.needsYou, .production], "T1 and T2 pass the limit")
+    }
+
+    func testEachTipShowsOnce() {
+        let first = raised(StartState(), .markRaised(.waiting, tab: "api"))
+        XCTAssertEqual(first.tip, .needsYou(tab: "api", mark: .waiting))
+        XCTAssertEqual(first.state.banner, first.tip)
+        XCTAssertTrue(first.state.tipsSeen.contains(.needsYou), "seen once placed")
+        let closed = first.state.dismissingTip().state
+        XCTAssertNil(closed.banner)
+        let again = raised(closed, .markRaised(.waiting, tab: "web"))
+        XCTAssertNil(again.tip, "× is for good")
+        XCTAssertNil(again.state.banner)
+        XCTAssertTrue(again.state.waiting.isEmpty)
+
+        // T2 and T4 the same way.
+        for event in [StartState.Event.productionPane(.kubernetes(context: "acme-prod")), .agentTabStarted] {
+            let shown = raised(StartState(), event)
+            XCTAssertNotNil(shown.tip, "\(event)")
+            XCTAssertNil(raised(shown.state.dismissingTip().state, event).tip, "\(event) again")
+        }
+    }
+
+    /// A tip says T1's words by the kind of mark: a shell's first mark is a
+    /// finished or failed command (7.6's correction).
+    func testT1ComesWithAnyKindOfMark() {
+        for mark in [StartState.Mark.waiting, .done, .failed] {
+            XCTAssertEqual(raised(StartState(), .markRaised(mark, tab: "zsh")).tip, .needsYou(tab: "zsh", mark: mark))
+        }
+    }
+
+    /// A feature already used needs no tip: an Inbox opened before any mark.
+    func testAUsedFeatureGetsNoTip() {
+        let opened = raised(StartState(), .inboxOpened(waiting: false)).state
+        XCTAssertTrue(opened.tipsSeen.contains(.needsYou))
+        XCTAssertNil(raised(opened, .markRaised(.waiting, tab: "api")).tip)
+    }
+
+    /// T1 goes when the Inbox opens or its tab is selected; T2 and T4 only by ×.
+    func testWhatEachTipGoesWith() {
+        let t1 = raised(StartState(), .markRaised(.waiting, tab: "api")).state
+        XCTAssertNil(raised(t1, .inboxOpened(waiting: true)).state.banner)
+        XCTAssertNil(raised(t1, .waitingTabSelected).state.banner)
+        let t2 = raised(StartState(), .productionPane(.terraform(root: "envs/prod"))).state
+        for event in [StartState.Event.inboxOpened(waiting: true), .waitingTabSelected, .changesShown] {
+            XCTAssertEqual(raised(t2, event).state.banner, .production(.terraform(root: "envs/prod")), "\(event)")
+        }
+        let t4 = raised(StartState(), .agentTabStarted).state
+        XCTAssertEqual(raised(t4, .waitingTabSelected).state.banner, .agentTools)
+    }
+
+    /// One banner tip a launch: T4 after T1 waits for a later launch, unseen.
+    func testOneBannerTipALaunch() {
+        var state = raised(StartState(), .markRaised(.waiting, tab: "api")).state
+        state = state.dismissingTip().state
+        let after = raised(state, .agentTabStarted)
+        XCTAssertNil(after.tip, "the limit")
+        XCTAssertFalse(after.state.tipsSeen.contains(.agentTools), "not seen: it comes at a later launch")
+        XCTAssertTrue(after.state.waiting.isEmpty)
+        let nextLaunch = StartState(tipsSeen: after.state.tipsSeen).launched(.same)
+        XCTAssertEqual(raised(nextLaunch, .agentTabStarted).tip, .agentTools)
+    }
+
+    /// T1 and T2 pass the limit: the first agent tab's T4 doesn't push the
+    /// first lesson, nor production, to a later launch.
+    func testT1AndT2PassTheLimit() {
+        var state = raised(StartState(), .agentTabStarted).state
+        XCTAssertEqual(state.banner, .agentTools)
+        // Raised while T4 shows: they wait for its place, in turn.
+        state = raised(state, .productionPane(.kubernetes(context: "acme-prod"))).state
+        state = raised(state, .markRaised(.done, tab: "api")).state
+        XCTAssertEqual(state.banner, .agentTools)
+        var next = state.dismissingTip()
+        XCTAssertEqual(next.tip, .production(.kubernetes(context: "acme-prod")))
+        next = next.state.dismissingTip()
+        XCTAssertEqual(next.tip, .needsYou(tab: "api", mark: .done))
+    }
+
+    /// `general.tips` off: no tip, ever, and one showing goes.
+    func testTipsOffShowsNoTip() {
+        let off = StartState(tips: false)
+        for event in [StartState.Event.markRaised(.waiting, tab: "a"), .productionPane(.kubernetes(context: "p")), .agentTabStarted, .paletteOpened] {
+            let after = raised(off, event)
+            XCTAssertNil(after.tip, "\(event)")
+            XCTAssertNil(after.state.banner)
+            XCTAssertFalse(after.state.paletteTip)
+        }
+        let showing = raised(StartState(), .agentTabStarted).state
+        XCTAssertNil(showing.withTips(false).banner, "Turn Off Tips takes the one showing")
+    }
+
+    /// A sheet, ⌘K, Tab Peek or the held banner: a tip waits; the app
+    /// behind another: it waits to be where it is seen.
+    func testATipWaitsWhileItsPlaceIsCovered() {
+        let covered = StartState().withRoom(blocked: true, inFront: true).state
+        let waiting = raised(covered, .markRaised(.waiting, tab: "api"))
+        XCTAssertNil(waiting.tip)
+        XCTAssertFalse(waiting.state.tipsSeen.contains(.needsYou), "not seen while it waits")
+        XCTAssertEqual(waiting.state.withRoom(blocked: false, inFront: true).tip, .needsYou(tab: "api", mark: .waiting))
+
+        let behind = raised(StartState().withRoom(blocked: false, inFront: false).state, .markRaised(.waiting, tab: "api"))
+        XCTAssertNil(behind.tip)
+        // Its tab selected before the app came back: gone, unseen, for the next mark.
+        let selected = raised(behind.state, .waitingTabSelected).state
+        XCTAssertTrue(selected.waiting.isEmpty)
+        XCTAssertFalse(selected.tipsSeen.contains(.needsYou))
+
+        // Placed, then covered: hidden, not gone.
+        let shown = raised(StartState(), .agentTabStarted).state
+        let hidden = shown.withRoom(blocked: true, inFront: true).state
+        XCTAssertEqual(hidden.banner, .agentTools)
+        XCTAssertNil(hidden.shownBanner)
+    }
+
+    /// T3: ⌘K's first three showings, then never.
+    func testT3StopsAfterThreeShowings() {
+        var state = StartState()
+        for showing in 1...3 {
+            state = raised(state, .paletteOpened).state
+            XCTAssertTrue(state.paletteTip, "showing \(showing)")
+            XCTAssertEqual(state.paletteOpens, showing)
+            XCTAssertNil(state.banner, "never the banner")
+        }
+        XCTAssertTrue(state.tipsSeen.contains(.clearMoved))
+        state = raised(state, .paletteOpened).state
+        XCTAssertFalse(state.paletteTip)
+        XCTAssertEqual(state.paletteOpens, 3)
+        XCTAssertFalse(raised(state, .changesShown).state.paletteTip)
+    }
+
+    /// Reset Tips: every tip again, T3's count from nought — the limit stays.
+    func testResetTips() {
+        var state = raised(StartState(), .agentTabStarted).state.dismissingTip().state
+        for _ in 1...3 { state = raised(state, .paletteOpened).state }
+        state = state.resettingTips()
+        XCTAssertTrue(state.tipsSeen.isEmpty)
+        XCTAssertEqual(state.paletteOpens, 0)
+        XCTAssertTrue(raised(state, .paletteOpened).state.paletteTip)
+        XCTAssertNil(raised(state, .agentTabStarted).tip, "one banner tip a launch still")
+        XCTAssertNotNil(raised(state, .markRaised(.waiting, tab: "api")).tip)
+    }
+
+    /// An update counts every tip seen; the notification ask waits only on
+    /// a fresh install's first launch (D-6).
+    func testAnUpdateSeesEveryTipAndOnlyAFreshLaunchHoldsTheAsk() {
+        let updated = StartState().launched(.upgraded(from: "1.6.8"))
+        XCTAssertEqual(updated.tipsSeen, Set(StartState.Tip.allCases))
+        XCTAssertNil(raised(updated, .markRaised(.waiting, tab: "api")).tip)
+        XCTAssertFalse(updated.holdsNotificationAsk)
+
+        let fresh = StartState().launched(.fresh)
+        XCTAssertTrue(fresh.holdsNotificationAsk)
+        XCTAssertFalse(fresh.launched(.same).holdsNotificationAsk, "the second launch asks as before, T1 seen or not")
+        XCTAssertFalse(fresh.withTips(false).holdsNotificationAsk)
+        XCTAssertFalse(raised(fresh, .markRaised(.waiting, tab: "api")).state.holdsNotificationAsk, "T1 seen")
+    }
+
+    /// `onboarding.tipsSeen` and `onboarding.paletteOpens` round-trip; an unknown id is passed over.
+    func testTheTipsKeptFormRoundTrips() {
+        let state = StartState(tipsSeen: [.agentTools, .needsYou], paletteOpens: 2)
+        XCTAssertEqual(state.storedTips, ["needsYou", "agentTools"])
+        let read = StartState(storedCard: nil, storedSteps: nil, tips: true, storedTips: state.storedTips + ["sixth"], paletteOpens: 2)
+        XCTAssertEqual(read.tipsSeen, [.agentTools, .needsYou])
+        XCTAssertEqual(read.paletteOpens, 2)
+        XCTAssertEqual(StartState(storedCard: nil, storedSteps: nil, tips: true, paletteOpens: 9).paletteOpens, 3)
+    }
 }

@@ -76,6 +76,9 @@ package final class PaletteModel: ObservableObject {
     }
     /// What has been typed into the selected snippet's placeholders.
     @Published package var values: [String: String] = [:]
+    /// A tip in the hint row (onboarding T3): set as the palette shows, on
+    /// its first three showings only.
+    @Published package var tip: String?
 
     private var items: [PaletteItem] = []
 

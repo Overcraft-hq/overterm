@@ -218,6 +218,8 @@ package enum MainMenu {
         // Mirrored from the app menu, without its identifier: a key the
         // person gives it belongs on one item.
         helpMenu.addItem(withTitle: "View Latest Changelog", action: #selector(AppDelegate.showChangelog(_:)), keyEquivalent: "")
+        // Onboarding 7.6: every tip shows again, asked first.
+        command(helpMenu, "Reset Tips", #selector(TerminalWindowController.resetTips(_:)), "help.resetTips")
         helpMenu.addItem(.separator())
         helpMenu.addItem(withTitle: "Overterm on GitHub", action: #selector(AppDelegate.openGitHub(_:)), keyEquivalent: "")
         helpItem.submenu = helpMenu

@@ -161,4 +161,70 @@ final class StartTextTests: XCTestCase {
         XCTAssertEqual(StartText.accessibilityValue(done: true), "done")
         XCTAssertEqual(StartText.accessibilityValue(done: false), "not done")
     }
+
+    // MARK: Tips (7.6)
+
+    private let tipKeys = ["inbox.show": "⌘I", "tabs.nextAttention": "⌥⌘↓", "terminal.clear": "⇧⌘K"]
+
+    func testTipWords() {
+        let text = StartText(keys: tipKeys)
+        XCTAssertEqual(
+            text.tip(.needsYou(tab: "api", mark: .waiting)), "“api” needs you. ⌘I opens the Inbox: answer from there. ⌥⌘↓ goes to the tab.")
+        XCTAssertEqual(
+            text.tip(.needsYou(tab: "zsh", mark: .done)),
+            "“zsh” has finished. ⌘I opens the Inbox: every tab with something to say. ⌥⌘↓ goes to the tab.")
+        XCTAssertTrue(text.tip(.needsYou(tab: "zsh", mark: .failed)).hasPrefix("“zsh” failed. "))
+        XCTAssertEqual(
+            text.tip(.production(.kubernetes(context: "acme-prod"))),
+            "This pane's kubectl points at production (acme-prod). Its header says so while it does. Settings ▸ Kubernetes decides what counts as production.")
+        XCTAssertTrue(text.tip(.production(.terraform(root: "envs/prod"))).contains("Settings ▸ Terraform decides what counts as production."))
+        XCTAssertEqual(
+            text.tip(.agentTools),
+            "Agents started from Overterm get its tools: the browser, databases, Docker… Settings ▸ Agents chooses which. One typed by hand gets none.")
+        XCTAssertEqual(text.paletteTip(ghosttyConfig: false), "Clear the screen is ⇧⌘K here.")
+        XCTAssertEqual(text.paletteTip(ghosttyConfig: true), "Your Ghostty config applies as it is. Clear the screen is ⇧⌘K here.")
+    }
+
+    /// Keys as bound now, settings by their page's title: a key or a page
+    /// name written into a tip fails here (risk 15).
+    func testTipsReadKeysAndSettingsNames() {
+        let rebound = StartText(keys: ["inbox.show": "⌃⌘I", "tabs.nextAttention": "⌃⌥⌘↓", "terminal.clear": "⌃⌘L"])
+        XCTAssertEqual(
+            rebound.tip(.needsYou(tab: "api", mark: .waiting)), "“api” needs you. ⌃⌘I opens the Inbox: answer from there. ⌃⌥⌘↓ goes to the tab.")
+        XCTAssertEqual(rebound.paletteTip(ghosttyConfig: false), "Clear the screen is ⌃⌘L here.")
+
+        let unbound = StartText(keys: [:])
+        let glyphs = CharacterSet(charactersIn: "⌘⌥⌃⇧")
+        let banners: [StartState.Banner] = [
+            .needsYou(tab: "api", mark: .waiting), .needsYou(tab: "api", mark: .done), .needsYou(tab: "api", mark: .failed),
+            .production(.kubernetes(context: "p")), .production(.terraform(root: "r")), .agentTools,
+        ]
+        for banner in banners {
+            XCTAssertNil(unbound.tip(banner).rangeOfCharacter(from: glyphs), "\(banner)")
+        }
+        XCTAssertNil(unbound.paletteTip(ghosttyConfig: true).rangeOfCharacter(from: glyphs))
+        XCTAssertTrue(unbound.tip(.needsYou(tab: "api", mark: .waiting)).contains("View ▸ Inbox opens the Inbox"))
+
+        for section in [SettingsSection.kubernetes, .terraform, .agents] {
+            XCTAssertEqual(StartText.settingsName(section), "Settings ▸ \(section.title)")
+        }
+        for id in StartText.tipCommands { XCTAssertNotNil(KeyCommands.byID[id], id) }
+        XCTAssertEqual(KeyCommands.byID["terminal.clear"]?.defaultKey, "shift+cmd+k", "T3 says where Clear the Screen went")
+    }
+
+    /// T1 offers Allow Notifications… only while macOS hasn't asked (D-6);
+    /// T2 and T4 open the page that decides; none has more than two.
+    func testTipButtons() {
+        let t1 = StartState.Banner.needsYou(tab: "api", mark: .waiting)
+        XCTAssertEqual(StartText.tipButtons(t1, permission: .notAsked).map(\.action), [.openInbox, .allowNotifications])
+        XCTAssertEqual(StartText.tipOffer(t1, permission: .notAsked), StartText.notificationOffer)
+        for permission in [NotificationPermission.allowed, .denied, nil] as [NotificationPermission?] {
+            XCTAssertEqual(StartText.tipButtons(t1, permission: permission).map(\.action), [.openInbox], "\(String(describing: permission))")
+            XCTAssertNil(StartText.tipOffer(t1, permission: permission))
+        }
+        XCTAssertEqual(StartText.tipButtons(.production(.kubernetes(context: "p")), permission: .notAsked).map(\.action), [.settings(.kubernetes)])
+        XCTAssertEqual(StartText.tipButtons(.production(.terraform(root: "r")), permission: nil).map(\.title), ["Settings ▸ Terraform"])
+        XCTAssertEqual(StartText.tipButtons(.agentTools, permission: .notAsked).map(\.action), [.settings(.agents)])
+        XCTAssertNil(StartText.tipOffer(.agentTools, permission: .notAsked))
+    }
 }

@@ -1772,6 +1772,39 @@ the keyboard — the one way in that moves it, and the person asked. Done's
 ticks are the optional panels' own switches (`SidebarPanel.toggleKey`,
 DISC-N4); none is unticked for the person (D-8).
 
+The tips (7.6, D-9) are four — T1 needs you, T2 production, T3 Clear
+moved, T4 agents' tools —, each shown once, never more than five
+(`StartState.Tip`, the cap a test's). Their rules are `StartState.apply`'s
+(pure): a tip comes from its event — `markRaised(kind)` at the three places
+a mark goes up (`TabActivity.handle`, `agentAsked`, `terraformAsked`, all
+through `noteMarkRaised`), `productionPane` when a pane header's production
+label appears (`KubeRunWarningLabel`, `TerraformRunWarningLabel`),
+`paletteOpened` as ⌘K shows, `agentTabStarted`; it waits while a sheet,
+⌘K, Tab Peek or the held-settings banner covers its place, or the app is
+behind another, and is seen once placed (`onboarding.tipsSeen`); an Inbox
+opened first makes T1 needless; one banner tip a launch, T1 and T2 past
+that limit; `general.tips` off, none; an update counts every tip seen. No
+timer: T1 goes with the Inbox or its tab selected, T2 and T4 with ×. T3 is
+⌘K's own hint row (`PaletteModel.tip`) on its first three showings
+(`onboarding.paletteOpens`); the others are `TipBannerView`, hosted as the
+held banner is — one view under the title bar, over the body, resizing
+nothing — by `TipBannerHostingView`, which refuses first responder; its
+buttons take no focus and it binds no key. Its presses go through
+`performTipAction`; a placed tip is announced to VoiceOver
+(`announcementRequested`) without moving the focus. Help ▸ Reset Tips
+(`help.resetTips`, no key) and its ⌘K row clear what was seen, asked first.
+
+The notification permission is asked by a click on a fresh install (D-6):
+on its first launch, while T1 is unseen and tips are on
+(`Start.holdsNotificationAsk`), `AttentionNotifier.notify` and `summarize`
+read macOS's answer first and ask nothing while it is "not asked"
+(`asksLazily`, pure) — the Dock bounce and the badge still say it; T1's
+Allow Notifications… asks then (`requestNow`). From the second launch on,
+or with T1 seen, the lazy ask is as before. The state is read live each
+time (`authorizationState`), every UserNotifications completion built in a
+`nonisolated` function; an isolated run asks macOS nothing
+(`permissionOverride`, `requestedNow`).
+
 ## Microphone and other privacy prompts
 
 macOS charges what a program in the terminal asks for to Overterm, the app

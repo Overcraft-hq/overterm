@@ -1,6 +1,24 @@
 import AppKit
 import UserNotifications
 
+/// Whether macOS lets Overterm post notifications, as it says now — read
+/// live each time, never kept: an ad hoc signed update can take it back
+/// (onboarding D-14).
+package enum NotificationPermission: String, Sendable {
+    /// Never asked: the system's question is still to come.
+    case notAsked
+    case allowed
+    case denied
+
+    package init(_ status: UNAuthorizationStatus) {
+        switch status {
+        case .notDetermined: self = .notAsked
+        case .denied: self = .denied
+        default: self = .allowed
+        }
+    }
+}
+
 /// Tells you about a tab that wants you while you're in another app: a
 /// notification (clicking it brings the tab up), a Dock bounce, and the
 /// Dock badge counting such tabs.
@@ -10,6 +28,11 @@ package enum AttentionNotifier {
 
     /// Notifications an isolated run would have posted (it posts none).
     package static var suppressed = 0
+    /// What `authorizationState()` answers in an isolated run, which never
+    /// asks macOS: a scenario's say; nil reads as a fresh Mac's, not asked.
+    package static var permissionOverride: NotificationPermission?
+    /// `requestNow()`s an isolated run made — no system question is put to it.
+    package static var requestedNow = 0
 
     /// `note` and `mark`: a notice that isn't the tab's own mark (a cluster
     /// failure while an agent's waiting mark holds the tab) — posted beside
@@ -32,8 +55,73 @@ package enum AttentionNotifier {
         let identifier = note == nil ? tab.id.uuidString : sideIdentifier(tab)
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         // Asks for permission the first time; if refused, the badge and the
-        // Dock bounce still say it.
-        center.requestAuthorization(options: [.alert, .sound, .badge], completionHandler: authorized(then: request))
+        // Dock bounce still say it. On a fresh install's first launch the
+        // question waits for T1's button instead (onboarding D-6).
+        if Start.shared.holdsNotificationAsk {
+            postUnlessNotAsked(request, options: [.alert, .sound, .badge])
+        } else {
+            center.requestAuthorization(options: [.alert, .sound, .badge], completionHandler: authorized(then: request))
+        }
+    }
+
+    /// Whether a notice asks for permission as it posts — the lazy ask, as
+    /// it always was — or, never asked yet, leaves the question to T1's
+    /// Allow Notifications… (onboarding D-6): only on a fresh install's
+    /// first launch, with tips on and T1 not seen. From the second launch
+    /// on it asks again, T1 seen or not, so a new install can't lose the
+    /// question for good. Pure.
+    package nonisolated static func asksLazily(state: NotificationPermission, tipsOn: Bool, t1Seen: Bool, firstLaunch: Bool) -> Bool {
+        state != .notAsked || !tipsOn || t1Seen || !firstLaunch
+    }
+
+    /// The held ask: what macOS says now, read off the main actor; asked
+    /// (and so posted) only when it isn't "not asked" — then the request
+    /// puts no question and answers at once. Built outside the main actor,
+    /// as `authorized(then:)` is.
+    private nonisolated static func postUnlessNotAsked(_ request: UNNotificationRequest, options: UNAuthorizationOptions) {
+        nonisolated(unsafe) let request = request
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let state = NotificationPermission(settings.authorizationStatus)
+            guard asksLazily(state: state, tipsOn: true, t1Seen: false, firstLaunch: true) else { return }
+            UNUserNotificationCenter.current().requestAuthorization(options: options, completionHandler: authorized(then: request))
+        }
+    }
+
+    /// Notifications as macOS says now (T1's second line, the Setup
+    /// page). An isolated run never asks: `permissionOverride`, else not asked.
+    package static func authorizationState() async -> NotificationPermission {
+        if AppEnvironment.isIsolated { return permissionOverride ?? .notAsked }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<NotificationPermission, Never>) in
+            readPermission(into: continuation)
+        }
+    }
+
+    /// T1's Allow Notifications…: the system's question, put now — by a
+    /// click, with the reason beside it (D-6). What macOS says after.
+    /// An isolated run counts it and puts nothing.
+    package static func requestNow() async -> NotificationPermission {
+        if AppEnvironment.isIsolated {
+            requestedNow += 1
+            return permissionOverride ?? .notAsked
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            requestPermission(resuming: continuation)
+        }
+        return await authorizationState()
+    }
+
+    /// UserNotifications answers on a queue of its own: built here, outside
+    /// the main actor (CLAUDE.md).
+    private nonisolated static func readPermission(into continuation: CheckedContinuation<NotificationPermission, Never>) {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            continuation.resume(returning: NotificationPermission(settings.authorizationStatus))
+        }
+    }
+
+    private nonisolated static func requestPermission(resuming continuation: CheckedContinuation<Void, Never>) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
+            continuation.resume()
+        }
     }
 
     /// What runs once permission is answered — built outside the main
@@ -64,7 +152,11 @@ package enum AttentionNotifier {
         content.title = held.count == 1 ? "1 tab waited while you focused" : "\(held.count) tabs waited while you focused"
         content.body = held.map { "\($0.groupName) · \($0.title) — \($0.note)" }.joined(separator: "\n")
         let request = UNNotificationRequest(identifier: "focus-summary", content: content, trigger: nil)
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound], completionHandler: authorized(then: request))
+        if Start.shared.holdsNotificationAsk {
+            postUnlessNotAsked(request, options: [.alert, .sound])
+        } else {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound], completionHandler: authorized(then: request))
+        }
     }
 
     /// A notice beside the tab's own (`notify(tab:note:mark:)`).

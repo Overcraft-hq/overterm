@@ -54,6 +54,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// settings.json's security settings changed outside the page, waiting
     /// for Keep or Revert (`Settings.held`); hidden while none is.
     package private(set) var settingsHeldBanner: NSHostingView<SettingsHeldBanner>?
+    /// The tip under the title bar (onboarding 7.6, D-3): hidden while no
+    /// tip shows (TerminalWindowController+Start).
+    package var tipBanner: TipBannerHostingView?
+    /// Notifications as macOS said when T1 took its place.
+    package let tipModel = TipBannerModel()
     private var searchSubscription: AnyCancellable?
     /// The ⌘F overlay over the terminal (terminal + files + contents).
     package let spotlight = SpotlightModel()
@@ -971,6 +976,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             .sink { [weak heldBanner] empty in heldBanner?.isHidden = empty }
             .store(in: &cancellables)
         settingsHeldBanner = heldBanner
+        // A tip: in the held banner's place, under it — a tip waits while
+        // the held banner shows, which stands alone.
+        installTipBanner(in: content, top: titleBottom, under: heldBanner, theme: theme)
 
         // The palette floats over everything, hidden until ⌘P.
         let paletteView = NSHostingView(
@@ -1214,6 +1222,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 // While focusing on one island, another group's notice waits
                 // — unless its agent is blocked on you.
                 self.notifyUnlessHeld(tab)
+                self.noteMarkRaised(on: tab)
             }
             if event == .bell, self.isVisible(tab) { NSSound.beep() }
             self.updateAttentionBadge()
@@ -1553,6 +1562,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         if let ask {
             let raised = tab.activity.terraformAsked(ask.summary, visible: isVisible(tab))
             if raised, tab.agent != nil || ask.prompt.isAgents { notifyUnlessHeld(tab) }
+            if raised { noteMarkRaised(on: tab) }
         } else if before != nil, tab.activity.terraformAnswered() {
             AttentionNotifier.withdraw(tab: tab)
         }
@@ -2934,7 +2944,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         paletteOpener = window?.firstResponder
         paletteFixedRows = nil
         palette.reset(with: paletteItems())
+        palette.tip = paletteTip()
         paletteView.isHidden = false
+        updateTipRoom()
         // The hosting view is reused, so its field has to be focused on
         // every show, after SwiftUI has laid it out.
         DispatchQueue.main.async { [weak self] in
@@ -2968,6 +2980,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// Esc and the arrows wherever the keyboard is, as the overview's: a
     /// click, or the terminal behind, takes first responder back.
     package func installPeekKeys() {
+        updateTipRoom()
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
         peekKeys = nil
         guard peek.isOpen else { return }
@@ -3497,6 +3510,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
 
     package func hidePalette() {
         paletteView?.isHidden = true
+        updateTipRoom()
         focusSelectedTerminal()
         releaseKubernetesSwitcher()
         releaseActivitySwitcher()
@@ -3522,11 +3536,15 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 [weak self] _, _ in self?.openFolder(nil)
             },
             // Help's rows (onboarding 7.8): Open Folder… above; Check Setup
-            // and Reset Tips come with their stages.
+            // comes with its stage.
             PaletteItem(
                 id: "a.gettingStarted", group: .action, title: "Getting Started", subtitle: "Five steps, in the sidebar", symbol: "checklist",
                 command: "help.gettingStarted"
             ) { [weak self] _, _ in self?.showGettingStarted(nil) },
+            PaletteItem(
+                id: "a.resetTips", group: .action, title: "Reset Tips", subtitle: "Every tip shows once more", symbol: "lightbulb",
+                command: "help.resetTips"
+            ) { [weak self] _, _ in self?.resetTips(nil) },
             PaletteItem(
                 id: "a.shortcuts", group: .action, title: "Keyboard Shortcuts", subtitle: "Every key, and yours to change", symbol: "keyboard",
                 command: "help.shortcuts"

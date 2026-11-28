@@ -132,4 +132,53 @@ final class StartTests: XCTestCase {
         start.noteNeedsYou(true)
         XCTAssertTrue(start.anyNeedsYou)
     }
+
+    /// The tips seen and ⌘K's count are kept in the defaults; Reset Tips clears both.
+    func testTipsAreKeptAndReset() {
+        let first = start()
+        first.begin(.fresh)
+        XCTAssertTrue(first.holdsNotificationAsk, "a fresh install's first launch holds the ask for T1")
+        first.note(.agentTabStarted)
+        XCTAssertEqual(first.state.banner, .agentTools)
+        first.note(.paletteOpened)
+        XCTAssertTrue(first.state.paletteTip)
+        first.dismissTip()
+        XCTAssertNil(first.state.banner)
+        XCTAssertEqual(defaults.stringArray(forKey: Start.tipsSeenKey), ["agentTools"])
+        XCTAssertEqual(defaults.integer(forKey: Start.paletteOpensKey), 1)
+
+        let second = start()
+        second.begin(.same)
+        XCTAssertFalse(second.holdsNotificationAsk, "asked as before from the second launch")
+        second.note(.agentTabStarted)
+        XCTAssertNil(second.state.banner, "seen at the launch before")
+        second.resetTips()
+        XCTAssertEqual(defaults.stringArray(forKey: Start.tipsSeenKey), [])
+        XCTAssertEqual(defaults.integer(forKey: Start.paletteOpensKey), 0)
+        second.note(.agentTabStarted)
+        XCTAssertEqual(second.state.banner, .agentTools)
+        second.turnOffTips()
+        XCTAssertNil(second.state.banner, "Turn Off Tips takes the tip")
+        let file = (try? String(contentsOf: settings.url, encoding: .utf8)) ?? ""
+        XCTAssertFalse(file.contains("onboarding"), "nothing of the tips in settings.json")
+    }
+
+    /// Inert, nothing is noted or kept; an update counts every tip seen.
+    func testAnInertRunAndAnUpdateGetNoTip() {
+        let inert = start(active: false)
+        inert.begin(.fresh)
+        inert.note(.markRaised(.waiting, tab: "api"))
+        inert.room(blocked: false, inFront: true)
+        inert.resetTips()
+        XCTAssertNil(inert.state.banner)
+        XCTAssertFalse(inert.holdsNotificationAsk)
+        XCTAssertNil(defaults.object(forKey: Start.tipsSeenKey))
+
+        let updated = start()
+        updated.begin(.upgraded(from: "1.6.8"))
+        updated.note(.markRaised(.waiting, tab: "api"))
+        XCTAssertNil(updated.state.banner)
+        XCTAssertFalse(updated.holdsNotificationAsk)
+        XCTAssertEqual(defaults.stringArray(forKey: Start.tipsSeenKey), StartState.Tip.allCases.map(\.seenKey))
+    }
 }

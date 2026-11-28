@@ -151,7 +151,10 @@ extension TerminalWindowController {
         guard tab.screenAsk != question else { return }
         tab.screenAsk = question
         if let question {
-            if tab.activity.agentAsked(question, visible: isVisible(tab)) { notifyUnlessHeld(tab) }
+            if tab.activity.agentAsked(question, visible: isVisible(tab)) {
+                notifyUnlessHeld(tab)
+                noteMarkRaised(on: tab)
+            }
         } else if tab.activity.agentAnswered() {
             AttentionNotifier.withdraw(tab: tab)
         }

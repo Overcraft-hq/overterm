@@ -116,6 +116,25 @@ package enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/ghostty/themes", isDirectory: true)
     }
 
+    /// The user's own Ghostty config file, if there is one: it applies in
+    /// Overterm as it is, which ⌘K's first tip says (onboarding T3). Only
+    /// its existence is looked at. None in an isolated run — a scenario
+    /// must not depend on what the user has.
+    package static var ghosttyConfigFile: URL? {
+        guard !isIsolated else { return nil }
+        let base: URL
+        if let config = env["XDG_CONFIG_HOME"], !config.isEmpty {
+            base = URL(fileURLWithPath: config, isDirectory: true)
+        } else {
+            base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config", isDirectory: true)
+        }
+        for name in ["config", "config.ghostty"] {
+            let file = base.appendingPathComponent("ghostty/" + name)
+            if FileManager.default.fileExists(atPath: file.path) { return file }
+        }
+        return nil
+    }
+
     /// Claude Code's other config folders on this Mac, beside the one above:
     /// `CLAUDE_CONFIG_DIR` points one launch at another folder — an alias
     /// per account, `~/.claude-work` — and a GUI app never sees that
