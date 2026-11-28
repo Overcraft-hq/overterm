@@ -13,6 +13,10 @@ version is tagged `v<version>`.
 - Ask Agent's sheet shows what is sent for a selection too, says how many values it masked, and can send them unmasked when asked
 - ⌘Z and ⇧⌘Z work in a note's reading view: a task ticked there is undone, the page drawn again
 - The group switcher (⌃⌘G) filters its groups as you type, and → walks the highlighted group's tabs
+- Writing in a note: Return carries a list, task or quote on (an empty item ends it), a URL pasted over a selection makes a link, and `/` at a line's start offers headings, lists, callouts, code and runnable blocks, tables and the date
+- Runnable notes: a shell block has ▶ Run in terminal — shown and asked first, then typed into the selected tab
+- Fold Heading folds a note's section in Live Preview, and Unfold All opens them
+- Notes tables: a ```dataview block lists notes by their properties — FROM a folder or tag, WHERE, SORT, LIMIT — as Obsidian's Dataview does
 
 ## 1.6.8 — 2026-11-26
 

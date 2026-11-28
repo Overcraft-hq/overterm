@@ -71,6 +71,9 @@ package final class NotesEditor: EditorNotes {
     package func paste(_ pasteboard: NSPasteboard, in editor: EditorViewController) -> Bool { editor.pasteIntoNote(from: pasteboard) }
     package func addTemplateItems(to menu: NSMenu, in editor: EditorViewController) { editor.addTemplateItems(to: menu) }
     package func updateCompletion(in editor: EditorViewController) -> Bool { editor.updateNoteCompletion() }
+    package func caretPastFolds(from old: NSRange, to new: NSRange, in editor: EditorViewController) -> NSRange {
+        editor.caretPastFolds(from: old, to: new)
+    }
 
     package func acceptCompletion(_ candidate: CompletionState.Candidate, anchor: Int, in editor: EditorViewController) {
         editor.acceptNoteCompletion(candidate, anchor: anchor)

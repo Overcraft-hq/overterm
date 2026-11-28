@@ -203,6 +203,13 @@ extension EditorViewController: CodeTextViewHost {
 
     package func codeTextViewInsertNewline(_ view: CodeTextView) -> Bool {
         guard let buffer = active else { return false }
+        // A note's list, task or quote goes on (or ends on an empty item), as Obsidian's does.
+        if buffer.isNote, textView.selectedRanges.count == 1,
+            let edit = NoteWriting.newline(in: textView.string as NSString, selection: textView.selectedRange())
+        {
+            apply(edit)
+            return true
+        }
         apply(
             EditCommands.newline(
                 in: textView.string as NSString, selections: textView.selectedRanges.map(\.rangeValue), style: buffer.indentStyle,

@@ -152,6 +152,8 @@ package protocol EditorNotes: AnyObject {
     func addTemplateItems(to menu: NSMenu, in editor: EditorViewController)
     func updateCompletion(in editor: EditorViewController) -> Bool
     func acceptCompletion(_ candidate: CompletionState.Candidate, anchor: Int, in editor: EditorViewController)
+    /// Where a caret moving from `old` to `new` lands: past a folded heading's lines.
+    func caretPastFolds(from old: NSRange, to new: NSRange, in editor: EditorViewController) -> NSRange
 }
 
 extension EditorViewController {

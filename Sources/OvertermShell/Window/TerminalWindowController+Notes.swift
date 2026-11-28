@@ -20,6 +20,8 @@ extension TerminalWindowController {
             self.notes.tagFilter = tag
             self.notes.detail = .tags
         }
+        // A note's shell block, ▶ Run in terminal: asked, then typed into the selected tab.
+        editor?.onRunNoteBlock = { [weak self] command in self?.runNoteCommand(command) }
         let changed = editor?.onActiveChanged
         editor?.onActiveChanged = { [weak self] url in
             changed?(url)
@@ -407,5 +409,38 @@ extension TerminalWindowController {
     package func reportNotesError(_ error: Error) {
         guard let window else { return }
         NSAlert(error: error).beginSheetModal(for: window)
+    }
+}
+
+// MARK: Runnable blocks
+
+extension TerminalWindowController {
+    /// A note's shell block, run: shown whole and asked about — naming the
+    /// tab it goes to — then typed into that tab and Return pressed. Never
+    /// without the question: a note may come from anywhere (a shared vault,
+    /// an agent), and Return on the sheet is Cancel.
+    package func runNoteCommand(_ command: String) {
+        guard let window, let tab = store.selected else { return NSSound.beep() }
+        let pane = tab.terminal
+        if let refusal = NoteRunbook.refusal(kind: tab.kind, terraformAsking: terraformAsking(tab)) {
+            let alert = NSAlert()
+            alert.messageText = "Not run in “\(tab.title)”"
+            alert.informativeText = refusal
+            alert.beginSheetModal(for: window)
+            return
+        }
+        let alert = NSAlert()
+        // The tab named with what it is (a remote shell, a pod's, a context's) — where the command lands.
+        alert.messageText = tab.kind == .shell ? "Run this in “\(tab.title)”?" : "Run this in “\(tab.title)” — \(tab.kind.name)?"
+        alert.informativeText = VisibleText.displayed(command)
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Run")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            // The pane the question named, still there and still not at an ask.
+            guard response == .alertSecondButtonReturn, let self, tab.terminals.contains(where: { $0 === pane }), !self.terraformAsking(tab) else { return }
+            pane.insertText(command)
+            pane.pressReturn()
+            self.focusSelectedTerminal()
+        }
     }
 }

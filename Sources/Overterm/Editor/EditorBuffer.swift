@@ -50,6 +50,11 @@ package final class EditorBuffer {
     package var livePreview = false
     /// The caret's lines when Live Preview last styled them: their markup shows.
     package var liveEditing: [NSRange] = []
+    /// A note's folded headings, by `NoteFolding.Section.key`: hidden in
+    /// Live Preview, kept while the buffer is open.
+    package var foldedHeadings: Set<String> = []
+    /// The note's sections for the version they were read at.
+    package var foldSections: (version: Int, sections: [NoteFolding.Section])?
     /// The note's frontmatter and code blocks, for the text's `version`.
     package var liveBlocks: (version: Int, blocks: [NoteLivePreview.Block])?
 
@@ -219,6 +224,18 @@ package final class EditorLineHeight: NSObject, NSLayoutManagerDelegate, @unchec
         var font = self.font
         if variable, let storage = layoutManager.textStorage {
             let characters = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+            // A line under a folded heading: nothing to show, no height.
+            if characters.length > 0, NSMaxRange(characters) <= storage.length {
+                var folded = NSRange()
+                if storage.attribute(.noteFolded, at: characters.location, longestEffectiveRange: &folded, in: characters) != nil,
+                    NSMaxRange(folded) >= NSMaxRange(characters)
+                {
+                    lineFragmentRect.pointee.size.height = 0
+                    lineFragmentUsedRect.pointee.size.height = 0
+                    baselineOffset.pointee = 0
+                    return true
+                }
+            }
             var largest: NSFont?
             storage.enumerateAttribute(.font, in: NSIntersectionRange(characters, NSRange(location: 0, length: storage.length))) { value, range, _ in
                 guard let candidate = value as? NSFont, storage.attribute(.noteHidden, at: range.location, effectiveRange: nil) == nil else { return }
@@ -245,7 +262,11 @@ package final class EditorLineHeight: NSObject, NSLayoutManagerDelegate, @unchec
         var changed: [NSLayoutManager.GlyphProperty]?
         for i in 0..<count {
             let index = characterIndexes[i]
-            guard index < storage.length, storage.attribute(.noteHidden, at: index, effectiveRange: nil) != nil else { continue }
+            guard index < storage.length else { continue }
+            let hidden = storage.attribute(.noteHidden, at: index, effectiveRange: nil) != nil
+            // A folded line's break stays one, so each folded line is a fragment of its own (and takes no height).
+            let folded = !hidden && storage.attribute(.noteFolded, at: index, effectiveRange: nil) != nil && (storage.string as NSString).character(at: index) != 0x0A
+            guard hidden || folded else { continue }
             if changed == nil { changed = Array(UnsafeBufferPointer(start: properties, count: count)) }
             changed?[i] = .null
         }

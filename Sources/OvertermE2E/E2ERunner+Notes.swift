@@ -168,6 +168,9 @@ extension E2ERunner {
         check("and embedded at the caret", editor.textView.string.contains("![[\(pasted.first ?? "?")]]"), editor.textView.string)
         board.releaseGlobally()
 
+        // Writing: lists go on, a URL links a selection, / commands, folds, a runnable block.
+        await notesWritingChecks(editor)
+
         // Insert template: the vault's templates folder, its fields filled.
         write(".obsidian/templates.json", #"{"folder": "Templates"}"#)
         write("Templates/Meeting.md", "## {{title}} — {{date:YYYY}}\n")

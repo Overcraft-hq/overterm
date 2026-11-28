@@ -20,6 +20,8 @@ package final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessag
     package var onOpenURL: ((URL) -> Void)?
     package var onToggleTask: ((_ line: Int) -> Void)?
     package var onTag: ((String) -> Void)?
+    /// ▶ Run in terminal on a shell block: the line (the file's) it opens on.
+    package var onRunBlock: ((_ line: Int) -> Void)?
     /// The note's own undo, for ⌘Z and ⇧⌘Z here: a task ticked in the
     /// reading view is an edit of the note's text, its undo held by the
     /// editor behind — and with the page focused, the Edit menu's Undo found
@@ -161,6 +163,7 @@ package final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessag
             return
         }
         if let line = body["toggleTask"] as? Int { onToggleTask?(line) }
+        if let line = body["runBlock"] as? Int { onRunBlock?(line) }
         if let tag = body["tag"] as? String { onTag?(tag) }
         if let target = body["open"] as? String {
             onOpenLink?(target, body["anchor"] as? String, body["markdown"] as? Bool ?? false, body["newTab"] as? Bool ?? false)

@@ -10,6 +10,8 @@ package enum NoteCompletion {
         case heading(target: String, query: String, start: Int)
         /// `#pro|`: after the `#`.
         case tag(query: String, start: Int)
+        /// `/tab|` at a line's start: a command to put there (`NoteSlashCommands`).
+        case slash(query: String, start: Int)
     }
 
     package struct Candidate: Equatable {
@@ -27,6 +29,9 @@ package enum NoteCompletion {
     /// From the line up to the caret.
     package static func context(before line: String) -> Context? {
         let ns = line as NSString
+        if let slash = cache.regex(#"^[ \t]*/([\p{L}\p{N}]*)$"#, []), let m = slash.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
+            return .slash(query: ns.substring(with: m.range(at: 1)), start: m.range(at: 1).location)
+        }
         let open = ns.range(of: "[[", options: .backwards)
         if open.location != NSNotFound {
             let after = ns.substring(from: NSMaxRange(open))
@@ -69,6 +74,8 @@ package enum NoteCompletion {
             guard let path, let doc = index.document(path) else { return [] }
             return doc.headings.filter { query.isEmpty || $0.text.localizedCaseInsensitiveContains(query) }
                 .map { Candidate(label: $0.text, insert: $0.text, detail: String(repeating: "#", count: $0.level)) }
+        case .slash(let query, _):
+            return NoteSlashCommands.matching(query).map { Candidate(label: $0.label, insert: $0.insert, detail: $0.detail) }
         case .tag(let query, _):
             return index.tags.filter { query.isEmpty || $0.key.localizedCaseInsensitiveContains(query) }
                 .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }

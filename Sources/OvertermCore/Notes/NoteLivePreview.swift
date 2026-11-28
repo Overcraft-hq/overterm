@@ -3,6 +3,8 @@ import AppKit
 extension NSAttributedString.Key {
     /// Markup Live Preview hides: no glyph is drawn for it (EditorLineHeight).
     package static let noteHidden = NSAttributedString.Key("OvertermNoteHidden")
+    /// A folded heading's lines: no glyphs, and a line all folded takes no height.
+    package static let noteFolded = NSAttributedString.Key("OvertermNoteFolded")
     /// What Live Preview draws over the text there (`NoteDecoration`).
     package static let noteDecoration = NSAttributedString.Key("OvertermNoteDecoration")
     /// A link's target as written, followed on a click (`md:` before a

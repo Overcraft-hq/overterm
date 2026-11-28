@@ -46,6 +46,7 @@ extension EditorViewController {
         reader.onOpenURL = { Self.openExternal($0) }
         reader.onToggleTask = { [weak self] line in self?.toggleNoteTask(line: line) }
         reader.onTag = { [weak self] tag in self?.onNoteTag?(tag) }
+        reader.onRunBlock = { [weak self] line in self?.runNoteBlock(openingAt: line) }
         reader.noteUndo = { [weak self] in self?.active.flatMap { $0.isNote ? $0.undo : nil } }
         reader.onUndone = { [weak self] in
             guard let self, let buffer = self.active, buffer.showsPreview else { return }
@@ -195,6 +196,28 @@ extension EditorViewController {
         replaceText(of: buffer, with: (text as NSString).replacingCharacters(in: edit.range, with: edit.replacement))
         renderNote(buffer)
     }
+
+    /// ▶ Run in terminal, on a shell block of the reading view: the block
+    /// that opens on that line (the file's) handed to the window, which asks.
+    package func runNoteBlock(openingAt line: Int) {
+        guard let buffer = active, buffer.isNote, let command = NoteRunbook.command(in: buffer.storage.string, openingAt: line) else {
+            return NSSound.beep()
+        }
+        onRunNoteBlock?(command)
+    }
+
+    /// Run Code Block in Terminal: the shell block the caret is in.
+    package func runNoteBlockAtCaret() {
+        guard let buffer = active, buffer.isNote else { return NSSound.beep() }
+        let text = buffer.storage.string as NSString
+        let caret = min(textView.selectedRange().location, text.length)
+        var line = 0
+        text.enumerateSubstrings(in: NSRange(location: 0, length: caret), options: [.byLines, .substringNotRequired]) { _, _, _, _ in line += 1 }
+        // A caret at a line's start is on that line, not the one before.
+        if caret > 0, caret <= text.length, text.character(at: caret - 1) != 0x0A { line -= 1 }
+        guard let command = NoteRunbook.command(in: buffer.storage.string, around: max(0, line)) else { return NSSound.beep() }
+        onRunNoteBlock?(command)
+    }
 }
 
 /// Where a followed link was clicked: the target opens in that mode.
@@ -221,9 +244,14 @@ extension EditorViewController {
         let lineStart = text.lineRange(for: NSRange(location: caret, length: 0)).location
         let before = text.substring(with: NSRange(location: lineStart, length: caret - lineStart))
         guard let context = NoteCompletion.context(before: before) else { return false }
+        // `/` in code or frontmatter is code's own.
+        if case .slash = context {
+            if NoteWriting.isInFence(text, at: lineStart) { return false }
+            if let front = NoteParser.parse(textView.string).frontmatterRange, NSLocationInRange(caret, front) { return false }
+        }
         let start: Int
         switch context {
-        case .link(_, let at), .heading(_, _, let at), .tag(_, let at): start = lineStart + at
+        case .link(_, let at), .heading(_, _, let at), .tag(_, let at), .slash(_, let at): start = lineStart + at
         }
         let found = NoteCompletion.candidates(context, index: notes.index, source: notes.path(of: url), settings: notes.vault.settings)
         guard !found.isEmpty else {
@@ -236,6 +264,7 @@ extension EditorViewController {
         case .link: badge = "[["
         case .heading: badge = "#"
         case .tag: badge = "tag"
+        case .slash: badge = "/"
         }
         let candidates = found.map {
             CompletionState.Candidate(
@@ -262,6 +291,15 @@ extension EditorViewController {
         guard anchor <= caret else { return }
         var end = caret
         var insert = candidate.insertText
+        // A `/` command: the slash and what was typed after it give way to
+        // its text, the caret where it says (`$0`).
+        if candidate.badge == "/", anchor > 0 {
+            let (text, offset) = NoteSlashCommands.expand(insert)
+            textView.apply(
+                [(range: NSRange(location: anchor - 1, length: caret - anchor + 1), text: text)],
+                selecting: [NSRange(location: anchor - 1 + offset, length: 0)])
+            return
+        }
         if candidate.badge == "[[" || candidate.badge == "#" {
             if caret + 2 <= text.length, text.substring(with: NSRange(location: caret, length: 2)) == "]]" { end += 2 }
             insert += "]]"
@@ -280,6 +318,13 @@ extension EditorViewController {
     /// caret. False for anything else, which pastes as text.
     package func pasteIntoNote(from pasteboard: NSPasteboard) -> Bool {
         guard let buffer = active, let url = buffer.url else { return false }
+        // A URL over a selection: `[selection](url)`, as Obsidian pastes it.
+        if textView.selectedRanges.count == 1, let pasted = pasteboard.string(forType: .string),
+            let edit = NoteWriting.linkPaste(pasted, over: textView.selectedRange(), in: textView.string as NSString)
+        {
+            apply(edit)
+            return true
+        }
         let notes = self.notes
         let folder = notes.vault.folderForAttachment(of: url)
         var saved: [URL] = []
@@ -427,13 +472,98 @@ extension EditorViewController {
         buffer.liveEditing = editing.map { text.lineRange(for: $0) }
         let runs = liveStyle.runs(in: text, range: lines, editing: editing, blocks: buffer.liveBlocks?.blocks ?? [])
         let all = NSRange(location: 0, length: target.length)
-        for key in [NSAttributedString.Key.noteHidden, .noteDecoration, .noteLink, .noteURL, .backgroundColor, .strikethroughStyle, .cursor] {
+        for key in [NSAttributedString.Key.noteHidden, .noteFolded, .noteDecoration, .noteLink, .noteURL, .backgroundColor, .strikethroughStyle, .cursor] {
             target.removeAttribute(key, range: all)
         }
         for (index, run) in runs.enumerated() {
             let clipped = NSIntersectionRange(NSRange(location: run.range.location - location, length: run.range.length), all)
             guard clipped.length > 0 else { continue }
             if index == 0 { target.setAttributes(run.attributes, range: clipped) } else { target.addAttributes(run.attributes, range: clipped) }
+        }
+        // Folded headings: their lines hidden, the heading underlined dotted to say so.
+        for section in foldedSections(in: buffer) {
+            let body = NSIntersectionRange(NSRange(location: section.body.location - location, length: section.body.length), all)
+            if body.length > 0 { target.addAttribute(.noteFolded, value: true, range: body) }
+            let heading = NSIntersectionRange(NSRange(location: section.heading.location - location, length: section.heading.length), all)
+            if heading.length > 0 {
+                target.addAttributes(
+                    [.underlineStyle: NSUnderlineStyle.single.rawValue | NSUnderlineStyle.patternDot.rawValue, .underlineColor: theme.lineNumber],
+                    range: heading)
+            }
+        }
+    }
+
+    /// The note's sections folded now, read once a version.
+    private func foldedSections(in buffer: EditorBuffer) -> [NoteFolding.Section] {
+        guard !buffer.foldedHeadings.isEmpty else { return [] }
+        if buffer.foldSections?.version != buffer.version {
+            buffer.foldSections = (buffer.version, NoteFolding.sections(in: buffer.storage.string as NSString))
+        }
+        let sections = buffer.foldSections?.sections ?? []
+        // A heading gone or renamed takes its fold with it.
+        buffer.foldedHeadings.formIntersection(sections.map(\.key))
+        return sections.filter { buffer.foldedHeadings.contains($0.key) }
+    }
+
+    /// Fold Heading: the heading the caret is on (or the nearest above it)
+    /// folds, or unfolds when it was folded. Live Preview's: its lines hide.
+    package func toggleHeadingFold() {
+        guard let buffer = active, buffer.isNote else { return NSSound.beep() }
+        if !buffer.livePreview { toggleLivePreview() }
+        let text = buffer.storage.string as NSString
+        let sections = NoteFolding.sections(in: text)
+        guard let section = NoteFolding.section(at: textView.selectedRange().location, in: sections) else { return NSSound.beep() }
+        if buffer.foldedHeadings.remove(section.key) == nil {
+            buffer.foldedHeadings.insert(section.key)
+            // The caret out of what hides: at the heading's end.
+            var end = NSMaxRange(section.heading)
+            while end > section.heading.location, [0x0A, 0x0D].contains(text.character(at: end - 1)) { end -= 1 }
+            textView.setSelectedRange(NSRange(location: end, length: 0))
+        }
+        buffer.foldSections = (buffer.version, sections)
+        applyLivePreview(over: NSUnionRange(section.heading, section.body), in: buffer)
+    }
+
+    /// Unfold All Headings.
+    package func unfoldAllHeadings() {
+        guard let buffer = active, buffer.isNote, !buffer.foldedHeadings.isEmpty else { return }
+        let folded = foldedSections(in: buffer)
+        buffer.foldedHeadings = []
+        for section in folded { applyLivePreview(over: NSUnionRange(section.heading, section.body), in: buffer) }
+    }
+
+    /// A caret stepping into folded lines from just beside them — ↓ off the
+    /// heading, ↑ from below — goes past them, as Obsidian's does; one
+    /// jumping in (a search, a link) is left there, and the fold opens.
+    package func caretPastFolds(from old: NSRange, to new: NSRange) -> NSRange {
+        guard let buffer = active, buffer.isNote, buffer.livePreview, new.length == 0, !buffer.foldedHeadings.isEmpty else { return new }
+        let text = buffer.storage.string as NSString
+        for section in foldedSections(in: buffer) where NSLocationInRange(new.location, section.body) {
+            if NSLocationInRange(old.location, section.heading) || old.location == section.body.location {
+                // Down: to the line after the fold — the end, at the note's end.
+                return NSRange(location: min(NSMaxRange(section.body), text.length), length: 0)
+            }
+            let after = NSMaxRange(section.body)
+            if old.location >= after, old.location <= after + text.lineRange(for: NSRange(location: min(after, max(0, text.length - 1)), length: 0)).length {
+                // Up: to the heading's end.
+                var end = NSMaxRange(section.heading)
+                while end > section.heading.location, [0x0A, 0x0D].contains(text.character(at: end - 1)) { end -= 1 }
+                return NSRange(location: end, length: 0)
+            }
+        }
+        return new
+    }
+
+    /// A caret moved into folded lines (a search, a link, arrows): they open.
+    private func unfoldAroundCaret(in buffer: EditorBuffer) {
+        guard !buffer.foldedHeadings.isEmpty else { return }
+        let carets = textView.selectedRanges.map(\.rangeValue)
+        // At the body's end too: a section running to the end of the note
+        // ends where typing there goes.
+        for section in foldedSections(in: buffer)
+        where carets.contains(where: { NSLocationInRange($0.location, section.body) || $0.location == NSMaxRange(section.body) }) {
+            buffer.foldedHeadings.remove(section.key)
+            applyLivePreview(over: NSUnionRange(section.heading, section.body), in: buffer)
         }
     }
 
@@ -442,6 +572,7 @@ extension EditorViewController {
     /// the ones it is on show theirs.
     package func updateLivePreviewEditing() {
         guard let buffer = active, buffer.livePreview, !textView.hasMarkedText() else { return }
+        unfoldAroundCaret(in: buffer)
         let text = buffer.storage.string as NSString
         let now = textView.selectedRanges.map { text.lineRange(for: $0.rangeValue) }
         guard now != buffer.liveEditing else { return }
