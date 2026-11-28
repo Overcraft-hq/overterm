@@ -69,6 +69,22 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(SettingsSection.activity.matches("activity.interval"))
     }
 
+    /// Onboarding 7.10: `updates.whatsNew`, in About's Updates, on, never
+    /// held — a chip, not a security setting.
+    func testWhatsNewsSetting() throws {
+        let spec = try XCTUnwrap(SettingsSchema.byKey["updates.whatsNew"])
+        XCTAssertEqual(spec.section, .about)
+        XCTAssertEqual(spec.group, "Updates")
+        XCTAssertEqual(spec.title, "Say what's new after an update")
+        XCTAssertEqual(spec.help, "A chip in the tab strip; never a window.")
+        XCTAssertEqual(spec.defaultValue, .bool(true))
+        XCTAssertFalse(spec.heldWhenEditedOutside)
+        XCTAssertEqual(SettingsSchema.specs(in: .about).map(\.key), ["updates.checkDaily", "updates.whatsNew"])
+        let settings = Settings(url: url, watch: false)
+        settings.set("updates.whatsNew", .bool(false))
+        XCTAssertFalse(settings.whatsNewAfterUpdate)
+    }
+
     func testDefaultsKeepTodaysBehaviour() {
         let settings = Settings(url: url, watch: false)
         XCTAssertTrue(settings.restoreTabs)
@@ -77,6 +93,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(settings.newTabDirectory, .current)
         XCTAssertEqual(settings.confirmClose, .always, "closing always asks unless changed")
         XCTAssertTrue(settings.notifications && settings.dockBadge && settings.checkForUpdates)
+        XCTAssertTrue(settings.whatsNewAfterUpdate, "the chip after an update, on by default")
         XCTAssertEqual(settings.unfocusedPaneDim, 0.35)
         XCTAssertEqual(settings.editorFontSize, 13)
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), "nothing written until something is set")

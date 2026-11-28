@@ -1049,7 +1049,9 @@ private struct AboutSettings: View {
     @ObservedObject var theme: ChromeTheme
 
     private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "" }
-    private var whatsNew: [String] { Changelog.bundled.map { Changelog.entry(for: updates.currentVersion, in: $0) } ?? [] }
+    /// This version's entry, and after an update every one since the last
+    /// run — the versions skipped too (onboarding 7.9).
+    private var changes: [Changelog.Entry] { updates.changes }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1067,11 +1069,19 @@ private struct AboutSettings: View {
                 Button("Acknowledgements") { AcknowledgementsWindowController.shared.show() }
             }
             status
-            if !whatsNew.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("What's new in \(updates.currentVersion)").font(.headline).foregroundStyle(theme.text)
-                    ForEach(whatsNew, id: \.self) { Text(verbatim: "• \($0)").foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true) }
+            if !changes.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(changes, id: \.version) { entry in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(verbatim: "What's new in \(entry.version)").font(.headline).foregroundStyle(theme.text)
+                            ForEach(entry.lines, id: \.self) { line in
+                                Text(verbatim: "• \(line)").foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
                 }
+                // Help ▸ What's New and the strip's chip open Settings here.
+                .id(Changelog.whatsNewAnchor)
             }
         }
     }

@@ -211,6 +211,8 @@ package enum MainMenu {
         command(helpMenu, "Keyboard Shortcuts", #selector(AppDelegate.showKeyboardShortcuts(_:)), "help.shortcuts")
         // The keys of wherever the keyboard is (DISC-N1).
         command(helpMenu, "Keys Here", #selector(TerminalWindowController.showKeysHere(_:)), "help.keysHere")
+        // Onboarding 7.8: Settings ▸ About at the changelog, the versions skipped too.
+        command(helpMenu, whatsNewTitle(FirstRun.currentVersion), #selector(AppDelegate.showWhatsNew(_:)), "help.whatsNew")
         // Mirrored from the app menu, without its identifier: a key the
         // person gives it belongs on one item.
         helpMenu.addItem(withTitle: "View Latest Changelog", action: #selector(AppDelegate.showChangelog(_:)), keyEquivalent: "")
@@ -230,6 +232,9 @@ package enum MainMenu {
         item.submenu = sub
         return sub
     }
+
+    /// Help ▸ What's New's title, this build's version in it; ⌘K's row says the same.
+    package static func whatsNewTitle(_ version: String) -> String { "What's New in \(version)" }
 
     /// An item for a KeyCommand, with the command's default key.
     @discardableResult

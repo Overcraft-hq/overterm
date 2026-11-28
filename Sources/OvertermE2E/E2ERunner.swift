@@ -1949,11 +1949,24 @@ package final class E2ERunner {
         // And it sits on the window's own chrome: no glass the toolbar lays
         // behind its item (macOS 26's platter hung 8 pt under the bar, a
         // grey band across the window under the tabs).
+        //
+        // With the What's New chip showing (onboarding 7.9): it takes the
+        // update chip's place in the strip, never the drag area's.
+        let updates = UpdateChecker.shared
+        AppEnvironment.defaults.removeObject(forKey: UpdateChecker.whatsNewSeenKey)
+        updates.noteLaunch(.upgraded(from: "1.6.1"), changelog: whatsNewChangelog(updates.currentVersion), enabled: true)
+        defer { updates.noteLaunch(.same) }
+        check("the What's New chip is in the strip for these", await eventually(3) { WhatsNewChip.drawn != nil }, String(describing: WhatsNewChip.drawn))
+        // Where the chip itself is, a point is the chip's, not empty strip:
+        // its frame is the strip's own, put in the window's x.
+        let stripX = app.tabBarView?.convert(NSPoint.zero, to: nil).x ?? 0
+        let chip = WhatsNewChip.drawn?.frame.offsetBy(dx: stripX, dy: 0)
         let backdrops = Self.stripBackdrops(app.tabBarView)
         check("nothing is drawn behind the strip", backdrops.isEmpty, backdrops.joined(separator: ", "))
         var dragArea: WindowDragView?
         for fraction in [0.35, 0.55, 0.75] {
             let point = NSPoint(x: window.frame.width * fraction, y: lights.midY)
+            if let chip, (chip.minX - 8...chip.maxX + 8).contains(point.x) { continue }
             let onTop = window.contentView?.superview?.hitTest(point)
             dragArea = dragArea ?? onTop as? WindowDragView
             check(

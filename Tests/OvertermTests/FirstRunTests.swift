@@ -69,6 +69,30 @@ final class FirstRunTests: XCTestCase {
         XCTAssertEqual(read(), .upgraded(from: "1.6.8"))
     }
 
+    /// 1.6.8's chip kept the last version under a key of its own: an update
+    /// from it is from that version — About lists every one since — until
+    /// this key is written; then the new key alone decides.
+    func testAnUpdateFrom168KnowsWhereItCameFrom() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("firstrun-\(UUID().uuidString)", isDirectory: true)
+        let suite = "overterm.tests.firstrun.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        func read() -> FirstRun.Launch {
+            FirstRun.read(
+                defaults: defaults, sessionURL: folder.appendingPathComponent("session.json"), settingsURL: folder.appendingPathComponent("settings.json"),
+                current: "1.6.9")
+        }
+        defaults.set("1.6.8", forKey: FirstRun.formerLastRunVersionKey)
+        XCTAssertEqual(read(), .upgraded(from: "1.6.8"))
+        defaults.set("1.6.9", forKey: FirstRun.formerLastRunVersionKey)
+        XCTAssertEqual(read(), .same, "a 1.6.9 build that ran before this key")
+        FirstRun.remember("1.6.9", in: defaults)
+        defaults.set("1.6.7", forKey: FirstRun.formerLastRunVersionKey)
+        XCTAssertEqual(read(), .same, "the new key wins")
+        defaults.set("", forKey: FirstRun.lastRunVersionKey)
+        XCTAssertEqual(read(), .upgraded(from: "1.6.7"), "an empty one is none")
+    }
+
     func testTheUpdateCheckWritesTheKeyFirstRunReads() {
         XCTAssertEqual(FirstRun.lastUpdateCheckKey, "updates.lastCheck")
     }

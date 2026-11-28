@@ -1027,7 +1027,11 @@ package enum SettingsSchema {
     private static let updates: [SettingSpec] = [
         SettingSpec(
             key: "updates.checkDaily", section: .about, group: "Updates", title: "Check for updates once a day, at launch",
-            help: "Releases come from GitHub, through your gh login.", kind: .toggle, defaultValue: .bool(true))
+            help: "Releases come from GitHub, through your gh login.", kind: .toggle, defaultValue: .bool(true)),
+        // Onboarding D-11: a switch of its own, about updates, not tips.
+        SettingSpec(
+            key: "updates.whatsNew", section: .about, group: "Updates", title: "Say what's new after an update",
+            help: "A chip in the tab strip; never a window.", kind: .toggle, defaultValue: .bool(true)),
     ]
 
     /// UserDefaults keys (under "settings.") before settings.json, and their

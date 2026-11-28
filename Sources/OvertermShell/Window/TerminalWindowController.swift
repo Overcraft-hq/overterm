@@ -3516,12 +3516,16 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 [weak self] _, _ in self?.openFolder(nil)
             },
             // Help's rows (onboarding 7.8): Open Folder… above; Getting
-            // Started, Check Setup, What's New and Reset Tips come with
-            // their stages.
+            // Started, Check Setup and Reset Tips come with their stages.
             PaletteItem(
                 id: "a.shortcuts", group: .action, title: "Keyboard Shortcuts", subtitle: "Every key, and yours to change", symbol: "keyboard",
                 command: "help.shortcuts"
             ) { [weak self] _, _ in self?.openSettings(.shortcuts) },
+            // The Help menu's title, so its own row isn't offered twice.
+            PaletteItem(
+                id: "a.whatsNew", group: .action, title: MainMenu.whatsNewTitle(UpdateChecker.shared.currentVersion),
+                subtitle: "What changed since the version you ran before", symbol: "sparkles", command: "help.whatsNew"
+            ) { [weak self] _, _ in self?.showWhatsNew() },
             PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance", symbol: "square.grid.2x2", command: "agents.overview") {
                 [weak self] _, _ in self?.showAgentOverview(nil)
             },
@@ -4351,15 +4355,16 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         pages[overlay]?.closed?()
     }
 
-    /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
-    /// The strip's "What's new in …" chip (SET-G2): the bundled changelog
-    /// at this version's entry, and the chip put away for it.
+    /// The strip's "What's new in …" chip (SET-G2, onboarding 7.9), Help ▸
+    /// What's New and its ⌘K row: Settings ▸ About at its changelog — every
+    /// version's entry since the last run — and the chip put away for this
+    /// version. The keyboard moves only now, on the press.
     package func showWhatsNew() {
-        guard let version = UpdateChecker.shared.whatsNew else { return }
         UpdateChecker.shared.dismissWhatsNew()
-        ChangelogWindowController.shared.show(version: version)
+        openSettings(.about, focus: Changelog.whatsNewAnchor)
     }
 
+    /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
     package func openSettings(_ section: SettingsSection? = nil, focus key: String? = nil) {
         if let section { settingsPage.show(section, focus: key) }
         showOverlay(.settings)

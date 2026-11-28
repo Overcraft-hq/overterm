@@ -2,9 +2,8 @@ import Foundation
 
 /// Whether this launch is the first ever, the first of a new version, or
 /// one more of the same (docs/design/onboarding/analysis.md, 7.2): what the
-/// later stages of onboarding decide by. Nothing reads it yet — the version
-/// is written from this stage on, so that an update to the stage that does
-/// read it already finds one.
+/// later stages of onboarding decide by. The strip's What's New chip reads
+/// it first (`UpdateChecker.noteLaunch`).
 ///
 /// Read at the very top of `applicationDidFinishLaunching`, before anything
 /// writes: the session's autosave writes session.json, the update check
@@ -28,6 +27,11 @@ package enum FirstRun {
 
     /// The version that ran last, written at every launch once the window shows.
     package static let lastRunVersionKey = "onboarding.lastRunVersion"
+    /// Where 1.6.8's What's New chip kept the version last run — or, while
+    /// its chip waited, the version before. Read only where
+    /// `lastRunVersionKey` isn't yet, so an update from 1.6.8 knows where it
+    /// came from and About lists every version since; written no more.
+    package static let formerLastRunVersionKey = "app.lastVersionRun"
     /// The update check's own key (`UpdateChecker.checkIfDue`): an install
     /// that ever checked is not a fresh one.
     package static let lastUpdateCheckKey = "updates.lastCheck"
@@ -46,11 +50,12 @@ package enum FirstRun {
     }
 
     /// The facts as they are on disk and in `defaults`, then the decision.
-    /// Reads only: a file's existence and two keys.
+    /// Reads only: a file's existence and three keys.
     package static func read(defaults: UserDefaults, sessionURL: URL, settingsURL: URL, current: String) -> Launch {
         let files = FileManager.default
+        let last = defaults.string(forKey: lastRunVersionKey).flatMap { $0.isEmpty ? nil : $0 }
         return decide(
-            lastRunVersion: defaults.string(forKey: lastRunVersionKey),
+            lastRunVersion: last ?? defaults.string(forKey: formerLastRunVersionKey),
             hasSession: files.fileExists(atPath: sessionURL.path),
             hasSettingsFile: files.fileExists(atPath: settingsURL.path),
             lastUpdateCheck: defaults.object(forKey: lastUpdateCheckKey) as? Date,

@@ -97,7 +97,7 @@ extension E2ERunner {
         // The rows the window writes: each names its command, and its
         // words hold no key of their own.
         let named = [
-            "a.newTab", "a.splitRight", "a.splitDown", "a.newTask", "a.openFolder", "a.shortcuts", "a.overview", "a.focusSidebar",
+            "a.newTab", "a.splitRight", "a.splitDown", "a.newTask", "a.openFolder", "a.shortcuts", "a.whatsNew", "a.overview", "a.focusSidebar",
             "a.focusTerminal", "a.focusEditor", "a.goToFile", "a.focusRight", "a.focusInbox", "a.nextColumn", "a.previousColumn", "a.peek",
             "a.reviewBranch", "a.sidebar", "a.overgit", "a.api", "a.notes", "a.diff",
         ]
@@ -116,6 +116,7 @@ extension E2ERunner {
                 "\(item.command ?? "no command"): \(item.subtitle ?? "nil")")
         }
         check("Help's Keyboard Shortcuts is a row of its own", row("a.shortcuts") != nil && row("menu.help.shortcuts") == nil)
+        check("Help's What's New is a row of its own", row("a.whatsNew") != nil && row("menu.help.whatsNew") == nil)
     }
 
     private func sheetHasButton(_ title: String) -> Bool {

@@ -74,10 +74,12 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
         GhosttyRuntime.shared.setColorScheme()
         controller.autosaveSession()
         controller.showWindow(nil)
-        // Every launch, once the window shows; read by later stages, not yet.
+        // Every launch, once the window shows.
         FirstRun.remember(FirstRun.currentVersion, in: AppEnvironment.defaults)
         UpdateChecker.shared.checkIfDue()
-        UpdateChecker.shared.noteLaunch()
+        // After an update, the strip's What's New chip (onboarding 7.9):
+        // never by itself in an isolated run — a scenario hands it a launch.
+        if !AppEnvironment.isIsolated { UpdateChecker.shared.noteLaunch(Self.launch) }
         windowController = controller
         controller.dumpLayoutIfRequested()
         if let scenario = AppEnvironment.e2eScenario {
@@ -262,6 +264,12 @@ package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotifica
     /// Help ▸ Keyboard Shortcuts: Settings, on its shortcuts.
     @objc package func showKeyboardShortcuts(_ sender: Any?) {
         windowController?.openSettings(.shortcuts)
+    }
+
+    /// Help ▸ What's New in …: Settings ▸ About at its changelog — every
+    /// version's entry since the last run — and the chip put away.
+    @objc package func showWhatsNew(_ sender: Any?) {
+        windowController?.showWhatsNew()
     }
 
     /// Help ▸ Overterm on GitHub: the repository, in the default browser

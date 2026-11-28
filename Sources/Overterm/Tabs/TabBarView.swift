@@ -37,7 +37,7 @@ package struct TabBarActions {
     package var resumeAll: () -> Void = {}
     /// A press, drag or release on a tab (`StripPressView`).
     package var press: (StripPressSubject, NSEvent, StripPressPhase) -> Void = { _, _, _ in }
-    /// The "What's new" chip: this version's changelog entry; its ×, put away.
+    /// The "What's new" chip: Settings ▸ About at the changelog; its ×, put away.
     package var showWhatsNew: () -> Void = {}
     package var dismissWhatsNew: () -> Void = {}
 
@@ -266,8 +266,9 @@ package struct TabBarView: View {
                 .foregroundStyle(TabStatusStyle.signal)
                 .help("Overterm \(release.version) is out — Settings ▸ About")
                 .padding(.trailing, 6)
-            }
-            if let version = updates.whatsNew, updates.available == nil {
+            } else if let version = updates.whatsNew {
+                // The update chip's place (onboarding 7.9): never two chips
+                // there; the update wins, and What's New is back once it goes.
                 WhatsNewChip(version: version, theme: theme, open: actions.showWhatsNew, dismiss: actions.dismissWhatsNew)
                     .padding(.trailing, 6)
             }
@@ -999,8 +1000,9 @@ package final class WindowDragView: NSView {
     }
 }
 
-/// After an update (SET-G2): what this version changed, one press away —
-/// quiet, beside the strip's other chips, never a sheet. Its × puts it away.
+/// After an update (SET-G2, onboarding 7.9): what changed, one press away —
+/// quiet, in the update chip's place, never a sheet, the keyboard left where
+/// it is. Its × puts it away.
 package struct WhatsNewChip: View {
     package let version: String
     @ObservedObject package var theme: ChromeTheme
@@ -1021,14 +1023,14 @@ package struct WhatsNewChip: View {
             }
             .accessibilityLabel(Text(verbatim: "What’s new in \(version)"))
             .buttonStyle(.plain)
-            .help("What Overterm \(version) changed — its changelog entry")
+            .help("What changed in Overterm \(version), and in any version skipped — Settings ▸ About")
             .accessibilityIdentifier("strip.whatsNew")
             Button(action: dismiss) {
                 Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(8), weight: .semibold))
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("Put it away — the changelog stays in Help ▸ View Latest Changelog")
+            .help("Put it away — Help ▸ What's New opens it again")
             .accessibilityIdentifier("strip.whatsNew.dismiss")
         }
         .foregroundStyle(theme.dimText)

@@ -91,6 +91,12 @@ final class MainMenuTests: XCTestCase {
         XCTAssertEqual(help.items.first { $0.title == "Keyboard Shortcuts" }?.identifier?.rawValue, "help.shortcuts")
         XCTAssertEqual(help.items.first { $0.title == "Keyboard Shortcuts" }?.action, #selector(AppDelegate.showKeyboardShortcuts(_:)))
         XCTAssertEqual(help.items.first { $0.title == "View Latest Changelog" }?.keyEquivalent, "")
+        // Onboarding 7.8: What's New in ‹version›, a command with no key.
+        let whatsNew = try XCTUnwrap(help.items.first { $0.identifier?.rawValue == "help.whatsNew" })
+        XCTAssertEqual(whatsNew.title, "What's New in \(FirstRun.currentVersion)")
+        XCTAssertEqual(whatsNew.title, MainMenu.whatsNewTitle(FirstRun.currentVersion))
+        XCTAssertEqual(whatsNew.action, #selector(AppDelegate.showWhatsNew(_:)))
+        XCTAssertEqual(whatsNew.keyEquivalent, "")
         let ours = items(of: main).compactMap(\.identifier?.rawValue).filter { $0.contains(".") && !$0.hasSuffix(":") }
         XCTAssertEqual(ours.count, Set(ours).count, "no command id on two items")
     }

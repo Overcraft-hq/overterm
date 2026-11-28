@@ -58,39 +58,61 @@ package final class UpdateChecker: ObservableObject {
         Task { await check() }
     }
 
-    // MARK: What's new (SET-G2)
+    // MARK: What's new (SET-G2, onboarding 7.9)
 
-    /// The version last run, in the app's own defaults (an isolated run's
-    /// are its own).
-    package static let lastRunKey = "app.lastVersionRun"
+    /// The version whose chip was opened or put away, in the app's own
+    /// defaults (onboarding 7.10): never offered again for it.
+    package static let whatsNewSeenKey = "onboarding.whatsNewSeen"
 
-    /// This version, on its first launch after an older one: the strip's
+    /// This version, on the first launch after an update: the strip's
     /// "What's new in …" chip, until it is opened or put away.
     @Published package private(set) var whatsNew: String?
+    /// The version that ran before this launch, when it was an update with
+    /// one remembered: Settings ▸ About lists every version's entry after it.
+    /// nil otherwise — About then lists only this version's.
+    @Published package private(set) var updatedFrom: String?
+    /// The changelog this launch was decided by: the bundled one, or a
+    /// scenario's. nil until `noteLaunch` — About then reads the bundled one.
+    private var changelog: String?
 
-    /// At launch: the first run ever remembers this version and says
-    /// nothing; a newer one than the last run offers its entry. The version
-    /// is remembered when the chip is opened or dismissed, so a chip not
-    /// yet seen is there at the next launch too.
-    package func noteLaunch(defaults: UserDefaults = AppEnvironment.defaults) {
-        let current = currentVersion
-        let last = defaults.string(forKey: Self.lastRunKey)
-        whatsNew = Self.whatsNew(lastRun: last, current: current)
-        if whatsNew == nil, last != current { defaults.set(current, forKey: Self.lastRunKey) }
+    /// After the window shows, with what `FirstRun` decided: the chip only
+    /// on an update, with `updates.whatsNew` on, for a version not seen yet
+    /// whose changelog has lines since the last run. Writes nothing — a chip
+    /// not opened is simply not there at the next launch, which is `.same`.
+    package func noteLaunch(
+        _ launch: FirstRun.Launch, changelog: String? = nil, enabled: Bool? = nil, defaults: UserDefaults = AppEnvironment.defaults
+    ) {
+        let text = changelog ?? Changelog.bundled
+        self.changelog = text
+        if case .upgraded(let from) = launch { updatedFrom = from } else { updatedFrom = nil }
+        whatsNew = Self.whatsNew(
+            launch: launch, seen: defaults.string(forKey: Self.whatsNewSeenKey), changelog: text, current: currentVersion,
+            enabled: enabled ?? Settings.shared.whatsNewAfterUpdate)
     }
 
     /// The chip opened or put away: not offered again for this version.
     package func dismissWhatsNew(defaults: UserDefaults = AppEnvironment.defaults) {
         guard let version = whatsNew else { return }
-        defaults.set(version, forKey: Self.lastRunKey)
+        defaults.set(version, forKey: Self.whatsNewSeenKey)
         whatsNew = nil
     }
 
-    /// `current` when it is newer than `lastRun`; nil on a first run ever
-    /// (no `lastRun`), the same version, or an older one run after a newer.
-    package nonisolated static func whatsNew(lastRun: String?, current: String) -> String? {
-        guard let lastRun, isNewer(current, than: lastRun) else { return nil }
-        return current
+    /// What About lists under "What's new": every version's entry after the
+    /// one run before this launch, through this one — the versions skipped
+    /// too —; this one's alone when none is remembered.
+    package var changes: [Changelog.Entry] {
+        guard let text = changelog ?? Changelog.bundled else { return [] }
+        return Changelog.entries(after: updatedFrom, through: currentVersion, in: text)
+    }
+
+    /// `current` when the chip is due: an update, the setting on, `current`
+    /// not seen yet, and the changelog has lines for a version after the
+    /// last run (only `current`'s when none is remembered — `from` nil).
+    /// nil on a fresh install, the same version again, or an older one run
+    /// after a newer. Pure.
+    package nonisolated static func whatsNew(launch: FirstRun.Launch, seen: String?, changelog: String?, current: String, enabled: Bool) -> String? {
+        guard enabled, case .upgraded(let from) = launch, seen != current, let changelog else { return nil }
+        return Changelog.entries(after: from, through: current, in: changelog).isEmpty ? nil : current
     }
 
     /// The release's DMG into ~/Downloads (through gh: the repository is
@@ -156,4 +178,48 @@ package enum Changelog {
         }
         return lines
     }
+
+    /// One version's lines.
+    package struct Entry: Equatable, Sendable {
+        package let version: String
+        package let lines: [String]
+
+        package init(version: String, lines: [String]) {
+            self.version = version
+            self.lines = lines
+        }
+    }
+
+    /// Every version's lines after `last` through `current`, newest first,
+    /// as the file has them — the versions an update skipped too. Versions
+    /// compare as numbers, so a `last` the file doesn't name still counts;
+    /// a version with no lines is left out. Only `current`'s when `last` is
+    /// nil. Where `current` is the older one, nothing.
+    package static func entries(after last: String?, through current: String, in text: String) -> [Entry] {
+        guard let last else {
+            let lines = entry(for: current, in: text)
+            return lines.isEmpty ? [] : [Entry(version: current, lines: lines)]
+        }
+        var found: [Entry] = []
+        var version: String?
+        var lines: [String] = []
+        func close() {
+            guard let version, !lines.isEmpty, UpdateChecker.isNewer(version, than: last), !UpdateChecker.isNewer(version, than: current) else { return }
+            found.append(Entry(version: version, lines: lines))
+        }
+        for line in text.components(separatedBy: "\n") {
+            if line.hasPrefix("## ") {
+                close()
+                version = line.dropFirst(3).split(separator: " ").first.map(String.init)
+                lines = []
+                continue
+            }
+            if version != nil, line.hasPrefix("- ") { lines.append(String(line.dropFirst(2))) }
+        }
+        close()
+        return found
+    }
+
+    /// Where About's "What's new" begins: Settings opens scrolled to it.
+    package static let whatsNewAnchor = "about.whatsNew"
 }
