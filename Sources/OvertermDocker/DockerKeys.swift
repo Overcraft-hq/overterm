@@ -22,6 +22,19 @@ package enum DockerKey: String, ResourceKey {
         }
     }
 
+    /// The heading `?` lists it under (DISC-U6).
+    package var sheetGroup: String? {
+        switch self {
+        case .details, .toggleDetail, .filter, .help: "Navigation"
+        case .containers, .images, .volumes, .networks, .builds, .models, .apple: "Sections"
+        case .composeUp, .composeUpFreePorts, .composeDown, .rebuild, .watch: "Compose"
+        case .run, .checkUpdates, .cleanUp: "The page"
+        case .startStop, .restart, .pause, .logs, .followLogs, .shell, .debugShell, .client, .askAgent, .inspect, .files, .open, .database,
+            .vulnerabilities, .settings, .remove:
+            "The selection"
+        }
+    }
+
     /// What is pressed: one character, or a key's name.
     package var key: String {
         switch self {

@@ -15,15 +15,18 @@ package struct PaletteItem: Identifiable {
         case terraform = "Terraform"
         /// Listening ports and the busiest processes (⌃⌘A scopes the palette to them).
         case activity = "Activity"
+        /// Settings, each opening ⌘, on its row.
+        case setting = "Setting"
 
         /// The scopes the field offers, in the order the designs have them.
-        package static let scopes: [Group] = [.history, .snippet, .action, .container, .kubernetes, .terraform, .activity]
+        package static let scopes: [Group] = [.history, .snippet, .action, .setting, .container, .kubernetes, .terraform, .activity]
     }
 
     package let id: String
     package let group: Group
     package let title: String
-    package let subtitle: String?
+    /// What it is, and the key that does it now (`PaletteCommands.withLiveKeys`).
+    package var subtitle: String?
     package let symbol: String
     /// What the detail pane says about it, if anything: when it last ran,
     /// how it went, where.
@@ -115,7 +118,11 @@ package final class PaletteModel: ObservableObject {
                 // or a tab named for what you typed is not. Without this a
                 // long command containing the letters n, c and l somewhere
                 // outranked "New Claude Tab" for "ncl".
-                return (item, item.group == .history ? best - 500_000 : best)
+                // A setting comes after an action or a tab of the same
+                // title — "changes" is the Changes pane before the gutter's
+                // setting — and still before anything matched by subtitle only.
+                let penalty = item.group == .history ? 500_000 : item.group == .setting ? 300_000 : 0
+                return (item, best - penalty)
             }
             .sorted { $0.1 > $1.1 }
             .map(\.0)

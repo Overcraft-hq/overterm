@@ -33,16 +33,17 @@ package enum SidebarRailAction: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The key that does the same thing, for the tooltip.
-    package var shortcut: String {
+    /// The command that does the same thing: the tooltip says its key as
+    /// it is bound now (DISC-U4).
+    package var commandID: String {
         switch self {
-        case .activity: "⌥⌘A"
-        case .settings: "⌘,"
-        case .hide: "⌘B"
+        case .activity: "activity.page"
+        case .settings: "app.settings"
+        case .hide: "sidebar.toggle"
         }
     }
 
-    package var help: String { "\(title) (\(shortcut))" }
+    @MainActor package func help(keys: Keybindings = .shared) -> String { KeyHints.help(title, command: commandID, keys: keys) }
 
     /// The buttons the rail draws: Activity's only while Settings has it on.
     @MainActor package static var shown: [SidebarRailAction] {
@@ -75,6 +76,8 @@ package struct SidebarRail: View {
 
     @ObservedObject package var sidebar: SidebarModel
     @ObservedObject package var theme: ChromeTheme
+    /// So the tooltips follow a rebound key.
+    @ObservedObject var keybindings = Keybindings.shared
     /// What a button at the foot does: the window's
     /// (`TerminalWindowController.performRailAction`).
     package let perform: (SidebarRailAction) -> Void
@@ -83,7 +86,7 @@ package struct SidebarRail: View {
         VStack(spacing: 2) {
             let shown = SidebarPanel.shown
             ForEach(shown) { item in
-                RailButton(selected: sidebar.panel == item, help: item.title, theme: theme) {
+                RailButton(selected: sidebar.panel == item, help: KeyHints.help(item.title, command: item.commandID), theme: theme) {
                     sidebar.panel = item
                 } label: {
                     item.icon(selected: sidebar.panel == item, compact: Self.isCompact)
@@ -101,7 +104,7 @@ package struct SidebarRail: View {
             }
             Spacer(minLength: 8)
             ForEach(SidebarRailAction.shown) { action in
-                RailButton(selected: false, help: action.help, theme: theme) {
+                RailButton(selected: false, help: action.help(), theme: theme) {
                     perform(action)
                 } label: {
                     Image(systemName: action.symbol).font(.system(size: Self.isCompact ? 12 : 14))

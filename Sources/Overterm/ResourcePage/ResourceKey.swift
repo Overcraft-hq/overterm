@@ -19,6 +19,25 @@ package protocol ResourceKey: CaseIterable, Hashable, Sendable where AllCases: R
     static var help: Self { get }
     /// `/`: the filter field.
     static var filter: Self { get }
+    /// The heading `?` lists it under; nil: "Keys in the list".
+    var sheetGroup: String? { get }
+}
+
+extension ResourceKey {
+    package var sheetGroup: String? { nil }
+
+    /// The filter field's tooltip: the syntax `?` lists on `/`'s line, from
+    /// the same words so the two can't drift apart (DISC-U7).
+    package static var filterHelp: String { ResourceKeys.filterHelp(filter.title) }
+}
+
+package enum ResourceKeys {
+    /// "Filter — status:running port:5432" → "status:running port:5432 — ? lists the keys".
+    package static func filterHelp(_ title: String) -> String {
+        let prefix = "Filter — "
+        let syntax = title.hasPrefix(prefix) ? String(title.dropFirst(prefix.count)) : title
+        return syntax + " — ? lists the keys"
+    }
 }
 
 /// What a key down means on a page's list.
@@ -85,42 +104,37 @@ extension ResourceKey {
     }
 }
 
-/// The sheet `?` shows over a page: its keys, as its table says them. Any
-/// key or a click closes it.
+/// The sheet `?` shows over a page: its keys, as its table says them,
+/// grouped, and the window's commands that are the page's with the keys
+/// bound now (`windowCommands`, prefixes such as `"docker."`). Any key or a
+/// click closes it.
 package struct ResourceKeySheet<Key: ResourceKey>: View {
     @ObservedObject package var theme: ChromeTheme
+    @ObservedObject private var keybindings = Keybindings.shared
     package let identifier: String
+    package var title: String
     /// A line under the keys: what the list itself reads (← →).
     package var footnote: String? = nil
+    package var windowCommands: [String]
     package let close: () -> Void
 
-    package init(theme: ChromeTheme, identifier: String, footnote: String? = nil, close: @escaping () -> Void) {
+    package init(
+        theme: ChromeTheme, identifier: String, title: String = KeySheet.listGroup, footnote: String? = nil, windowCommands: [String] = [],
+        close: @escaping () -> Void
+    ) {
         self._theme = ObservedObject(wrappedValue: theme)
         self.identifier = identifier
+        self.title = title
         self.footnote = footnote
+        self.windowCommands = windowCommands
         self.close = close
     }
 
     package var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Keys in the list").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text).padding(.bottom, 4)
-            ForEach(Array(Key.allCases), id: \.self) { key in
-                HStack(spacing: 12) {
-                    Text(verbatim: key.key).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text)
-                        .frame(width: 48, alignment: .leading)
-                    Text(key.title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
-                }
-            }
-            if let footnote {
-                Text(verbatim: footnote).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).padding(.top, 2)
-            }
-            Text("↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
-                .padding(.top, 6)
-        }
-        .padding(18)
-        .background(RoundedRectangle(cornerRadius: 12).fill(theme.menu).shadow(radius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(theme.menuEdge))
-        .onTapGesture { close() }
-        .accessibilityIdentifier(identifier)
+        let window = KeySheet.commands(KeySheet.commands(prefixed: windowCommands), title: KeySheet.windowGroup) { keybindings.key(for: $0)?.display }
+        let notes = [footnote, "↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names."].compactMap { $0 }.joined(separator: "\n")
+        KeySheetView(
+            theme: theme, title: title, groups: KeySheet.groups(of: Key.self) + [window].compactMap { $0 }, footnote: notes, identifier: identifier,
+            close: close)
     }
 }

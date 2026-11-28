@@ -12,6 +12,10 @@ package final class SettingsPageModel: ObservableObject {
 
     @Published package var section: SettingsSection = .general
     @Published package var search = ""
+    /// The setting the page was opened on (⌘K's): scrolled to and marked.
+    @Published package var focus: String?
+    /// Moves on every `show(_:focus:)`, so the same setting picked again scrolls to it again.
+    @Published package private(set) var focusRequest = 0
     @Published package var mode: Mode = .ui
     /// The JSON view's text, as typed; nil until the view opens.
     @Published package var draft: String?
@@ -81,8 +85,12 @@ package final class SettingsPageModel: ObservableObject {
         }
     }
 
-    package func show(_ section: SettingsSection) {
+    package func show(_ section: SettingsSection, focus key: String? = nil) {
         self.section = section
+        focus = key
+        if key != nil { focusRequest += 1 }
+        // A search that would hide the row is cleared.
+        if let key, let spec = SettingsSchema.all.first(where: { $0.key == key }), !spec.matches(search) { search = "" }
         mode = .ui
         draft = nil
         draftBase = nil
@@ -171,20 +179,30 @@ package struct SettingsPageView: View {
             if model.mode == .json && model.section != .about {
                 SettingsJSONView(model: model, settings: settings, keybindings: keybindings, theme: theme)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
-                        problems
-                        sectionBody
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 22) {
+                            problems
+                            sectionBody
+                        }
+                        .padding(.horizontal, 32)
+                        .padding(.bottom, 32)
+                        // The themes gallery wants the window; a column of
+                        // controls is unreadable that wide.
+                        .frame(maxWidth: model.section == .themes ? 1240 : 760, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, 32)
-                    // The themes gallery wants the window; a column of
-                    // controls is unreadable that wide.
-                    .frame(maxWidth: model.section == .themes ? 1240 : 760, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // Opened on a setting (⌘K): its row brought into view.
+                    .onAppear { scroll(proxy) }
+                    .onChange(of: model.focusRequest) { _ in scroll(proxy) }
                 }
             }
         }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy) {
+        guard let key = model.focus else { return }
+        DispatchQueue.main.async { withAnimation { proxy.scrollTo(key, anchor: .center) } }
     }
 
     @ViewBuilder private var problems: some View {
@@ -270,6 +288,10 @@ private struct SpecRows: View {
                 Text(group).font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.dimText).padding(.bottom, 6)
                 ForEach(specs.filter { $0.group == group }) { spec in
                     SettingRow(spec: spec, model: model, settings: settings, theme: theme)
+                        .id(spec.key)
+                        // The row ⌘K opened the page on, marked until another is.
+                        .background(RoundedRectangle(cornerRadius: 6).fill(model.focus == spec.key ? theme.selected : .clear).padding(.horizontal, -8))
+                        .accessibilityAddTraits(model.focus == spec.key ? .isSelected : [])
                     Rectangle().fill(theme.dimText.opacity(0.12)).frame(height: 1)
                 }
             }
