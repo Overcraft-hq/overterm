@@ -38,6 +38,28 @@ package enum Secrets {
         return secretNames.contains(upper) || words.contains { upper.contains($0) } || !tokenWords.isDisjoint(with: tokens(key))
     }
 
+    /// Whether a result's column holds what an agent mustn't read
+    /// (DB-G3): `password_hash`, `api_token`, `client_secret`, `salt`,
+    /// `privateKey` — by its words, never a substring (`author`,
+    /// `primary_key`, `keyword` stay). A column about one (`token_count`,
+    /// `password_changed_at`, `api_key_id`) isn't one. A heuristic: a
+    /// column selected under another name passes.
+    package static func isSecretColumn(_ name: String) -> Bool {
+        let words = Set(tokens(name))
+        guard words.isDisjoint(with: aboutSecret) else { return false }
+        if !words.isDisjoint(with: secretColumnWords) { return true }
+        return words.contains("KEY") && !words.isDisjoint(with: keyKinds)
+    }
+
+    private static let secretColumnWords: Set<String> = [
+        "PASSWORD", "PASSWD", "PWD", "PASSPHRASE", "SECRET", "TOKEN", "SALT", "CREDENTIAL", "CREDENTIALS", "APIKEY", "DSN", "OTP", "TOTP",
+    ]
+    private static let keyKinds: Set<String> = ["API", "PRIVATE", "SECRET", "ACCESS", "SIGNING", "ENCRYPTION", "SESSION", "LICENSE"]
+    private static let aboutSecret: Set<String> = [
+        "ID", "COUNT", "COUNTS", "AT", "ON", "TYPE", "KIND", "EXPIRES", "EXPIRY", "EXPIRATION", "LENGTH", "LEN", "CHANGED", "UPDATED", "CREATED",
+        "SET", "REQUIRED", "ENABLED", "POLICY", "NAME", "PREFIX", "HINT", "LAST4", "USED", "LIMIT",
+    ]
+
     /// A name's words: split on anything not a letter or digit, and where a
     /// lowercase letter or digit meets an uppercase one; uppercased.
     package static func tokens(_ key: String) -> [String] {

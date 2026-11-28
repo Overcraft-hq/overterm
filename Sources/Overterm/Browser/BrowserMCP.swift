@@ -95,13 +95,19 @@ package enum BrowserMCP {
         case "tools/call":
             guard let name = params["name"] as? String else { return failure(-32602, "No tool name.") }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
+            // Every tool's answer leaves through `AgentText` (SEC-N1): one
+            // gate, so a tool that forgot `Secrets` hands on nothing more.
             // The pane's call, in its log (MCP-U3): memory only.
-            guard let pane else { return await callTool(name, arguments, reply: reply, failure: failure, browser: browser, api: api, pane: nil, settings: settings, kubernetes: kubernetes) }
+            guard let pane else {
+                return AgentText.scrubbing(
+                    reply: await callTool(name, arguments, reply: reply, failure: failure, browser: browser, api: api, pane: nil, settings: settings, kubernetes: kubernetes))
+            }
             let logged = MCPCallLog.shared.begin(pane: pane, tool: name, arguments: arguments)
             nonisolated(unsafe) let given = arguments
-            let answered = await MCPCallLog.$current.withValue((pane, logged)) {
-                await callTool(name, given, reply: reply, failure: failure, browser: browser, api: api, pane: pane, settings: settings, kubernetes: kubernetes)
-            }
+            let answered = AgentText.scrubbing(
+                reply: await MCPCallLog.$current.withValue((pane, logged)) {
+                    await callTool(name, given, reply: reply, failure: failure, browser: browser, api: api, pane: pane, settings: settings, kubernetes: kubernetes)
+                })
             MCPCallLog.shared.end(pane: pane, id: logged, reply: answered)
             return answered
         default:

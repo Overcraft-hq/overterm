@@ -39,7 +39,7 @@ extension TerminalWindowController {
         if let recorder = reviewNotesRecorder { return recorder(brief, agents) }
         if agents.count == 1, let agent = agents.first {
             hideReviewPage(focus: false)
-            if type(brief, intoAgent: agent) { review.clearNotes() }
+            if type(AgentText(scrubbing: brief), intoAgent: agent) { review.clearNotes() }
             return
         }
         let count = review.notes.count
@@ -71,7 +71,7 @@ extension TerminalWindowController {
         if let recorder = reviewNotesRecorder { return recorder(brief, agents) }
         if agents.count == 1, let agent = agents.first {
             hideReviewPage(focus: false)
-            type(brief, intoAgent: agent)
+            type(AgentText(scrubbing: brief), intoAgent: agent)
             return
         }
         presentAskAgent(
