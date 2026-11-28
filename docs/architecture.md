@@ -1701,10 +1701,16 @@ on a first launch only; the dead ends get a next step instead.
   looks: the login shell's PATH as `ShellEnvironment.known()` has it
   (never asked, never waited for — `.unknown` until it answers, and in an
   isolated run), then Claude Code's installers' places, shared with
-  `AgentUsageCommand`. `newAgentTab` asks before typing: missing, or found
-  only off the PATH, is a sheet with Open the Tab Anyway — never a refusal,
-  since an alias or a shell function is invisible to the lookup. New
-  Task's picker marks such an agent and starts on Shell only. No CLI is run.
+  `AgentUsageCommand` — a folder under Desktop, Documents, Downloads or
+  iCloud Drive never looked in (`SetupProbe.isProtected`). `newAgentTab` asks before typing: missing — found
+  neither on the PATH nor in a known place — is a sheet with Open the Tab
+  Anyway, never a refusal, since an alias or a shell function is invisible
+  to the lookup; New Task's picker marks it and starts on Shell only. Found
+  only off the PATH (Claude Code's local install, reached by an alias) is
+  neither warned about nor fallen back from: the picker notes "not on
+  PATH", the Setup page says where. Check Again asks the login shell again
+  even when it answered (`ShellEnvironment.login(askingAgain:)`), so an
+  agent installed since is seen without a relaunch. No CLI is run.
 
 File ▸ Open Folder… (`file.openFolder`, no key by default — D-10) and its
 ⌘K row pick a folder in `NSOpenPanel` and hand it to `open(_:)`
@@ -1817,7 +1823,12 @@ is added to the window or a split. Its foot is Check Setup · Turn Off Tips.
   the Ghostty config's; gcloud for Kubernetes or Database
   (`BigQueryDriver.gcloudCandidates`, and `gke-gcloud-auth-plugin` on the
   login shell's PATH as a GKE context's proxy looks) and protoc for the
-  API client (`GRPCProtoc.locate(environment:)`, as gRPC looks). The
+  API client (`GRPCProtoc.locate(environment:)`, as gRPC looks). Every
+  finder's `isExecutable` passes over Desktop, Documents, Downloads and
+  iCloud Drive (`SetupProbe.isProtected`), as `AgentFinder` and
+  `SetupProbe` do, but for a path the person set in a setting —
+  `kubernetes.kubectlPath`, `kubernetes.helmPath`, `terraform.path`
+  (`SetupPanelProbe.chosenPaths`) —, looked at wherever it is. The
   credential plugins' row is never silent: before the Kubernetes page has
   read the contexts it says "Open Kubernetes once to check its contexts'
   plugins". A panel a fresh install hid is a row of its own, in the card's
@@ -1878,7 +1889,8 @@ a mark goes up (`TabActivity.handle`, `agentAsked`, `terraformAsked`, all
 through `noteMarkRaised`) and with every notice told
 (`notifyUnlessHeld`: a container's, a cluster's, Left Behind, CI…), `productionPane` when a pane header's production
 label appears (`KubeRunWarningLabel`, `TerraformRunWarningLabel`),
-`paletteOpened` as ⌘K shows, `agentTabStarted`; it waits while a sheet,
+`paletteOpened` as ⌘K shows (`showPalette`; never a switcher's opening,
+`openPalette(countingTip: false)`), `agentTabStarted`; it waits while a sheet,
 ⌘K, Tab Peek or the held-settings banner covers its place, or the app is
 behind another, and is seen once placed (`onboarding.tipsSeen`); an Inbox
 opened first makes T1 needless; one banner tip a launch, T1 and T2 past
@@ -1891,7 +1903,9 @@ selected its tab, stays —, T2 and T4 with ×. T3 is
 ⌘K's own hint row (`PaletteModel.tip`) on its first three showings
 (`onboarding.paletteOpens`); the others are `TipBannerView`, hosted as the
 held banner is — one view under the title bar, over the body, resizing
-nothing — by `TipBannerHostingView`, which refuses first responder; its
+nothing — by `TipBannerHostingView`, shown only in the window that holds
+the tips (`holdsTips`: the key window, else the main one) and moving with
+key status; that window alone says the room. The host refuses first responder; its
 buttons take no focus and it binds no key. Its presses go through
 `performTipAction`; a placed tip is announced to VoiceOver
 (`announcementRequested`) without moving the focus. Help ▸ Reset Tips

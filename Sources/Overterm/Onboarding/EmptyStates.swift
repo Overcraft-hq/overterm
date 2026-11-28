@@ -28,11 +28,18 @@ package enum EmptyStates {
     /// window's own read of that folder (`DiffModel`, already made for the
     /// badge) said it is no repository — a home folder kept in git is one,
     /// and gets no strip. `checked` is the folder that read was about, so a
-    /// tab switch shows nothing until the new folder's read is in. Pure.
+    /// tab switch shows nothing until the new folder's read is in. The
+    /// three compared with symlinks resolved (`sameFolder`): a shell names
+    /// the temporary folder's `/var` as `/private/var`. Pure but for that.
     package nonisolated static func showsHomeStrip(root: URL?, home: URL, checked: URL?, notARepository: Bool) -> Bool {
         guard notARepository, let root, let checked else { return false }
-        let path = root.standardizedFileURL.path
-        return path == home.standardizedFileURL.path && checked.standardizedFileURL.path == path
+        return sameFolder(root, home) && sameFolder(checked, root)
+    }
+
+    /// Whether two URLs name one folder: symlinks resolved on both sides
+    /// (`/var` and `/private/var`), then standardized (a trailing slash, `..`).
+    package nonisolated static func sameFolder(_ one: URL, _ other: URL) -> Bool {
+        one.resolvingSymlinksInPath().standardizedFileURL.path == other.resolvingSymlinksInPath().standardizedFileURL.path
     }
 }
 

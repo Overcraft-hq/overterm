@@ -147,7 +147,11 @@ extension E2ERunner {
         } else {
             check("Help ▸ \(title) exists", false)
         }
+        // Left as no update at all: no remembered update for a later
+        // scenario's launch note to show the chip from again.
+        defaults.removeObject(forKey: UpdateChecker.whatsNewFromKey)
         updates.noteLaunch(.same, changelog: changelog, enabled: true)
+        check("cleared: no chip", updates.whatsNew == nil)
     }
 }
 #endif

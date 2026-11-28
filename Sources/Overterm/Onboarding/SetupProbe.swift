@@ -55,7 +55,7 @@ package enum SetupProbe {
     /// is read on it, as everything that runs gh reads it. `full`: the
     /// Setup page's too — notifications as macOS says now (never its
     /// question), the bridge as Settings has it. `again`: a person's Check
-    /// Again — a shell that failed is asked again at once.
+    /// Again — the shell asked again at once, even one that answered.
     @MainActor package static func read(full: Bool = false, again: Bool = false) async -> SetupFacts {
         if let override { return override }
         let gh = GitHub.executable
@@ -68,7 +68,7 @@ package enum SetupProbe {
             // written here could be typed main-actor and trap off it.
             let work: @Sendable () -> Void = {
                 let facts = Self.facts(
-                    environment: ShellEnvironment.login(retryingFailure: again), gh: gh, places: places, exists: { FileManager.default.fileExists(atPath: $0) },
+                    environment: ShellEnvironment.login(askingAgain: again), gh: gh, places: places, exists: { FileManager.default.fileExists(atPath: $0) },
                     isExecutable: { FileManager.default.isExecutableFile(atPath: $0) }, geminiVariable: geminiVariable)
                 continuation.resume(returning: facts)
             }

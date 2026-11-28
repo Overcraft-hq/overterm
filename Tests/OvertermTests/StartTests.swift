@@ -133,7 +133,12 @@ final class StartTests: XCTestCase {
         XCTAssertEqual(start.taskAgent, "codex")
         XCTAssertTrue(start.state.isDone(.agent))
 
+        // The active one kept the step in these defaults: an inert one made
+        // over them would read it back as done. Start the inert one clean.
+        defaults.removeObject(forKey: Start.stepsKey)
+        defaults.removeObject(forKey: Start.cardKey)
         let inert = self.start(active: false)
+        XCTAssertFalse(inert.state.isDone(.agent), "nothing done before the change")
         settings.set("agents.newTaskAgent", .string("shell"))
         XCTAssertEqual(inert.taskAgent, "shell", "followed")
         XCTAssertFalse(inert.state.isDone(.agent), "inert: nothing done")

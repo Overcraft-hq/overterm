@@ -9,8 +9,11 @@ import Foundation
 /// `ShellEnvironment` was told it — `known()`, which never asks and never
 /// waits. Until the shell has answered the answer is `.unknown` and nothing
 /// changes. Claude Code's installers also put it in a few fixed places
-/// (`knownPaths`); one found only there is said as found off the PATH —
-/// the tab's shell still won't find it unless an alias names it.
+/// (`knownPaths`); one found only there is found off the PATH — Claude
+/// Code's local install is reached by `alias claude=~/.claude/local/claude`,
+/// which no PATH lookup sees — so it is never warned about and never makes
+/// New Task start on Shell only: the picker notes "not on PATH", the Setup
+/// page says where it was found.
 ///
 /// An alias or a shell function named `claude` never shows in a PATH
 /// lookup, so `.missing` says "not found", never "not installed", and never
@@ -24,14 +27,10 @@ package enum AgentFinder {
         /// The login shell hasn't answered yet (or never will, in an isolated run).
         case unknown
 
-        /// A new tab's shell wouldn't find it: missing, or found off the PATH.
-        package var isNotFound: Bool {
-            switch self {
-            case .missing: true
-            case .found(_, let onPath): !onPath
-            case .unknown: false
-            }
-        }
+        /// Neither the PATH nor a known place has it: the only answer an
+        /// agent's tab warns about and New Task starts on Shell only for.
+        /// Found off the PATH is not — an alias may well reach it.
+        package var isNotFound: Bool { self == .missing }
 
         /// What New Task's picker says beside the agent's name; nil when nothing.
         package var pickerNote: String? {
@@ -67,30 +66,30 @@ package enum AgentFinder {
         return .missing
     }
 
+    /// The same with the probes' rule: nothing in a folder macOS guards
+    /// (`SetupProbe.isProtected` — Desktop, Documents, Downloads, iCloud
+    /// Drive) is looked at, so a PATH folder there never brings macOS's
+    /// question. Pure but for `isExecutable`.
+    package nonisolated static func find(
+        _ agent: Agent, environment: [String: String]?, home: String, isExecutable: (String) -> Bool
+    ) -> Result {
+        func looksExecutable(_ path: String) -> Bool { !SetupProbe.isProtected(path, home: home) && isExecutable(path) }
+        return find(agent, environment: environment, knownPaths: knownPaths(for: agent, home: home), isExecutable: looksExecutable)
+    }
+
     /// `agent` as the login shell last said its PATH: never asks it, never
     /// waits for it — the main thread may call it.
     package static func find(_ agent: Agent) -> Result {
         find(
-            agent, environment: ShellEnvironment.known(),
-            knownPaths: knownPaths(for: agent, home: FileManager.default.homeDirectoryForCurrentUser.path),
-            isExecutable: { FileManager.default.isExecutableFile(atPath: $0) })
+            agent, environment: ShellEnvironment.known(), home: FileManager.default.homeDirectoryForCurrentUser.path,
+            isExecutable: { path in FileManager.default.isExecutableFile(atPath: path) })
     }
 
     /// The warning before an agent's tab types its command; nil when the
-    /// command goes as before (found on the PATH, or not known yet).
-    package nonisolated static func warning(_ agent: Agent, _ result: Result, home: String = NSHomeDirectory())
-        -> (title: String, detail: String)?
-    {
-        let title = "\(agent.productName) isn’t on your PATH."
-        let looked = "Overterm looked where a new tab’s shell looks."
-        switch result {
-        case .missing:
-            return (title, looked)
-        case .found(let url, onPath: false):
-            let path = url.path.hasPrefix(home + "/") ? "~" + String(url.path.dropFirst(home.count)) : url.path
-            return (title, looked + " Found at \(path), not on your PATH: the tab’s shell won’t find it unless an alias names it.")
-        case .found, .unknown:
-            return nil
-        }
+    /// command goes as before — found (on the PATH, or in a known place an
+    /// alias may reach), or not known yet.
+    package nonisolated static func warning(_ agent: Agent, _ result: Result) -> (title: String, detail: String)? {
+        guard result == .missing else { return nil }
+        return ("\(agent.productName) isn’t on your PATH.", "Overterm looked where a new tab’s shell looks.")
     }
 }

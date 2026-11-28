@@ -212,8 +212,8 @@ package final class Start: ObservableObject {
 
     /// Asks the probe while the second step shows: once, and again while
     /// the shell hasn't answered (it is asked again after a minute,
-    /// `ShellEnvironment.retryAfter`); `force`: Check Again — a shell that
-    /// failed asked again at once.
+    /// `ShellEnvironment.retryAfter`); `force`: Check Again — the shell asked
+    /// again at once, even one that answered (an agent installed since).
     package func probe(force: Bool = false) {
         guard active, probing == nil, force || setup?.shellAnswered != true else { return }
         probing = Task { [weak self] in

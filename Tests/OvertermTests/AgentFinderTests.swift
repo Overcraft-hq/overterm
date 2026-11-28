@@ -26,7 +26,7 @@ final class AgentFinderTests: XCTestCase {
         XCTAssertEqual(result, .found(URL(fileURLWithPath: "\(home)/.bun/bin/codex"), onPath: true))
         XCTAssertFalse(result.isNotFound)
         XCTAssertNil(result.pickerNote)
-        XCTAssertNil(AgentFinder.warning(.codex, result, home: home), "nothing said: the command goes as before")
+        XCTAssertNil(AgentFinder.warning(.codex, result), "nothing said: the command goes as before")
     }
 
     func testMissing() {
@@ -34,7 +34,7 @@ final class AgentFinderTests: XCTestCase {
         XCTAssertEqual(result, .missing)
         XCTAssertTrue(result.isNotFound)
         XCTAssertEqual(result.pickerNote, "not found")
-        let warning = AgentFinder.warning(.gemini, result, home: home)
+        let warning = AgentFinder.warning(.gemini, result)
         XCTAssertEqual(warning?.title, "Gemini CLI isn’t on your PATH.")
         XCTAssertEqual(warning?.detail, "Overterm looked where a new tab’s shell looks.")
         XCTAssertFalse((warning?.title ?? "").contains("installed"), "not found, never not installed")
@@ -46,11 +46,12 @@ final class AgentFinderTests: XCTestCase {
         XCTAssertEqual(result, .unknown)
         XCTAssertFalse(result.isNotFound)
         XCTAssertNil(result.pickerNote)
-        XCTAssertNil(AgentFinder.warning(.claude, result, home: home))
+        XCTAssertNil(AgentFinder.warning(.claude, result))
     }
 
-    /// Claude Code's installers' places: found there and not on the PATH,
-    /// it is still said — the tab's shell won't find it.
+    /// Claude Code's installers' places: found there and not on the PATH —
+    /// its local install, reached by an alias — nothing is said and nothing
+    /// falls back; the picker's note is quiet.
     func testClaudeCodesKnownPlaces() {
         XCTAssertEqual(
             AgentFinder.knownPaths(for: .claude, home: home),
@@ -59,14 +60,26 @@ final class AgentFinderTests: XCTestCase {
 
         let offPath = find(.claude, path: "/usr/bin:/bin", executables: ["\(home)/.claude/local/claude"])
         XCTAssertEqual(offPath, .found(URL(fileURLWithPath: "\(home)/.claude/local/claude"), onPath: false))
-        XCTAssertTrue(offPath.isNotFound)
+        XCTAssertFalse(offPath.isNotFound, "found: an alias may reach it")
         XCTAssertEqual(offPath.pickerNote, "not on PATH")
-        let warning = AgentFinder.warning(.claude, offPath, home: home)
-        XCTAssertEqual(warning?.title, "Claude Code isn’t on your PATH.")
-        XCTAssertTrue(warning?.detail.contains("Found at ~/.claude/local/claude, not on your PATH") == true, warning?.detail ?? "")
+        XCTAssertNil(AgentFinder.warning(.claude, offPath), "no warning before its tab")
 
         let onPath = find(.claude, path: "/usr/bin:\(home)/.local/bin", executables: ["\(home)/.local/bin/claude", "\(home)/.claude/local/claude"])
         XCTAssertEqual(onPath, .found(URL(fileURLWithPath: "\(home)/.local/bin/claude"), onPath: true), "the PATH first")
+    }
+
+    /// A PATH folder under Documents, Desktop or iCloud Drive is never
+    /// looked in: macOS would ask the person first.
+    func testProtectedPathFoldersAreNotLookedIn() {
+        var asked: [String] = []
+        let result = AgentFinder.find(
+            .codex, environment: ["PATH": "\(home)/Documents/bin:\(home)/Library/Mobile Documents/x:/usr/local/bin"], home: home,
+            isExecutable: { candidate in
+                asked.append(candidate)
+                return true
+            })
+        XCTAssertEqual(result, .found(URL(fileURLWithPath: "/usr/local/bin/codex"), onPath: true))
+        XCTAssertEqual(asked, ["/usr/local/bin/codex"], "nothing protected asked about")
     }
 
     func testAnEmptyPathIsMissingNotUnknown() {
@@ -80,11 +93,16 @@ final class AgentFinderTests: XCTestCase {
         XCTAssertEqual(NewTaskView.pickerTitle(.claude, .unknown), "Claude")
         XCTAssertEqual(NewTaskView.pickerTitle(.claude, nil), "Claude")
         XCTAssertEqual(NewTaskView.pickerTitle(.codex, .found(URL(fileURLWithPath: "/usr/local/bin/codex"), onPath: true)), "Codex")
+        XCTAssertEqual(
+            NewTaskView.pickerTitle(.claude, .found(URL(fileURLWithPath: "\(home)/.claude/local/claude"), onPath: false)), "Claude (not on PATH)",
+            "shown as any agent, with a quiet note")
     }
 
-    func testThePickerStartsWithShellOnlyWhenTheSetAgentIsMissing() {
+    func testThePickerStartsWithShellOnlyOnlyWhenTheSetAgentIsMissing() {
         XCTAssertNil(NewTaskView.startingAgent(.claude, [.claude: .missing]))
-        XCTAssertNil(NewTaskView.startingAgent(.claude, [.claude: .found(URL(fileURLWithPath: "\(home)/.bun/bin/claude"), onPath: false)]))
+        XCTAssertEqual(
+            NewTaskView.startingAgent(.claude, [.claude: .found(URL(fileURLWithPath: "\(home)/.claude/local/claude"), onPath: false)]), .claude,
+            "found off the PATH (an alias's): starts as set")
         XCTAssertEqual(NewTaskView.startingAgent(.claude, [.claude: .unknown]), .claude, "not known yet: as before")
         XCTAssertEqual(NewTaskView.startingAgent(.claude, [:]), .claude)
         XCTAssertEqual(NewTaskView.startingAgent(.codex, [.claude: .missing]), .codex)

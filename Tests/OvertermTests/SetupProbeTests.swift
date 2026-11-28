@@ -59,7 +59,7 @@ final class SetupProbeTests: XCTestCase {
                 XCTFail("Kubernetes is off")
                 return []
             },
-            terraformBinary: {
+            terraformBinary: { _ in
                 XCTFail("Terraform is off")
                 return nil
             }, discovery: discovery)
@@ -93,7 +93,7 @@ final class SetupProbeTests: XCTestCase {
             kubeconfigs: {
                 kubeconfigsAsked += 1
                 return [self.home.appendingPathComponent(".kube/config")]
-            }, terraformBinary: { nil }, discovery: discovery)
+            }, terraformBinary: { _ in nil }, discovery: discovery)
 
         XCTAssertEqual(kubeconfigsAsked, 1, "the Kubernetes page hasn't read them: only the files' existence")
         let forbidden = ["/Documents", "/Desktop", "/Library/Mobile Documents"]
@@ -153,7 +153,7 @@ final class SetupProbeTests: XCTestCase {
             kubeconfigs: {
                 XCTFail("the page's contexts are used; the files aren't looked at again")
                 return []
-            }, terraformBinary: { URL(fileURLWithPath: "/opt/homebrew/bin/terraform") }, discovery: discovery)
+            }, terraformBinary: { _ in URL(fileURLWithPath: "/opt/homebrew/bin/terraform") }, discovery: discovery)
         let rows = Dictionary(uniqueKeysWithValues: SetupCheck.panelRows(facts, home: home.path).map { row in (row.id, row) })
         XCTAssertEqual(rows[.docker]?.detail, "/usr/local/bin/docker")
         XCTAssertEqual(rows[.dockerEngine]?.detail, "Docker Engine · socket at /var/run/docker.sock")
@@ -174,7 +174,7 @@ final class SetupProbeTests: XCTestCase {
         let facts = SetupPanelProbe.facts(
             given, login: nil, exists: { _ in false }, isExecutable: { path in path == "/opt/tools/tofu" },
             dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") }, kubeconfigs: { [] },
-            terraformBinary: {
+            terraformBinary: { _ in
                 XCTFail("the setting is taken first")
                 return nil
             }, discovery: discovery)
@@ -191,7 +191,7 @@ final class SetupProbeTests: XCTestCase {
         let present: Set<String> = [home.path + "/google-cloud-sdk/bin/gcloud", "/opt/homebrew/bin/protoc"]
         let facts = SetupPanelProbe.facts(
             given, login: ["PATH": "/opt/homebrew/bin"], exists: { _ in false }, isExecutable: { path in present.contains(path) },
-            dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") }, kubeconfigs: { [] }, terraformBinary: { nil },
+            dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") }, kubeconfigs: { [] }, terraformBinary: { _ in nil },
             discovery: discovery)
         XCTAssertEqual(facts.gcloud?.gkePluginLooked, false, "Kubernetes is off: its plugin isn't looked for")
         let rows = Dictionary(uniqueKeysWithValues: SetupCheck.panelRows(facts, home: home.path).map { row in (row.id, row) })
@@ -207,9 +207,57 @@ final class SetupProbeTests: XCTestCase {
         let facts = SetupPanelProbe.facts(
             inputs(all: true, contexts: [context("dev", production: false, plugin: "aws")]), login: nil, exists: { _ in false },
             isExecutable: { _ in false }, dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") },
-            kubeconfigs: { [] }, terraformBinary: { nil }, discovery: discovery)
+            kubeconfigs: { [] }, terraformBinary: { _ in nil }, discovery: discovery)
         let row = SetupCheck.panelRows(facts, home: home.path).first { $0.id == .kubePlugins }
         XCTAssertEqual(row?.detail, "not looked for — your login shell didn't say its PATH")
+    }
+
+
+    /// A PATH folder under Documents, Desktop or iCloud Drive is passed over
+    /// by every finder (macOS would ask the person before an app looks
+    /// there) — but a path the person set themselves is looked at: they
+    /// asked for it.
+    func testProtectedPathFoldersArePassedOverButTheSettingsAreNot() {
+        let documents = home.path + "/Documents/bin"
+        let desktop = home.path + "/Desktop/tools"
+        var given = inputs(all: true)
+        given.kubectlPath = desktop + "/kubectl"
+        given.terraformPath = desktop + "/terraform"
+        var executable: [String] = []
+        var terraformLooked: [String] = []
+        let facts = SetupPanelProbe.facts(
+            given, login: ["PATH": "\(documents):/opt/homebrew/bin:\(home.path)/Library/Mobile Documents/bin"], exists: { _ in false },
+            isExecutable: { path in
+                executable.append(path)
+                return path.hasPrefix(self.home.path + "/Desktop/")
+            },
+            dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") }, kubeconfigs: { [] },
+            terraformBinary: { looks in
+                for path in [documents + "/terraform", "/opt/homebrew/bin/terraform"] where looks(path) { terraformLooked.append(path) }
+                return nil
+            }, discovery: discovery)
+        let protected = executable.filter { path in SetupProbe.isProtected(path, home: home.path) }
+        XCTAssertEqual(Set(protected), [desktop + "/kubectl", desktop + "/terraform"], "only the settings' own paths: \(protected)")
+        XCTAssertFalse(executable.contains(documents + "/kubectl"), "a PATH folder under Documents is passed over")
+        XCTAssertFalse(executable.contains(documents + "/protoc"))
+        XCTAssertTrue(executable.contains("/opt/homebrew/bin/kubectl"), "the rest of the PATH as before")
+        XCTAssertEqual(facts.kubernetes?.kubectl, URL(fileURLWithPath: desktop + "/kubectl"), "the setting, though under Desktop")
+        XCTAssertEqual(facts.terraform, SetupPanelFacts.Terraform(binary: URL(fileURLWithPath: desktop + "/terraform"), fromSetting: true))
+        XCTAssertEqual(
+            SetupPanelProbe.chosenPaths(given), [desktop + "/kubectl", desktop + "/terraform"], "the settings' paths, standardized")
+        XCTAssertTrue(terraformLooked.isEmpty, "the setting is taken first: \(terraformLooked)")
+
+        // Without the setting, TerraformCLI's search gets the same filter.
+        given.terraformPath = ""
+        var looked: [String] = []
+        _ = SetupPanelProbe.facts(
+            given, login: ["PATH": documents], exists: { _ in false }, isExecutable: { _ in true },
+            dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") }, kubeconfigs: { [] },
+            terraformBinary: { looks in
+                looked = [documents + "/terraform", "/opt/homebrew/bin/terraform"].filter { path in looks(path) }
+                return nil
+            }, discovery: discovery)
+        XCTAssertEqual(looked, ["/opt/homebrew/bin/terraform"], "a protected PATH folder passed over")
     }
 
     /// A remote engine is never reached from here.

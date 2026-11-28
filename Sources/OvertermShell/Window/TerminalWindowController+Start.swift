@@ -152,29 +152,55 @@ extension TerminalWindowController {
             center.addObserver(forName: NSWindow.didEndSheetNotification, object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.updateTipRoom(sheet: false) }
             })
-        tipObservers.append(
-            center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: window, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.updateTipRoom() }
-            })
+        // The banner shows only in the window that holds the tips
+        // (`holdsTips`): key or main status moving moves it.
+        for name in [
+            NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification, NSWindow.didBecomeMainNotification,
+            NSWindow.didResignMainNotification,
+        ] {
+            tipObservers.append(
+                center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.updateTipRoom() }
+                })
+        }
         updateTipRoom()
     }
 
+    /// Whether this window is the one the tips are about — the one whose
+    /// room is said to `Start` and the only one showing the banner: the
+    /// key window, else the main one (a panel is key); with no window of
+    /// Overterm's key or main (the app behind, an isolated run never
+    /// activated), the frontmost terminal window.
+    package var holdsTips: Bool {
+        guard let window else { return false }
+        if window.isKeyWindow || window.isMainWindow { return true }
+        func ours(_ candidate: NSWindow?) -> Bool { candidate?.windowController is TerminalWindowController }
+        if ours(NSApp.keyWindow) || ours(NSApp.mainWindow) { return false }
+        return NSApp.orderedWindows.first { candidate in ours(candidate) } === window
+    }
+
+    /// Whether the banner shows here: a tip placed, its place not covered, this window the tips'.
+    private func tipShown(_ banner: StartState.Banner?, blocked: Bool) -> Bool {
+        banner != nil && !blocked && holdsTips
+    }
+
     /// What covers the tip's place in this window — a sheet, ⌘K, Tab
-    /// Peek, the held settings banner — said to `Start` by the key window,
-    /// with whether the app is in front: a tip is placed only where it is
-    /// seen. An isolated run counts as in front (the scenario's app may
-    /// not be; it asks macOS nothing).
+    /// Peek, the held settings banner — said to `Start` by the window that
+    /// holds the tips (`holdsTips`), with whether the app is in front: a
+    /// tip is placed only where it is seen, and shown only there. An
+    /// isolated run counts as in front (the scenario's app may not be; it
+    /// asks macOS nothing).
     package func updateTipRoom(sheet: Bool? = nil, heldShown: Bool? = nil) {
-        guard Start.shared.active, let window else { return }
+        guard Start.shared.active, window != nil else { return }
         let blocked = tipBlocked(sheet: sheet, heldShown: heldShown)
-        tipBanner?.isHidden = Start.shared.state.banner == nil || blocked
-        guard window.isKeyWindow || NSApp.keyWindow == nil else { return }
+        tipBanner?.isHidden = !tipShown(Start.shared.state.banner, blocked: blocked)
+        guard holdsTips else { return }
         // A tip `room` places now reaches `tipChanged` before this returns:
         // it goes by what was worked out here.
         tipRoomBlocked = blocked
         Start.shared.room(blocked: blocked, inFront: NSApp.isActive || AppEnvironment.isIsolated)
         tipRoomBlocked = nil
-        tipBanner?.isHidden = Start.shared.state.banner == nil || blocked
+        tipBanner?.isHidden = !tipShown(Start.shared.state.banner, blocked: blocked)
     }
 
     private func tipBlocked(sheet: Bool? = nil, heldShown: Bool? = nil) -> Bool {
@@ -191,13 +217,13 @@ extension TerminalWindowController {
     /// A tip placed, or gone: the banner shown or hidden; a new one said
     /// to VoiceOver — the focus stays where it is.
     private func tipChanged(_ banner: StartState.Banner?) {
-        tipBanner?.isHidden = banner == nil || (tipRoomBlocked ?? tipBlocked())
+        tipBanner?.isHidden = !tipShown(banner, blocked: tipRoomBlocked ?? tipBlocked())
         guard let banner else { return }
         if banner.tip == .needsYou {
             tipModel.permission = nil
             readTipPermission()
         }
-        guard let host = tipBanner, !host.isHidden, window?.isKeyWindow == true || NSApp.keyWindow == nil else { return }
+        guard let host = tipBanner, !host.isHidden else { return }
         let words = TipBannerView.text(keys: .shared).tip(banner)
         NSAccessibility.post(
             element: host, notification: .announcementRequested,

@@ -160,7 +160,7 @@ final class ShellEnvironmentTests: XCTestCase {
         XCTAssertEqual(runs.value, 1, "one run")
         XCTAssertEqual(second.value?["PATH"], "/bin", "the second caller takes the first run's answer")
         XCTAssertEqual(kept.known()?["PATH"], "/bin")
-        XCTAssertEqual(kept.answer { ["PATH": "/again"] }?["PATH"], "/bin", "an answer is kept for good")
+        XCTAssertEqual(kept.answer { ["PATH": "/again"] }?["PATH"], "/bin", "an answer is kept until a person asks again")
     }
 
     /// A shell that couldn't be asked is asked again only after `retryAfter`.
@@ -174,13 +174,65 @@ final class ShellEnvironmentTests: XCTestCase {
         XCTAssertEqual(later.answer { ["PATH": "/bin"] }?["PATH"], "/bin")
     }
 
-    /// Check Again: a failure kept from before is asked again at once; an answer is still kept.
+    /// Check Again: a failure kept from before is asked again at once.
     func testCheckAgainAsksAFailedShellAgainAtOnce() {
         let kept = ShellAnswer(retryAfter: 60)
         XCTAssertNil(kept.answer { nil })
         XCTAssertNil(kept.answer { ["PATH": "/bin"] }, "within retryAfter, by itself: the failure is kept")
-        XCTAssertEqual(kept.answer(retryingFailure: true) { ["PATH": "/bin"] }?["PATH"], "/bin", "asked again by the person: run again")
-        XCTAssertEqual(kept.answer(retryingFailure: true) { ["PATH": "/other"] }?["PATH"], "/bin", "an answer is kept for good")
+        XCTAssertEqual(kept.answer(askingAgain: true) { ["PATH": "/bin"] }?["PATH"], "/bin", "asked again by the person: run again")
+    }
+
+    /// Check Again after an agent's installer changed `.zshrc`: the shell
+    /// that answered is asked again, and `known()` — what an agent's tab
+    /// and New Task read — has the new PATH; a failed run keeps the old one.
+    func testCheckAgainAsksAShellThatAnsweredAgain() {
+        let kept = ShellAnswer(retryAfter: 60)
+        XCTAssertEqual(kept.answer { ["PATH": "/bin"] }?["PATH"], "/bin")
+        XCTAssertEqual(kept.answer { ["PATH": "/never"] }?["PATH"], "/bin", "by itself: kept")
+        let fresh = kept.answer(askingAgain: true) { ["PATH": "/bin:/Users/someone/.local/bin"] }
+        XCTAssertEqual(fresh?["PATH"], "/bin:/Users/someone/.local/bin", "asked again by the person: the new PATH")
+        XCTAssertEqual(kept.known()?["PATH"], "/bin:/Users/someone/.local/bin", "known() has it at once")
+        XCTAssertEqual(kept.answer { ["PATH": "/never"] }?["PATH"], "/bin:/Users/someone/.local/bin", "and keeps it")
+        XCTAssertEqual(kept.answer(askingAgain: true) { nil }?["PATH"], "/bin:/Users/someone/.local/bin", "a failed run keeps the answer before it")
+        XCTAssertEqual(kept.known()?["PATH"], "/bin:/Users/someone/.local/bin")
+    }
+
+    /// Check Again while a run is going: one run at a time — it waits for
+    /// it, then runs its own (the going one began before it was asked).
+    func testCheckAgainWaitsForTheRunGoing() {
+        let kept = ShellAnswer(retryAfter: 60)
+        let runs = LockedBox(0)
+        let started = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let done = DispatchSemaphore(value: 0)
+        let again = LockedBox<[String: String]?>(nil)
+        let first: @Sendable () -> Void = {
+            _ = kept.answer {
+                runs.update { count in count += 1 }
+                started.signal()
+                release.wait()
+                return ["PATH": "/old"]
+            }
+            done.signal()
+        }
+        DispatchQueue.global().async(execute: first)
+        started.wait()
+        let second: @Sendable () -> Void = {
+            let answer = kept.answer(askingAgain: true) {
+                runs.update { count in count += 1 }
+                return ["PATH": "/new"]
+            }
+            again.update { value in value = answer }
+            done.signal()
+        }
+        DispatchQueue.global().async(execute: second)
+        XCTAssertNil(kept.known(), "known() never waits for the run")
+        release.signal()
+        done.wait()
+        done.wait()
+        XCTAssertEqual(runs.value, 2, "never two at once, and Check Again runs its own")
+        XCTAssertEqual(again.value?["PATH"], "/new")
+        XCTAssertEqual(kept.known()?["PATH"], "/new")
     }
 }
 

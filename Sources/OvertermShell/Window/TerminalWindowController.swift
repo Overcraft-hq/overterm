@@ -1966,10 +1966,12 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         }
     }
 
-    /// An agent tab in the selected tab's directory. A CLI a new tab's
-    /// shell wouldn't find is said first, before anything is typed
-    /// (onboarding 7.4) — never refused: an alias or a shell function of
-    /// that name is invisible to the lookup, so the tab can open anyway.
+    /// An agent tab in the selected tab's directory. A CLI found nowhere —
+    /// not on the PATH, not in a known place — is said first, before
+    /// anything is typed (onboarding 7.4) — never refused: an alias or a
+    /// shell function of that name is invisible to the lookup, so the tab
+    /// can open anyway. One found only off the PATH (Claude Code's local
+    /// install, reached by an alias) opens with nothing said.
     /// `then`: what to do with the tab once it is open — never called when
     /// the warning's Cancel (or Check Setup) opened none.
     package func newAgentTab(_ agent: Agent, then opened: ((Tab) -> Void)? = nil) {
@@ -2976,7 +2978,17 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
 
     // MARK: Palette
 
+    /// ⌘K (View ▸ Command Palette, Ghostty's ⇧⌘P): the palette, or
+    /// closed when it shows — a real opening, which T3 counts.
     @objc package func showPalette(_ sender: Any?) {
+        openPalette(countingTip: true)
+    }
+
+    /// The palette shown, or hidden when it shows. `countingTip`: a real
+    /// ⌘K opening — T3 (onboarding 7.6) is counted and shown only then,
+    /// never when a switcher (Kubernetes', Activity's, Terraform's,
+    /// Docker's) or a command opens the palette on its own group.
+    package func openPalette(countingTip: Bool) {
         guard let paletteView else { return }
         if !paletteView.isHidden {
             hidePalette()
@@ -2985,7 +2997,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         paletteOpener = window?.firstResponder
         paletteFixedRows = nil
         palette.reset(with: paletteItems())
-        palette.tip = paletteTip()
+        palette.tip = countingTip ? paletteTip() : nil
         paletteView.isHidden = false
         updateTipRoom()
         // The hosting view is reused, so its field has to be focused on

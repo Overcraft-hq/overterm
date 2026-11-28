@@ -98,7 +98,8 @@ extension TerminalWindowController {
     /// A switcher: the palette on one group, or closed when it already is.
     package func togglePalette(scope: PaletteItem.Group) {
         if paletteView?.isHidden == false, palette.scope == scope { return hidePalette() }
-        if paletteView?.isHidden != false { showPalette(nil) }
+        // A switcher, not ⌘K: T3 neither counted nor shown.
+        if paletteView?.isHidden != false { openPalette(countingTip: false) }
         palette.scope = scope
     }
 }

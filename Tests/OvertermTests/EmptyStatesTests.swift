@@ -22,6 +22,27 @@ final class EmptyStatesTests: XCTestCase {
         XCTAssertFalse(EmptyStates.showsHomeStrip(root: nil, home: home, checked: nil, notARepository: true))
     }
 
+    /// The temporary folder is `/var/folders/…` to Foundation and
+    /// `/private/var/folders/…` to a shell: one folder, the strip shown —
+    /// whichever side names it which way.
+    func testTheHomeStripComparesWithSymlinksResolved() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("empty-states-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let real = folder.resolvingSymlinksInPath().path
+        let bare = real.hasPrefix("/private/") ? String(real.dropFirst("/private".count)) : real
+        let viaVar = URL(fileURLWithPath: bare, isDirectory: true)
+        let viaPrivate = URL(fileURLWithPath: "/private" + bare, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: viaPrivate.path), FileManager.default.fileExists(atPath: viaVar.path) else {
+            throw XCTSkip("the temporary folder isn't under /var here: \(real)")
+        }
+        XCTAssertTrue(EmptyStates.sameFolder(viaVar, viaPrivate))
+        XCTAssertTrue(EmptyStates.showsHomeStrip(root: viaPrivate, home: viaVar, checked: viaPrivate, notARepository: true), "root /private, home /var")
+        XCTAssertTrue(EmptyStates.showsHomeStrip(root: viaVar, home: viaPrivate, checked: viaPrivate, notARepository: true), "root /var, read /private")
+        let other = viaPrivate.appendingPathComponent("project", isDirectory: true)
+        XCTAssertFalse(EmptyStates.showsHomeStrip(root: other, home: viaVar, checked: other, notARepository: true), "another folder still isn't")
+    }
+
     /// Only git's "not a git repository" counts for the strip — not any
     /// failure of the changes' read (a timeout, a lock, a folder unread).
     func testOnlyNotARepositoryCountsForTheStrip() {

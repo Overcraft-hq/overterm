@@ -6,6 +6,12 @@ import Foundation
 /// feature does — only for the panels that are on, only once the section
 /// is opened. Here, above the features, because the finders are theirs.
 ///
+/// Nothing under Desktop, Documents, Downloads or iCloud Drive is looked
+/// at (`SetupProbe.isProtected`): a PATH folder there is passed over, as
+/// macOS would ask the person before an app looks inside — but a path the
+/// person set themselves (`kubernetes.kubectlPath`, `kubernetes.helmPath`,
+/// `terraform.path`) is looked at wherever it is: they asked for it.
+///
 /// It looks; it never runs. No `docker info` or ping (it wakes Docker
 /// Desktop's VM), no kube proxy or credential plugin, no `terraform
 /// version`, no `mise which`, no `xcrun`, no `simctl`, no `dlopen`. Docker's
@@ -67,15 +73,35 @@ package enum SetupPanelProbe {
     package static let xcodePath = "/Applications/Xcode.app"
     package static let coreSimulatorPath = "/Library/Developer/PrivateFrameworks/CoreSimulator.framework"
 
+    /// The paths the person set themselves, standardized: looked at even
+    /// in a protected folder. Pure.
+    package nonisolated static func chosenPaths(_ inputs: Inputs) -> Set<String> {
+        var chosen: [String] = [inputs.kubectlPath, inputs.helmPath].compactMap { setting in
+            KubeconfigSources.expand(setting.trimmingCharacters(in: .whitespaces), home: inputs.home)?.path
+        }
+        let terraform = (inputs.terraformPath.trimmingCharacters(in: .whitespaces) as NSString).expandingTildeInPath
+        if terraform.hasPrefix("/") { chosen.append(terraform) }
+        return Set(chosen.map { path in (path as NSString).standardizingPath })
+    }
+
     /// The facts, from the finders. Pure but for the closures and the
-    /// language servers' `discovery`, which only look at files.
-    /// `environment`: the login shell's, as the features hand their tools.
+    /// language servers' `discovery`, which only look at files (fixed
+    /// folders, none protected). `login`: the login shell's environment, as
+    /// the features hand their tools. Every finder is handed an
+    /// `isExecutable` that passes over protected folders but for the
+    /// person's own settings (`chosenPaths`); `terraformBinary` too.
     package nonisolated static func facts(
         _ inputs: Inputs, login: [String: String]?, exists: (String) -> Bool, isExecutable: (String) -> Bool,
-        dockerEndpoint: () -> DockerEndpoint, kubeconfigs: () -> [URL], terraformBinary: () -> URL?, discovery: ServerDiscovery
+        dockerEndpoint: () -> DockerEndpoint, kubeconfigs: () -> [URL], terraformBinary: (_ isExecutable: (String) -> Bool) -> URL?,
+        discovery: ServerDiscovery
     ) -> SetupPanelFacts {
         var facts = SetupPanelFacts(ghosttyConfig: inputs.ghosttyConfig)
         let home = inputs.home
+        let chosen = chosenPaths(inputs)
+        func looksExecutable(_ path: String) -> Bool {
+            if SetupProbe.isProtected(path, home: home.path), !chosen.contains((path as NSString).standardizingPath) { return false }
+            return isExecutable(path)
+        }
         // Only those still off: one turned back on is a panel like any other.
         let on: [SidebarPanel: Bool] = [.docker: inputs.docker, .kubernetes: inputs.kubernetes, .terraform: inputs.terraform]
         facts.hiddenAtInstall = inputs.hiddenAtInstall.filter { panel in on[panel] == false }
@@ -85,20 +111,20 @@ package enum SetupPanelProbe {
             if case .unix(let path) = endpoint.address { socket = path }
             var plugins: [String: Bool] = [:]
             for plugin in SetupCheck.dockerPlugins {
-                plugins[plugin] = DockerCLI.hasPlugin(plugin, home: home, isExecutable: isExecutable)
+                plugins[plugin] = DockerCLI.hasPlugin(plugin, home: home, isExecutable: looksExecutable)
             }
             facts.docker = SetupPanelFacts.Docker(
-                cli: DockerCLI.locate("docker", home: home, path: inputs.appPath, isExecutable: isExecutable), runtime: DockerRuntime.of(endpoint).name,
+                cli: DockerCLI.locate("docker", home: home, path: inputs.appPath, isExecutable: looksExecutable), runtime: DockerRuntime.of(endpoint).name,
                 source: endpoint.source, socket: endpoint.remoteHost == nil ? socket : nil, socketExists: socket.map(exists) ?? false,
                 remoteHost: endpoint.remoteHost, plugins: plugins)
         }
         if inputs.kubernetes {
             let loginPath = login?["PATH"]
             let kubectl = KubectlLocator.candidates(
-                configured: inputs.kubectlPath, guarded: inputs.guardsKubeconfig, loginPath: loginPath, home: home, isExecutable: isExecutable
+                configured: inputs.kubectlPath, guarded: inputs.guardsKubeconfig, loginPath: loginPath, home: home, isExecutable: looksExecutable
             ).first
             let helm = KubeHelmLocator.candidates(
-                configured: inputs.helmPath, guarded: inputs.guardsKubeconfig, loginPath: loginPath, home: home, isExecutable: isExecutable
+                configured: inputs.helmPath, guarded: inputs.guardsKubeconfig, loginPath: loginPath, home: home, isExecutable: looksExecutable
             ).first
             var kube = SetupPanelFacts.Kubernetes(kubectl: kubectl, helm: helm)
             if let contexts = inputs.contexts {
@@ -108,7 +134,7 @@ package enum SetupPanelProbe {
                 var missing: [String] = []
                 for context in contexts {
                     guard case .exec(let exec)? = context.auth, !missing.contains(exec.name),
-                        !KubeProxyPlanner.isInstalled(exec, in: login ?? [:], isExecutable: isExecutable)
+                        !KubeProxyPlanner.isInstalled(exec, in: login ?? [:], isExecutable: looksExecutable)
                     else { continue }
                     missing.append(exec.name)
                 }
@@ -122,22 +148,22 @@ package enum SetupPanelProbe {
             // `terraform.path` as `binary(forRoot:)` takes it, without
             // that function's `mise which`.
             let setting = (inputs.terraformPath as NSString).expandingTildeInPath
-            if setting.hasPrefix("/"), isExecutable(setting) {
+            if setting.hasPrefix("/"), looksExecutable(setting) {
                 facts.terraform = SetupPanelFacts.Terraform(binary: URL(fileURLWithPath: setting), fromSetting: true)
             } else {
-                facts.terraform = SetupPanelFacts.Terraform(binary: terraformBinary(), fromSetting: false)
+                facts.terraform = SetupPanelFacts.Terraform(binary: terraformBinary(looksExecutable), fromSetting: false)
             }
         }
         if inputs.kubernetes || inputs.database {
             // gcloud where BigQuery's sign-in looks; its GKE plugin where a context's proxy looks.
             facts.gcloud = SetupPanelFacts.GCloud(
-                cli: BigQueryDriver.gcloudCandidates(home: home).first(where: isExecutable).map(URL.init(fileURLWithPath:)),
-                gkePlugin: inputs.kubernetes ? login.flatMap { login in ShellEnvironment.executable("gke-gcloud-auth-plugin", in: login, isExecutable: isExecutable) } : nil,
+                cli: BigQueryDriver.gcloudCandidates(home: home).first(where: looksExecutable).map(URL.init(fileURLWithPath:)),
+                gkePlugin: inputs.kubernetes ? login.flatMap { login in ShellEnvironment.executable("gke-gcloud-auth-plugin", in: login, isExecutable: looksExecutable) } : nil,
                 gkePluginLooked: inputs.kubernetes && login != nil, database: inputs.database, kubernetes: inputs.kubernetes)
         }
         if inputs.api {
             // As gRPC looks: the login shell's environment, else the one Overterm was started with.
-            facts.protoc = .some(GRPCProtoc.locate(environment: login ?? ["PATH": inputs.appPath ?? ""], isExecutable: isExecutable))
+            facts.protoc = .some(GRPCProtoc.locate(environment: login ?? ["PATH": inputs.appPath ?? ""], isExecutable: looksExecutable))
         }
         if inputs.languageServers {
             facts.languageServers = LanguageServers.specs.map { spec in
@@ -175,7 +201,8 @@ package enum SetupPanelProbe {
                 let facts = Self.facts(
                     inputs, login: ShellEnvironment.login(), exists: { path in files.fileExists(atPath: path) },
                     isExecutable: { path in files.isExecutableFile(atPath: path) }, dockerEndpoint: { DockerEndpoint.current() },
-                    kubeconfigs: { AppEnvironment.kubeconfigs(extra: extra) }, terraformBinary: { TerraformCLI.binary() },
+                    kubeconfigs: { AppEnvironment.kubeconfigs(extra: extra) },
+                    terraformBinary: { looksExecutable in TerraformCLI.binary(isExecutable: looksExecutable) },
                     discovery: ServerDiscovery(home: inputs.home, runsXcrun: false))
                 continuation.resume(returning: facts)
             }

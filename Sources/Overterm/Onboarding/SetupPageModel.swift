@@ -118,7 +118,7 @@ package final class SetupPageModel: ObservableObject {
         usageAsk = settings.usageAsk
     }
 
-    /// `again`: Check Again's — a shell that failed is asked again at once.
+    /// `again`: Check Again's — the shell asked again at once, even one that answered.
     private func read(again: Bool = false) {
         generation += 1
         let generation = generation

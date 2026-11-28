@@ -177,15 +177,15 @@ package struct NewTaskView: View {
         }
     }
 
-    /// The picker's row: the agent's name, and "(not found)" when a new
-    /// tab's shell wouldn't find it. Pure.
+    /// The picker's row: the agent's name, "(not found)" when it is missing,
+    /// a quiet "(not on PATH)" when found only off it. Pure.
     package nonisolated static func pickerTitle(_ agent: Agent, _ found: AgentFinder.Result?) -> String {
         guard let note = found?.pickerNote else { return agent.name }
         return "\(agent.name) (\(note))"
     }
 
     /// What the picker starts with: Settings ▸ Agents' agent, or Shell only
-    /// when a new tab's shell wouldn't find it. Pure.
+    /// when it is missing — found off the PATH (an alias's) starts as set. Pure.
     package nonisolated static func startingAgent(_ preferred: Agent?, _ agents: [Agent: AgentFinder.Result]) -> Agent? {
         guard let preferred, agents[preferred]?.isNotFound != true else { return nil }
         return preferred

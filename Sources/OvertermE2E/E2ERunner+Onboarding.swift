@@ -234,8 +234,9 @@ extension E2ERunner {
         let home = scratch.appendingPathComponent("onboarding-home", isDirectory: true)
         try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         let first = app.store.selected
-        // The home folder as the window names it once the tab is there (the
-        // temporary folder's /var is /private/var to a shell), then the
+        // The home folder as Foundation names it (the temporary folder's
+        // /var, /private/var to the tab's shell and so to the window's
+        // reads): the strip compares them with symlinks resolved. Then the
         // sidebar drawn again for it.
         // Only the new tab's own root: never the previous tab's, left there
         // while the new one hasn't said its own.
@@ -243,7 +244,10 @@ extension E2ERunner {
             let there = await eventually(8) { self.app.tree.root?.lastPathComponent == folder.lastPathComponent }
             check("the tab in \(folder.lastPathComponent) says its folder", there, app.tree.root?.path ?? "nil")
             guard there, let root = app.tree.root else { return false }
-            EmptyStates.homeOverride = root
+            check(
+                "the window's root and the home folder are one folder, however each names it", EmptyStates.sameFolder(root, folder),
+                "\(root.path) against \(folder.path)")
+            EmptyStates.homeOverride = folder
             app.sidebarPanel.panel = .git
             app.sidebarPanel.panel = .files
             return true
@@ -361,6 +365,7 @@ extension E2ERunner {
             "T1: the first mark brings the tip, under the title bar", await eventually(3) { showsT1() && present("tip.banner") },
             "\(String(describing: start.state.banner))")
         check("its words show", present("tip.text"))
+        check("shown in the window that holds the tips — the key or main one, not every window", app.holdsTips)
         check("seen once shown: the notification ask is no longer held for it", !start.holdsNotificationAsk)
         await keyboardStays("T1 appeared")
         if let strip, let stripBefore {
@@ -419,6 +424,16 @@ extension E2ERunner {
         app.store.select(worked)
         app.focusSelectedTerminal()
         await keyboardStays("an agent's tab")
+
+        // A switcher opening the palette on its own group is no ⌘K: T3
+        // neither counted nor shown.
+        let opensBefore = start.state.paletteOpens
+        app.togglePalette(scope: .action)
+        check(
+            "a switcher's palette: no hint row, nothing counted",
+            app.paletteView?.isHidden == false && app.palette.tip == nil && start.state.paletteOpens == opensBefore,
+            "\(app.palette.tip ?? "nil"), \(start.state.paletteOpens)")
+        app.hidePalette()
 
         // T3: ⌘K's hint row, from the first showing; Reset Tips counts again.
         app.showPalette(nil)
@@ -719,7 +734,7 @@ extension E2ERunner {
             languageServers: false, hiddenAtInstall: start.hiddenAtInstall)
         let facts = SetupPanelProbe.facts(
             inputs, login: nil, exists: { _ in false }, isExecutable: { _ in false },
-            dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") }, kubeconfigs: { [] }, terraformBinary: { nil },
+            dockerEndpoint: { DockerEndpoint(address: .unix("/var/run/docker.sock"), source: "default") }, kubeconfigs: { [] }, terraformBinary: { _ in nil },
             discovery: ServerDiscovery(home: scratch, searchDirectories: [], toolchainDirectories: [], runsXcrun: false))
         let rows = SetupCheck.panelRows(facts).filter { row in row.detail == SetupCheck.hiddenAtInstallDetail }
         check("and Check Setup agrees", rows.map(\.id) == [.panelHidden(.docker), .panelHidden(.kubernetes)], "\(rows.map(\.id))")
@@ -783,7 +798,7 @@ extension E2ERunner {
     }
 
     /// Step 5: no agent found — nothing typed, the warning, Open the Tab
-    /// Anyway; not known yet — as before.
+    /// Anyway; found off the PATH (an alias's) or not known yet — as before.
     private func missingAgentChecks() async {
         var opened: [Agent] = []
         app.agentTabRecorder = { agent, _ in opened.append(agent) }
@@ -824,19 +839,20 @@ extension E2ERunner {
         check("Open the Tab Anyway opens it all the same", await eventually(3) { opened == [.claude] }, "\(opened)")
         _ = await eventually(2) { self.window.attachedSheet == nil }
 
-        // Found only in one of Claude Code's installers' places: still said.
+        // Found only in one of Claude Code's installers' places — its local
+        // install, reached by an alias: no sheet, the tab opens.
         app.findAgent = { _ in .found(URL(fileURLWithPath: NSHomeDirectory() + "/.claude/local/claude"), onPath: false) }
         app.newAgentTab(.claude)
-        check("found off the PATH is said too", await eventually(3) { self.window.attachedSheet != nil })
-        let offPath = sheetTexts().joined(separator: " ")
-        check("with where it was found", offPath.contains("Found at ~/.claude/local/claude, not on your PATH"), offPath)
-        clickSheetButton("Cancel")
-        _ = await eventually(2) { self.window.attachedSheet == nil }
+        check(
+            "found off the PATH: the tab opens with nothing said", await eventually(3) { opened == [.claude, .claude] } && window.attachedSheet == nil,
+            "\(opened)")
 
         // The shell hasn't answered: nothing changes.
         app.findAgent = { _ in .unknown }
         app.newAgentTab(.claude)
-        check("not known yet, the tab opens as before", await eventually(3) { opened == [.claude, .claude] } && window.attachedSheet == nil, "\(opened)")
+        check(
+            "not known yet, the tab opens as before", await eventually(3) { opened == [.claude, .claude, .claude] } && window.attachedSheet == nil,
+            "\(opened)")
     }
 }
 #endif

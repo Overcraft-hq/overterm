@@ -1957,7 +1957,12 @@ package final class E2ERunner {
         let updates = UpdateChecker.shared
         AppEnvironment.defaults.removeObject(forKey: UpdateChecker.whatsNewSeenKey)
         updates.noteLaunch(.upgraded(from: "1.6.1"), changelog: whatsNewChangelog(updates.currentVersion), enabled: true)
-        defer { updates.noteLaunch(.same) }
+        defer {
+            // No update remembered: the next launch's note shows no chip
+            // (a `.same` alone reads the update kept above and shows it again).
+            AppEnvironment.defaults.removeObject(forKey: UpdateChecker.whatsNewFromKey)
+            updates.noteLaunch(.same)
+        }
         check("the What's New chip is in the strip for these", await eventually(3) { WhatsNewChip.drawn != nil }, String(describing: WhatsNewChip.drawn))
         // Where the chip itself is, a point is the chip's, not empty strip:
         // its frame is the strip's own, put in the window's x.

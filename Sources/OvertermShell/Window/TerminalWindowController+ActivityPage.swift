@@ -385,7 +385,7 @@ extension TerminalWindowController {
     /// its item, the port typed into its field.
     @objc package func showActivityFreePort(_ sender: Any?) {
         guard Settings.shared.activityEnabled else { return openSettings(.activity) }
-        if paletteView?.isHidden != false { showPalette(sender) }
+        if paletteView?.isHidden != false { openPalette(countingTip: false) }
         palette.scope = .action
         palette.query = "Free a Port"
         if let at = palette.results.firstIndex(where: { $0.id == "a.activity.freePort" }) { palette.selectedIndex = at }

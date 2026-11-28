@@ -22,7 +22,7 @@ version is tagged `v<version>`.
 - Docker's and Activity's `?` group their keys and list the page's window commands; the filter fields say their syntax
 - Tooltips, the Inbox and empty panels say the key bound now, not the default
 - File ▸ Open Folder… (and its ⌘K row) opens a tab in a folder you pick; New Task outside a repository offers it
-- An agent's tab whose CLI isn't on your PATH says so before typing its command, with Open the Tab Anyway; New Task marks such an agent "(not found)" and starts on Shell only
+- An agent's tab whose CLI Overterm can't find — not on your PATH nor where its installer puts it — says so before typing its command, with Open the Tab Anyway; New Task marks such an agent "(not found)" and starts on Shell only (one reached by an alias, as Claude Code's local install, opens as before)
 - Help ▸ Keyboard Shortcuts can be given a key
 - Outside a repository, Overgit, Kubernetes and Terraform offer Open Folder…, and Files over your home folder says what to open instead
 - The empty Inbox and Sessions say what lands there and how to start; ⌘K's own rows, the group switcher and the plan pane say the key bound now, and ⌘K has a Keyboard Shortcuts row
