@@ -221,7 +221,8 @@ package struct KubernetesPanelView: View {
                 HStack(spacing: 10) {
                     if let found = headline.answer.found, !found.isHead || found.elsewhere > 0 {
                         Button("Diff Deployed…Current") { panel.reviewDeployed(found) }
-                            .help(KeyHints.help("A review tab", command: "review.branch", keys: keys) + ": what the checkout has that isn't deployed")
+                            // No key: ⇧⌘R reviews against the base branch, not the deployed commit.
+                            .help("A review tab: what the checkout has that isn't deployed")
                             .accessibilityIdentifier("kubernetes.panel.diffDeployed")
                     }
                     if headline.answer.found == nil || headline.answer.found?.source != .revisionLabel {

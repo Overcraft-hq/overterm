@@ -117,22 +117,12 @@ package enum AppEnvironment {
     }
 
     /// The user's own Ghostty config file, if there is one: it applies in
-    /// Overterm as it is, which ⌘K's first tip says (onboarding T3). Only
-    /// its existence is looked at. None in an isolated run — a scenario
-    /// must not depend on what the user has.
+    /// Overterm as it is, which ⌘K's first tip says (onboarding T3). The
+    /// first of `ghosttyConfigFiles` that is there — XDG's, then macOS's
+    /// Application Support ones. Only its existence is looked at. None in
+    /// an isolated run — a scenario must not depend on what the user has.
     package static var ghosttyConfigFile: URL? {
-        guard !isIsolated else { return nil }
-        let base: URL
-        if let config = env["XDG_CONFIG_HOME"], !config.isEmpty {
-            base = URL(fileURLWithPath: config, isDirectory: true)
-        } else {
-            base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config", isDirectory: true)
-        }
-        for name in ["config", "config.ghostty"] {
-            let file = base.appendingPathComponent("ghostty/" + name)
-            if FileManager.default.fileExists(atPath: file.path) { return file }
-        }
-        return nil
+        ghosttyConfigFiles.first { file in FileManager.default.fileExists(atPath: file.path) }
     }
 
     /// Every file libghostty loads by default (`ghostty_config_load_default_files`),

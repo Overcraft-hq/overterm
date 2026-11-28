@@ -49,6 +49,10 @@ extension TerminalWindowController {
     /// reaches the card and Esc goes back to the terminal.
     @objc package func showGettingStarted(_ sender: Any?) {
         guard Start.shared.active else { return }
+        // A page over the body (Setup, Settings) or a review's covers the
+        // sidebar: put away, or the card opens behind it.
+        if store.showingOverlay != nil { hideOverlay(focus: false) }
+        hideReviewPage(focus: false)
         if sidebarItem?.isCollapsed == true { toggleFileTree(nil) }
         Start.shared.gettingStarted()
         if let window, let target = sidebarKeyTarget?() { window.makeFirstResponder(target) }
@@ -165,7 +169,12 @@ extension TerminalWindowController {
         let blocked = tipBlocked(sheet: sheet, heldShown: heldShown)
         tipBanner?.isHidden = Start.shared.state.banner == nil || blocked
         guard window.isKeyWindow || NSApp.keyWindow == nil else { return }
+        // A tip `room` places now reaches `tipChanged` before this returns:
+        // it goes by what was worked out here.
+        tipRoomBlocked = blocked
         Start.shared.room(blocked: blocked, inFront: NSApp.isActive || AppEnvironment.isIsolated)
+        tipRoomBlocked = nil
+        tipBanner?.isHidden = Start.shared.state.banner == nil || blocked
     }
 
     private func tipBlocked(sheet: Bool? = nil, heldShown: Bool? = nil) -> Bool {
@@ -182,7 +191,7 @@ extension TerminalWindowController {
     /// A tip placed, or gone: the banner shown or hidden; a new one said
     /// to VoiceOver — the focus stays where it is.
     private func tipChanged(_ banner: StartState.Banner?) {
-        tipBanner?.isHidden = banner == nil || tipBlocked()
+        tipBanner?.isHidden = banner == nil || (tipRoomBlocked ?? tipBlocked())
         guard let banner else { return }
         if banner.tip == .needsYou {
             tipModel.permission = nil
@@ -215,7 +224,7 @@ extension TerminalWindowController {
         case .failed: mark = .failed
         case .none: return
         }
-        Start.shared.note(.markRaised(mark, tab: tab.title))
+        Start.shared.note(.markRaised(mark, tab: tab.title, id: tab.id))
     }
 
     /// ⌘K showing: T3's words for its hint row on its first three showings, else none.

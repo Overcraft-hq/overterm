@@ -173,6 +173,15 @@ final class ShellEnvironmentTests: XCTestCase {
         XCTAssertNil(later.answer { nil })
         XCTAssertEqual(later.answer { ["PATH": "/bin"] }?["PATH"], "/bin")
     }
+
+    /// Check Again: a failure kept from before is asked again at once; an answer is still kept.
+    func testCheckAgainAsksAFailedShellAgainAtOnce() {
+        let kept = ShellAnswer(retryAfter: 60)
+        XCTAssertNil(kept.answer { nil })
+        XCTAssertNil(kept.answer { ["PATH": "/bin"] }, "within retryAfter, by itself: the failure is kept")
+        XCTAssertEqual(kept.answer(retryingFailure: true) { ["PATH": "/bin"] }?["PATH"], "/bin", "asked again by the person: run again")
+        XCTAssertEqual(kept.answer(retryingFailure: true) { ["PATH": "/other"] }?["PATH"], "/bin", "an answer is kept for good")
+    }
 }
 
 /// A value shared with a queue's block, behind a lock.

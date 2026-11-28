@@ -124,13 +124,19 @@ final class StartTests: XCTestCase {
         XCTAssertNil(start.panels[.files], "Files has no switch")
     }
 
-    func testNeedsYouIsFollowedOnlyWhileActive() {
-        let inert = start(active: false)
-        inert.noteNeedsYou(true)
-        XCTAssertFalse(inert.anyNeedsYou)
+    /// New Task's agent picked in Settings ▸ Agents (or settings.json) does
+    /// the step too; reading the default at launch doesn't.
+    func testAnAgentPickedInSettingsDoesTheStep() {
         let start = start()
-        start.noteNeedsYou(true)
-        XCTAssertTrue(start.anyNeedsYou)
+        XCTAssertFalse(start.state.isDone(.agent), "the default read is no pick")
+        settings.set("agents.newTaskAgent", .string("codex"))
+        XCTAssertEqual(start.taskAgent, "codex")
+        XCTAssertTrue(start.state.isDone(.agent))
+
+        let inert = self.start(active: false)
+        settings.set("agents.newTaskAgent", .string("shell"))
+        XCTAssertEqual(inert.taskAgent, "shell", "followed")
+        XCTAssertFalse(inert.state.isDone(.agent), "inert: nothing done")
     }
 
     /// The tips seen and ⌘K's count are kept in the defaults; Reset Tips clears both.

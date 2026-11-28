@@ -97,6 +97,31 @@ final class FreshInstallTests: XCTestCase {
         XCTAssertTrue(looked.isEmpty, "the PATH unknown: nothing looked at")
     }
 
+    /// Docker is looked for where its page and the Setup page look — the
+    /// PATH Overterm was started with — as well as the login shell's.
+    func testDockerOnTheAppsPathCounts() {
+        let found = FreshInstallSetup.tools(
+            login: ["PATH": "/usr/bin:/bin"], appPath: "/Users/someone/custom-bin", home: home, exists: { _ in false },
+            isExecutable: { path in path == "/Users/someone/custom-bin/docker" })
+        XCTAssertTrue(found.docker)
+    }
+
+    /// A PATH folder under Desktop, Documents, Downloads or iCloud Drive is
+    /// never looked in: macOS would ask the person, at their first launch.
+    func testProtectedFoldersOnThePathAreNotLookedIn() {
+        var asked: [String] = []
+        let path = "/Users/someone/Documents/bin:/Users/someone/Desktop/tools:/Users/someone/Library/Mobile Documents/bin:/usr/bin"
+        let found = FreshInstallSetup.tools(
+            login: ["PATH": path], appPath: "/Users/someone/Downloads/bin", home: home, exists: { _ in false },
+            isExecutable: { path in
+                asked.append(path)
+                return true
+            })
+        XCTAssertTrue(found.docker && found.kubectl && found.terraform, "found where it may look")
+        XCTAssertFalse(asked.contains { path in SetupProbe.isProtected(path, home: "/Users/someone") }, "\(asked)")
+        XCTAssertFalse(asked.isEmpty)
+    }
+
     // MARK: Deciding
 
     func testAFreshInstallHidesOnceAndRemembers() async {
@@ -200,14 +225,32 @@ final class FreshInstallTests: XCTestCase {
         XCTAssertTrue(read.contains(base.appendingPathComponent("extra.conf").path), "\(read)")
         XCTAssertFalse(FreshInstall.ghosttySetsTheme(files: [base.appendingPathComponent("none")]) { _ in nil })
 
-        // A file including itself, or a long chain, ends.
+        // A file including itself, or a long chain, ends — cut short, it
+        // isn't known to name no theme: the person's config is left alone.
         var count = 0
         let looped = FreshInstall.ghosttySetsTheme(files: [base.appendingPathComponent("a")]) { url in
             count += 1
             return "config-file = \(url.lastPathComponent)x"
         }
-        XCTAssertFalse(looped)
+        XCTAssertTrue(looped, "the limit reached: unknown, kept")
         XCTAssertLessThanOrEqual(count, FreshInstall.ghosttyFilesLimit)
+        XCTAssertFalse(
+            FreshInstall.ghosttySetsTheme(files: [base.appendingPathComponent("a")]) { url in url.lastPathComponent == "a" ? "config-file = a" : nil },
+            "a file including itself is read once: the search ends, and finds none")
+    }
+
+    /// A theme past the read limit is never read; the search cut short says
+    /// so rather than "none", and no pair is chosen over it.
+    func testATruncatedSearchKeepsThePersonsConfig() {
+        let base = URL(fileURLWithPath: "/Users/someone/.config/ghostty")
+        let count = FreshInstall.ghosttyFilesLimit + 2
+        var files: [String: String] = [
+            base.appendingPathComponent("config").path: (1...count).map { index in "config-file = part\(index).conf" }.joined(separator: "\n")
+        ]
+        for index in 1..<count { files[base.appendingPathComponent("part\(index).conf").path] = "font-size = \(index)" }
+        files[base.appendingPathComponent("part\(count).conf").path] = "theme = Dracula"
+        XCTAssertTrue(FreshInstall.ghosttySetsTheme(files: [base.appendingPathComponent("config")]) { url in files[url.path] })
+        XCTAssertFalse(FreshInstall.ghosttySetsTheme(files: [base.appendingPathComponent("config")]) { url in url.lastPathComponent == "config" ? "font-size = 13" : nil })
     }
 
     /// Only files that are there count against the limit: the four default

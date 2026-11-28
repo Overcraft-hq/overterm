@@ -214,6 +214,37 @@ final class SetupCheckTests: XCTestCase {
                 .geminiSystemDefaults, "the variable in the app's environment counts, as the launch counts it")
     }
 
+    /// A PATH folder under Desktop, Documents, Downloads or iCloud Drive is
+    /// never looked in — macOS would ask the person —; the rest as before.
+    func testTheProbeLooksInNoProtectedFolder() {
+        var executable: [String] = []
+        let environment = ["PATH": "\(home)/Documents/bin:\(home)/Desktop/bin:\(home)/Library/Mobile Documents/bin:\(home)/Downloads:/usr/local/bin"]
+        let facts = SetupProbe.facts(
+            environment: environment, gh: nil, places: places, exists: { _ in false },
+            isExecutable: { path in
+                executable.append(path)
+                return path.hasSuffix("/claude") || path.hasSuffix("/gh")
+            })
+        XCTAssertFalse(executable.contains { path in SetupProbe.isProtected(path, home: home) }, "\(executable)")
+        XCTAssertTrue(executable.contains("/usr/local/bin/codex"), "the rest of the PATH as before")
+        XCTAssertEqual(facts.agents[.claude], .found(URL(fileURLWithPath: "/usr/local/bin/claude"), onPath: true))
+        XCTAssertEqual(facts.ghOnPath, URL(fileURLWithPath: "/usr/local/bin/gh"))
+        XCTAssertTrue(SetupProbe.isProtected(home + "/Documents", home: home))
+        XCTAssertTrue(SetupProbe.isProtected(home + "/Desktop//bin/", home: home), "as the path standardizes")
+        XCTAssertFalse(SetupProbe.isProtected(home + "/DocumentsArchive/bin", home: home))
+        XCTAssertFalse(SetupProbe.isProtected(home + "/.local/bin", home: home))
+    }
+
+    /// Xcode selected elsewhere (`Xcode-beta.app`) counts, by the link
+    /// `xcode-select` keeps — never run.
+    func testASelectedXcodeElsewhereCounts() {
+        let facts = SetupProbe.facts(
+            environment: ["PATH": "/usr/bin"], gh: nil, places: places, exists: { path in path == "/var/db/xcode_select_link" }, isExecutable: { _ in false })
+        XCTAssertTrue(facts.developerTools)
+        let none = SetupProbe.facts(environment: ["PATH": "/usr/bin"], gh: nil, places: places, exists: { _ in false }, isExecutable: { _ in false })
+        XCTAssertFalse(none.developerTools, "none: Command Line Tools not found, as before")
+    }
+
     /// The shell not answered: agents unknown, nothing on its PATH looked for.
     func testTheShellNotAnsweredLooksForNothingOnItsPath() {
         var executable: [String] = []

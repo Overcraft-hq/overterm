@@ -62,6 +62,10 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// What the tip banner hears from NotificationCenter — the app in
     /// front, a sheet, the window key —, removed when the window closes.
     package var tipObservers: [any NSObjectProtocol] = []
+    /// What covers the tip's place as `updateTipRoom` worked it out, while
+    /// it tells `Start`: a tip placed then is shown or hidden by that, not
+    /// by `Settings.held`, which a `$held` sink reads before it changes.
+    var tipRoomBlocked: Bool?
     private var searchSubscription: AnyCancellable?
     /// The ⌘F overlay over the terminal (terminal + files + contents).
     package let spotlight = SpotlightModel()
@@ -805,7 +809,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         // (it renders nothing while hidden). Only ever on — dragged shut, it
         // just keeps rendering, as it always did.
         split.onResize = { [weak self] in
-            guard let self, let item = self.diffItem, !item.isCollapsed, !self.diff.panelVisible else { return }
+            guard let self else { return }
+            // The sidebar dragged open or shut: Overgit's reads and the
+            // Start card's probe follow it, as they do the toggle.
+            self.updateOvergitVisibility()
+            guard let item = self.diffItem, !item.isCollapsed, !self.diff.panelVisible else { return }
             self.diff.panelVisible = true
             // Dragged open on the usage or the pull request: that model has
             // to be told it is showing, or the pane stays blank.
@@ -1527,7 +1535,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     private func markSelectedSeen() {
         showSelectedApproval()
         guard let tab = store.selected, isVisible(tab), tab.activity.needsAttention else { return }
-        Start.shared.note(.waitingTabSelected)
+        Start.shared.note(.waitingTabSelected(tab.id))
         tab.activity.seen()
         AttentionNotifier.withdraw(tab: tab)
         updateAttentionBadge()
@@ -1590,7 +1598,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package func updateAttentionBadge() {
         AttentionNotifier.updateBadge(count: store.tabs.filter { $0.activity.needsAttention }.count)
         updateMenuBarItem(count: store.tabs.count { $0.activity.needsAttention })
-        Start.shared.noteNeedsYou(store.tabs.contains { $0.activity.needsAttention })
+        // This window's own: its card's Open Inbox opens this window's Inbox.
+        let needsYou = store.tabs.contains { tab in tab.activity.needsAttention }
+        if sidebarPanel.needsYou != needsYou { sidebarPanel.needsYou = needsYou }
         if inboxItem?.isCollapsed == false { refreshInbox() }
     }
 

@@ -11,7 +11,7 @@ final class StartStateTests: XCTestCase {
     func testEachStepIsDoneByItsOwnEvents() {
         let cases: [(StartState.Event, StartState.Step?)] = [
             (.inRepository, .repository), (.agentChosen, .agent), (.agentTabStarted, .agent), (.taskCreated, .task),
-            (.inboxOpened(waiting: true), .answered), (.inboxOpened(waiting: false), nil), (.waitingTabSelected, .answered),
+            (.inboxOpened(waiting: true), .answered), (.inboxOpened(waiting: false), nil), (.waitingTabSelected(nil), .answered),
             (.changesShown, .changes),
         ]
         for (event, step) in cases {
@@ -24,7 +24,7 @@ final class StartStateTests: XCTestCase {
 
     /// Nothing is locked: the last step first, the first last — the same five done.
     func testAnyOrderDoesThemAll() {
-        let events: [StartState.Event] = [.changesShown, .waitingTabSelected, .taskCreated, .agentTabStarted, .inRepository]
+        let events: [StartState.Event] = [.changesShown, .waitingTabSelected(nil), .taskCreated, .agentTabStarted, .inRepository]
         var forwards = StartState()
         var backwards = StartState()
         for (index, event) in events.enumerated() {
@@ -177,13 +177,41 @@ final class StartStateTests: XCTestCase {
     func testWhatEachTipGoesWith() {
         let t1 = raised(StartState(), .markRaised(.waiting, tab: "api")).state
         XCTAssertNil(raised(t1, .inboxOpened(waiting: true)).state.banner)
-        XCTAssertNil(t1.apply(.waitingTabSelected, now: t0.addingTimeInterval(StartState.seenAfter)).state.banner, "on screen a moment: seen")
+        XCTAssertNil(t1.apply(.waitingTabSelected(nil), now: t0.addingTimeInterval(StartState.seenAfter)).state.banner, "on screen a moment: seen")
         let t2 = raised(StartState(), .productionPane(.terraform(root: "envs/prod"))).state
-        for event in [StartState.Event.inboxOpened(waiting: true), .waitingTabSelected, .changesShown] {
+        for event in [StartState.Event.inboxOpened(waiting: true), .waitingTabSelected(nil), .changesShown] {
             XCTAssertEqual(raised(t2, event).state.banner, .production(.terraform(root: "envs/prod")), "\(event)")
         }
         let t4 = raised(StartState(), .agentTabStarted).state
-        XCTAssertEqual(raised(t4, .waitingTabSelected).state.banner, .agentTools)
+        XCTAssertEqual(raised(t4, .waitingTabSelected(nil)).state.banner, .agentTools)
+    }
+
+    /// T1 names its tab: another tab that needs you, selected, leaves it.
+    func testT1GoesOnlyWithItsOwnTab() {
+        let api = UUID()
+        let web = UUID()
+        let t1 = raised(StartState(), .markRaised(.waiting, tab: "api", id: api)).state
+        XCTAssertEqual(t1.banner, .needsYou(tab: "api", mark: .waiting, id: api))
+        let later = t0.addingTimeInterval(StartState.seenAfter)
+        let other = t1.apply(.waitingTabSelected(web), now: later).state
+        XCTAssertEqual(other.banner, t1.banner, "another tab selected: T1 stays")
+        XCTAssertTrue(other.isDone(.answered), "the step is done all the same")
+        XCTAssertNil(t1.apply(.waitingTabSelected(api), now: later).state.banner, "its own tab, after a moment: seen, it goes")
+    }
+
+    /// Time behind another app or under a sheet doesn't count toward T1's
+    /// moment on screen: it counts again from when it is seen again.
+    func testT1sMomentCountsOnlyWhileShown() {
+        let t1 = raised(StartState(), .markRaised(.waiting, tab: "api")).state
+        let behind = t1.withRoom(blocked: false, inFront: false, now: t0.addingTimeInterval(0.1)).state
+        let back = behind.withRoom(blocked: false, inFront: true, now: t0.addingTimeInterval(10)).state
+        XCTAssertNotNil(back.apply(.waitingTabSelected(nil), now: t0.addingTimeInterval(10.5)).state.banner, "back half a second: not seen yet")
+        XCTAssertNil(back.apply(.waitingTabSelected(nil), now: t0.addingTimeInterval(10 + StartState.seenAfter)).state.banner)
+        let covered = t1.withRoom(blocked: true, inFront: true, now: t0.addingTimeInterval(0.1)).state
+        let uncovered = covered.withRoom(blocked: false, inFront: true, now: t0.addingTimeInterval(5)).state
+        XCTAssertNotNil(uncovered.apply(.waitingTabSelected(nil), now: t0.addingTimeInterval(5.5)).state.banner, "a sheet's time doesn't count")
+        let still = t1.withRoom(blocked: false, inFront: true, now: t0.addingTimeInterval(0.5)).state
+        XCTAssertNil(still.apply(.waitingTabSelected(nil), now: t0.addingTimeInterval(StartState.seenAfter)).state.banner, "an unbroken second: seen")
     }
 
     /// One banner tip a launch: T4 after T1 waits for a later launch, unseen.
@@ -261,19 +289,19 @@ final class StartStateTests: XCTestCase {
         // Its tab selected as the app comes back — before the app is said
         // to be in front, or after it placed T1 in the same turn —: T1 is
         // not dropped unseen; it stays until ×, the Inbox or its button.
-        let selected = raised(behind.state, .waitingTabSelected).state
+        let selected = raised(behind.state, .waitingTabSelected(nil)).state
         XCTAssertEqual(selected.waiting, [.needsYou(tab: "api", mark: .waiting)])
         XCTAssertFalse(selected.tipsSeen.contains(.needsYou))
         let back = selected.withRoom(blocked: false, inFront: true, now: t0)
         XCTAssertEqual(back.tip, .needsYou(tab: "api", mark: .waiting), "placed when the app comes to the front")
         let placedFirst = behind.state.withRoom(blocked: false, inFront: true, now: t0).state
-        XCTAssertEqual(raised(placedFirst, .waitingTabSelected).state.banner, .needsYou(tab: "api", mark: .waiting), "placed and selected in one turn")
+        XCTAssertEqual(raised(placedFirst, .waitingTabSelected(nil)).state.banner, .needsYou(tab: "api", mark: .waiting), "placed and selected in one turn")
         XCTAssertNil(
-            placedFirst.apply(.waitingTabSelected, now: t0.addingTimeInterval(StartState.seenAfter)).state.banner,
+            placedFirst.apply(.waitingTabSelected(nil), now: t0.addingTimeInterval(StartState.seenAfter)).state.banner,
             "on screen a moment, then its tab selected: seen, it goes")
         // A fresh first launch: the ask is held until T1 shows, and T1 does show.
         let fresh = raised(StartState().launched(.fresh).withRoom(blocked: false, inFront: false, now: t0).state, .markRaised(.waiting, tab: "api"))
-        let freshSelected = raised(fresh.state, .waitingTabSelected).state
+        let freshSelected = raised(fresh.state, .waitingTabSelected(nil)).state
         XCTAssertTrue(freshSelected.holdsNotificationAsk, "not shown yet")
         XCTAssertFalse(freshSelected.withRoom(blocked: false, inFront: true, now: t0).state.holdsNotificationAsk, "shown on return")
 

@@ -176,8 +176,8 @@ final class UpdatesTests: XCTestCase {
     }
 
     func testTheVersionAnUpdateCameFrom() {
-        func from(_ launch: FirstRun.Launch, remembered: String? = nil, seen: String? = nil) -> String? {
-            UpdateChecker.pendingFrom(launch: launch, remembered: remembered, seen: seen)
+        func from(_ launch: FirstRun.Launch, remembered: String? = nil, seen: String? = nil, current: String? = nil) -> String? {
+            UpdateChecker.pendingFrom(launch: launch, remembered: remembered, seen: seen, current: current)
         }
         XCTAssertNil(from(.fresh, remembered: "1.6.1"))
         XCTAssertNil(from(.same), "no update known")
@@ -189,6 +189,16 @@ final class UpdatesTests: XCTestCase {
             "1.6.8's chip never opened: the versions since 1.6.5 still unsaid")
         XCTAssertEqual(from(.upgraded(from: "1.6.8"), remembered: "1.6.5", seen: "1.6.8"), "1.6.8", "1.6.8's seen: from there")
         XCTAssertEqual(from(.upgraded(from: "1.6.5"), remembered: "1.6.8", seen: nil), "1.6.5", "a newer one remembered: the update's own")
+        XCTAssertEqual(
+            from(.upgraded(from: "1.6.9"), remembered: "1.6.5", seen: "1.6.5", current: "1.6.10"), "1.6.5",
+            "forward over an unopened chip: the versions since 1.6.5")
+        XCTAssertEqual(
+            from(.upgraded(from: "1.6.9"), remembered: "1.6.5", seen: "1.6.5", current: "1.6.8"), "1.6.9",
+            "1.6.8 run after 1.6.9: the update's own, nothing to list")
+        XCTAssertNil(
+            UpdateChecker.whatsNew(
+                from: from(.upgraded(from: "1.6.9"), remembered: "1.6.5", seen: "1.6.5", current: "1.6.8"), seen: "1.6.5", changelog: changelog,
+                current: "1.6.8", enabled: true), "no chip going back")
         XCTAssertEqual(
             UpdateChecker.whatsNew(from: "", seen: nil, changelog: changelog, current: "1.6.9", enabled: true), "1.6.9", "none known: this version's lines")
         XCTAssertNil(UpdateChecker.whatsNew(from: nil, seen: nil, changelog: changelog, current: "1.6.9", enabled: true))

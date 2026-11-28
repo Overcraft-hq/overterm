@@ -85,13 +85,14 @@ package enum FreshInstallSetup {
         } else {
             guard !AppEnvironment.isIsolated else { return [] }
             let home = FileManager.default.homeDirectoryForCurrentUser
+            let appPath = ProcessInfo.processInfo.environment["PATH"]
             tools = await withCheckedContinuation { (continuation: CheckedContinuation<FreshInstall.Tools, Never>) in
                 // Spelled `@Sendable`: a block for a queue written here would
                 // otherwise be typed main-actor and trap off it.
                 let work: @Sendable () -> Void = {
                     let files = FileManager.default
                     let found = Self.tools(
-                        login: ShellEnvironment.login(), home: home, exists: { path in files.fileExists(atPath: path) },
+                        login: ShellEnvironment.login(), appPath: appPath, home: home, exists: { path in files.fileExists(atPath: path) },
                         isExecutable: { path in files.isExecutableFile(atPath: path) })
                     continuation.resume(returning: found)
                 }
@@ -116,26 +117,36 @@ package enum FreshInstallSetup {
     }
 
     /// What this Mac has of the three panels' tools, each where its feature
-    /// looks: `docker` in the login shell's PATH and its installers' folders
-    /// (`DockerCLI.folders`), or Docker Desktop's or OrbStack's app; `kubectl`
+    /// looks: `docker` in the PATH Overterm was started with — where Docker's
+    /// page and the Setup page look (`DockerCLI.locate`) —, the login shell's,
+    /// and its installers' folders (`DockerCLI.folders`), or Docker Desktop's
+    /// or OrbStack's app; `kubectl`
     /// where the Kubernetes panel looks (`KubectlLocator`, Settings' path
     /// aside — a fresh install has none); `terraform` or `tofu` on the PATH
     /// or in Homebrew's folders (`TerraformCLI.fallbackFolders`). Nil
-    /// `login`: the PATH is unknown. Pure but for `exists` and `isExecutable`.
+    /// `login`: the PATH is unknown. Nothing under Desktop, Documents,
+    /// Downloads or iCloud Drive is looked at (`SetupProbe.isProtected`):
+    /// macOS would ask the person, at their first launch. Pure but for
+    /// `exists` and `isExecutable`.
     package nonisolated static func tools(
-        login: [String: String]?, home: URL, exists: (String) -> Bool, isExecutable: (String) -> Bool
+        login: [String: String]?, appPath: String? = nil, home: URL, exists: (String) -> Bool, isExecutable: (String) -> Bool
     ) -> FreshInstall.Tools {
         guard let login else { return .unknown }
+        let homePath = home.path
+        func looksExecutable(_ path: String) -> Bool { !SetupProbe.isProtected(path, home: homePath) && isExecutable(path) }
         let path = login["PATH"]
+        let dockerPath = [appPath, path].compactMap { part in part }.filter { part in !part.isEmpty }.joined(separator: ":")
         let docker =
-            DockerCLI.folders(home: home, path: path).contains { folder in isExecutable(URL(fileURLWithPath: folder).appendingPathComponent("docker").path) }
+            DockerCLI.folders(home: home, path: dockerPath).contains { folder in
+                looksExecutable(URL(fileURLWithPath: folder).appendingPathComponent("docker").path)
+            }
             || dockerApps.contains(where: exists)
         let kubectl = !KubectlLocator.candidates(
-            configured: "", guarded: false, loginPath: path, home: home, isExecutable: isExecutable, resolve: { url in url }
+            configured: "", guarded: false, loginPath: path, home: home, isExecutable: looksExecutable, resolve: { url in url }
         ).isEmpty
         let terraform = ["terraform", "tofu"].contains { tool in
-            ShellEnvironment.executable(tool, in: login, isExecutable: isExecutable) != nil
-                || TerraformCLI.fallbackFolders.contains { folder in isExecutable(URL(fileURLWithPath: folder).appendingPathComponent(tool).path) }
+            ShellEnvironment.executable(tool, in: login, isExecutable: looksExecutable) != nil
+                || TerraformCLI.fallbackFolders.contains { folder in looksExecutable(URL(fileURLWithPath: folder).appendingPathComponent(tool).path) }
         }
         return FreshInstall.Tools(pathKnown: true, docker: docker, kubectl: kubectl, terraform: terraform)
     }

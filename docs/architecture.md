@@ -1787,7 +1787,11 @@ is added to the window or a split. Its foot is Check Setup · Turn Off Tips.
   Command Line Tools or Xcode, of Gemini CLI's system defaults (as the
   launch tests it), and `GitHub.executable`; for the page also
   notifications as macOS says now and the bridge as Settings has it. It
-  runs nothing and writes nothing; a scenario sets `SetupProbe.override`.
+  runs no tool — no agent's CLI, no `git`, no `gh` — but may start the
+  login shell once for its PATH (`ShellEnvironment.login()`, which runs
+  the person's rc files); it skips PATH folders under Desktop, Documents,
+  Downloads and iCloud Drive (`SetupProbe.isProtected`), and writes
+  nothing; a scenario sets `SetupProbe.override`.
 - The Setup page (7.7) is a `WorkspacePage` (`WorkspaceOverlay.setup`)
   opened only by the person: Help ▸ Check Setup… (`help.setup`, no key),
   its ⌘K row, the card's Check Setup and the "isn't on your PATH"

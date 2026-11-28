@@ -259,7 +259,7 @@ package struct StartText: Sendable {
     /// A banner tip's words: its keys as bound now, a setting by its page's title.
     package func tip(_ banner: StartState.Banner) -> String {
         switch banner {
-        case .needsYou(let tab, let mark):
+        case .needsYou(let tab, let mark, _):
             let inbox = keys["inbox.show"].map { "\($0) opens the Inbox" } ?? "View ▸ Inbox opens the Inbox"
             let next = keys["tabs.nextAttention"].map { " \($0) goes to the tab." } ?? ""
             switch mark {

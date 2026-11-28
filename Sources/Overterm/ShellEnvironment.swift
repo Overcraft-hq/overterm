@@ -30,10 +30,12 @@ package enum ShellEnvironment {
 
     /// What the login shell said, asked once; nil in an isolated run or when
     /// the shell couldn't be asked. Blocking (up to `timeout`) the first
-    /// time: call off the main thread.
-    package static func login() -> [String: String]? {
+    /// time: call off the main thread. `retryingFailure`: a person's Check
+    /// Again — a failure kept from before is asked again at once, not after
+    /// `retryAfter`; an answer is still kept for good.
+    package static func login(retryingFailure: Bool = false) -> [String: String]? {
         if AppEnvironment.isIsolated { return nil }
-        return kept.answer(asking: askTheShell)
+        return kept.answer(retryingFailure: retryingFailure, asking: askTheShell)
     }
 
     /// What the login shell said, if it has been asked already: never asks,
@@ -165,13 +167,16 @@ package final class ShellAnswer: @unchecked Sendable {
     }
 
     /// The kept answer, else `ask`'s — one run at a time, its answer kept;
-    /// a failed run asked again only after `retryAfter`.
-    package func answer(asking ask: () -> [String: String]?) -> [String: String]? {
-        if let kept = current() { return kept }
+    /// a failed run asked again only after `retryAfter`, or at once when
+    /// `retryingFailure` (only a failure from a run that ended after this
+    /// call began is handed back then).
+    package func answer(retryingFailure: Bool = false, asking ask: () -> [String: String]?) -> [String: String]? {
+        let since: Date? = retryingFailure ? Date() : nil
+        if let kept = current(failuresSince: since) { return kept }
         running.lock()
         defer { running.unlock() }
         // Answered while this caller waited for the run before it.
-        if let kept = current() { return kept }
+        if let kept = current(failuresSince: since) { return kept }
         let answer = ask()
         state.withLock { asked = (answer, Date()) }
         return answer
@@ -183,11 +188,14 @@ package final class ShellAnswer: @unchecked Sendable {
     }
 
     /// The answer to hand back without a run: `.some` while one is kept —
-    /// an answer, or a failure younger than `retryAfter` (`.some(nil)`).
-    private func current() -> [String: String]?? {
+    /// an answer, or a failure younger than `retryAfter` (`.some(nil)`);
+    /// with `failuresSince`, only a failure from a run that ended then or later.
+    private func current(failuresSince since: Date?) -> [String: String]?? {
         state.withLock { () -> [String: String]?? in
-            guard let asked, asked.answer != nil || Date().timeIntervalSince(asked.at) < retryAfter else { return .none }
-            return .some(asked.answer)
+            guard let asked else { return .none }
+            if asked.answer != nil { return .some(asked.answer) }
+            let fresh = since.map { since in asked.at >= since } ?? (Date().timeIntervalSince(asked.at) < retryAfter)
+            return fresh ? .some(nil) : .none
         }
     }
 }

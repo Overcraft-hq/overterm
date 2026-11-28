@@ -34,6 +34,8 @@ extension E2ERunner {
             check("rebound, the tooltip follows", await eventually(3) { help("git").contains("Overgit (⌃⌥⌘G)") }, "\(help("git"))")
             keys.reset(command)
             check("and back", await eventually(3) { help("git").contains(overgit) }, "\(help("git"))")
+        } else {
+            check("overgit.show is a command", false)
         }
         // Stage 1's rule past the rail: the pane header's tooltips read the key bound now.
         func paneHelp() -> [String] { Self.accessibilityHelps("pane.splitRight", in: root) }
@@ -44,6 +46,9 @@ extension E2ERunner {
             check("rebound, the pane header follows", await eventually(3) { paneHelp().contains("Split Right (⌃⌥⌘D)") }, "\(paneHelp())")
             keys.reset(command)
             check("and back", await eventually(3) { paneHelp().contains(split) }, "\(paneHelp())")
+        } else {
+            // Unregistered, the tooltip and `split` would both fall back to the name alone.
+            check("splits.right is a command", false)
         }
 
         // Outside a repository: a tab in a folder git doesn't know.
@@ -134,6 +139,15 @@ extension E2ERunner {
         check("Help's Getting Started is a row of its own", row("a.gettingStarted") != nil && row("menu.help.gettingStarted") == nil)
         check("Help's Reset Tips is a row of its own", row("a.resetTips") != nil && row("menu.help.resetTips") == nil)
         check("Help's Check Setup is a row of its own", row("a.checkSetup") != nil && row("menu.help.setup") == nil)
+        // Each Help row runs, and says the key of, its own command — not another's.
+        let helpRows = [
+            "a.checkSetup": "help.setup", "a.gettingStarted": "help.gettingStarted", "a.resetTips": "help.resetTips", "a.shortcuts": "help.shortcuts",
+            "a.whatsNew": "help.whatsNew",
+        ]
+        for (id, command) in helpRows.sorted(by: { first, second in first.key < second.key }) {
+            check(
+                "\(id) is \(command)'s row", row(id)?.command == command && KeyCommands.byID[command] != nil, row(id)?.command ?? "no row")
+        }
     }
 
     /// Stages 3 and 4, the `onboarding` scenario (onboarding 7.3, 7.6,
@@ -223,20 +237,26 @@ extension E2ERunner {
         // The home folder as the window names it once the tab is there (the
         // temporary folder's /var is /private/var to a shell), then the
         // sidebar drawn again for it.
-        func becomeHome(_ folder: URL) async {
-            _ = await eventually(8) { self.app.tree.root?.lastPathComponent == folder.lastPathComponent }
-            EmptyStates.homeOverride = app.tree.root ?? folder
+        // Only the new tab's own root: never the previous tab's, left there
+        // while the new one hasn't said its own.
+        func becomeHome(_ folder: URL) async -> Bool {
+            let there = await eventually(8) { self.app.tree.root?.lastPathComponent == folder.lastPathComponent }
+            check("the tab in \(folder.lastPathComponent) says its folder", there, app.tree.root?.path ?? "nil")
+            guard there, let root = app.tree.root else { return false }
+            EmptyStates.homeOverride = root
             app.sidebarPanel.panel = .git
             app.sidebarPanel.panel = .files
+            return true
         }
         app.newTab(in: home)
         let homeTab = app.store.selected
-        await becomeHome(home)
-        check(
-            "Files over the home folder shows its strip, with Open Folder…",
-            await eventually(8) { present("files.homeStrip") && present("files.openFolder") },
-            "root \(app.tree.root?.path ?? "nil"), checked \(app.diff.root?.path ?? "nil"), not a repository: \(app.diff.notARepository)")
-        await keyboardStays("the home strip")
+        if await becomeHome(home) {
+            check(
+                "Files over the home folder shows its strip, with Open Folder…",
+                await eventually(8) { present("files.homeStrip") && present("files.openFolder") },
+                "root \(app.tree.root?.path ?? "nil"), checked \(app.diff.root?.path ?? "nil"), not a repository: \(app.diff.notARepository)")
+            await keyboardStays("the home strip")
+        }
         // A home folder kept in git is a repository: no strip.
         let gitHome = scratch.appendingPathComponent("onboarding-git-home", isDirectory: true)
         try? FileManager.default.createDirectory(at: gitHome, withIntermediateDirectories: true)
@@ -244,13 +264,14 @@ extension E2ERunner {
         try? await git(["commit", "-q", "--allow-empty", "-m", "home"], in: gitHome)
         app.newTab(in: gitHome)
         let gitHomeTab = app.store.selected
-        await becomeHome(gitHome)
-        // Its read in: the window's own, which said it is a repository.
-        _ = await eventually(8) { self.app.diff.root?.lastPathComponent == gitHome.lastPathComponent && self.app.diff.branch == "main" }
-        check(
-            "a home folder that is a repository shows none",
-            app.diff.root?.lastPathComponent == gitHome.lastPathComponent && !app.diff.notARepository && !present("files.homeStrip"),
-            "checked \(app.diff.root?.path ?? "nil"), not a repository: \(app.diff.notARepository)")
+        if await becomeHome(gitHome) {
+            // Its read in: the window's own, which said it is a repository.
+            _ = await eventually(8) { self.app.diff.root?.lastPathComponent == gitHome.lastPathComponent && self.app.diff.branch == "main" }
+            check(
+                "a home folder that is a repository shows none",
+                app.diff.root?.lastPathComponent == gitHome.lastPathComponent && !app.diff.notARepository && !present("files.homeStrip"),
+                "checked \(app.diff.root?.path ?? "nil"), not a repository: \(app.diff.notARepository)")
+        }
         EmptyStates.homeOverride = nil
         app.closeTabsWithoutAsking([homeTab, gitHomeTab].compactMap { tab in tab })
         if let first { app.store.select(first) }
@@ -333,7 +354,7 @@ extension E2ERunner {
         notify(worked)
         check("the task's tab is marked waiting", await eventually(10) { worked.activity.mark == .waiting }, "\(worked.activity.mark)")
         func showsT1() -> Bool {
-            if case .needsYou(_, .waiting)? = start.state.banner { return true }
+            if case .needsYou(_, .waiting, _)? = start.state.banner { return true }
             return false
         }
         check(
@@ -367,7 +388,7 @@ extension E2ERunner {
 
         // 10. The Inbox, from the card's Open Inbox: T1 goes, the fourth step is done.
         app.updateAttentionBadge()
-        check("while a tab needs you, the card offers Open Inbox", await eventually(3) { start.anyNeedsYou && present("start.button.inbox.show") })
+        check("while a tab needs you, the card offers Open Inbox", await eventually(3) { self.app.sidebarPanel.needsYou && present("start.button.inbox.show") })
         check("Open Inbox pressed", press("start.button.inbox.show"))
         check("the Inbox opens, and the fourth step is done", await eventually(3) { self.app.inboxItem?.isCollapsed == false && start.state.isDone(.answered) })
         check("T1 goes with it", await eventually(2) { start.state.banner == nil && !present("tip.banner") })
@@ -580,6 +601,28 @@ extension E2ERunner {
         check(
             "hideOverlay gives the keyboard to the terminal", await eventually(2) { self.window.firstResponder === self.app.store.selected?.terminal })
         app.closeOverlay(.setup)
+
+        // Put in a New Tab by the real path, with a harmless command whose
+        // running would leave a file: typed into the new tab's shell, and
+        // left there — no Return.
+        let ran = scratch.appendingPathComponent("setup-typed-ran")
+        try? FileManager.default.removeItem(at: ran)
+        let command = "touch '\(ran.path)'"
+        let tabsBefore = Set(app.store.tabs.map(\.id))
+        let selectedBefore = app.store.selected
+        app.performSetupAction(.newTab(command))
+        guard let typedTab = app.store.tabs.first(where: { tab in !tabsBefore.contains(tab.id) }) else {
+            return check("Put in a New Tab opens a tab", false)
+        }
+        check(
+            "the new tab's shell has the command typed",
+            await eventually(10) { typedTab.terminal.visibleText?.contains(ran.lastPathComponent) == true },
+            typedTab.terminal.visibleText ?? "nil")
+        await pause(1.5)
+        check("and nothing pressed Return: it didn't run", !FileManager.default.fileExists(atPath: ran.path))
+        app.closeTabsWithoutAsking([typedTab])
+        if let selectedBefore { app.store.select(selectedBefore) }
+        app.focusSelectedTerminal()
     }
 
     /// Step 1b: a fresh install's two settings (`FreshInstall`), through
@@ -643,17 +686,24 @@ extension E2ERunner {
         }
 
         // Fresh, no docker, kubectl or terraform — Terraform's switch the
-        // person's own already, in settings.json: Docker and Kubernetes hidden.
-        settings.set("terraform.enabled", .bool(false))
+        // person's own already, in settings.json, and on: Docker and
+        // Kubernetes hidden, Terraform's left on though its tool is missing.
+        settings.set("terraform.enabled", .bool(true))
         let hidden = await FreshInstallSetup.decidePanels(.fresh)
         check("no docker, kubectl or terraform: Docker and Kubernetes hidden", hidden == [.docker, .kubernetes], "\(hidden)")
         check("their switches off in settings.json", !settings.bool("docker.enabled") && !settings.bool("kubernetes.enabled"))
         check(
-            "Terraform's, the person's, kept and not claimed",
-            settings.isSet("terraform.enabled") && FreshInstall.hidden(stored: defaults.stringArray(forKey: FreshInstall.panelsHiddenKey)) == [.docker, .kubernetes])
+            "Terraform's, the person's, kept on and not claimed",
+            settings.isSet("terraform.enabled") && settings.bool("terraform.enabled")
+                && FreshInstall.hidden(stored: defaults.stringArray(forKey: FreshInstall.panelsHiddenKey)) == [.docker, .kubernetes])
         check("API, Database, Notes, Sessions and Snippets left as they are", noneSet(others))
+        // Decided once: a switch it set, cleared, isn't set again — it never reruns.
+        settings.set("docker.enabled", nil)
         let twice = await FreshInstallSetup.decidePanels(.fresh)
-        check("decided once: never again", twice.isEmpty && defaults.bool(forKey: FreshInstall.panelsDecidedKey))
+        check(
+            "decided once: never again", twice.isEmpty && !settings.isSet("docker.enabled") && defaults.bool(forKey: FreshInstall.panelsDecidedKey),
+            "\(twice)")
+        settings.set("docker.enabled", .bool(false))
         settings.set("terraform.enabled", nil)
 
         // The card: one line, and Show.

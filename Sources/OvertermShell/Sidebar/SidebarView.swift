@@ -54,7 +54,7 @@ package struct SidebarView: View {
                     // panel of its own. Past 40% of the column, it scrolls.
                     StartCardView(
                         start: .shared, theme: theme, inRepository: worktrees.main != nil, maxHeight: geometry.size.height * 0.4,
-                        columnOpen: sidebar.columnOpen, perform: startAction)
+                        columnOpen: sidebar.columnOpen, anyNeedsYou: sidebar.needsYou, perform: startAction)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

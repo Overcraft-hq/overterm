@@ -80,4 +80,52 @@ final class SetupPageModelTests: XCTestCase {
         XCTAssertEqual(model.panels, .closed)
         model.visible = false
     }
+
+    /// Folded and opened again while a read is out: the read from before
+    /// the fold is thrown away, even when it comes first; the new one shows.
+    func testAReadFromBeforeAFoldIsThrownAway() async throws {
+        SetupProbe.override = SetupFacts(shellAnswered: true)
+        let old = SetupPanelFacts(simulator: SetupPanelFacts.Simulator(xcode: false, coreSimulator: false), ghosttyConfig: false)
+        let new = SetupPanelFacts(simulator: SetupPanelFacts.Simulator(xcode: true, coreSimulator: true), ghosttyConfig: false)
+        let reads = HeldReads()
+        let model = SetupPageModel()
+        model.readPanels = {
+            reads.started += 1
+            let read = reads.started
+            while !reads.released.contains(read) {
+                try? await Task.sleep(nanoseconds: 5_000_000)
+            }
+            return read == 1 ? old : new
+        }
+        model.visible = true
+        try await settle(model)
+
+        model.setPanelsOpen(true)
+        for _ in 0..<200 where reads.started < 1 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        model.setPanelsOpen(false)
+        model.setPanelsOpen(true)
+        for _ in 0..<200 where reads.started < 2 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(reads.started, 2)
+
+        reads.released.insert(1)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(model.panels, .reading, "the read from before the fold isn't shown")
+        reads.released.insert(2)
+        for _ in 0..<200 where model.panels == .reading {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(model.panels, .read(new))
+        model.visible = false
+    }
+}
+
+/// The panels' reads a test holds until it lets each go.
+@MainActor
+private final class HeldReads {
+    var started = 0
+    var released: Set<Int> = []
 }

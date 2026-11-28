@@ -42,6 +42,10 @@ package struct StartCardView: View {
     /// The sidebar's column is open: the second step asks the login shell
     /// only then — a collapsed column's card is never seen.
     private let columnOpen: Bool
+    /// Some tab of this window needs you: the fourth step offers Open
+    /// Inbox, which opens this window's Inbox — another window's marks
+    /// aren't in it.
+    private let anyNeedsYou: Bool
     /// 40% of the sidebar's height: past it, the card scrolls inside itself.
     private let maxHeight: CGFloat
     private let perform: (StartCardAction) -> Void
@@ -49,13 +53,14 @@ package struct StartCardView: View {
 
     package init(
         start: Start, theme: ChromeTheme, keys: Keybindings = .shared, inRepository: Bool, maxHeight: CGFloat, columnOpen: Bool = true,
-        perform: @escaping (StartCardAction) -> Void
+        anyNeedsYou: Bool = false, perform: @escaping (StartCardAction) -> Void
     ) {
         self._start = ObservedObject(wrappedValue: start)
         self._theme = ObservedObject(wrappedValue: theme)
         self._keys = ObservedObject(wrappedValue: keys)
         self.inRepository = inRepository
         self.columnOpen = columnOpen
+        self.anyNeedsYou = anyNeedsYou
         self.maxHeight = maxHeight
         self.perform = perform
     }
@@ -99,7 +104,7 @@ package struct StartCardView: View {
     }
 
     private var facts: StartText.Facts {
-        StartText.Facts(inRepository: inRepository, setup: start.setup, taskAgent: start.taskAgent, anyNeedsYou: start.anyNeedsYou)
+        StartText.Facts(inRepository: inRepository, setup: start.setup, taskAgent: start.taskAgent, anyNeedsYou: anyNeedsYou)
     }
 
     // MARK: Collapsed

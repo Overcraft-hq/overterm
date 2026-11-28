@@ -420,6 +420,11 @@ private struct KubePinLabel: View {
         .background(RoundedRectangle(cornerRadius: 5).fill(pin.isProduction ? KubernetesPageView.production : theme.rowSel))
         .help(pin.help)
         .accessibilityIdentifier("pane.kubeContext")
+        // Onboarding T2: a pane pinned to production says so here, and
+        // `KubeRunWarningLabel` leaves a pin's warning to this label.
+        .onAppear {
+            if pin.isProduction { Start.shared.note(.productionPane(.kubernetes(context: pin.displayName))) }
+        }
     }
 }
 

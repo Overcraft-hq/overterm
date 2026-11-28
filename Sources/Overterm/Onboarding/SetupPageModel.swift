@@ -61,6 +61,9 @@ package final class SetupPageModel: ObservableObject {
     private let settings: Settings
     /// Bumped by every read and drop: an answer that comes after is thrown away.
     private var generation = 0
+    /// Bumped by every read of the panels and every fold: a read from
+    /// before a fold is thrown away even when the section is open again.
+    private var panelRead = 0
     private var settingsChanges: AnyCancellable?
 
     package init(settings: Settings = .shared) {
@@ -88,6 +91,7 @@ package final class SetupPageModel: ObservableObject {
             panels = .reading
             if visible { readPanelFacts() }
         } else {
+            panelRead += 1
             panels = .closed
         }
     }
@@ -95,7 +99,7 @@ package final class SetupPageModel: ObservableObject {
     /// Check Again: everything read anew.
     package func checkAgain() {
         guard visible else { return }
-        read()
+        read(again: true)
     }
 
     /// Allow…: macOS's question, then what it says now.
@@ -114,12 +118,13 @@ package final class SetupPageModel: ObservableObject {
         usageAsk = settings.usageAsk
     }
 
-    private func read() {
+    /// `again`: Check Again's — a shell that failed is asked again at once.
+    private func read(again: Bool = false) {
         generation += 1
         let generation = generation
         facts = nil
         Task { [weak self] in
-            let facts = await SetupProbe.read(full: true)
+            let facts = await SetupProbe.read(full: true, again: again)
             guard let self, self.generation == generation, self.visible else { return }
             self.facts = facts
         }
@@ -131,6 +136,8 @@ package final class SetupPageModel: ObservableObject {
 
     private func readPanelFacts() {
         let generation = generation
+        panelRead += 1
+        let panelRead = panelRead
         Task { [weak self] in
             let found: SetupPanelFacts?
             if let override = SetupProbe.panelsOverride {
@@ -138,7 +145,7 @@ package final class SetupPageModel: ObservableObject {
             } else {
                 found = await self?.readPanels?()
             }
-            guard let self, self.generation == generation, self.visible, self.panels == .reading else { return }
+            guard let self, self.generation == generation, self.panelRead == panelRead, self.visible, self.panels == .reading else { return }
             self.panels = found.map { facts in Panels.read(facts) } ?? .notLooked
         }
     }

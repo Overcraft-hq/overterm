@@ -144,8 +144,10 @@ package enum FreshInstall {
     /// end of the list, relative to the including file's folder. The last
     /// `theme` line read decides: a later file's `theme =` puts the default
     /// back. At most `ghosttyFilesLimit` files read (only those there count),
-    /// a file once, `ghosttyLookupsLimit` looked for. `read`: a file's text,
-    /// nil when it isn't there. Pure but for `read`.
+    /// a file once, `ghosttyLookupsLimit` looked for. A search the limits cut
+    /// short says true: a file left unread may name a theme, and the
+    /// person's choice is left alone rather than covered. `read`: a file's
+    /// text, nil when it isn't there. Pure but for `read`.
     package static func ghosttySetsTheme(files: [URL], read: (URL) -> String?) -> Bool {
         var list = files
         var next = 0
@@ -165,6 +167,8 @@ package enum FreshInstall {
                 list.append(path.hasPrefix("/") ? URL(fileURLWithPath: path) : folder.appendingPathComponent(path))
             }
         }
+        // Files still to look for once a limit was reached: unknown, not "none".
+        if next < list.count { return true }
         return theme.map { value in !value.isEmpty } ?? false
     }
 

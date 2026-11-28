@@ -104,7 +104,7 @@ package final class UpdateChecker: ObservableObject {
         let text = changelog ?? Changelog.bundled
         self.changelog = text
         let seen = defaults.string(forKey: Self.whatsNewSeenKey)
-        let from = Self.pendingFrom(launch: launch, remembered: defaults.string(forKey: Self.whatsNewFromKey), seen: seen)
+        let from = Self.pendingFrom(launch: launch, remembered: defaults.string(forKey: Self.whatsNewFromKey), seen: seen, current: currentVersion)
         if let from {
             defaults.set(from, forKey: Self.whatsNewFromKey)
         } else {
@@ -151,14 +151,17 @@ package final class UpdateChecker: ObservableObject {
     /// one `remembered` on a later launch of the same version; nothing on a
     /// fresh install. An update over one whose chip was never opened nor
     /// put away (`seen` isn't the version it came from) keeps the older
-    /// version, so the versions skipped since are listed too. Pure.
-    package nonisolated static func pendingFrom(launch: FirstRun.Launch, remembered: String?, seen: String?) -> String? {
+    /// version, so the versions skipped since are listed too — only going
+    /// forward: an older version run after a newer (`current` before `from`)
+    /// keeps the update's own, which lists nothing. Pure.
+    package nonisolated static func pendingFrom(launch: FirstRun.Launch, remembered: String?, seen: String?, current: String? = nil) -> String? {
         switch launch {
         case .fresh: return nil
         case .same: return remembered
         case .upgraded(let from):
             guard let from else { return "" }
-            if let remembered, !remembered.isEmpty, seen != from, isNewer(from, than: remembered) { return remembered }
+            let forward = current.map { current in isNewer(current, than: from) } ?? true
+            if forward, let remembered, !remembered.isEmpty, seen != from, isNewer(from, than: remembered) { return remembered }
             return from
         }
     }

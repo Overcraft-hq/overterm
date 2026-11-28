@@ -49,8 +49,6 @@ package final class Start: ObservableObject {
     @Published package private(set) var taskAgent: String
     /// The optional panels and whether each is on, for the done state's ticks.
     @Published package private(set) var panels: [SidebarPanel: Bool]
-    /// Some tab needs you: the fourth step offers Open Inbox.
-    @Published package private(set) var anyNeedsYou = false
     /// The panels a fresh install hid, their tool not found (`FreshInstall`),
     /// as the defaults keep them; the card names those still off.
     @Published package private(set) var hiddenAtInstall: [SidebarPanel]
@@ -138,12 +136,6 @@ package final class Start: ObservableObject {
         update(state.resettingTips())
     }
 
-    /// Whether some tab needs you now — the badge's own count, from the window.
-    package func noteNeedsYou(_ any: Bool) {
-        guard active, any != anyNeedsYou else { return }
-        anyNeedsYou = any
-    }
-
     /// This launch, once the window shows (7.2): a fresh install's card
     /// open, an open one collapsed after the first launch, none after an update.
     package func begin(_ launch: FirstRun.Launch) {
@@ -220,11 +212,12 @@ package final class Start: ObservableObject {
 
     /// Asks the probe while the second step shows: once, and again while
     /// the shell hasn't answered (it is asked again after a minute,
-    /// `ShellEnvironment.retryAfter`); `force`: Check Again.
+    /// `ShellEnvironment.retryAfter`); `force`: Check Again — a shell that
+    /// failed asked again at once.
     package func probe(force: Bool = false) {
         guard active, probing == nil, force || setup?.shellAnswered != true else { return }
         probing = Task { [weak self] in
-            let facts = await SetupProbe.read()
+            let facts = await SetupProbe.read(again: force)
             guard let self else { return }
             self.setup = facts
             self.probing = nil
@@ -257,7 +250,15 @@ package final class Start: ObservableObject {
 
     private func settingsChanged(_ keys: Set<String>) {
         if keys.contains("general.tips") { update(state.withTips(settings.tips)) }
-        if keys.contains("agents.newTaskAgent") { taskAgent = settings.taskAgent }
+        if keys.contains("agents.newTaskAgent") {
+            // Picked anywhere — Settings ▸ Agents, settings.json — the step
+            // is done; reading the default at launch is not a pick.
+            let chosen = settings.taskAgent
+            if chosen != taskAgent {
+                taskAgent = chosen
+                note(.agentChosen)
+            }
+        }
         let toggles = Set(SidebarPanel.allCases.compactMap(\.toggleKey))
         if !keys.isDisjoint(with: toggles) { panels = Self.panels(of: settings) }
         if !keys.isDisjoint(with: FreshInstall.themeKeys) {

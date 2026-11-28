@@ -65,9 +65,10 @@ package struct StartState: Equatable, Sendable {
         case terraform(root: String)
     }
 
-    /// A banner tip, with what its words name.
+    /// A banner tip, with what its words name. T1's `id` is its tab's:
+    /// selecting that tab, and no other, takes it (nil: any tab's).
     package enum Banner: Equatable, Sendable {
-        case needsYou(tab: String, mark: Mark)
+        case needsYou(tab: String, mark: Mark, id: UUID? = nil)
         case production(Production)
         case agentTools
 
@@ -92,12 +93,12 @@ package struct StartState: Equatable, Sendable {
         case taskCreated
         /// The Inbox opened; `waiting`: while a tab needed you.
         case inboxOpened(waiting: Bool)
-        /// A tab that was waiting, or had finished, selected.
-        case waitingTabSelected
+        /// A tab that was waiting, or had finished, selected: its id.
+        case waitingTabSelected(UUID?)
         /// The changes pane on screen.
         case changesShown
-        /// A tab's mark went up, by any of its three ways (T1).
-        case markRaised(Mark, tab: String)
+        /// A tab's mark went up, by any of its three ways (T1): its title, and its id.
+        case markRaised(Mark, tab: String, id: UUID? = nil)
         /// A pane's header said production (T2).
         case productionPane(Production)
         /// ⌘K showed (T3).
@@ -126,8 +127,9 @@ package struct StartState: Equatable, Sendable {
     package var fresh = false
     /// The banner tip placed, shown while nothing covers its place.
     package var banner: Banner?
-    /// When `banner` was placed: T1's tab selected only goes with a T1
-    /// that has been on screen a moment (`seenAfter`).
+    /// When `banner` was placed, or came back on screen: T1's tab selected
+    /// only goes with a T1 that has been on screen a moment (`seenAfter`)
+    /// — time behind another app or under a sheet doesn't count.
     package var bannerPlacedAt: Date?
     /// The launch's one tip that isn't exempt, put back by T1 or T2 taking
     /// its place: it comes back when their place is free, not counted
@@ -232,8 +234,8 @@ package struct StartState: Equatable, Sendable {
         var next = applying(event, now: now)
         next.paletteTip = false
         switch event {
-        case .markRaised(let mark, let tab):
-            next.raise(.needsYou(tab: tab, mark: mark))
+        case .markRaised(let mark, let tab, let id):
+            next.raise(.needsYou(tab: tab, mark: mark, id: id))
         case .productionPane(let production):
             next.raise(.production(production))
         case .agentTabStarted:
@@ -244,14 +246,17 @@ package struct StartState: Equatable, Sendable {
             // The Inbox opened, with a mark or before any: T1 has nothing to teach.
             next.tipsSeen.insert(.needsYou)
             next.drop(.needsYou)
-        case .waitingTabSelected:
+        case .waitingTabSelected(let selected):
             // T1's tab looked at: once T1 has been on screen, it was seen
             // and goes. One still waiting — the app behind another, a sheet
             // over its place — or placed this very moment (the app coming
             // back places it and selects its tab in one turn) stays, until
             // ×, the Inbox or its own button: the first launch's
-            // notification question is in it (D-6).
-            if next.banner?.tip == .needsYou, let placed = next.bannerPlacedAt, now.timeIntervalSince(placed) >= Self.seenAfter {
+            // notification question is in it (D-6). Another tab that needs
+            // you, selected, isn't the one T1 names: it stays.
+            if case .needsYou(_, _, let named)? = next.banner, named == nil || named == selected, let placed = next.bannerPlacedAt,
+                now.timeIntervalSince(placed) >= Self.seenAfter
+            {
                 next.banner = nil
                 next.bannerPlacedAt = nil
             }
@@ -274,8 +279,11 @@ package struct StartState: Equatable, Sendable {
     /// What covers a tip's place, and whether the app is in front.
     package func withRoom(blocked: Bool, inFront: Bool, now: Date = Date()) -> (state: StartState, tip: Banner?) {
         var next = self
+        let wasShown = !self.blocked && self.inFront
         next.blocked = blocked
         next.inFront = inFront
+        // On screen again after a sheet or another app: its moment counts from now.
+        if !wasShown, !blocked, inFront, next.banner != nil { next.bannerPlacedAt = now }
         return next.placing(now: now)
     }
 
