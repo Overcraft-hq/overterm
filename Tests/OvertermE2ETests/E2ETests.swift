@@ -464,6 +464,7 @@ final class E2ETests: XCTestCase {
     func testMCPApprovals() throws { try run("mcpApprovals") }
     func testOverview() throws { try run("overview") }
     func testPeek() throws { try run("peek") }
+    func testPeekFilter() throws { try run("peekFilter") }
     func testScrollback() throws { try run("scrollback") }
     func testOpenFromFinder() throws { try run("openFromFinder") }
     func testSessions() throws { try run("sessions") }
