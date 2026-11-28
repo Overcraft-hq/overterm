@@ -1023,7 +1023,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 onChooseTab: { [weak self] in self?.chooseGroupTab($0) },
                 onMoveHere: { [weak self] in self?.moveSelectedTab(to: $0) },
                 onDismiss: { [weak self] in self?.hideGroupSwitcher() }))
-        switcherView.onEscape = { [weak self] in self?.hideGroupSwitcher() }
+        switcherView.onEscape = { [weak self] in self?.escapeGroupSwitcher() }
         switcherView.onKey = { [weak self] in self?.handleSwitcher(key: $0) ?? false }
         switcherView.translatesAutoresizingMaskIntoConstraints = false
         switcherView.isHidden = true

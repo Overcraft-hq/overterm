@@ -475,6 +475,7 @@ final class E2ETests: XCTestCase {
     func testOpenWith() throws { try run("openWith") }
     func testDropFiles() throws { try run("dropFiles") }
     func testGroups() throws { try run("groups") }
+    func testGroupSwitcher() throws { try run("groupSwitcher") }
     func testBlocks() throws { try run("blocks") }
     func testInbox() throws { try run("inbox") }
     func testAskAgent() throws { try run("askAgent") }

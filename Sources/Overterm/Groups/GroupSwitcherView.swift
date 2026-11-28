@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// ⌃⌘G: the islands and their tabs, side by side. ↩ switches, ⌥↩ moves the
-/// current tab into the highlighted group, Esc closes.
+/// ⌃⌘G: the islands and their tabs, side by side. Typing filters them,
+/// → walks the highlighted island's tabs and ← back; ↩ switches, ⌥↩ moves
+/// the current tab into the highlighted group, Esc clears the filter, then
+/// closes.
 ///
 /// The design asked for ⇧⌘G; Ghostty binds that to `navigate_search` and
 /// eats it before the menu sees it (docs/ghostty.md), hence ⌃⌘G.
@@ -24,14 +26,17 @@ package struct GroupSwitcherView: View {
         self.onDismiss = onDismiss
     }
 
+    /// Strip order, so the list reads as the strip does; stashed last;
+    /// only what matches what was typed.
     private var groups: [TabGroup] {
-        // Strip order, so the list reads as the strip does; stashed last.
-        var seen: [TabGroup] = []
-        for case .group(let g, _) in store.strip where !seen.contains(where: { $0.id == g.id }) { seen.append(g) }
-        return seen + store.stashedGroups
+        GroupSwitcherFilter.groups(GroupSwitcherFilter.order(store), tabs: { store.tabs(in: $0) }, query: store.switcherQuery)
     }
 
-    private var highlighted: TabGroup? { store.group(store.switcherHighlight) ?? groups.first }
+    private var highlighted: TabGroup? { groups.first { $0.id == store.switcherHighlight } ?? groups.first }
+
+    private var highlightedTabs: [Tab] {
+        highlighted.map { GroupSwitcherFilter.tabs(of: $0, store.tabs(in: $0), query: store.switcherQuery) } ?? []
+    }
 
     package var body: some View {
         ZStack {
@@ -52,6 +57,19 @@ package struct GroupSwitcherView: View {
     private var groupList: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Groups").font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.dimText)
+            // What was typed: the keys go to the switcher, not a field.
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
+                Text(verbatim: store.switcherQuery.isEmpty ? "Type to filter" : store.switcherQuery)
+                    .font(.system(size: ChromeMetrics.text(12)))
+                    .foregroundStyle(store.switcherQuery.isEmpty ? theme.dimText : theme.text)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: ChromeMetrics.row(26))
+            .background(RoundedRectangle(cornerRadius: 6).fill(theme.dimText.opacity(0.12)))
+            .accessibilityIdentifier("groupSwitcher.query")
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(groups) { group in
@@ -63,7 +81,10 @@ package struct GroupSwitcherView: View {
                         .onTapGesture { onChoose(group) }
                         .onHover { if $0 { store.switcherHighlight = group.id } }
                     }
-                    if groups.isEmpty {
+                    if groups.isEmpty, !store.switcherQuery.isEmpty {
+                        Text(verbatim: "No group or tab matches “\(store.switcherQuery)” — ⌫ or esc")
+                            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(.vertical, 8)
+                    } else if groups.isEmpty {
                         Text("No groups yet — ⌃⌘N makes one from the selected tabs")
                             .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(.vertical, 8)
                     }
@@ -81,7 +102,7 @@ package struct GroupSwitcherView: View {
             Text("Tabs").font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.dimText)
             ScrollView {
                 VStack(alignment: .leading, spacing: 3) {
-                    ForEach(highlighted.map { store.tabs(in: $0) } ?? []) { tab in
+                    ForEach(highlightedTabs) { tab in
                         HStack(spacing: 7) {
                             TabStateGlyph(tab: tab, theme: theme)
                             Text(verbatim: tab.title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1)
@@ -91,6 +112,9 @@ package struct GroupSwitcherView: View {
                         .padding(.horizontal, 8)
                         .frame(height: ChromeMetrics.row(26))
                         .background(RoundedRectangle(cornerRadius: 6).fill(tab.id == store.selectedID ? theme.selected : .clear))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6).strokeBorder(TabStatusStyle.working, lineWidth: tab.id == store.switcherTab ? 1.5 : 0)
+                        )
                         .contentShape(Rectangle())
                         .onTapGesture { onChooseTab(tab) }
                     }
@@ -105,6 +129,7 @@ package struct GroupSwitcherView: View {
     private var legend: some View {
         HStack(spacing: 10) {
             Label("Switch", systemImage: "return").labelStyle(.titleAndIcon)
+            Text(verbatim: "→ Tabs")
             Text(verbatim: "⌥↩ Move current tab here")
             Text(verbatim: "esc Close")
         }

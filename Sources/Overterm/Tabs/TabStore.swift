@@ -22,6 +22,11 @@ package final class TabStore: ObservableObject {
     @Published package var renamingGroupID: TabGroup.ID?
     /// Where the arrows are in the group switcher (⌃⌘G).
     @Published package var switcherHighlight: TabGroup.ID?
+    /// What has been typed into the switcher: it filters the islands (GRP-U1).
+    @Published package var switcherQuery = ""
+    /// The tab the arrows are on in the switcher's tab column (→ in, ← out);
+    /// nil while they walk the islands.
+    @Published package var switcherTab: Tab.ID?
 
     /// ⌘-clicked tabs, for "Add 2 Tabs to New Group". The selected tab is
     /// not in here: `selectedTabs` adds it.

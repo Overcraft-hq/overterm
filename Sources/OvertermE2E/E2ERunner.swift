@@ -97,6 +97,7 @@ package final class E2ERunner {
         "openWith": { await $0.openWithScenario() },
         "dropFiles": { await $0.dropFilesScenario() },
         "groups": { await $0.groupsScenario() },
+        "groupSwitcher": { await $0.groupSwitcherScenario() },
         "blocks": { await $0.blocksScenario() },
         "inbox": { await $0.inboxScenario() },
         "askAgent": { await $0.askAgentScenario() },
