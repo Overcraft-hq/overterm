@@ -479,7 +479,11 @@ final class ProcessSignalsTests: XCTestCase {
         defer { child.stop() }
         let real = LiveActivityKernel()
         func kids() -> [ActivityProcess] { (real.processes() ?? []).filter { $0.parentPID == child.pid && !$0.isZombie } }
-        XCTAssertTrue(TestChild.eventually { kids().count == 2 }, "two sleeps")
+        // Both forked and both exec'd: a child read between its fork and its
+        // exec is still /bin/sh, and its path read then no longer matches
+        // the /bin/sleep it becomes (ranAnotherProgram) — flaky on CI.
+        XCTAssertTrue(
+            TestChild.eventually { kids().count == 2 && kids().allSatisfy { real.path(of: $0.pid) == "/bin/sleep" } }, "two sleeps")
         let members = [child.identity] + kids().map(\.identity)
         // Whatever the checks say, the test's own sleeps end with it: each
         // by its pid, once its start is read again.
