@@ -95,7 +95,10 @@ package struct ActivityPageView: View {
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
         .overlay {
             if page.cheatSheet {
-                ResourceKeySheet<ActivityKey>(theme: theme, identifier: "activity.keys", footnote: ActivityKey.foldHelp) { page.cheatSheet = false }
+                ResourceKeySheet<ActivityKey>(
+                    theme: theme, identifier: "activity.keys", title: "Keys on the Activity page", footnote: ActivityKey.foldHelp,
+                    windowCommands: ["activity."]
+                ) { page.cheatSheet = false }
             }
         }
         .onChange(of: page.focusFilter) { _ in filterFocused = true }

@@ -290,6 +290,9 @@ private struct SessionListView: View {
             if model.sessions.isEmpty {
                 Text(model.loading ? "" : "No agent sessions in \(group?.name ?? "this folder") yet")
                     .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(12)
+                if !model.loading {
+                    KeyHint("%@ starts a Claude tab", command: "tabs.newClaude", color: theme.text3).padding(.horizontal, 12)
+                }
                 Spacer()
             } else {
                 ScrollView {
@@ -388,6 +391,7 @@ private struct SnippetListView: View {
                         .font(.system(size: ChromeMetrics.text(11)))
                         .foregroundStyle(theme.text3)
                         .fixedSize(horizontal: false, vertical: true)
+                    KeyHint("%@ finds a snippet by name", command: "palette.show", color: theme.text3)
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 8)

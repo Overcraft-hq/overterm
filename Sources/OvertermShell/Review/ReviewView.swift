@@ -39,6 +39,7 @@ package struct ReviewPageView: View {
 package struct ReviewView: View {
     @ObservedObject package var model: ReviewModel
     @ObservedObject package var theme: ChromeTheme
+    @ObservedObject var keybindings = Keybindings.shared
     package let actions: ReviewActions
 
     package var body: some View {
@@ -67,6 +68,17 @@ package struct ReviewView: View {
             }
         }
         .background(theme.card)
+        .overlay {
+            if model.showsKeys {
+                ZStack {
+                    Color.black.opacity(0.001).onTapGesture { model.showsKeys = false }
+                    KeySheetView(
+                        theme: theme, title: "Keys in the review", groups: ReviewKey.groups { keybindings.key(for: $0)?.display },
+                        identifier: "review.keys"
+                    ) { model.showsKeys = false }
+                }
+            }
+        }
     }
 
     private func note(_ text: String) -> some View {
@@ -125,6 +137,15 @@ private struct ReviewHeader: View {
             .labelsHidden()
             .fixedSize()
             .accessibilityIdentifier("review.layout")
+            Button {
+                model.showsKeys.toggle()
+            } label: {
+                Image(systemName: "keyboard").font(.system(size: ChromeMetrics.text(12)))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(theme.dimText)
+            .help("Keys — ?")
+            .accessibilityIdentifier("review.keysButton")
             Button {
                 Task { await model.load() }
             } label: {
@@ -746,14 +767,19 @@ package final class ReviewHostingView: NSHostingView<ReviewPageView> {
         guard modifiers.isEmpty, let review = review(), let key = event.charactersIgnoringModifiers?.lowercased() else {
             return super.keyDown(with: event)
         }
-        switch key {
-        case "j": review.selectFile(by: 1)
-        case "k": review.selectFile(by: -1)
-        case "n": review.moveToChange(by: 1)
-        case "p": review.moveToChange(by: -1)
-        case "v": review.toggleViewed()
-        case "\u{1b}" where review.lineSelection != nil: review.clearLineSelection()
-        default: super.keyDown(with: event)
+        if review.showsKeys {
+            review.showsKeys = false
+            return
+        }
+        if key == "\u{1b}", review.lineSelection != nil { return review.clearLineSelection() }
+        switch ReviewKey.of(event.characters ?? key) {
+        case .nextFile: review.selectFile(by: 1)
+        case .previousFile: review.selectFile(by: -1)
+        case .nextChange: review.moveToChange(by: 1)
+        case .previousChange: review.moveToChange(by: -1)
+        case .viewed: review.toggleViewed()
+        case .help: review.showsKeys = true
+        case nil: super.keyDown(with: event)
         }
     }
 }

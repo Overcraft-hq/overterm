@@ -288,7 +288,11 @@ package struct DiffPanelView: View {
     }
 
     private func placeholder(_ text: String) -> some View {
-        Text(text).foregroundStyle(theme.dimText).frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 4) {
+            Text(text).foregroundStyle(theme.dimText)
+            KeyHint("%@ reviews the whole branch", command: "review.branch", color: theme.dimText)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func iconButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {

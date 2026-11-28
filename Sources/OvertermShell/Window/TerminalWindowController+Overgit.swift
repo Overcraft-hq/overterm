@@ -36,6 +36,18 @@ extension TerminalWindowController {
         updateOvergitVisibility()
     }
 
+    /// View ▸ Files, Sessions, Snippets (DISC-U8): the sidebar, on that panel.
+    @objc package func showFiles(_ sender: Any?) { showSidebarPanel(.files) }
+    @objc package func showSessions(_ sender: Any?) { showSidebarPanel(.sessions) }
+    @objc package func showSnippets(_ sender: Any?) { showSidebarPanel(.snippets) }
+
+    package func showSidebarPanel(_ panel: SidebarPanel) {
+        guard panel.isEnabled else { return NSSound.beep() }
+        if sidebarItem?.isCollapsed == true { toggleFileTree(nil) }
+        sidebarPanel.panel = panel
+        updateOvergitVisibility()
+    }
+
     /// The right pane, on the working tree's changes — the overview's
     /// `+x −y`.
     @objc package func showChanges(_ sender: Any?) {

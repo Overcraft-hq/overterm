@@ -205,6 +205,22 @@ package enum SidebarPanel: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The command that shows the panel, for the rail's tooltip (DISC-U4).
+    /// Docker's and Kubernetes' open their page, not the panel: none.
+    package var commandID: String? {
+        switch self {
+        case .files: "files.show"
+        case .git: "overgit.show"
+        case .sessions: "sessions.show"
+        case .snippets: "snippets.show"
+        case .api: "api.show"
+        case .notes: "notes.show"
+        case .database: "database.show"
+        case .terraform: "terraform.show"
+        case .docker, .kubernetes: nil
+        }
+    }
+
     package var title: String {
         switch self {
         case .git: "Overgit"

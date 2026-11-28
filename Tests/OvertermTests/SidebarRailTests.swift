@@ -96,9 +96,10 @@ final class SidebarRailTests: XCTestCase {
     /// only while Settings has it on.
     func testTheFootOfTheRail() {
         XCTAssertEqual(SidebarRailAction.allCases, [.activity, .settings, .hide])
-        XCTAssertEqual(SidebarRailAction.activity.help, "Activity (⌥⌘A)")
-        XCTAssertEqual(SidebarRailAction.settings.help, "Settings (⌘,)")
-        XCTAssertEqual(SidebarRailAction.hide.help, "Hide Sidebar (⌘B)")
+        let keys = Keybindings(url: URL(fileURLWithPath: "/nonexistent/keybindings.json"), ghosttyDefault: { _ in nil }, watch: false)
+        XCTAssertEqual(SidebarRailAction.activity.help(keys: keys), "Activity (⌥⌘A)")
+        XCTAssertEqual(SidebarRailAction.settings.help(keys: keys), "Settings (⌘,)")
+        XCTAssertEqual(SidebarRailAction.hide.help(keys: keys), "Hide Sidebar (⌘B)")
         XCTAssertEqual(
             SidebarRailAction.shown,
             Settings.shared.activityEnabled ? [.activity, .settings, .hide] : [.settings, .hide])

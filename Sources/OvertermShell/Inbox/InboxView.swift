@@ -23,6 +23,8 @@ package struct InboxActions {
 package struct InboxView: View {
     @ObservedObject package var model: InboxModel
     @ObservedObject package var theme: ChromeTheme
+    /// So the header and the empty state follow a rebound key (DISC-N3).
+    @ObservedObject var keys = Keybindings.shared
     package let actions: InboxActions
 
     package var body: some View {
@@ -30,7 +32,7 @@ package struct InboxView: View {
             HStack {
                 Text("Inbox").font(.system(size: ChromeMetrics.text(13), weight: .bold)).foregroundStyle(theme.text)
                 Spacer()
-                Text("J / K to move · ⌘I to close")
+                Text(verbatim: KeyHints.text("J / K to move · %@ to close", command: "inbox.show", keys: keys) ?? "J / K to move")
                     .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(theme.text3)
             }
@@ -42,6 +44,8 @@ package struct InboxView: View {
                 Text("Nothing is waiting for you")
                     .font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(theme.text3)
+                    .frame(maxWidth: .infinity)
+                KeyHint("%@ jumps to the next tab that needs you", command: "tabs.nextAttention", color: theme.text3)
                     .frame(maxWidth: .infinity)
                 Spacer()
             } else {

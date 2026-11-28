@@ -346,6 +346,7 @@ package struct DockerPageView: View {
             .padding(.horizontal, 8)
             .frame(width: 240, height: 26)
             .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
+            .help(DockerKey.filterHelp)
             Button {
                 page.cheatSheet.toggle()
             } label: {
@@ -512,6 +513,8 @@ package struct DockerPageView: View {
     }
 
     private var cheatSheet: some View {
-        ResourceKeySheet<DockerKey>(theme: theme, identifier: "docker.keys") { page.cheatSheet = false }
+        ResourceKeySheet<DockerKey>(theme: theme, identifier: "docker.keys", title: "Keys on the Docker page", windowCommands: ["docker."]) {
+            page.cheatSheet = false
+        }
     }
 }

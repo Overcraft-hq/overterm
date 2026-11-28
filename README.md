@@ -219,13 +219,15 @@ The defaults; every one is rebindable in Settings ▸ Keyboard Shortcuts (or
 | | |
 |---|---|
 | ⌘T / ⌘W | New tab / close the pane, else the tab |
-| ⌥⌘C / ⌥⌘X | New Claude / Codex tab here |
+| ⇧⌘] / ⇧⌘[ | Next / previous tab |
+| ⌥⌘C / ⌥⌘X / ⌥⌘O | New Claude / Codex / opencode tab here |
 | ⇧⌘N | New Task — worktree, branch, agent |
 | ⇧⎋ | The editor across the window, and back |
 | ⌘K | Command palette |
 | ⌘I | Inbox · ⌃⌘I Tab Info · ⇧⌘A agent overview |
 | ⌥⌘↓ | The next failure, or tab that needs you |
-| ⌘D / ⇧⌘D | Split right / down · ⌘[ ⌘] between panes · ⇧⌘↩ zoom |
+| ⌘D / ⇧⌘D | Split right / down · ⌘[ ⌘] between panes · ⇧⌘↩ zoom · ⌃⌘= equalize |
+| ⌃⌥⌘1…5 · F6 / ⇧F6 | The keyboard to the sidebar, terminal, editor, right pane, inbox · the next / previous column |
 | ⌃⌘N / ⌃⌘G | Group the selected tabs / the group switcher |
 | ⌃⌘1…9 | Go to a group · ⌃⌘F focus · ⌃⌘S stash · ⌃⌘B broadcast |
 | ⌘R / ⇧⌘C | Run the last command again / copy its output |
@@ -234,12 +236,20 @@ The defaults; every one is rebindable in Settings ▸ Keyboard Shortcuts (or
 | ⇧⌘R | Review the branch |
 | ⌘B / ⌥⌘D | Sidebar / changes |
 | ⌥⌘G · ⌥⌘N · ⌥⌘R · ⌥⌘B | Overgit · notes · API client · database |
-| ⌥⌘P / ⇧⌥⌘P | Docker / find a container |
+| ⌥⌘P / ⌃⌘P | Docker / find a container |
 | ⌥⌘J / ⌃⌘J | Kubernetes / a context, namespace or pod |
 | ⌥⌘E / ⌃⌘E | Terraform / a root |
+| ⌥⌘A / ⌃⌘A | Activity / a process or port |
+| ⌥⌘T · ⌥⌘K | Today's note · the notes graph |
 | ⇧⌘B · ⌥⌘U | Browser · usage |
 | ⇧⌘E | Tab Peek (or three fingers down) |
-| ⌘, / ⌥⌘O | Settings / what's new |
+| ⌃⇧⌘P | Presentation mode |
+| ⌘↑ / ⌘↓ · ⇧⌘K | The previous / next command in the terminal · clear the screen |
+| ⌘, | Settings |
+
+The editor's own keys (go to definition, multi-cursor, Vim…) are in
+Settings ▸ Keyboard Shortcuts, and Help ▸ Keys Here lists the keys of
+wherever the keyboard is.
 
 ## Settings
 

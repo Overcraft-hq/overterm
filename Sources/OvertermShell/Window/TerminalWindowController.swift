@@ -3665,10 +3665,46 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         items += terraformPaletteItems()
         items += terraformPlanPaletteItems()
         items += databasePaletteItems()
+        // Keys as bound now; then every menu command not offered yet, and
+        // every setting (issue-tracker#22).
+        items = PaletteCommands.withLiveKeys(items)
+        items += menuPaletteItems(skipping: items)
+        items += settingsPaletteItems()
         // History last in the unranked order — before you type, what you
         // want is an action; once you type, ranking decides.
         items += historyItems(matching: query)
         return items
+    }
+
+    /// Every menu command ⌘K hasn't a row for: its title, where it is in
+    /// the menu, the key bound now. Return does what the item does — and
+    /// nothing, as the menu, when the item is greyed now.
+    private func menuPaletteItems(skipping offered: [PaletteItem]) -> [PaletteItem] {
+        guard let menu = NSApp.mainMenu else { return [] }
+        let titles = Set(offered.filter { $0.group == .action }.map { PaletteCommands.normalized($0.title) })
+        return PaletteCommands.commands(in: menu, skipping: titles).map { found in
+            let item = found.item
+            let place = found.path.joined(separator: " ▸ ")
+            return PaletteItem(
+                id: "menu.\(item.identifier?.rawValue ?? place + "." + item.title)", group: .action, title: item.title,
+                subtitle: PaletteCommands.subtitle(place.isEmpty ? nil : place, key: PaletteCommands.key(of: item)), symbol: "filemenu.and.selection"
+            ) { _, _ in
+                item.menu?.update()
+                guard item.isEnabled, let action = item.action else { return NSSound.beep() }
+                NSApp.sendAction(action, to: item.target, from: item)
+            }
+        }
+    }
+
+    /// Every setting: its title, where it is and its value now; Return opens
+    /// Settings on its row. Values change there, not from ⌘K.
+    private func settingsPaletteItems() -> [PaletteItem] {
+        SettingsSchema.all.map { spec in
+            PaletteItem(
+                id: "setting.\(spec.key)", group: .setting, title: spec.title,
+                subtitle: "\(spec.section.title) ▸ \(spec.group) — \(PaletteCommands.describe(Settings.shared.value(spec.key)))", symbol: "gearshape"
+            ) { [weak self] _, _ in self?.openSettings(spec.section, focus: spec.key) }
+        }
     }
 
     /// The history rows for a query. Rebuilt as you type, because ranking
@@ -4251,8 +4287,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         ChangelogWindowController.shared.show(version: version)
     }
 
-    package func openSettings(_ section: SettingsSection? = nil) {
-        if let section { settingsPage.show(section) }
+    package func openSettings(_ section: SettingsSection? = nil, focus key: String? = nil) {
+        if let section { settingsPage.show(section, focus: key) }
         showOverlay(.settings)
     }
 
@@ -4802,6 +4838,15 @@ extension TerminalWindowController: NSMenuItemValidation {
         if menuItem.action == #selector(showDatabase(_:)) {
             menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .database ? .on : .off
             return Settings.shared.databaseEnabled
+        }
+        let panels: [Selector: SidebarPanel] = [#selector(showFiles(_:)): .files, #selector(showSessions(_:)): .sessions, #selector(showSnippets(_:)): .snippets]
+        if let action = menuItem.action, let panel = panels[action] {
+            menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == panel ? .on : .off
+            return panel.isEnabled
+        }
+        if menuItem.action == #selector(toggleSimulator(_:)) {
+            menuItem.state = browserItem?.isCollapsed == false && browserColumn?.mode == .simulator ? .on : .off
+            return Settings.shared.simulatorEnabled
         }
         if menuItem.action == #selector(showNotes(_:)) {
             menuItem.state = sidebarItem?.isCollapsed == false && sidebarPanel.panel == .notes ? .on : .off
