@@ -634,8 +634,9 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                 model: peek.model, theme: theme,
                 onChoose: { [weak self] in self?.peek.choose($0) },
                 onClose: { [weak self] in self?.peek.closeTab($0) },
+                onAnswer: { [weak self] in self?.peek.answer($1, on: $0) },
                 onDismiss: { [weak self] in self?.peek.close() }))
-        peekView.onEscape = { [weak self] in self?.peek.close() }
+        peekView.onEscape = { [weak self] in self?.peek.escape() }
         peekView.onKey = { [weak self] in self?.peek.handle(key: $0) ?? false }
         peekView.onTouches = { [weak self] fingers, y, ended in
             self?.peek.touched(fingers: fingers, y: y, ended: ended)
@@ -2929,7 +2930,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         peekKeys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, event.window === self.window, self.peek.isOpen else { return event }
             if event.keyCode == 53 {
-                self.peek.close()
+                // The filter cleared first, then the peek closed.
+                self.peek.escape()
                 self.installPeekKeys()
                 return nil
             }
@@ -3359,7 +3361,14 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// Types a choice's number and Return into the tab's agent. Return is
     /// its own keystroke — `insertText` is a bracketed paste, so a newline
     /// inside it would arrive as a literal.
-    package func answer(_ choice: AgentPrompt.Choice, in id: Tab.ID) {
+    /// The choices `tab`'s card offers now, as the Inbox reads them.
+    package func askedChoices(_ tab: Tab) -> AgentPrompt? {
+        InboxModel.choices(for: tab, asked: approval(of: tab) != nil, screen: { tab.askingTerminal.visibleText })
+    }
+
+    /// `asked`: the question the card answered showed (Tab Peek's); the
+    /// Inbox's card's by default.
+    package func answer(_ choice: AgentPrompt.Choice, in id: Tab.ID, asked: AgentPrompt? = nil) {
         guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
         // A Terraform write is never answered by Overterm (3.3): not by a
         // button, a key or anything automated — read again here, in case
@@ -3369,7 +3378,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         // The screen read again: the card's question must still be the one
         // there, with this choice — else nothing is typed, and the card is
         // made again from what the screen asks now.
-        let card = inbox.entries.first { $0.id == id }?.prompt
+        let card = asked ?? inbox.entries.first { $0.id == id }?.prompt
         guard Self.answerStands(choice, card: card, screen: pane.visibleText) else {
             NSSound.beep()
             return refreshInbox()

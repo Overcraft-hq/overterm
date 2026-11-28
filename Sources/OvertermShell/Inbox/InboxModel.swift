@@ -96,14 +96,22 @@ package final class InboxModel: ObservableObject {
                 // only a question with a choice marked is (AGT-G1): an
                 // answer ending in a numbered list gets Open Tab alone.
                 // An MCP write's card answers that, never the screen's choices.
-                prompt: tab.activity.mark == .waiting && tab.terraformAsk == nil && asked[tab.id] == nil
-                    ? screen(tab).flatMap { TerraformPrompt.parse($0) == nil ? AgentPrompt.question(in: $0) : nil } : nil,
+                prompt: Self.choices(for: tab, asked: asked[tab.id] != nil, screen: { screen(tab) }),
                 // Since it began to wait, not since the list was read (AGT-U7).
                 since: tab.activity.mark == .waiting ? tab.activity.waitingSince ?? now : nil, asksWhy: !tab.kubeAlerts.isEmpty, terraform: tab.terraformAsk,
                 leftBehind: tab.activity.fromLeftBehind, ci: tab.ciFailure, approval: asked[tab.id])
         }
         if built != entries { entries = built }
         if highlighted == nil || !built.contains(where: { $0.id == highlighted }) { highlighted = built.first?.id }
+    }
+
+    /// The question a tab's card offers answers to, read off `screen`: only
+    /// a blocked agent's, never a Terraform write's (3.3) nor one an MCP
+    /// write asks (its card answers that), and only with a choice marked
+    /// (AGT-G1). Tab Peek's waiting cards ask the same (PEEK-U1).
+    package static func choices(for tab: Tab, asked: Bool, screen: () -> String?) -> AgentPrompt? {
+        guard tab.activity.mark == .waiting, tab.terraformAsk == nil, !asked, let text = screen() else { return nil }
+        return TerraformPrompt.parse(text) == nil ? AgentPrompt.question(in: text) : nil
     }
 
     /// Blocked first, then failed, then finished, tab order inside each —

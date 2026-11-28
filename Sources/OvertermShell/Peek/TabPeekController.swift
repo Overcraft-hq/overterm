@@ -43,13 +43,13 @@ package final class TabPeekController {
 
     /// ⇧⌘E and the palette: straight to the grid, or back out.
     package func toggle() {
-        guard let owner, owner.store.tabs.count > 1 || isOpen else { return }
+        guard let owner, owner.store.stripTabs.count > 1 || isOpen else { return }
         isOpen ? close() : open(.overview)
     }
 
     package func open(_ stage: TabPeek.Stage) {
         guard stage != .closed else { return close() }
-        guard let owner, !owner.store.tabs.isEmpty else { return }
+        guard let owner, !owner.store.stripTabs.isEmpty else { return }
         // The stage first: `begin` installs the key monitor, which only
         // arms itself while the peek counts as open.
         let wasClosed = self.stage == .closed
@@ -69,6 +69,7 @@ package final class TabPeekController {
         chrome?.isHidden = true
         model.cards = []
         model.progress = 0
+        model.query = ""
         owner?.installPeekKeys()
         // Let the hosts fly back before their occlusion is taken away: hiding
         // them mid-animation would blink.
@@ -95,6 +96,7 @@ package final class TabPeekController {
         // terminal paints over the editor and changes panes beside it.
         container.clipsToBounds = true
         model.highlighted = owner?.store.selectedID
+        model.query = ""
         refreshEntries()
         showPanes()
         guard let chrome else { return }
@@ -116,7 +118,7 @@ package final class TabPeekController {
             break
         case .update(let progress):
             if !isOpen {
-                guard let owner, owner.store.tabs.count > 1 else { return }
+                guard let owner, owner.store.stripTabs.count > 1 else { return }
                 stage = .peek
                 begin()
             }
@@ -141,9 +143,12 @@ package final class TabPeekController {
 
     // MARK: The keyboard
 
-    /// Returns true when the key was the peek's.
+    /// Returns true when the key was the peek's: the arrows and ⇥ among
+    /// the cards the filter finds, ↩ or Space the highlighted one, 1–9 the
+    /// nth of them, anything typed the filter, ⌫ its last character (PEEK-U1).
     package func handle(key event: NSEvent) -> Bool {
-        guard isOpen, let highlighted = model.highlighted else { return false }
+        guard isOpen else { return false }
+        let shown = model.shownCards
         let direction: TabPeek.Direction?
         switch Int(event.keyCode) {
         case 123: direction = .left
@@ -153,19 +158,56 @@ package final class TabPeekController {
         default: direction = nil
         }
         if let direction {
-            model.highlighted = TabPeek.move(direction, from: highlighted, in: model.cards)
+            if let highlighted = model.highlighted, shown.contains(where: { $0.id == highlighted }) {
+                model.highlighted = TabPeek.move(direction, from: highlighted, in: shown)
+            } else {
+                model.highlighted = shown.first?.id
+            }
             return true
         }
+        let modifiers = !event.modifierFlags.intersection([.command, .control]).isEmpty
         switch event.charactersIgnoringModifiers {
         case "\r", " ":
-            choose(highlighted)
+            if let highlighted = model.highlighted, shown.contains(where: { $0.id == highlighted }) { choose(highlighted) }
             return true
         case "\t":
-            model.highlighted = TabPeek.step(event.modifierFlags.contains(.shift) ? -1 : 1, from: highlighted, in: model.cards)
+            if let highlighted = model.highlighted {
+                model.highlighted = TabPeek.step(event.modifierFlags.contains(.shift) ? -1 : 1, from: highlighted, in: shown)
+            }
+            return true
+        case let typed? where !modifiers && typed.count == 1 && ("1"..."9").contains(typed):
+            if let nth = Int(typed), shown.indices.contains(nth - 1) { choose(shown[nth - 1].id) }
             return true
         default:
-            return false
+            guard
+                let query = GroupSwitcherFilter.query(model.query, typing: event.characters, delete: event.keyCode == 51, modifiers: modifiers)
+            else { return event.keyCode == 51 }
+            setQuery(query)
+            return true
         }
+    }
+
+    /// The filter changed: the highlight stays if the card is still found,
+    /// else the first card found takes it.
+    package func setQuery(_ query: String) {
+        model.query = query
+        let shown = model.shownCards
+        if !shown.contains(where: { $0.id == model.highlighted }) { model.highlighted = shown.first?.id ?? model.highlighted }
+    }
+
+    /// Esc: the filter cleared first, then the peek closed.
+    package func escape() {
+        guard model.query.isEmpty else { return setQuery("") }
+        close()
+    }
+
+    /// A waiting card's answer: typed into the pane that asked, as the
+    /// Inbox's is — its screen read again first, so a question that changed
+    /// meanwhile gets nothing. The card keeps no buttons after.
+    package func answer(_ choice: AgentPrompt.Choice, on id: Tab.ID) {
+        guard let owner, let asked = model.entries[id]?.prompt else { return }
+        owner.answer(choice, in: id, asked: asked)
+        model.entries[id]?.prompt = nil
     }
 
     package func choose(_ id: Tab.ID) {
@@ -247,7 +289,7 @@ package final class TabPeekController {
         guard let owner else { return }
         let bounds = container.bounds
         let cards = TabPeek.placements(
-            tabs: owner.store.tabs.map(\.id), selected: owner.store.selectedID,
+            tabs: owner.store.stripTabs.map(\.id), selected: owner.store.selectedID,
             progress: progress, in: bounds)
 
         CATransaction.begin()
@@ -301,7 +343,15 @@ package final class TabPeekController {
         guard let owner else { return }
         stopSlowDraw()
         var live = 0
-        for tab in owner.store.tabs {
+        // What the strip offers only (PEEK-U2): a stashed island's tabs, or
+        // another island's while focusing, stay hidden — hidden here too, as
+        // a peek opened again before the last one settled left them shown.
+        let offered = owner.store.stripTabs
+        let ids = Set(offered.map(\.id))
+        for tab in owner.store.tabs where !ids.contains(tab.id) && tab.id != owner.store.selectedID {
+            owner.host(of: tab)?.setVisible(false)
+        }
+        for tab in offered {
             guard let host = owner.host(of: tab) else { continue }
             if live < TabPeek.liveLimit {
                 // Un-occluding draws a frame at once, so the card is current
@@ -329,8 +379,13 @@ package final class TabPeekController {
     private func refreshEntries() {
         guard let owner else { return }
         model.entries = Dictionary(
-            uniqueKeysWithValues: owner.store.tabs.map {
-                ($0.id, TabPeekModel.Entry(title: $0.title, color: $0.color, activity: $0.activity, agent: $0.agent, panes: $0.terminals.count))
+            uniqueKeysWithValues: owner.store.stripTabs.map {
+                (
+                    $0.id,
+                    TabPeekModel.Entry(
+                        title: $0.title, color: $0.color, activity: $0.activity, agent: $0.agent, panes: $0.terminals.count,
+                        checkout: $0.checkoutSource?.root.lastPathComponent, prompt: owner.askedChoices($0))
+                )
             })
         model.group = owner.store.selected?.checkoutSource.map { $0.root.lastPathComponent } ?? "Tabs"
     }

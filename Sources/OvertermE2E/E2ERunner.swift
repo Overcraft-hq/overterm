@@ -84,6 +84,7 @@ package final class E2ERunner {
         "mcpApprovals": { await $0.mcpApprovalsScenario() },
         "overview": { await $0.overviewScenario() },
         "peek": { await $0.peekScenario() },
+        "peekFilter": { await $0.peekFilterScenario() },
         "scrollback": { await $0.scrollbackScenario() },
         "openFromFinder": { await $0.openFromFinderScenario() },
         "sessions": { await $0.sessionsScenario() },
@@ -3925,7 +3926,7 @@ package final class E2ERunner {
             }())
     }
 
-    private func key(_ code: Int, _ characters: String, modifiers: NSEvent.ModifierFlags = [], ignoringModifiers: String? = nil) {
+    package func key(_ code: Int, _ characters: String, modifiers: NSEvent.ModifierFlags = [], ignoringModifiers: String? = nil) {
         let event = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: window.windowNumber, context: nil, characters: characters,

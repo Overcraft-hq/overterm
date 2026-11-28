@@ -18,13 +18,28 @@ package final class TabPeekModel: ObservableObject {
         package let activity: TabActivity
         package let agent: Agent?
         package let panes: Int
+        /// The checkout it works in (its folder's name — a worktree's is its branch's).
+        package let checkout: String?
+        /// A waiting agent's question with its choices, as the Inbox reads it.
+        package var prompt: AgentPrompt?
 
-        package init(title: String, color: TabColor?, activity: TabActivity, agent: Agent?, panes: Int) {
+        package init(
+            title: String, color: TabColor?, activity: TabActivity, agent: Agent?, panes: Int, checkout: String? = nil, prompt: AgentPrompt? = nil
+        ) {
             self.title = title
             self.color = color
             self.activity = activity
             self.agent = agent
             self.panes = panes
+            self.checkout = checkout
+            self.prompt = prompt
+        }
+
+        /// Whether `query` finds it: its title, its checkout or its agent,
+        /// the palette's matching (PEEK-U1).
+        package func matches(_ query: String) -> Bool {
+            guard !query.isEmpty else { return true }
+            return [title, checkout, agent?.name].compactMap { $0 }.contains { FuzzyMatch.score(query, in: $0) != nil }
         }
     }
 
@@ -35,6 +50,14 @@ package final class TabPeekModel: ObservableObject {
     @Published package var progress: Double = 0
     /// The checkout the tabs belong to, above the grid.
     @Published package var group: String = ""
+    /// What has been typed: the cards it doesn't find are dimmed where they
+    /// are — none moves (PEEK-U1).
+    @Published package var query = ""
+
+    package func matches(_ id: Tab.ID) -> Bool { entries[id]?.matches(query) ?? query.isEmpty }
+
+    /// The cards the arrows and the digits reach: those the query finds, in place order.
+    package var shownCards: [TabPeek.Card] { cards.filter { matches($0.id) } }
 }
 
 package struct TabPeekView: View {
@@ -42,13 +65,18 @@ package struct TabPeekView: View {
     @ObservedObject package var theme: ChromeTheme
     package let onChoose: (Tab.ID) -> Void
     package let onClose: (Tab.ID) -> Void
+    package let onAnswer: (Tab.ID, AgentPrompt.Choice) -> Void
     package let onDismiss: () -> Void
 
-    package init(model: TabPeekModel, theme: ChromeTheme, onChoose: @escaping (Tab.ID) -> Void, onClose: @escaping (Tab.ID) -> Void, onDismiss: @escaping () -> Void) {
+    package init(
+        model: TabPeekModel, theme: ChromeTheme, onChoose: @escaping (Tab.ID) -> Void, onClose: @escaping (Tab.ID) -> Void,
+        onAnswer: @escaping (Tab.ID, AgentPrompt.Choice) -> Void = { _, _ in }, onDismiss: @escaping () -> Void
+    ) {
         self._model = ObservedObject(wrappedValue: model)
         self._theme = ObservedObject(wrappedValue: theme)
         self.onChoose = onChoose
         self.onClose = onClose
+        self.onAnswer = onAnswer
         self.onDismiss = onDismiss
     }
 
@@ -63,19 +91,26 @@ package struct TabPeekView: View {
                 .onTapGesture(perform: onDismiss)
 
             if deep > 0.01 {
-                Text(verbatim: model.group)
-                    .font(.system(size: ChromeMetrics.text(13), weight: .semibold))
-                    .foregroundStyle(theme.text)
-                    .opacity(deep)
-                    .padding(.leading, TabPeek.margin)
-                    .padding(.top, TabPeek.margin)
+                HStack(spacing: 10) {
+                    Text(verbatim: model.group)
+                        .font(.system(size: ChromeMetrics.text(13), weight: .semibold))
+                        .foregroundStyle(theme.text)
+                    // What was typed; the keys go to the peek, not a field.
+                    Text(verbatim: model.query.isEmpty ? "Type to filter · 1–9 to pick" : "Filter: \(model.query)")
+                        .font(.system(size: ChromeMetrics.text(12)))
+                        .foregroundStyle(model.query.isEmpty ? theme.dimText : theme.text)
+                        .accessibilityIdentifier("tabPeek.query")
+                }
+                .opacity(deep)
+                .padding(.leading, TabPeek.margin)
+                .padding(.top, TabPeek.margin)
             }
 
             ForEach(model.cards, id: \.id) { card in
                 TabPeekCard(
                     card: card, entry: model.entries[card.id], theme: theme,
-                    isHighlighted: model.highlighted == card.id,
-                    onChoose: { onChoose(card.id) }, onClose: { onClose(card.id) }
+                    isHighlighted: model.highlighted == card.id, isDimmed: !model.matches(card.id), showsChoices: deep > 0.5,
+                    onChoose: { onChoose(card.id) }, onClose: { onClose(card.id) }, onAnswer: { onAnswer(card.id, $0) }
                 )
                 .frame(width: card.frame.width, height: card.frame.height)
                 .position(x: card.frame.midX, y: card.frame.midY)
@@ -92,8 +127,13 @@ private struct TabPeekCard: View {
     let entry: TabPeekModel.Entry?
     @ObservedObject var theme: ChromeTheme
     let isHighlighted: Bool
+    /// Not found by what was typed: dimmed where it is.
+    let isDimmed: Bool
+    /// In the grid, a waiting card offers its question's answers.
+    let showsChoices: Bool
     let onChoose: () -> Void
     let onClose: () -> Void
+    let onAnswer: (AgentPrompt.Choice) -> Void
     @State private var hovering = false
 
     private var radius: CGFloat { TabPeek.cornerRadius }
@@ -101,7 +141,9 @@ private struct TabPeekCard: View {
     var body: some View {
         VStack(spacing: 0) {
             if card.hasHeader { header }
-            Color.clear
+            // Over the live terminal: a fill dims it without moving it.
+            Color.black.opacity(isDimmed ? 0.6 : 0)
+            if showsChoices, !isDimmed, let prompt = entry?.prompt, !prompt.choices.isEmpty { choices(prompt) }
         }
         .background(
             // Only behind the title bar: a fill over the whole card would
@@ -122,6 +164,32 @@ private struct TabPeekCard: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: onChoose)
+    }
+
+    /// The question's answers, as the Inbox offers them: one typed into the
+    /// pane that asked, after its screen is read again.
+    private func choices(_ prompt: AgentPrompt) -> some View {
+        HStack(spacing: 4) {
+            ForEach(prompt.choices.prefix(4), id: \.key) { choice in
+                Button {
+                    onAnswer(choice)
+                } label: {
+                    Text(verbatim: "\(choice.key) \(choice.label)")
+                        .font(.system(size: ChromeMetrics.text(10), weight: choice.isDefault ? .semibold : .regular))
+                        .lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .frame(height: ChromeMetrics.row(20))
+                        .background(Capsule().fill(choice.isDefault ? TabStatusStyle.signal.opacity(0.35) : theme.strip))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.text)
+                .help(choice.label)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(6)
+        .background(theme.strip.opacity(0.92))
+        .accessibilityIdentifier("tabPeek.choices")
     }
 
     private var border: Color {

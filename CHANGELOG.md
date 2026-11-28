@@ -17,6 +17,7 @@ version is tagged `v<version>`.
 - Runnable notes: a shell block has ▶ Run in terminal — shown and asked first, then typed into the selected tab
 - Fold Heading folds a note's section in Live Preview, and Unfold All opens them
 - Notes tables: a ```dataview block lists notes by their properties — FROM a folder or tag, WHERE, SORT, LIMIT — as Obsidian's Dataview does
+- Tab Peek shows only the tabs the strip shows, filters its cards as you type, picks one with 1–9, and answers a waiting agent from its card
 
 ## 1.6.8 — 2026-11-26
 
