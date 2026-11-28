@@ -86,7 +86,10 @@ package struct SidebarRail: View {
         VStack(spacing: 2) {
             let shown = SidebarPanel.shown
             ForEach(shown) { item in
-                RailButton(selected: sidebar.panel == item, help: KeyHints.help(item.title, command: item.commandID), theme: theme) {
+                RailButton(
+                    selected: sidebar.panel == item, help: KeyHints.help(item.title, command: item.commandID, keys: keybindings), identifier: "sidebar.rail.\(item.rawValue)",
+                    theme: theme
+                ) {
                     sidebar.panel = item
                 } label: {
                     item.icon(selected: sidebar.panel == item, compact: Self.isCompact)
@@ -104,7 +107,7 @@ package struct SidebarRail: View {
             }
             Spacer(minLength: 8)
             ForEach(SidebarRailAction.shown) { action in
-                RailButton(selected: false, help: action.help(), theme: theme) {
+                RailButton(selected: false, help: action.help(keys: keybindings), identifier: "sidebar.rail.\(action.rawValue)", theme: theme) {
                     perform(action)
                 } label: {
                     Image(systemName: action.symbol).font(.system(size: Self.isCompact ? 12 : 14))
@@ -124,6 +127,8 @@ package struct SidebarRail: View {
 private struct RailButton<Label: View>: View {
     let selected: Bool
     let help: String
+    /// `sidebar.rail.<panel or action>`: what the scenarios read its tooltip by.
+    let identifier: String
     @ObservedObject var theme: ChromeTheme
     let action: () -> Void
     @ViewBuilder var label: Label
@@ -156,5 +161,6 @@ private struct RailButton<Label: View>: View {
         .foregroundStyle(selected ? theme.text : theme.text2)
         .onHover { hovering = $0 }
         .help(help)
+        .accessibilityIdentifier(identifier)
     }
 }

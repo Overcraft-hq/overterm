@@ -55,11 +55,15 @@ package struct WorktreeActions {
     package var cleanUp: () -> Void
     /// The right pane on the current checkout's pull request.
     package var showPullRequest: () -> Void
+    /// File ▸ Open Folder…: what a panel outside a repository offers (onboarding 7.5).
+    package var openFolder: () -> Void
 
     package init(
         open: @escaping (Worktree) -> Void, newTab: @escaping (Worktree) -> Void, newAgentTab: @escaping (Worktree, Agent) -> Void, remove: @escaping (Worktree) -> Void,
-        attach: @escaping (Worktree) -> Void, detach: @escaping () -> Void, newTask: @escaping () -> Void, cleanUp: @escaping () -> Void, showPullRequest: @escaping () -> Void
+        attach: @escaping (Worktree) -> Void, detach: @escaping () -> Void, newTask: @escaping () -> Void, cleanUp: @escaping () -> Void, showPullRequest: @escaping () -> Void,
+        openFolder: @escaping () -> Void = {}
     ) {
+        self.openFolder = openFolder
         self.open = open
         self.newTab = newTab
         self.newAgentTab = newAgentTab

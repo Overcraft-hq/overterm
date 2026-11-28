@@ -68,7 +68,7 @@ package struct SidebarView: View {
                 case .kubernetes:
                     KubernetesPanelView(
                         panel: kubernetesPanel, kubernetes: .shared, forwards: .shared, settings: .shared, theme: theme, group: group,
-                        openPage: openKubernetesPage)
+                        openPage: openKubernetesPage, openFolder: worktreeActions.openFolder)
                 case .terraform:
                     TerraformPanelView(panel: terraformPanel, settings: .shared, theme: theme, group: group, actions: terraformActions)
                 }
@@ -84,6 +84,13 @@ package struct SidebarView: View {
 
     @ViewBuilder private var files: some View {
         header
+        // The home folder, outside any repository (onboarding 7.5): what
+        // to open instead, from the read the window already made.
+        if EmptyStates.showsHomeStrip(
+            root: tree.root, home: FileManager.default.homeDirectoryForCurrentUser, checked: diff.root, notARepository: diff.error != nil)
+        {
+            HomeFolderStrip(theme: theme, openFolder: worktreeActions.openFolder)
+        }
         if tree.root == nil {
             Spacer()
         } else {
@@ -291,7 +298,9 @@ private struct SessionListView: View {
                 Text(model.loading ? "" : "No agent sessions in \(group?.name ?? "this folder") yet")
                     .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(12)
                 if !model.loading {
-                    KeyHint("%@ starts a Claude tab", command: "tabs.newClaude", color: theme.text3).padding(.horizontal, 12)
+                    KeyHint(EmptyStates.sessions, command: Agent.claude.newTabCommand, unbound: EmptyStates.sessionsUnbound, color: theme.text3)
+                        .padding(.horizontal, 12)
+                        .accessibilityIdentifier("sessions.emptyHint")
                 }
                 Spacer()
             } else {

@@ -24,6 +24,8 @@ version is tagged `v<version>`.
 - File ▸ Open Folder… (and its ⌘K row) opens a tab in a folder you pick; New Task outside a repository offers it
 - An agent's tab whose CLI isn't on your PATH says so before typing its command, with Open the Tab Anyway; New Task marks such an agent "(not found)" and starts on Shell only
 - Help ▸ Keyboard Shortcuts can be given a key
+- Outside a repository, Overgit, Kubernetes and Terraform offer Open Folder…, and Files over your home folder says what to open instead
+- The empty Inbox and Sessions say what lands there and how to start; ⌘K's own rows, the group switcher and the plan pane say the key bound now, and ⌘K has a Keyboard Shortcuts row
 
 ## 1.6.8 — 2026-11-26
 

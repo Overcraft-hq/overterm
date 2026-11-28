@@ -735,7 +735,7 @@ extension TerminalWindowController {
         guard Settings.shared.dockerEnabled else { return [] }
         let docker = DockerModel.shared
         var items = [
-            PaletteItem(id: "a.docker", group: .action, title: "Docker", subtitle: "Containers, compose projects, logs  ⌥⌘P", symbol: "shippingbox") {
+            PaletteItem(id: "a.docker", group: .action, title: "Docker", subtitle: "Containers, compose projects, logs", symbol: "shippingbox", command: "docker.page") {
                 [weak self] _, _ in self?.toggleDockerPage(nil)
             }
         ]

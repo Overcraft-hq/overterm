@@ -1710,6 +1710,20 @@ offers it. Overterm never runs `git init`. Help holds Keyboard Shortcuts
 Changelog, so no id or key is on two menus; `NSApp.helpMenu` brings
 macOS's menu search.
 
+The empty states teach (7.5, `EmptyStates`): a sentence, one action, the
+key bound now. Overgit outside a repository, and Kubernetes' and
+Terraform's panels with no checkout or outside a repository's top folder
+(`canBind` false, `.notGit`), offer `OpenFolderButton` (through
+`WorktreeActions.openFolder`, `KubernetesPanelView`'s `openFolder`,
+`TerraformPanelActions.openFolder`); Files rooted at the home folder shows
+`HomeFolderStrip` when the window's `DiffModel` — already read for the
+badge — said that folder is no repository (`EmptyStates.showsHomeStrip`,
+pure). No empty state runs a tool to decide what it says. Every key such a
+state, the Inbox's header, a rail tooltip or a ⌘K row shows is read from
+`Keybindings` (`KeyHint`, `KeyHints`): a ⌘K row names its command
+(`PaletteItem.command`) and `PaletteCommands.withLiveKeys` appends that
+command's key as bound now, so no row writes one into its words.
+
 ## Microphone and other privacy prompts
 
 macOS charges what a program in the terminal asks for to Overterm, the app

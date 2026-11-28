@@ -530,7 +530,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     detach: { [weak self] in self?.detach() },
                     newTask: { [weak self] in self?.newTask(nil) },
                     cleanUp: { [weak self] in self?.cleanUpMergedWorktrees(nil) },
-                    showPullRequest: { [weak self] in self?.showPullRequest(nil) }
+                    showPullRequest: { [weak self] in self?.showPullRequest(nil) },
+                    openFolder: { [weak self] in self?.openFolder(nil) }
                 ),
                 overgitActions: OvergitActions(
                     showCommit: { [weak self] in self?.showCommit($0) },
@@ -3499,53 +3500,63 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     /// before typing.
     private func paletteItems(matching query: String = "") -> [PaletteItem] {
         var items: [PaletteItem] = [
-            PaletteItem(id: "a.newTab", group: .action, title: "New Tab", subtitle: "⌘T", symbol: "plus") { [weak self] _, _ in
+            PaletteItem(id: "a.newTab", group: .action, title: "New Tab", subtitle: nil, symbol: "plus", command: "tabs.new") { [weak self] _, _ in
                 self?.newTab(from: self?.store.selected?.terminal)
             },
-            PaletteItem(id: "a.splitRight", group: .action, title: "Split Right", subtitle: "⌘D", symbol: "rectangle.split.2x1") {
+            PaletteItem(id: "a.splitRight", group: .action, title: "Split Right", subtitle: nil, symbol: "rectangle.split.2x1", command: "splits.right") {
                 [weak self] _, _ in self?.split(nil, .right)
             },
-            PaletteItem(id: "a.splitDown", group: .action, title: "Split Down", subtitle: "⇧⌘D", symbol: "rectangle.split.1x2") {
+            PaletteItem(id: "a.splitDown", group: .action, title: "Split Down", subtitle: nil, symbol: "rectangle.split.1x2", command: "splits.down") {
                 [weak self] _, _ in self?.split(nil, .down)
             },
-            PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent  ⇧⌘N", symbol: "arrow.triangle.branch") {
+            PaletteItem(id: "a.newTask", group: .action, title: "New Task…", subtitle: "Worktree + branch + agent", symbol: "arrow.triangle.branch", command: "tasks.new") {
                 [weak self] _, _ in self?.newTask(nil)
             },
-            PaletteItem(id: "a.openFolder", group: .action, title: "Open Folder…", subtitle: "A tab in a folder you pick", symbol: "folder") {
+            PaletteItem(id: "a.openFolder", group: .action, title: "Open Folder…", subtitle: "A tab in a folder you pick", symbol: "folder", command: "file.openFolder") {
                 [weak self] _, _ in self?.openFolder(nil)
             },
-            PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance  ⇧⌘A", symbol: "square.grid.2x2") {
+            // Help's rows (onboarding 7.8): Open Folder… above; Getting
+            // Started, Check Setup, What's New and Reset Tips come with
+            // their stages.
+            PaletteItem(
+                id: "a.shortcuts", group: .action, title: "Keyboard Shortcuts", subtitle: "Every key, and yours to change", symbol: "keyboard",
+                command: "help.shortcuts"
+            ) { [weak self] _, _ in self?.openSettings(.shortcuts) },
+            PaletteItem(id: "a.overview", group: .action, title: "Agent Overview", subtitle: "Every tab at a glance", symbol: "square.grid.2x2", command: "agents.overview") {
                 [weak self] _, _ in self?.showAgentOverview(nil)
             },
             PaletteItem(
-                id: "a.clearHistory", group: .action, title: "Clear Command History…", subtitle: "What ⌘K remembers you ran; the shell's own is left alone",
+                id: "a.clearHistory", group: .action, title: "Clear Command History…", subtitle: "What the palette remembers you ran; the shell's own is left alone",
                 symbol: "clock.badge.xmark"
             ) { [weak self] _, _ in self?.clearCommandHistory() },
-            PaletteItem(id: "a.focusSidebar", group: .action, title: "Focus the Sidebar", subtitle: "The keyboard to the sidebar's panel  ⌃⌥⌘1", symbol: "sidebar.left") {
+            PaletteItem(id: "a.focusSidebar", group: .action, title: "Focus the Sidebar", subtitle: "The keyboard to the sidebar's panel", symbol: "sidebar.left", command: "columns.sidebar") {
                 [weak self] _, _ in self?.focusColumn(.sidebar)
             },
-            PaletteItem(id: "a.focusTerminal", group: .action, title: "Focus the Terminal", subtitle: "⌃⌥⌘2", symbol: "terminal") {
+            PaletteItem(id: "a.focusTerminal", group: .action, title: "Focus the Terminal", subtitle: nil, symbol: "terminal", command: "columns.terminal") {
                 [weak self] _, _ in self?.focusColumn(.terminal)
             },
-            PaletteItem(id: "a.focusEditor", group: .action, title: "Focus the Editor", subtitle: "⌃⌥⌘3", symbol: "doc.text") {
+            PaletteItem(id: "a.focusEditor", group: .action, title: "Focus the Editor", subtitle: nil, symbol: "doc.text", command: "columns.editor") {
                 [weak self] _, _ in self?.focusColumn(.editor)
             },
-            PaletteItem(id: "a.goToFile", group: .action, title: "Go to File…", subtitle: "A file of this checkout by name, name:line  ⌘P in the editor", symbol: "doc.text.magnifyingglass") {
+            PaletteItem(
+                id: "a.goToFile", group: .action, title: "Go to File…", subtitle: "A file of this checkout by name, name:line; the key in the editor", symbol: "doc.text.magnifyingglass",
+                command: "editor.goToFile"
+            ) {
                 [weak self] _, _ in self?.goToFile()
             },
-            PaletteItem(id: "a.focusRight", group: .action, title: "Focus the Right Pane", subtitle: "Changes, pull request, browser…  ⌃⌥⌘4", symbol: "sidebar.right") {
+            PaletteItem(id: "a.focusRight", group: .action, title: "Focus the Right Pane", subtitle: "Changes, pull request, browser…", symbol: "sidebar.right", command: "columns.right") {
                 [weak self] _, _ in self?.focusColumn(.right)
             },
-            PaletteItem(id: "a.focusInbox", group: .action, title: "Focus the Inbox", subtitle: "J and K to move  ⌃⌥⌘5", symbol: "tray") {
+            PaletteItem(id: "a.focusInbox", group: .action, title: "Focus the Inbox", subtitle: "J and K to move", symbol: "tray", command: "columns.inbox") {
                 [weak self] _, _ in self?.focusColumn(.inbox)
             },
-            PaletteItem(id: "a.nextColumn", group: .action, title: "Next Column", subtitle: "The keyboard to the next open column  F6", symbol: "arrow.right.to.line") {
+            PaletteItem(id: "a.nextColumn", group: .action, title: "Next Column", subtitle: "The keyboard to the next open column", symbol: "arrow.right.to.line", command: "columns.next") {
                 [weak self] _, _ in self?.focusColumn(by: 1)
             },
-            PaletteItem(id: "a.previousColumn", group: .action, title: "Previous Column", subtitle: "⇧F6", symbol: "arrow.left.to.line") {
+            PaletteItem(id: "a.previousColumn", group: .action, title: "Previous Column", subtitle: nil, symbol: "arrow.left.to.line", command: "columns.previous") {
                 [weak self] _, _ in self?.focusColumn(by: -1)
             },
-            PaletteItem(id: "a.peek", group: .action, title: "Tab Peek", subtitle: "Every tab's terminal, live  ⇧⌘E", symbol: "rectangle.on.rectangle") {
+            PaletteItem(id: "a.peek", group: .action, title: "Tab Peek", subtitle: "Every tab's terminal, live", symbol: "rectangle.on.rectangle", command: "tabs.peek") {
                 [weak self] _, _ in self?.toggleTabPeek(nil)
             },
             PaletteItem(id: "a.pullRequest", group: .action, title: "Show Pull Request", subtitle: "Checks, comments, review threads", symbol: "arrow.triangle.pull") {
@@ -3553,11 +3564,11 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             },
             PaletteItem(
                 id: "a.createPullRequest", group: .action, title: "Create Pull Request…", subtitle: "This branch's commits, opened on GitHub — asked first",
-                symbol: "arrow.triangle.pull"
+                symbol: "arrow.triangle.pull", command: "pullRequest.create"
             ) { [weak self] _, _ in self?.createPullRequest(nil) },
             PaletteItem(
-                id: "a.reviewBranch", group: .action, title: "Review Branch", subtitle: "This branch's changes in a tab, side by side  ⇧⌘R",
-                symbol: "rectangle.split.2x1"
+                id: "a.reviewBranch", group: .action, title: "Review Branch", subtitle: "This branch's changes in a tab, side by side",
+                symbol: "rectangle.split.2x1", command: "review.branch"
             ) { [weak self] _, _ in self?.reviewBranch(nil) },
             PaletteItem(
                 id: "a.reviewUncommitted", group: .action, title: "Review Uncommitted Changes",
@@ -3574,16 +3585,16 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         ]
         if store.selected?.isSplit == true {
             items += [
-                PaletteItem(id: "a.nextPane", group: .action, title: "Next Pane", subtitle: "⌘]", symbol: "arrow.right.square") {
+                PaletteItem(id: "a.nextPane", group: .action, title: "Next Pane", subtitle: nil, symbol: "arrow.right.square", command: "splits.next") {
                     [weak self] _, _ in self?.focusSplit(from: nil, .next)
                 },
-                PaletteItem(id: "a.zoomPane", group: .action, title: "Zoom Pane", subtitle: "⇧⌘↩ — alone, full size, and back", symbol: "arrow.up.left.and.arrow.down.right") {
+                PaletteItem(id: "a.zoomPane", group: .action, title: "Zoom Pane", subtitle: "Alone, full size, and back", symbol: "arrow.up.left.and.arrow.down.right", command: "splits.zoom") {
                     [weak self] _, _ in self?.toggleSplitZoom(nil)
                 },
-                PaletteItem(id: "a.equalizePanes", group: .action, title: "Equalize Panes", subtitle: "⌃⌘=", symbol: "equal.square") {
+                PaletteItem(id: "a.equalizePanes", group: .action, title: "Equalize Panes", subtitle: nil, symbol: "equal.square", command: "splits.equalize") {
                     [weak self] _, _ in self?.equalizeSplits(nil)
                 },
-                PaletteItem(id: "a.closePane", group: .action, title: "Close Pane", subtitle: "⌘W", symbol: "xmark.square") {
+                PaletteItem(id: "a.closePane", group: .action, title: "Close Pane", subtitle: nil, symbol: "xmark.square", command: "tabs.close") {
                     [weak self] _, _ in
                     guard let self, let tab = self.store.selected else { return }
                     self.closePane(tab.terminal, in: tab)
@@ -3591,33 +3602,33 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             ]
         }
         items += Agent.allCases.map { agent in
-            PaletteItem(id: "a.agent.\(agent.rawValue)", group: .action, title: "New \(agent.name) Tab", subtitle: nil, symbol: agent.symbol) {
+            PaletteItem(id: "a.agent.\(agent.rawValue)", group: .action, title: "New \(agent.name) Tab", subtitle: nil, symbol: agent.symbol, command: agent.newTabCommand) {
                 [weak self] _, _ in self?.newAgentTab(agent)
             }
         }
         items += [
-            PaletteItem(id: "a.sidebar", group: .action, title: "Toggle Sidebar", subtitle: "⌘B", symbol: "sidebar.left") { [weak self] _, _ in
+            PaletteItem(id: "a.sidebar", group: .action, title: "Toggle Sidebar", subtitle: nil, symbol: "sidebar.left", command: "sidebar.toggle") { [weak self] _, _ in
                 self?.toggleFileTree(nil)
             },
             PaletteItem(
                 id: "a.overgit", group: .action, title: "Overgit",
-                subtitle: "The checkout’s history, branches and worktrees  ⌥⌘G", symbol: "arrow.triangle.branch"
+                subtitle: "The checkout’s history, branches and worktrees", symbol: "arrow.triangle.branch", command: "overgit.show"
             ) { [weak self] _, _ in self?.showOvergit(nil) },
             PaletteItem(
                 id: "a.api", group: .action, title: "API Client",
-                subtitle: "The checkout’s Bruno collection: send requests, run their tests  ⌥⌘R", symbol: "arrow.left.arrow.right"
+                subtitle: "The checkout’s Bruno collection: send requests, run their tests", symbol: "arrow.left.arrow.right", command: "api.show"
             ) { [weak self] _, _ in self?.showAPIClient(nil) },
             PaletteItem(
                 id: "a.notes", group: .action, title: "Notes",
-                subtitle: "The vault: Markdown notes, Obsidian’s and iCloud’s  ⌥⌘N", symbol: "note.text"
+                subtitle: "The vault: Markdown notes, Obsidian’s and iCloud’s", symbol: "note.text", command: "notes.show"
             ) { [weak self] _, _ in self?.showNotes(nil) },
-            PaletteItem(id: "a.dailyNote", group: .action, title: "Today’s Note", subtitle: nil, symbol: "calendar") {
+            PaletteItem(id: "a.dailyNote", group: .action, title: "Today’s Note", subtitle: nil, symbol: "calendar", command: "notes.daily") {
                 [weak self] _, _ in self?.openDailyNote(nil)
             },
             PaletteItem(id: "a.newNote", group: .action, title: "New Note", subtitle: nil, symbol: "square.and.pencil") {
                 [weak self] _, _ in self?.newNote(nil)
             },
-            PaletteItem(id: "a.graph", group: .action, title: "Graph View", subtitle: "The notes and their links", symbol: "point.3.connected.trianglepath.dotted") {
+            PaletteItem(id: "a.graph", group: .action, title: "Graph View", subtitle: "The notes and their links", symbol: "point.3.connected.trianglepath.dotted", command: "notes.graph") {
                 [weak self] _, _ in self?.showNotesGraph(nil)
             },
             PaletteItem(
@@ -3663,7 +3674,7 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             }
         }
         items += [
-            PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: "Changed files and their diffs  ⌥⌘D", symbol: "plusminus") {
+            PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: "Changed files and their diffs", symbol: "plusminus", command: "changes.toggle") {
                 [weak self] _, _ in self?.toggleDiff(nil)
             },
             PaletteItem(id: "a.snippet", group: .action, title: "New Snippet…", subtitle: nil, symbol: "text.badge.plus") { [weak self] _, _ in

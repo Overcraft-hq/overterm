@@ -82,12 +82,19 @@ package enum PaletteCommands {
         return parts.isEmpty ? nil : parts.joined(separator: "  ")
     }
 
-    /// Rows written by hand, each named as a command showing its key now.
+    /// The command a row does: the one it names (`PaletteItem.command`),
+    /// else, for an action, the command of its title.
+    package static func command(of item: PaletteItem) -> KeyCommand? {
+        if let id = item.command { return KeyCommands.byID[id] }
+        return item.group == .action ? command(named: item.title) : nil
+    }
+
+    /// Rows written by hand, each that does a command showing its key now.
     package static func withLiveKeys(_ items: [PaletteItem], keys: Keybindings = .shared) -> [PaletteItem] {
         items.map { item in
-            guard item.group == .action, let command = command(named: item.title) else { return item }
+            guard let bound = command(of: item) else { return item }
             var live = item
-            live.subtitle = subtitle(item.subtitle, key: keys.key(for: command)?.display)
+            live.subtitle = subtitle(item.subtitle, key: keys.key(for: bound)?.display)
             return live
         }
     }

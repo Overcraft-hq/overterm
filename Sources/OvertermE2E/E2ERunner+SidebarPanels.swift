@@ -4,7 +4,8 @@ import AppKit
 /// Settings ▸ General ▸ Sidebar: Sessions and Snippets switched off and on
 /// — their icons go from the rail, the panel on screen gives way to Files,
 /// and the palette stops listing snippets. Then the rail's order, its
-/// Compact size, and the panel a new window opens on.
+/// Compact size, and the panel a new window opens on; then onboarding's
+/// empty states and the rail's keys (`onboardingSidebarChecks`).
 extension E2ERunner {
     package func sidebarPanelsScenario() async {
         app.snippets.upsert(Snippet(name: "Validate everything", command: "mise run validate"))
@@ -75,6 +76,9 @@ extension E2ERunner {
         Settings.shared.set("general.sidebarStartPanel", .string("files"))
         check("…or the one Settings names", SidebarModel().panel == .files)
         Settings.shared.set("general.sidebarStartPanel", nil)
+
+        // Onboarding stage 1: the rail's keys, and the panels outside a repository.
+        await onboardingSidebarChecks()
     }
 }
 #endif

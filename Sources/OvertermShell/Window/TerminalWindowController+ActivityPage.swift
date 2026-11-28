@@ -420,7 +420,7 @@ extension TerminalWindowController {
                 ) { [weak self, weak selected] _, _ in if let selected { self?.showInActivity(.tab(selected.id)) } })
         }
         return rows + tab + [
-            PaletteItem(id: "a.activity", group: .action, title: "Activity", subtitle: "Every process and port on this Mac  ⌥⌘A  ·  ⌃⌘A its switcher", symbol: "cpu") {
+            PaletteItem(id: "a.activity", group: .action, title: "Activity", subtitle: "Every process and port on this Mac", symbol: "cpu", command: "activity.page") {
                 [weak self] _, _ in self?.showActivityPage(.processes)
             },
             PaletteItem(

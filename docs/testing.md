@@ -833,6 +833,15 @@ scenario puts its own facts in `TerminalWindowController.findAgent` and
 records an agent tab opened anyway (`agentTabRecorder`) rather than type
 whatever `claude` the run's PATH has.
 
+Stage 1's empty states: `EmptyStatesTests` (when Files' home strip shows,
+no key written into the words, the hints rebound through a throwaway
+keybindings.json) and `PaletteCommandsTests` (a row's key is its command's,
+rebound or unbound). `sidebarPanels` reads the rail's tooltips and the
+panels' Open Folder… from the accessibility tree (`sidebar.rail.<id>`,
+`<panel>.openFolder`) in a tab outside a repository, and `palette` checks
+the rows' keys follow a rebinding in the run's own keybindings.json, reset
+after.
+
 ## End-to-end — `Sources/OvertermE2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

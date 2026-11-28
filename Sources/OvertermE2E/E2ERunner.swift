@@ -5752,6 +5752,8 @@ package final class E2ERunner {
         check(
             "the Inbox row shows its key", app.palette.results.first { $0.title == "Inbox" }?.subtitle?.hasSuffix(inboxKey) == true,
             app.palette.results.first { $0.title == "Inbox" }?.subtitle ?? "nil")
+        // Onboarding stage 1: the rows' keys from their commands, Help's rows.
+        await onboardingPaletteChecks()
         // Every setting a row; Return opens Settings at it.
         app.palette.query = "font size"
         let fontSize = app.palette.results.first { $0.group == .setting }

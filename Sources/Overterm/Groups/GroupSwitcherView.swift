@@ -85,8 +85,11 @@ package struct GroupSwitcherView: View {
                         Text(verbatim: "No group or tab matches “\(store.switcherQuery)” — ⌫ or esc")
                             .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(.vertical, 8)
                     } else if groups.isEmpty {
-                        Text("No groups yet — ⌃⌘N makes one from the selected tabs")
-                            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(.vertical, 8)
+                        KeyHint(
+                            "No groups yet — %@ makes one from the selected tabs", command: "groups.new", unbound: "No groups yet — Group Selected Tabs makes one",
+                            color: theme.dimText
+                        )
+                        .padding(.vertical, 8)
                     }
                 }
             }

@@ -25,24 +25,26 @@ package enum KeyHints {
 
 /// A small line naming a key, following keybindings.json as it changes:
 /// `KeyHint("⌥⌘↓ jumps…")` is written `KeyHint("%@ jumps to the next tab that needs you", command: "tabs.nextAttention")`.
-/// Nothing at all while the command has no key.
+/// While the command has no key: `unbound`, or nothing at all.
 package struct KeyHint: View {
     @ObservedObject private var keys: Keybindings
     private let text: String
     private let command: String
+    private let unbound: String?
     private let color: Color
     private let size: CGFloat
 
-    package init(_ text: String, command: String, color: Color, size: CGFloat = 11, keys: Keybindings = .shared) {
+    package init(_ text: String, command: String, unbound: String? = nil, color: Color, size: CGFloat = 11, keys: Keybindings = .shared) {
         self.text = text
         self.command = command
+        self.unbound = unbound
         self.color = color
         self.size = size
         self.keys = keys
     }
 
     package var body: some View {
-        if let line = KeyHints.text(text, command: command, keys: keys) {
+        if let line = KeyHints.text(text, command: command, keys: keys) ?? unbound {
             Text(verbatim: line).font(.system(size: ChromeMetrics.text(size))).foregroundStyle(color)
         }
     }

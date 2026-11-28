@@ -36,6 +36,51 @@ final class PaletteCommandsTests: XCTestCase {
         XCTAssertNotEqual(live.first?.subtitle, "⌘T", "the key in keybindings.json, not the one written in the row")
     }
 
+    /// Onboarding stage 1 (9.1): a row names its command, and its key is
+    /// that command's as bound now — whatever its title says, and never a
+    /// key written into it.
+    func testARowsKeyIsItsCommandsAsBoundNow() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("keybindings.json")
+        func keys(_ json: String) throws -> Keybindings {
+            try json.write(to: file, atomically: true, encoding: .utf8)
+            return Keybindings(url: file, ghosttyDefault: { _ in nil }, watch: false)
+        }
+        // "Close Pane" is no command's title: only its id says which.
+        let row = PaletteItem(id: "a.closePane", group: .action, title: "Close Pane", subtitle: nil, symbol: "xmark.square", command: "tabs.close") { _, _ in }
+        XCTAssertEqual(PaletteCommands.withLiveKeys([row], keys: try keys("[]")).first?.subtitle, "⌘W")
+        let rebound = try keys(#"[{ "key": "ctrl+alt+cmd+w", "command": "tabs.close" }]"#)
+        XCTAssertEqual(PaletteCommands.withLiveKeys([row], keys: rebound).first?.subtitle, "⌃⌥⌘W", "the rebound key, not ⌘W")
+
+        // A subtitle keeps its words and gains the key; a key someone left
+        // written in it gives way.
+        let zoom = PaletteItem(id: "a.zoomPane", group: .action, title: "Zoom Pane", subtitle: "Alone, full size, and back", symbol: "z", command: "splits.zoom") { _, _ in }
+        XCTAssertEqual(PaletteCommands.withLiveKeys([zoom], keys: try keys("[]")).first?.subtitle, "Alone, full size, and back  ⇧⌘↩")
+        let stale = PaletteItem(id: "a.peek", group: .action, title: "Tab Peek", subtitle: "Every tab's terminal, live  ⇧⌘E", symbol: "p", command: "tabs.peek") { _, _ in }
+        let peekRebound = try keys(#"[{ "key": "ctrl+alt+cmd+e", "command": "tabs.peek" }]"#)
+        XCTAssertEqual(PaletteCommands.withLiveKeys([stale], keys: peekRebound).first?.subtitle, "Every tab's terminal, live  ⌃⌥⌘E")
+
+        // Unbound: the words alone. Open Folder… has no key by default (D-10).
+        let folder = PaletteItem(id: "a.openFolder", group: .action, title: "Open Folder…", subtitle: "A tab in a folder you pick", symbol: "folder", command: "file.openFolder") { _, _ in }
+        XCTAssertEqual(PaletteCommands.withLiveKeys([folder], keys: try keys("[]")).first?.subtitle, "A tab in a folder you pick")
+        let bound = try keys(#"[{ "key": "cmd+o", "command": "file.openFolder" }]"#)
+        XCTAssertEqual(PaletteCommands.withLiveKeys([folder], keys: bound).first?.subtitle, "A tab in a folder you pick  ⌘O", "bound by the person: said")
+
+        // The id wins over a title that names another command.
+        let named = PaletteItem(id: "x", group: .action, title: "New Tab", subtitle: nil, symbol: "plus", command: "splits.right") { _, _ in }
+        XCTAssertEqual(PaletteCommands.command(of: named)?.id, "splits.right")
+    }
+
+    /// Every agent's row and hint reads a command there is.
+    func testEveryAgentsNewTabIsACommand() {
+        for agent in Agent.allCases {
+            XCTAssertNotNil(KeyCommands.byID[agent.newTabCommand], "\(agent)")
+            XCTAssertEqual(KeyCommands.byID[agent.newTabCommand]?.title, "New \(agent.name) Tab", "\(agent)")
+        }
+    }
+
     func testEveryMenuCommandHasARow() {
         let menu = NSMenu()
         let view = NSMenuItem(title: "View", action: nil, keyEquivalent: "")

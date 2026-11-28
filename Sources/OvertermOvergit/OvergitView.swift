@@ -88,6 +88,8 @@ package struct OvergitView: View {
     @ObservedObject package var theme: ChromeTheme
     package let actions: OvergitActions
     package let worktreeActions: WorktreeActions
+    /// So the header's tooltip follows a rebound key.
+    @ObservedObject private var keys = Keybindings.shared
 
     package init(
         model: OvergitModel, diff: DiffModel, worktrees: WorktreeModel, store: TabStore, currentRoot: URL?, group: TabGroup?, theme: ChromeTheme, actions: OvergitActions,
@@ -113,12 +115,19 @@ package struct OvergitView: View {
                 if model.isReading {
                     ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 22, height: 22)
                 }
-                PanelHeaderButton(symbol: "plus", help: "New Task… (⇧⌘N)", action: worktreeActions.newTask, theme: theme)
+                PanelHeaderButton(symbol: "plus", help: KeyHints.help("New Task…", command: "tasks.new", keys: keys), action: worktreeActions.newTask, theme: theme)
                 PanelHeaderButton(
                     symbol: "arrow.clockwise", help: "Fetch and reload", action: reload, theme: theme)
             }
             if !model.isRepository {
-                Text("Not in a git repository").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(12)
+                // The way into one (onboarding 7.5): Open Folder…, or a `cd`
+                // the window follows.
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(EmptyStates.overgit).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    OpenFolderButton(theme: theme, identifier: "overgit.openFolder", action: worktreeActions.openFolder)
+                }
+                .padding(12)
                 Spacer()
             } else {
                 list

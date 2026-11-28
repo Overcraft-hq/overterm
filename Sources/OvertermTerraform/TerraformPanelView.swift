@@ -35,6 +35,8 @@ package struct TerraformPanelActions {
     package var openFileAt: (URL, Int?) -> Void = { _, _ in }
     /// A page in the browser column: an HCP root's workspace (TF-G6).
     package var openURL: (URL) -> Void = { _ in }
+    /// File ▸ Open Folder…, offered with no checkout here (onboarding 7.5).
+    package var openFolder: () -> Void = {}
 
     package init(
         openTerminal: @escaping (TerraformRootCard) -> Void, openFile: @escaping (URL) -> Void, validate: @escaping (TerraformRootCard) -> Void, plan: @escaping (TerraformRootCard) -> Void,
@@ -42,8 +44,9 @@ package struct TerraformPanelActions {
         planDestroy: @escaping (TerraformRootCard) -> Void = { _ in }, showApply: @escaping (TerraformApplyRun) -> Void = { _ in }, showState: @escaping (TerraformRootCard) -> Void = { _ in },
         checkDrift: @escaping (TerraformRootCard) -> Void = { _ in }, test: @escaping (TerraformRootCard) -> Void = { _ in }, showTest: @escaping (TerraformTestRun) -> Void = { _ in },
         chooseVarFiles: @escaping (TerraformRootCard) -> Void = { _ in }, typeInTerminal: @escaping (TerraformRootCard, String) -> Void = { _, _ in },
-        openFileAt: @escaping (URL, Int?) -> Void = { _, _ in }, openURL: @escaping (URL) -> Void = { _ in }
+        openFileAt: @escaping (URL, Int?) -> Void = { _, _ in }, openURL: @escaping (URL) -> Void = { _ in }, openFolder: @escaping () -> Void = {}
     ) {
+        self.openFolder = openFolder
         self.openURL = openURL
         self.chooseVarFiles = chooseVarFiles
         self.typeInTerminal = typeInTerminal
@@ -97,10 +100,16 @@ package struct TerraformPanelView: View {
                 note("Terraform is off in Settings.")
             } else if panel.checkout == nil {
                 note("No checkout here: a tab in a repository shows its Terraform roots.")
+                OpenFolderButton(theme: theme, identifier: "terraform.openFolder", action: actions.openFolder)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.top, 8)
             } else {
                 switch panel.state {
                 case .notGit:
                     note("Not a repository's top folder: Overterm looks for roots only in one — never in your home folder or /.")
+                    OpenFolderButton(theme: theme, identifier: "terraform.openFolder", action: actions.openFolder)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12).padding(.top, 8)
                 case .idle, .reading:
                     ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.top, 12)
                 case .read:
