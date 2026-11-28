@@ -420,15 +420,26 @@ extension TerminalWindowController {
     /// without the question: a note may come from anywhere (a shared vault,
     /// an agent), and Return on the sheet is Cancel.
     package func runNoteCommand(_ command: String) {
-        guard let window, let tab = store.selected, tab.terminal != nil else { return NSSound.beep() }
+        guard let window, let tab = store.selected, let pane = tab.terminal else { return NSSound.beep() }
+        if let refusal = NoteRunbook.refusal(kind: tab.kind, terraformAsking: terraformAsking(tab)) {
+            let alert = NSAlert()
+            alert.messageText = "Not run in “\(tab.title)”"
+            alert.informativeText = refusal
+            alert.beginSheetModal(for: window)
+            return
+        }
         let alert = NSAlert()
-        alert.messageText = "Run this in “\(tab.title)”?"
+        // The tab named with what it is (a remote shell, a pod's, a context's) — where the command lands.
+        alert.messageText = tab.kind == .shell ? "Run this in “\(tab.title)”?" : "Run this in “\(tab.title)” — \(tab.kind.title)?"
         alert.informativeText = VisibleText.displayed(command)
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Run")
         alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertSecondButtonReturn, let self, self.store.selected === tab else { return }
-            self.type(command, run: true)
+            // The pane the question named, still there and still not at an ask.
+            guard response == .alertSecondButtonReturn, let self, tab.terminals.contains(where: { $0 === pane }), !self.terraformAsking(tab) else { return }
+            pane.insertText(command)
+            pane.pressReturn()
+            self.focusSelectedTerminal()
         }
     }
 }

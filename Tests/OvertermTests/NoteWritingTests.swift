@@ -116,4 +116,29 @@ final class NoteWritingTests: XCTestCase {
         let json = payload.json(vaultBase: "v", base: "b", breaks: false, dark: true, colors: [:])
         XCTAssertTrue(json.contains("\"queries\":{\"4\""), json)
     }
+
+    /// A note can't take the app down: a LIMIT past Int, a WHERE nesting
+    /// ten thousand deep, each a table that says so or stops at 500.
+    func testANotesTableCantCrashTheApp() {
+        var index = NotesIndex()
+        index.set("A.md", text: "x", modified: Date())
+        XCTAssertNil(NoteQuery.table(for: "LIST LIMIT 99999999999999999999", over: index).error)
+        XCTAssertEqual(try NoteQuery.parse("LIST LIMIT 99999999999999999999").limit, NoteQuery.maxRows)
+        let deep = "LIST WHERE " + String(repeating: "(", count: 10_000) + "a"
+        XCTAssertEqual(NoteQuery.table(for: deep, over: index).error, "WHERE nests too deep.")
+        XCTAssertNotNil(NoteQuery.table(for: "LIST WHERE " + String(repeating: "!", count: 10_000) + "a", over: index).error)
+    }
+
+    func testARunGoesToNoTabThatWouldTakeItAsAnAnswer() {
+        XCTAssertNotNil(NoteRunbook.refusal(kind: .agent, terraformAsking: false), "an agent's tab: it would be a prompt")
+        XCTAssertNotNil(NoteRunbook.refusal(kind: .shell, terraformAsking: true), "Terraform asking: it would be the answer")
+        XCTAssertNil(NoteRunbook.refusal(kind: .shell, terraformAsking: false))
+        XCTAssertNil(NoteRunbook.refusal(kind: .ssh, terraformAsking: false), "a remote shell: asked, named so")
+    }
+
+    func testSlashIsNotOfferedInCode() {
+        let text = "```bash\n/usr" as NSString
+        XCTAssertTrue(NoteWriting.isInFence(text, at: 8))
+        XCTAssertFalse(NoteWriting.isInFence("text\n/tab" as NSString, at: 5))
+    }
 }

@@ -1319,3 +1319,17 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         picker?.dismiss()
     }
 }
+
+extension EditorViewController {
+    /// A caret stepping onto a folded heading's hidden lines goes past them (Notes).
+    @objc package func textView(
+        _ textView: NSTextView, willChangeSelectionFromCharacterRanges oldSelectedCharRanges: [NSValue],
+        toCharacterRanges newSelectedCharRanges: [NSValue]
+    ) -> [NSValue] {
+        guard newSelectedCharRanges.count == 1, oldSelectedCharRanges.count == 1, let notes = Self.notes, active?.isNote == true else {
+            return newSelectedCharRanges
+        }
+        let moved = notes.caretPastFolds(from: oldSelectedCharRanges[0].rangeValue, to: newSelectedCharRanges[0].rangeValue, in: self)
+        return [NSValue(range: moved)]
+    }
+}

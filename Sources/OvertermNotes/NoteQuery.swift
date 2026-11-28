@@ -171,6 +171,9 @@ package struct NoteQuery: Equatable, Sendable {
     private struct Reader {
         var tokens: [Token]
         var at = 0
+        /// How deep WHERE's parentheses and `!` go: a note's ten thousand
+        /// `(` would overflow the stack.
+        var depth = 0
 
         var peek: Token? { at < tokens.count ? tokens[at] : nil }
         mutating func next() -> Token? {
@@ -238,8 +241,9 @@ package struct NoteQuery: Equatable, Sendable {
                     query.sort.append((field, ascending))
                 } while r.take(symbol: ",")
             } else if r.take("LIMIT") {
-                guard case .number(let n)? = r.next(), n >= 0 else { throw Problem(message: "LIMIT takes a number.") }
-                query.limit = Int(n)
+                guard case .number(let n)? = r.next(), n >= 0, n.isFinite else { throw Problem(message: "LIMIT takes a number.") }
+                // Past what a table shows, it is what a table shows: Int(1e20) would trap.
+                query.limit = n >= Double(maxRows) ? maxRows : Int(n)
             } else {
                 throw Problem(message: "“\(describe(token))” isn't understood here: FROM, WHERE, SORT or LIMIT.")
             }
@@ -290,6 +294,9 @@ package struct NoteQuery: Equatable, Sendable {
     }
 
     private static func unary(_ r: inout Reader) throws -> Expression {
+        r.depth += 1
+        defer { r.depth -= 1 }
+        guard r.depth <= 64 else { throw Problem(message: "WHERE nests too deep.") }
         if r.take(symbol: "!") { return .not(try unary(&r)) }
         if r.take(symbol: "(") {
             let inner = try orExpression(&r)

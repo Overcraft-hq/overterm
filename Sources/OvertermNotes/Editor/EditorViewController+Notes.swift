@@ -244,6 +244,11 @@ extension EditorViewController {
         let lineStart = text.lineRange(for: NSRange(location: caret, length: 0)).location
         let before = text.substring(with: NSRange(location: lineStart, length: caret - lineStart))
         guard let context = NoteCompletion.context(before: before) else { return false }
+        // `/` in code or frontmatter is code's own.
+        if case .slash = context {
+            if NoteWriting.isInFence(text, at: lineStart) { return false }
+            if let front = NoteParser.parse(textView.string).frontmatterRange, NSLocationInRange(caret, front) { return false }
+        }
         let start: Int
         switch context {
         case .link(_, let at), .heading(_, _, let at), .tag(_, let at), .slash(_, let at): start = lineStart + at
@@ -527,11 +532,36 @@ extension EditorViewController {
         for section in folded { applyLivePreview(over: NSUnionRange(section.heading, section.body), in: buffer) }
     }
 
+    /// A caret stepping into folded lines from just beside them — ↓ off the
+    /// heading, ↑ from below — goes past them, as Obsidian's does; one
+    /// jumping in (a search, a link) is left there, and the fold opens.
+    package func caretPastFolds(from old: NSRange, to new: NSRange) -> NSRange {
+        guard let buffer = active, buffer.isNote, buffer.livePreview, new.length == 0, !buffer.foldedHeadings.isEmpty else { return new }
+        let text = buffer.storage.string as NSString
+        for section in foldedSections(in: buffer) where NSLocationInRange(new.location, section.body) {
+            if NSLocationInRange(old.location, section.heading) || old.location == section.body.location {
+                // Down: to the line after the fold — the end, at the note's end.
+                return NSRange(location: min(NSMaxRange(section.body), text.length), length: 0)
+            }
+            let after = NSMaxRange(section.body)
+            if old.location >= after, old.location <= after + text.lineRange(for: NSRange(location: min(after, max(0, text.length - 1)), length: 0)).length {
+                // Up: to the heading's end.
+                var end = NSMaxRange(section.heading)
+                while end > section.heading.location, [0x0A, 0x0D].contains(text.character(at: end - 1)) { end -= 1 }
+                return NSRange(location: end, length: 0)
+            }
+        }
+        return new
+    }
+
     /// A caret moved into folded lines (a search, a link, arrows): they open.
     private func unfoldAroundCaret(in buffer: EditorBuffer) {
         guard !buffer.foldedHeadings.isEmpty else { return }
         let carets = textView.selectedRanges.map(\.rangeValue)
-        for section in foldedSections(in: buffer) where carets.contains(where: { NSLocationInRange($0.location, section.body) }) {
+        // At the body's end too: a section running to the end of the note
+        // ends where typing there goes.
+        for section in foldedSections(in: buffer)
+        where carets.contains(where: { NSLocationInRange($0.location, section.body) || $0.location == NSMaxRange(section.body) }) {
             buffer.foldedHeadings.remove(section.key)
             applyLivePreview(over: NSUnionRange(section.heading, section.body), in: buffer)
         }

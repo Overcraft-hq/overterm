@@ -262,9 +262,11 @@ package final class EditorLineHeight: NSObject, NSLayoutManagerDelegate, @unchec
         var changed: [NSLayoutManager.GlyphProperty]?
         for i in 0..<count {
             let index = characterIndexes[i]
-            guard index < storage.length,
-                storage.attribute(.noteHidden, at: index, effectiveRange: nil) != nil || storage.attribute(.noteFolded, at: index, effectiveRange: nil) != nil
-            else { continue }
+            guard index < storage.length else { continue }
+            let hidden = storage.attribute(.noteHidden, at: index, effectiveRange: nil) != nil
+            // A folded line's break stays one, so each folded line is a fragment of its own (and takes no height).
+            let folded = !hidden && storage.attribute(.noteFolded, at: index, effectiveRange: nil) != nil && (storage.string as NSString).character(at: index) != 0x0A
+            guard hidden || folded else { continue }
             if changed == nil { changed = Array(UnsafeBufferPointer(start: properties, count: count)) }
             changed?[i] = .null
         }

@@ -278,7 +278,13 @@
       const token = tokens[idx];
       const language = token.info.trim().split(/\s+/)[0].toLowerCase();
       const depth = (env && env.depth) || 0;
-      const line = token.map && depth === 0 ? token.map[0] + payload.lineOffset : -1;
+      // Inside a quote or a callout the app reads no fence (`> ```bash`): neither runs nor tabulates there.
+      let quoted = 0;
+      for (let i = 0; i < idx; i++) {
+        if (tokens[i].type === "blockquote_open") quoted++;
+        else if (tokens[i].type === "blockquote_close") quoted--;
+      }
+      const line = token.map && depth === 0 && quoted === 0 ? token.map[0] + payload.lineOffset : -1;
       if (language === "mermaid") return `<div class="mermaid" data-diagram="${mermaidSources.push(token.content) - 1}"></div>`;
       if (language === "math" || language === "latex" && token.content.trim().startsWith("\\begin")) {
         return `<div class="math-block">${renderMath(token.content, true)}</div>`;

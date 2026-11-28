@@ -61,6 +61,9 @@ package enum NoteWriting {
             selections: [NSRange(location: caret + (replacement as NSString).length, length: 0)])
     }
 
+    /// Whether a line starting at `location` is inside a ``` or ~~~ fence.
+    package static func isInFence(_ text: NSString, at location: Int) -> Bool { inFence(text, before: location) }
+
     /// Whether `location` is inside a ``` or ~~~ fence: an odd number of
     /// fence lines before it.
     private static func inFence(_ text: NSString, before location: Int) -> Bool {
@@ -204,6 +207,7 @@ package enum NoteFolding {
 /// commands are its `$ ` lines, the output between them left. Pure.
 package enum NoteRunbook {
     package static let languages: Set<String> = ["bash", "sh", "zsh", "shell", "console", "shell-session"]
+
 
     /// The command of the fence that opens on `line` (zero-based, the
     /// file's); nil when no shell fence opens there.
