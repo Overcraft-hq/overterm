@@ -81,7 +81,7 @@ package struct DiffPanelView: View {
                         .accessibilityIdentifier("diff.actionError")
                 }
                 if model.shownFiles.isEmpty, editable || model.commits.isEmpty {
-                    placeholder(editable ? "No uncommitted changes" : "No changes on this branch")
+                    placeholder(editable ? "No uncommitted changes" : "No changes on this branch", hint: editable)
                 } else {
                     cards
                 }
@@ -287,10 +287,11 @@ package struct DiffPanelView: View {
         }
     }
 
-    private func placeholder(_ text: String) -> some View {
+    /// `hint`: only on a clean working tree, where reviewing the branch is the next thing.
+    private func placeholder(_ text: String, hint: Bool = false) -> some View {
         VStack(spacing: 4) {
             Text(text).foregroundStyle(theme.dimText)
-            KeyHint("%@ reviews the whole branch", command: "review.branch", color: theme.dimText)
+            if hint { KeyHint("%@ reviews the whole branch", command: "review.branch", color: theme.dimText) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

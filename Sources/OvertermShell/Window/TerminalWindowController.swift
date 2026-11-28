@@ -24,6 +24,12 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     package let snippets = SnippetStore()
     package private(set) var palette = PaletteModel()
     package private(set) var paletteView: NSView?
+    /// What had the keyboard when ⌘K opened: a menu command chosen there
+    /// is validated and sent from it, as the menu would (Save, Find…).
+    private weak var paletteOpener: NSResponder?
+    /// The menu's and the settings' rows, built once a showing — the
+    /// palette is rebuilt on every keystroke, and they don't change with it.
+    private var paletteFixedRows: [PaletteItem]?
     package private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
     /// The pages' lists' single-letter keys (each page's `ResourceKey`
@@ -2888,6 +2894,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
             hidePalette()
             return
         }
+        paletteOpener = window?.firstResponder
+        paletteFixedRows = nil
         palette.reset(with: paletteItems())
         paletteView.isHidden = false
         // The hosting view is reused, so its field has to be focused on
@@ -3668,8 +3676,8 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
         // Keys as bound now; then every menu command not offered yet, and
         // every setting (issue-tracker#22).
         items = PaletteCommands.withLiveKeys(items)
-        items += menuPaletteItems(skipping: items)
-        items += settingsPaletteItems()
+        if paletteFixedRows == nil { paletteFixedRows = menuPaletteItems(skipping: items) + settingsPaletteItems() }
+        items += paletteFixedRows ?? []
         // History last in the unranked order — before you type, what you
         // want is an action; once you type, ranking decides.
         items += historyItems(matching: query)
@@ -3682,13 +3690,21 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
     private func menuPaletteItems(skipping offered: [PaletteItem]) -> [PaletteItem] {
         guard let menu = NSApp.mainMenu else { return [] }
         let titles = Set(offered.filter { $0.group == .action }.map { PaletteCommands.normalized($0.title) })
-        return PaletteCommands.commands(in: menu, skipping: titles).map { found in
+        return PaletteCommands.commands(in: menu, skipping: titles).compactMap { found in
             let item = found.item
+            // A feature switched off (Docker's Compose with Docker off) is
+            // left out, as its hand-written rows are: the window's own
+            // validation says so. What another responder answers (Save,
+            // Find…) is asked when chosen, from where the keyboard was.
+            if item.target == nil, let action = item.action, responds(to: action), !validateMenuItem(item) { return nil }
             let place = found.path.joined(separator: " ▸ ")
+            // Only a command's identifier is unique; AppKit names other items by their selector.
+            let id = item.identifier.map(\.rawValue).flatMap { KeyCommands.byID[$0]?.id } ?? place + "." + item.title
             return PaletteItem(
-                id: "menu.\(item.identifier?.rawValue ?? place + "." + item.title)", group: .action, title: item.title,
+                id: "menu.\(id)", group: .action, title: item.title,
                 subtitle: PaletteCommands.subtitle(place.isEmpty ? nil : place, key: PaletteCommands.key(of: item)), symbol: "filemenu.and.selection"
-            ) { _, _ in
+            ) { [weak self] _, _ in
+                if let opener = self?.paletteOpener, let window = self?.window { window.makeFirstResponder(opener) }
                 item.menu?.update()
                 guard item.isEnabled, let action = item.action else { return NSSound.beep() }
                 NSApp.sendAction(action, to: item.target, from: item)

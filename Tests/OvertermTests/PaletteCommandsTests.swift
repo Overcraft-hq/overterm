@@ -68,6 +68,18 @@ final class PaletteCommandsTests: XCTestCase {
         XCTAssertFalse(found.contains("quit overterm"))
     }
 
+    /// A setting whose title fits the query better still comes after the
+    /// action of that name: "changes" is the Changes pane.
+    func testAnActionOutranksASetting() {
+        let palette = PaletteModel()
+        palette.reset(with: [
+            PaletteItem(id: "setting.gutter", group: .setting, title: "Mark lines changed since the last commit", subtitle: nil, symbol: "gearshape") { _, _ in },
+            PaletteItem(id: "a.diff", group: .action, title: "Changes", subtitle: nil, symbol: "plus") { _, _ in },
+        ])
+        palette.query = "changes"
+        XCTAssertEqual(palette.results.map(\.id), ["a.diff", "setting.gutter"])
+    }
+
     func testASettingsRowSaysItsValue() {
         XCTAssertEqual(PaletteCommands.describe(.bool(true)), "On")
         XCTAssertEqual(PaletteCommands.describe(.double(13)), "13")

@@ -76,6 +76,8 @@ package struct SidebarRail: View {
 
     @ObservedObject package var sidebar: SidebarModel
     @ObservedObject package var theme: ChromeTheme
+    /// So the tooltips follow a rebound key.
+    @ObservedObject var keybindings = Keybindings.shared
     /// What a button at the foot does: the window's
     /// (`TerminalWindowController.performRailAction`).
     package let perform: (SidebarRailAction) -> Void

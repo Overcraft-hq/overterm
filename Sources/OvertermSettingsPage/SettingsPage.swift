@@ -14,6 +14,8 @@ package final class SettingsPageModel: ObservableObject {
     @Published package var search = ""
     /// The setting the page was opened on (⌘K's): scrolled to and marked.
     @Published package var focus: String?
+    /// Moves on every `show(_:focus:)`, so the same setting picked again scrolls to it again.
+    @Published package private(set) var focusRequest = 0
     @Published package var mode: Mode = .ui
     /// The JSON view's text, as typed; nil until the view opens.
     @Published package var draft: String?
@@ -86,6 +88,7 @@ package final class SettingsPageModel: ObservableObject {
     package func show(_ section: SettingsSection, focus key: String? = nil) {
         self.section = section
         focus = key
+        if key != nil { focusRequest += 1 }
         // A search that would hide the row is cleared.
         if let key, let spec = SettingsSchema.all.first(where: { $0.key == key }), !spec.matches(search) { search = "" }
         mode = .ui
@@ -191,7 +194,7 @@ package struct SettingsPageView: View {
                     }
                     // Opened on a setting (⌘K): its row brought into view.
                     .onAppear { scroll(proxy) }
-                    .onChange(of: model.focus) { _ in scroll(proxy) }
+                    .onChange(of: model.focusRequest) { _ in scroll(proxy) }
                 }
             }
         }

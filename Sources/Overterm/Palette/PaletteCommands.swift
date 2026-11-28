@@ -47,7 +47,7 @@ package enum PaletteCommands {
     }
 
     /// The key a menu item has now: its command's, as bound in
-    /// keybindings.json or by default; else the item's own.
+    /// keybindings.json or by default; nil for an item that is no command.
     package static func key(of item: NSMenuItem, keys: Keybindings = .shared) -> String? {
         if let id = item.identifier?.rawValue, let command = KeyCommands.byID[id] { return keys.key(for: command)?.display }
         if let command = command(named: item.title) { return keys.key(for: command)?.display }

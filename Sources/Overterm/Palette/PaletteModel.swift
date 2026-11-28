@@ -118,7 +118,11 @@ package final class PaletteModel: ObservableObject {
                 // or a tab named for what you typed is not. Without this a
                 // long command containing the letters n, c and l somewhere
                 // outranked "New Claude Tab" for "ncl".
-                return (item, item.group == .history ? best - 500_000 : best)
+                // A setting comes after an action or a tab of the same
+                // title — "changes" is the Changes pane before the gutter's
+                // setting — and still before anything matched by subtitle only.
+                let penalty = item.group == .history ? 500_000 : item.group == .setting ? 300_000 : 0
+                return (item, best - penalty)
             }
             .sorted { $0.1 > $1.1 }
             .map(\.0)
