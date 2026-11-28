@@ -3597,6 +3597,22 @@ package final class TerminalWindowController: NSWindowController, NSWindowDelega
                     id: "a.livePreview", group: .action, title: live ? "Show the Note’s Markdown" : "Live Preview",
                     subtitle: "This note as written, or as it reads while you edit it", symbol: "text.viewfinder"
                 ) { [weak self] _, _ in self?.editor?.toggleLivePreview() })
+            items.append(
+                PaletteItem(
+                    id: "a.foldHeading", group: .action, title: "Fold Heading", subtitle: "The heading the caret is under, folded or opened — Live Preview",
+                    symbol: "chevron.right.square"
+                ) { [weak self] _, _ in self?.editor?.toggleHeadingFold() })
+            if editor?.active?.foldedHeadings.isEmpty == false {
+                items.append(
+                    PaletteItem(id: "a.unfoldHeadings", group: .action, title: "Unfold All Headings", subtitle: nil, symbol: "chevron.down.square") {
+                        [weak self] _, _ in self?.editor?.unfoldAllHeadings()
+                    })
+            }
+            items.append(
+                PaletteItem(
+                    id: "a.runBlock", group: .action, title: "Run Code Block in Terminal", subtitle: "The shell block the caret is in, asked first",
+                    symbol: "play.rectangle"
+                ) { [weak self] _, _ in self?.editor?.runNoteBlockAtCaret() })
             items += notes.vault.templates.map { template in
                 let name = template.deletingPathExtension().lastPathComponent
                 return PaletteItem(id: "a.template.\(name)", group: .action, title: "Insert Template: \(name)", subtitle: nil, symbol: "doc.badge.plus") {

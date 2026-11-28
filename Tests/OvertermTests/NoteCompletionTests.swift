@@ -31,6 +31,11 @@ final class NoteCompletionTests: XCTestCase {
         XCTAssertNil(NoteCompletion.context(before: "#"))
         XCTAssertNil(NoteCompletion.context(before: "# Heading"))
         XCTAssertNil(NoteCompletion.context(before: "a#b"))
+        // `/` at a line's start: a command to put there; a path is no command.
+        XCTAssertEqual(NoteCompletion.context(before: "/tab"), .slash(query: "tab", start: 1))
+        XCTAssertEqual(NoteCompletion.context(before: "  /"), .slash(query: "", start: 3))
+        XCTAssertNil(NoteCompletion.context(before: "a /tab"))
+        XCTAssertNil(NoteCompletion.context(before: "/usr/bin"))
     }
 
     func testCandidatesComeFromTheIndex() {

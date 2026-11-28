@@ -269,17 +269,44 @@
     });
   }
 
+  /** Shell blocks a note can run: ▶ Run in terminal, asked first by the app. */
+  const runnable = new Set(["bash", "sh", "zsh", "shell", "console", "shell-session"]);
+
   function fences(md) {
     const fallback = md.renderer.rules.fence;
     md.renderer.rules.fence = (tokens, idx, options, env, self) => {
       const token = tokens[idx];
       const language = token.info.trim().split(/\s+/)[0].toLowerCase();
+      const depth = (env && env.depth) || 0;
+      const line = token.map && depth === 0 ? token.map[0] + payload.lineOffset : -1;
       if (language === "mermaid") return `<div class="mermaid" data-diagram="${mermaidSources.push(token.content) - 1}"></div>`;
       if (language === "math" || language === "latex" && token.content.trim().startsWith("\\begin")) {
         return `<div class="math-block">${renderMath(token.content, true)}</div>`;
       }
-      return fallback(tokens, idx, options, env, self);
+      if (language === "dataview" && line >= 0) return notesTable((payload.queries || {})[String(line)]);
+      const block = fallback(tokens, idx, options, env, self);
+      if (runnable.has(language) && line >= 0) {
+        return `<div class="runnable">${block}<button type="button" class="run-block" data-line="${line}" title="Asked first, then typed into the selected tab">▶ Run in terminal</button></div>`;
+      }
+      return block;
     };
+  }
+
+  /** A notes table the app ran (NoteQuery): its rows, the note's name a link. */
+  function notesTable(table) {
+    if (!table) return `<div class="notes-table-error">This table runs when the note is opened from the vault.</div>`;
+    if (table.error) return `<div class="notes-table-error">Notes table: ${escapeHtml(table.error)}</div>`;
+    if (!table.rows.length) return `<div class="notes-table-empty">No notes match.</div>`;
+    const head = table.columns.map((c) => `<th>${escapeHtml(c)}</th>`).join("");
+    const rows = table.rows.map((row) => "<tr>" + row.map((cell) => {
+      if (cell.p) {
+        const target = cell.p.replace(/\.md$/i, "");
+        return `<td><a href="#" class="internal" data-target="${escapeHtml(target)}">${escapeHtml(cell.t)}</a></td>`;
+      }
+      return `<td>${escapeHtml(cell.t)}</td>`;
+    }).join("") + "</tr>").join("");
+    const more = table.truncated ? `<div class="notes-table-empty">The first ${table.rows.length} shown.</div>` : "";
+    return `<table class="notes-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>${more}`;
   }
 
   function highlight(code, language) {
@@ -569,6 +596,12 @@
   }
 
   document.addEventListener("click", (event) => {
+    const run = event.target.closest("button.run-block");
+    if (run) {
+      event.preventDefault();
+      if (run.dataset.line) post({ runBlock: Number(run.dataset.line) });
+      return;
+    }
     const box = event.target.closest("input.task");
     if (box) {
       event.preventDefault();

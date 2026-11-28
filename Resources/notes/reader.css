@@ -102,3 +102,14 @@ details.callout[open] > .callout-title::after { transform: rotate(90deg); }
 
 button.remote-image { display: inline-block; padding: 6px 10px; margin: 2px 0; border: 1px dashed var(--border, #888); border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: .85em; opacity: .8; cursor: pointer; }
 button.remote-image:hover { opacity: 1; }
+
+/* A runnable shell block: ▶ Run in terminal under it. */
+.runnable { position: relative; }
+button.run-block { display: inline-block; margin: -6px 0 10px; padding: 3px 9px; border: 1px solid var(--border, #888); border-radius: 6px; background: transparent; color: var(--accent, inherit); font: inherit; font-size: .8em; cursor: pointer; opacity: .85; }
+button.run-block:hover { opacity: 1; background: var(--hover, rgba(127,127,127,.12)); }
+/* A notes table (```dataview). */
+table.notes-table { border-collapse: collapse; margin: .6em 0; font-size: .92em; }
+table.notes-table th, table.notes-table td { border: 1px solid var(--border, #8884); padding: 4px 9px; text-align: left; vertical-align: top; }
+table.notes-table th { font-weight: 600; opacity: .85; }
+.notes-table-error, .notes-table-empty { font-size: .85em; opacity: .75; margin: .4em 0; }
+.notes-table-error { color: var(--warning, #c80); }

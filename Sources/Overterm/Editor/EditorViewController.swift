@@ -37,6 +37,9 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     package var noteObserver: AnyCancellable?
     /// A #tag clicked in a note.
     package var onNoteTag: ((String) -> Void)?
+    /// A note's shell block to run: its command, for the window to ask
+    /// about and type into the selected tab.
+    package var onRunNoteBlock: ((String) -> Void)?
     /// The header's menu: Reveal in Files (the window's sidebar).
     package var onRevealInFiles: ((URL) -> Void)?
 

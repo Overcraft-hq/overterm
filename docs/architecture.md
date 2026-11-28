@@ -2129,6 +2129,28 @@ Notes" in iCloud Drive; the panel's header switches between the vaults
 Obsidian lists in its `obsidian.json`). Overterm keeps nothing of its own
 in it, and `.obsidian/` is read for where things go, never written.
 
+- **Writing** (`NoteWriting`, `NoteSlashCommands`, `NoteFolding`, pure): Return
+  in a list, task or quote line begins the next item (a number one more, a
+  task's box empty), an empty item ends the list; a URL pasted over a
+  selection is `[selection](url)`. `/` at a line's start offers what can go
+  there — headings, lists, a callout, a fenced or runnable block, a table, a
+  notes table, the date — through the note completion's list. Fold Heading
+  (⌘K) hides a heading's lines in Live Preview: `.noteFolded`, no glyphs,
+  and `EditorLineHeight` gives a line all folded no height; the heading
+  underlined dotted, the fold kept by the heading's level, text and
+  occurrence, opened when the caret goes in.
+- **Runnable blocks** (`NoteRunbook`, pure): a `bash`/`sh`/`zsh`/`shell`
+  block — `console`'s `$ ` lines — has ▶ Run in terminal in the reading
+  view, and ⌘K's Run Code Block in Terminal runs the one at the caret. The
+  command is shown whole and asked about, naming the tab, Return on Cancel
+  (`runNoteCommand`), then typed into the selected tab with Return.
+- **Notes tables** (`NoteQuery`, pure): a ```dataview block, Dataview's
+  language as far as a table over properties needs — `TABLE [WITHOUT ID]
+  fields [AS "title"]` or `LIST`, `FROM "folder"`/`#tag` with AND/OR,
+  `WHERE` (= != < <= > >=, `contains`, `!`, AND, OR, parentheses), `SORT`,
+  `LIMIT` — run over the index as the payload is made (`queries`, by the
+  fence's line) and drawn by the page, a note's name its link; 500 rows at
+  most. The same block reads in Obsidian with the plugin.
 - **The files** (`NotesVault`, `NoteFiles`): every read and write goes
   through `NSFileCoordinator`, so a write never lands in the middle of a
   sync or of Obsidian's own; a file iCloud hasn't downloaded (a

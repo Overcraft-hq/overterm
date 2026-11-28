@@ -28,6 +28,8 @@ package struct NoteRenderPayload: Equatable, Sendable {
     package var embeds: [String: String]
     /// Embedded drawings' scenes, by target as written — drawn as pictures.
     package var drawings: [String: Drawing] = [:]
+    /// Each ```dataview block's table, by the line (the file's) it opens on.
+    package var queries: [Int: NoteQuery.Table] = [:]
 
     package struct Drawing: Equatable, Sendable {
         package var scene: String
@@ -36,7 +38,7 @@ package struct NoteRenderPayload: Equatable, Sendable {
 
     package static func == (a: Self, b: Self) -> Bool {
         a.path == b.path && a.text == b.text && a.lineOffset == b.lineOffset && a.links == b.links && a.embeds == b.embeds
-            && a.drawings == b.drawings
+            && a.drawings == b.drawings && a.queries == b.queries
             && a.properties.map { "\($0.0)\u{1}\($0.1)\u{1}\($0.2 ?? [])" } == b.properties.map { "\($0.0)\u{1}\($0.1)\u{1}\($0.2 ?? [])" }
     }
 
@@ -93,6 +95,10 @@ package struct NoteRenderPayload: Equatable, Sendable {
             }
         }
         collect(doc, from: path, depth: 0)
+        // Notes tables: run over the index now, drawn by the page.
+        for block in NoteQuery.blocks(in: body) {
+            payload.queries[block.line + lineOffset] = NoteQuery.table(for: block.source, over: index)
+        }
         return payload
     }
 
@@ -154,6 +160,16 @@ package struct NoteRenderPayload: Equatable, Sendable {
             "properties": properties.map { [$0.0, $0.1, $0.2 as Any? ?? NSNull()] as [Any] },
             "links": links, "embeds": embeds, "vault": vaultBase,
             "drawings": drawings.mapValues { ["scene": $0.scene, "encoding": $0.encoding.rawValue] }, "base": base, "breaks": breaks, "dark": dark, "colors": colors,
+            "queries": Dictionary(
+                uniqueKeysWithValues: queries.map { line, table in
+                    (
+                        String(line),
+                        [
+                            "columns": table.columns, "error": table.error as Any? ?? NSNull(), "truncated": table.truncated,
+                            "rows": table.rows.map { row in row.map { cell -> [String: Any] in cell.path.map { ["t": cell.text, "p": $0] } ?? ["t": cell.text] } },
+                        ] as [String: Any]
+                    )
+                }),
         ]
         let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data("{}".utf8)
         return String(decoding: data, as: UTF8.self)
